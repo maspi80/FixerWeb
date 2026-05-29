@@ -26,9 +26,9 @@ export const serviceOrders = [
 ];
 
 export const clients = [
-  { localId: 'demo-1', name: 'Adam Kowalski', type: 'Osoba prywatna', phone: '+48 600 100 200', email: 'adam@example.com', rating: 'Ryzykowny', notes: 'Klient testowy z historią opóźnień.' },
-  { localId: 'demo-2', name: 'Studio Alfa', type: 'Firma', phone: '+48 600 300 400', email: 'kontakt@studioalfa.pl', rating: 'Dobry', notes: 'Stały klient firmowy.' },
-  { localId: 'demo-3', name: 'BMX Media', type: 'Firma', phone: '+48 600 500 600', email: 'office@bmxmedia.pl', rating: 'Bardzo dobry', notes: 'Klient testowy.' }
+  { localId: 'demo-1', name: 'Adam Kowalski', type: 'Osoba prywatna', client_kind: 'Problematyczny', phone: '+48 600 100 200', email: 'adam@example.com', contact_person: '', street: 'Gliwicka', building_number: '12', apartment_number: '4', postal_code: '41-800', city: 'Zabrze', country: 'Polska', nip: '', regon: '', notes: 'Klient testowy z historią opóźnień.' },
+  { localId: 'demo-2', name: 'Studio Alfa', type: 'Firma', client_kind: 'Stały', phone: '+48 600 300 400', email: 'kontakt@studioalfa.pl', contact_person: 'Anna Nowak', street: 'Wolności', building_number: '20', apartment_number: '', postal_code: '41-500', city: 'Chorzów', country: 'Polska', nip: '6270000000', regon: '270000000', notes: 'Stały klient firmowy.' },
+  { localId: 'demo-3', name: 'BMX Media', type: 'Firma', client_kind: 'VIP', phone: '+48 600 500 600', email: 'office@bmxmedia.pl', contact_person: 'Mariusz', street: 'Techniczna', building_number: '7', apartment_number: '', postal_code: '44-100', city: 'Gliwice', country: 'Polska', nip: '6310000000', regon: '240000000', notes: 'Klient testowy.' }
 ];
 
 export const equipment = [

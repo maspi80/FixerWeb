@@ -11,6 +11,28 @@ import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients,
 import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecord } from './services/clientsService';
 import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
 
+const DEFAULT_CLIENT_TYPES = ['Stały', 'Pracownik', 'VIP', 'Problematyczny', 'Nowy', 'Zablokowany'];
+
+function getClientTypes() {
+  try {
+    const saved = localStorage.getItem('fixer-client-types');
+    const parsed = saved ? JSON.parse(saved) : null;
+    return Array.isArray(parsed) && parsed.length ? parsed : DEFAULT_CLIENT_TYPES;
+  } catch {
+    return DEFAULT_CLIENT_TYPES;
+  }
+}
+
+function saveClientTypes(types) {
+  localStorage.setItem('fixer-client-types', JSON.stringify(types));
+}
+
+function getClientAddress(client) {
+  return [client.street, client.building_number, client.apartment_number ? `/${client.apartment_number}` : '', client.postal_code, client.city]
+    .filter(Boolean)
+    .join(' ');
+}
+
 const modules = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'clients', label: 'Klienci', icon: Users },
@@ -204,7 +226,23 @@ function ClientsModule() {
   useEffect(() => { loadClients(); }, []);
 
   const handleSave = async (client) => {
-    const payload = { name: client.name, type: client.type, phone: client.phone, email: client.email, rating: client.rating, notes: client.notes };
+    const payload = {
+      name: client.name,
+      type: client.type,
+      client_kind: client.client_kind,
+      phone: client.phone,
+      email: client.email,
+      contact_person: client.contact_person,
+      street: client.street,
+      building_number: client.building_number,
+      apartment_number: client.apartment_number,
+      postal_code: client.postal_code,
+      city: client.city,
+      country: client.country,
+      nip: client.type === 'Firma' ? client.nip : '',
+      regon: client.type === 'Firma' ? client.regon : '',
+      notes: client.notes
+    };
     if (isSupabaseConfigured) {
       const result = client.id ? await updateClientRecord(client.id, payload) : await createClientRecord(payload);
       if (result.error) alert(result.error.message);
@@ -232,7 +270,7 @@ function ClientsModule() {
     <div className="module-page">
       <section className="panel hero-panel">
         <p className="eyebrow">Moduł</p><h2>Baza klientów</h2>
-        <p className="muted">Kartoteka klientów, historia współpracy, wypożyczenia, serwisy i ocena wiarygodności.</p>
+        <p className="muted">Kartoteka klientów, dane adresowe, dane firmowe, rodzaje klientów i historia współpracy.</p>
         <div className="module-actions">
           <button className="primary-button" onClick={() => { setEditingClient(null); setEditorOpen(true); }}><Plus size={18} />Dodaj klienta</button>
           <button className="secondary-button" onClick={loadClients}>Odśwież</button>
@@ -242,7 +280,7 @@ function ClientsModule() {
         {notice && <div className="notice">{notice}</div>}
       </section>
       <section className="panel">
-        <DataTable storageKey="clients-table" loading={loading} columns={[{ key: 'name', label: 'Nazwa' },{ key: 'type', label: 'Typ' },{ key: 'phone', label: 'Telefon' },{ key: 'email', label: 'Email' },{ key: 'rating', label: 'Ocena' }]} rows={rows} onEdit={(client) => { setEditingClient(client); setEditorOpen(true); }} onDelete={handleDelete} />
+        <DataTable storageKey="clients-table" loading={loading} columns={[{ key: 'name', label: 'Nazwa' },{ key: 'type', label: 'Typ' },{ key: 'client_kind', label: 'Rodzaj klienta' },{ key: 'phone', label: 'Telefon' },{ key: 'email', label: 'Email' },{ key: 'city', label: 'Miasto' },{ key: 'nip', label: 'NIP' }]} rows={rows} onEdit={(client) => { setEditingClient(client); setEditorOpen(true); }} onDelete={handleDelete} />
       </section>
       {editorOpen && <ClientEditor client={editingClient} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -250,24 +288,80 @@ function ClientsModule() {
 }
 
 function ClientEditor({ client, onClose, onSave }) {
+  const [activeTab, setActiveTab] = useState('data');
+  const [clientTypes, setClientTypes] = useState(getClientTypes);
   const [form, setForm] = useState(() => ({
-    id: client?.id ?? null, localId: client?.localId ?? null, name: client?.name ?? '', type: client?.type ?? 'Firma',
-    phone: client?.phone ?? '', email: client?.email ?? '', rating: client?.rating ?? 'Dobry', notes: client?.notes ?? ''
+    id: client?.id ?? null,
+    localId: client?.localId ?? null,
+    name: client?.name ?? '',
+    type: client?.type ?? 'Firma',
+    client_kind: client?.client_kind ?? client?.rating ?? getClientTypes()[0],
+    phone: client?.phone ?? '',
+    email: client?.email ?? '',
+    contact_person: client?.contact_person ?? '',
+    street: client?.street ?? '',
+    building_number: client?.building_number ?? '',
+    apartment_number: client?.apartment_number ?? '',
+    postal_code: client?.postal_code ?? '',
+    city: client?.city ?? '',
+    country: client?.country ?? 'Polska',
+    nip: client?.nip ?? '',
+    regon: client?.regon ?? '',
+    notes: client?.notes ?? ''
   }));
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
+  const addClientKind = () => {
+    const value = prompt('Podaj nowy rodzaj klienta:');
+    const cleanValue = value?.trim();
+    if (!cleanValue) return;
+    const next = Array.from(new Set([...clientTypes, cleanValue]));
+    setClientTypes(next);
+    saveClientTypes(next);
+    update('client_kind', cleanValue);
+  };
+
+  const clientHistoryRows = [
+    ...rentals.filter((rental) => rental.client === form.name).map((rental) => ({ date: rental.date, type: 'Wypożyczenie', description: `${rental.number} — ${rental.item}`, status: rental.status })),
+    ...serviceOrders.filter((order) => order.client === form.name).map((order) => ({ date: '—', type: 'Serwis', description: `${order.number} — ${order.item}`, status: order.status }))
+  ];
+
   return (
     <div className="modal-backdrop">
-      <div className="modal-card">
-        <div className="modal-header"><div><p className="eyebrow">Klient</p><h2>{client ? 'Edycja klienta' : 'Nowy klient'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
-        <div className="form-grid">
+      <div className="modal-card client-modal">
+        <div className="modal-header"><div><p className="eyebrow">Klient</p><h2>{client ? 'Kartoteka klienta' : 'Nowy klient'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
+        <div className="tabs">
+          <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane</button>
+          <button className={activeTab === 'address' ? 'active' : ''} onClick={() => setActiveTab('address')}>Adres i firma</button>
+          <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
+        </div>
+        {activeTab === 'data' && <div className="form-grid">
           <label>Nazwa klienta<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
           <label>Typ<select value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></select></label>
+          <label>Rodzaj klienta<select value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+          <label>Osoba kontaktowa<input value={form.contact_person} onChange={(event) => update('contact_person', event.target.value)} /></label>
           <label>Telefon<input value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
           <label>Email<input value={form.email} onChange={(event) => update('email', event.target.value)} /></label>
-          <label>Ocena<select value={form.rating} onChange={(event) => update('rating', event.target.value)}><option>Bardzo dobry</option><option>Dobry</option><option>Neutralny</option><option>Ryzykowny</option><option>Zablokowany</option></select></label>
+          <div className="wide-field inline-actions"><button className="secondary-button" onClick={addClientKind}>Dodaj rodzaj klienta</button><span className="muted">Lista jest zapisywana w ustawieniach przeglądarki i używana w kartotece klienta.</span></div>
           <label className="wide-field">Notatki<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
-        </div>
+        </div>}
+        {activeTab === 'address' && <div className="form-grid">
+          <label>Ulica<input value={form.street} onChange={(event) => update('street', event.target.value)} /></label>
+          <label>Nr budynku<input value={form.building_number} onChange={(event) => update('building_number', event.target.value)} /></label>
+          <label>Nr lokalu<input value={form.apartment_number} onChange={(event) => update('apartment_number', event.target.value)} /></label>
+          <label>Kod pocztowy<input value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} /></label>
+          <label>Miasto<input value={form.city} onChange={(event) => update('city', event.target.value)} /></label>
+          <label>Kraj<input value={form.country} onChange={(event) => update('country', event.target.value)} /></label>
+          {form.type === 'Firma' && <>
+            <label>NIP<input value={form.nip} onChange={(event) => update('nip', event.target.value)} /></label>
+            <label>REGON<input value={form.regon} onChange={(event) => update('regon', event.target.value)} /></label>
+          </>}
+          <div className="wide-field summary-box"><strong>Adres do kartoteki</strong><span>{getClientAddress(form) || 'Brak adresu'}</span></div>
+        </div>}
+        {activeTab === 'history' && <div className="history-panel">
+          <div className="summary-box"><strong>Informacje o kliencie</strong><span>{form.notes || 'Brak notatek.'}</span></div>
+          {clientHistoryRows.length ? <DataTable storageKey={`client-history-${form.id ?? form.localId ?? 'new'}`} columns={[{ key: 'date', label: 'Data' },{ key: 'type', label: 'Typ' },{ key: 'description', label: 'Opis' },{ key: 'status', label: 'Status' }]} rows={clientHistoryRows} /> : <div className="notice">Brak powiązanych wypożyczeń lub zleceń serwisowych dla tego klienta.</div>}
+        </div>}
         <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={() => onSave(form)}><Save size={18} />Zapisz</button></div>
       </div>
     </div>
@@ -424,7 +518,7 @@ function OrganizerModule() {
   return <ModulePage title="Organizer" description="Projekty, zadania, komentarze, załączniki i przypomnienia inspirowane Asaną." table={<OrganizerBoard />} />;
 }
 function SettingsModule() {
-  return <ModulePage title="Ustawienia" description="Konfiguracja firmy, statusów, numeracji dokumentów, marek, modeli i preferencji." table={<SettingsGrid />} />;
+  return <ModulePage title="Ustawienia" description="Konfiguracja firmy, statusów, rodzajów klientów, numeracji dokumentów i preferencji." table={<SettingsGrid />} />;
 }
 function ModulePage({ title, description, table }) {
   return <div className="module-page"><section className="panel hero-panel"><p className="eyebrow">Moduł</p><h2>{title}</h2><p className="muted">{description}</p><div className="module-actions"><button className="primary-button">Dodaj wpis</button><button className="secondary-button">Eksport PDF</button><button className="secondary-button">Ustawienia modułu</button></div></section><section className="panel">{table}</section></div>;
@@ -466,7 +560,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
       <div className="table-tools"><div className="table-tool-label"><Columns3 size={16} />Widoczność kolumn</div><div className="column-toggles">{columns.map((column) => <button key={column.key} className={visibleColumns.includes(column.key) ? 'active' : ''} onClick={() => toggleColumn(column.key)}>{visibleColumns.includes(column.key) ? <Eye size={14} /> : <EyeOff size={14} />}{column.label}</button>)}</div></div>
       {loading && <div className="loading-line">Ładowanie danych...</div>}
       <table><thead><tr>{activeColumns.map((column) => <th key={column.key} onClick={() => handleSort(column.key)}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}</th>)}{hasActions && <th>Akcje</th>}</tr></thead>
-      <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'rating' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}{hasActions && <td><div className="row-actions">{onEdit && <button onClick={() => onEdit(row)}>Edytuj</button>}{onDelete && <button className="danger-action" onClick={() => onDelete(row)}><Trash2 size={14} />Usuń</button>}</div></td>}</tr>)}</tbody></table>
+      <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}{hasActions && <td><div className="row-actions">{onEdit && <button onClick={() => onEdit(row)}>Edytuj</button>}{onDelete && <button className="danger-action" onClick={() => onDelete(row)}><Trash2 size={14} />Usuń</button>}</div></td>}</tr>)}</tbody></table>
     </div>
   );
 }
@@ -474,9 +568,9 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
 function StatusPill({ value }) {
   const text = String(value ?? '');
   const lower = text.toLowerCase();
-  const tone = lower.includes('po terminie') || lower.includes('ryzykowny') || lower.includes('zablokowany') ? 'danger'
-    : lower.includes('gotowe') || lower.includes('bardzo dobry') ? 'success'
-    : lower.includes('rezerwacja') || lower.includes('neutralny') ? 'warning'
+  const tone = lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') ? 'danger'
+    : lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') ? 'success'
+    : lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') ? 'warning'
     : 'neutral';
   return <span className={`status-pill ${tone}`}>{text}</span>;
 }
@@ -489,8 +583,40 @@ function OrganizerBoard() {
   return <div className="kanban">{columns.map((column, index) => <div className="kanban-column" key={column}><h3>{column}</h3><div className="task-card"><strong>{index === 0 ? 'Uzupełnić dane klienta' : index === 1 ? 'Zweryfikować zestaw CASE-04' : 'Przygotować szablon umowy'}</strong><span>{index === 0 ? 'Klienci' : index === 1 ? 'Wypożyczenia' : 'Dokumenty'}</span></div></div>)}</div>;
 }
 function SettingsGrid() {
+  const [clientTypes, setClientTypes] = useState(getClientTypes);
+  const [newType, setNewType] = useState('');
   const items = ['Dane firmy', 'Statusy sprzętu', 'Statusy serwisu', 'Numeracja dokumentów', 'Marki i modele', 'Szablony PDF'];
-  return <div className="settings-grid">{items.map((item) => <button key={item}><Settings size={18} /><span>{item}</span></button>)}</div>;
+
+  const addType = () => {
+    const value = newType.trim();
+    if (!value) return;
+    const next = Array.from(new Set([...clientTypes, value]));
+    setClientTypes(next);
+    saveClientTypes(next);
+    setNewType('');
+  };
+
+  const removeType = (type) => {
+    const next = clientTypes.filter((item) => item !== type);
+    setClientTypes(next.length ? next : DEFAULT_CLIENT_TYPES);
+    saveClientTypes(next.length ? next : DEFAULT_CLIENT_TYPES);
+  };
+
+  const resetTypes = () => {
+    setClientTypes(DEFAULT_CLIENT_TYPES);
+    saveClientTypes(DEFAULT_CLIENT_TYPES);
+  };
+
+  return <div className="settings-section">
+    <div className="settings-grid">{items.map((item) => <button key={item}><Settings size={18} /><span>{item}</span></button>)}</div>
+    <div className="panel settings-editor">
+      <div className="panel-header"><h2>Rodzaje klientów</h2><button onClick={resetTypes}>Przywróć domyślne</button></div>
+      <p className="muted">Ta lista zasila pole „Rodzaj klienta” w kartotece klienta.</p>
+      <div className="inline-form"><input value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><button className="primary-button" onClick={addType}>Dodaj</button></div>
+      <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type}>{type}<button onClick={() => removeType(type)}>×</button></span>)}</div>
+    </div>
+  </div>;
 }
+
 
 createRoot(document.getElementById('root')).render(<App />);

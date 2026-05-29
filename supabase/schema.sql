@@ -4,13 +4,42 @@ create table if not exists public.clients (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   type text not null default 'Firma',
+  client_kind text not null default 'Stały',
   phone text,
   email text,
-  rating text not null default 'Dobry',
+  contact_person text,
+  street text,
+  building_number text,
+  apartment_number text,
+  postal_code text,
+  city text,
+  country text not null default 'Polska',
+  nip text,
+  regon text,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.clients add column if not exists client_kind text not null default 'Stały';
+alter table public.clients add column if not exists contact_person text;
+alter table public.clients add column if not exists street text;
+alter table public.clients add column if not exists building_number text;
+alter table public.clients add column if not exists apartment_number text;
+alter table public.clients add column if not exists postal_code text;
+alter table public.clients add column if not exists city text;
+alter table public.clients add column if not exists country text not null default 'Polska';
+alter table public.clients add column if not exists nip text;
+alter table public.clients add column if not exists regon text;
+
+update public.clients
+set client_kind = case
+  when rating = 'Ryzykowny' then 'Problematyczny'
+  when rating = 'Bardzo dobry' then 'VIP'
+  when rating = 'Dobry' then 'Stały'
+  else coalesce(client_kind, 'Stały')
+end
+where client_kind is null or client_kind = 'Stały';
 
 alter table public.clients enable row level security;
 
@@ -114,11 +143,11 @@ to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
-insert into public.clients (name, type, phone, email, rating, notes)
+insert into public.clients (name, type, client_kind, phone, email, contact_person, street, building_number, apartment_number, postal_code, city, country, nip, regon, notes)
 values
-('Adam Kowalski', 'Osoba prywatna', '+48 600 100 200', 'adam@example.com', 'Ryzykowny', 'Klient testowy z historią opóźnień.'),
-('Studio Alfa', 'Firma', '+48 600 300 400', 'kontakt@studioalfa.pl', 'Dobry', 'Stały klient firmowy.'),
-('BMX Media', 'Firma', '+48 600 500 600', 'office@bmxmedia.pl', 'Bardzo dobry', 'Klient testowy.')
+('Adam Kowalski', 'Osoba prywatna', 'Problematyczny', '+48 600 100 200', 'adam@example.com', '', 'Gliwicka', '12', '4', '41-800', 'Zabrze', 'Polska', '', '', 'Klient testowy z historią opóźnień.'),
+('Studio Alfa', 'Firma', 'Stały', '+48 600 300 400', 'kontakt@studioalfa.pl', 'Anna Nowak', 'Wolności', '20', '', '41-500', 'Chorzów', 'Polska', '6270000000', '270000000', 'Stały klient firmowy.'),
+('BMX Media', 'Firma', 'VIP', '+48 600 500 600', 'office@bmxmedia.pl', 'Mariusz', 'Techniczna', '7', '', '44-100', 'Gliwice', 'Polska', '6310000000', '240000000', 'Klient testowy.')
 on conflict do nothing;
 
 

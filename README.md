@@ -1,40 +1,33 @@
-# Fixer WEB
+# FIXER WEB v0.5.0
 
-Etap: v0.4 — Supabase + moduły Klienci i Sprzęt.
+Wersja rozwijająca moduł Klienci jako realny moduł roboczy z zapisem do Supabase.
 
-## Co zawiera paczka
+## Zmiany
 
-- React + Vite
-- przygotowanie Supabase Auth
-- tryb demo, gdy Supabase nie jest jeszcze skonfigurowany
-- moduł Klienci z dodawaniem, edycją i usuwaniem
-- moduł Sprzęt z dodawaniem, edycją i usuwaniem
-- tabele Supabase: `clients`, `equipment`, `user_preferences`
-- plik SQL: `supabase/schema.sql`
-- sortowanie tabel
-- ukrywanie i pokazywanie kolumn tabel
-- zachowanie ustawień widoku w localStorage
-
-## Nowości w v0.4
-
-- pełny edytor sprzętu
-- pola: nazwa, kategoria, status, marka, model, numer seryjny, numer inwentarzowy, kod kreskowy/QR, lokalizacja, data zakupu, notatki
-- usługa `equipmentService.js` do komunikacji z Supabase
-- rozszerzony `schema.sql` o tabelę `equipment` i polityki RLS
-- zaktualizowane dane demo sprzętu
-
-## Vercel
-
-Po wrzuceniu plików do repo Vercel sam wykona build.
+- klienci są pobierani z tabeli `clients` w Supabase,
+- dodawanie klienta zapisuje rekord w bazie,
+- edycja klienta aktualizuje rekord w bazie,
+- usuwanie klienta usuwa rekord z bazy,
+- rodzaje klientów są przechowywane w tabeli `client_types`,
+- usunięto komunikaty o trybie demo z interfejsu,
+- ustawienia tabel pozostają zapamiętywane po ponownym otwarciu programu:
+  - widoczność kolumn,
+  - kolejność kolumn,
+  - szerokość kolumn.
 
 ## Supabase
 
-Aby podpiąć prawdziwe dane:
-1. W Supabase otwórz SQL Editor.
-2. Wklej zawartość `supabase/schema.sql`.
-3. Uruchom SQL.
-4. W Vercel dodaj zmienne:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+Przed użyciem modułu Klienci uruchom zawartość pliku:
 
-Jeżeli schema była już uruchamiana wcześniej, można uruchomić aktualny plik ponownie. Tabele są tworzone przez `create table if not exists`, a polityki są odświeżane przez `drop policy if exists`.
+```text
+supabase/schema.sql
+```
+
+w panelu Supabase SQL Editor.
+
+W Vercel muszą być ustawione zmienne środowiskowe:
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+```

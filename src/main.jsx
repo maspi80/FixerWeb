@@ -9,6 +9,7 @@ import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients, equipment as demoEquipment } from './data/mockData';
 import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecord } from './services/clientsService';
+import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetClientTypesRecords } from './services/clientTypesService';
 import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
 
 const DEFAULT_CLIENT_TYPES = ['Stały', 'Pracownik', 'VIP', 'Problematyczny', 'Nowy', 'Zablokowany'];
@@ -140,14 +141,14 @@ function LoginScreen({ onDemoLogin }) {
         <div className="brand-mark">F</div>
         <p className="eyebrow">Fixer WEB</p>
         <h1>Logowanie do systemu</h1>
-        <p className="muted">System jest przygotowany pod Supabase Auth. Bez zmiennych środowiskowych działa tryb demo.</p>
+        <p className="muted">System logowania i zapisu danych działa przez Supabase.</p>
         <form onSubmit={handleSupabaseLogin} className="login-form">
           <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email użytkownika" /></label>
           <label>Hasło<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="hasło" /></label>
           <button className="primary-button" type="submit"><LockKeyhole size={18} />Zaloguj</button>
         </form>
-        <button className="secondary-button full-width" onClick={onDemoLogin}>Wejdź w trybie demo</button>
-        <div className="login-note">Supabase: {isSupabaseConfigured ? 'skonfigurowany' : 'brak konfiguracji — działa tryb demo'}</div>
+        {!isSupabaseConfigured && <button className="secondary-button full-width" onClick={onDemoLogin}>Wejdź lokalnie</button>}
+        <div className="login-note">Baza danych: {isSupabaseConfigured ? 'połączona' : 'brak konfiguracji Supabase'}</div>
       </div>
     </div>
   );
@@ -203,7 +204,7 @@ function Dashboard({ setActiveModule }) {
 }
 
 function ClientsModule() {
-  const [rows, setRows] = useState(demoClients);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
@@ -214,11 +215,10 @@ function ClientsModule() {
     setNotice('');
     const { data, error } = await fetchClients();
     if (error) {
-      setRows(demoClients);
-      setNotice('Tryb demo: tabela Supabase nie jest jeszcze podpięta albo nie utworzono schematu.');
+      setRows([]);
+      setNotice(`Nie udało się pobrać klientów z bazy: ${error.message}`);
     } else {
-      setRows(data.length ? data : demoClients);
-      setNotice('Dane pobrane z Supabase.');
+      setRows(data);
     }
     setLoading(false);
   };
@@ -243,27 +243,35 @@ function ClientsModule() {
       regon: client.type === 'Firma' ? client.regon : '',
       notes: client.notes
     };
-    if (isSupabaseConfigured) {
-      const result = client.id ? await updateClientRecord(client.id, payload) : await createClientRecord(payload);
-      if (result.error) alert(result.error.message);
-      await loadClients();
-    } else {
-      setRows((current) => client.localId
-        ? current.map((row) => row.localId === client.localId ? client : row)
-        : [{ ...client, localId: crypto.randomUUID() }, ...current]);
+    if (!client.name.trim()) {
+      alert('Nazwa klienta jest wymagana.');
+      return;
     }
+    if (!isSupabaseConfigured) {
+      alert('Brak konfiguracji bazy danych Supabase. Dane klientów nie mogą zostać zapisane.');
+      return;
+    }
+    const result = client.id ? await updateClientRecord(client.id, payload) : await createClientRecord(payload);
+    if (result.error) {
+      alert(result.error.message);
+      return;
+    }
+    await loadClients();
     setEditorOpen(false);
   };
 
   const handleDelete = async (client) => {
     if (!confirm(`Usunąć klienta: ${client.name}?`)) return;
-    if (client.id && isSupabaseConfigured) {
-      const { error } = await deleteClientRecord(client.id);
-      if (error) alert(error.message);
-      await loadClients();
-    } else {
-      setRows((current) => current.filter((row) => row !== client));
+    if (!client.id || !isSupabaseConfigured) {
+      alert('Brak konfiguracji bazy danych Supabase. Nie można usunąć klienta.');
+      return;
     }
+    const { error } = await deleteClientRecord(client.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadClients();
   };
 
   return (
@@ -275,7 +283,7 @@ function ClientsModule() {
           <button className="primary-button" onClick={() => { setEditingClient(null); setEditorOpen(true); }}><Plus size={18} />Dodaj klienta</button>
           <button className="secondary-button" onClick={loadClients}>Odśwież</button>
           <button className="secondary-button">Eksport PDF</button>
-          <button className="secondary-button">Ustawienia modułu</button>
+
         </div>
         {notice && <div className="notice">{notice}</div>}
       </section>
@@ -289,7 +297,7 @@ function ClientsModule() {
 
 function ClientEditor({ client, onClose, onSave }) {
   const [activeTab, setActiveTab] = useState('data');
-  const [clientTypes, setClientTypes] = useState(getClientTypes);
+  const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
   const [form, setForm] = useState(() => ({
     id: client?.id ?? null,
     localId: client?.localId ?? null,
@@ -309,6 +317,16 @@ function ClientEditor({ client, onClose, onSave }) {
     notes: client?.notes ?? ''
   }));
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  useEffect(() => {
+    let active = true;
+    fetchClientTypes().then(({ data }) => {
+      if (!active) return;
+      const names = data.map((item) => item.name).filter(Boolean);
+      setClientTypes(names.length ? names : getClientTypes());
+    });
+    return () => { active = false; };
+  }, []);
 
   const clientHistoryRows = [
     ...rentals.filter((rental) => rental.client === form.name).map((rental) => ({ date: rental.date, type: 'Wypożyczenie', description: `${rental.number} — ${rental.item}`, status: rental.status })),
@@ -384,7 +402,7 @@ function EquipmentModule() {
     const { data, error } = await fetchEquipment();
     if (error) {
       setRows(demoEquipment);
-      setNotice('Tryb demo: tabela Supabase equipment nie jest jeszcze podpięta albo nie uruchomiono aktualnego schema.sql.');
+      setNotice('Nie udało się pobrać sprzętu z bazy danych. Sprawdź konfigurację Supabase i schema.sql.');
     } else {
       setRows(data.length ? data : demoEquipment);
       setNotice('Dane sprzętu pobrane z Supabase.');
@@ -703,37 +721,71 @@ function OrganizerBoard() {
   return <div className="kanban">{columns.map((column, index) => <div className="kanban-column" key={column}><h3>{column}</h3><div className="task-card"><strong>{index === 0 ? 'Uzupełnić dane klienta' : index === 1 ? 'Zweryfikować zestaw CASE-04' : 'Przygotować szablon umowy'}</strong><span>{index === 0 ? 'Klienci' : index === 1 ? 'Wypożyczenia' : 'Dokumenty'}</span></div></div>)}</div>;
 }
 function SettingsGrid() {
-  const [clientTypes, setClientTypes] = useState(getClientTypes);
+  const [clientTypes, setClientTypes] = useState([]);
   const [newType, setNewType] = useState('');
+  const [notice, setNotice] = useState('');
   const items = ['Dane firmy', 'Statusy sprzętu', 'Statusy serwisu', 'Numeracja dokumentów', 'Marki i modele', 'Szablony PDF'];
 
-  const addType = () => {
+  const loadTypes = async () => {
+    const { data, error } = await fetchClientTypes();
+    if (error) {
+      setNotice(`Nie udało się pobrać rodzajów klientów z bazy: ${error.message}`);
+      setClientTypes(getClientTypes().map((name, index) => ({ id: name, name, sort_order: index })));
+      return;
+    }
+    setClientTypes(data);
+    saveClientTypes(data.map((item) => item.name));
+    setNotice('');
+  };
+
+  useEffect(() => { loadTypes(); }, []);
+
+  const addType = async () => {
     const value = newType.trim();
     if (!value) return;
-    const next = Array.from(new Set([...clientTypes, value]));
-    setClientTypes(next);
-    saveClientTypes(next);
+    if (clientTypes.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
+      setNewType('');
+      return;
+    }
+    const { error } = await addClientTypeRecord(value, clientTypes.length + 1);
+    if (error) {
+      alert(error.message);
+      return;
+    }
     setNewType('');
+    await loadTypes();
   };
 
-  const removeType = (type) => {
-    const next = clientTypes.filter((item) => item !== type);
-    setClientTypes(next.length ? next : DEFAULT_CLIENT_TYPES);
-    saveClientTypes(next.length ? next : DEFAULT_CLIENT_TYPES);
+  const removeType = async (type) => {
+    if (clientTypes.length <= 1) {
+      alert('Musi zostać przynajmniej jeden rodzaj klienta.');
+      return;
+    }
+    const { error } = await deleteClientTypeRecord(type.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadTypes();
   };
 
-  const resetTypes = () => {
-    setClientTypes(DEFAULT_CLIENT_TYPES);
-    saveClientTypes(DEFAULT_CLIENT_TYPES);
+  const resetTypes = async () => {
+    const { error } = await resetClientTypesRecords(DEFAULT_CLIENT_TYPES);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadTypes();
   };
 
   return <div className="settings-section">
     <div className="settings-grid">{items.map((item) => <button key={item}><Settings size={18} /><span>{item}</span></button>)}</div>
     <div className="panel settings-editor">
-      <div className="panel-header"><h2>Rodzaje klientów</h2><button onClick={resetTypes}>Przywróć domyślne</button></div>
-      <p className="muted">Ta lista zasila pole „Rodzaj klienta” w kartotece klienta.</p>
+      <div className="panel-header"><h2>Ustawienia programu / Klienci</h2><button onClick={resetTypes}>Przywróć domyślne</button></div>
+      <p className="muted">Rodzaje klientów są zapisywane w bazie i zasilają pole „Rodzaj klienta” w kartotece klienta.</p>
+      {notice && <div className="notice">{notice}</div>}
       <div className="inline-form"><input value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><button className="primary-button" onClick={addType}>Dodaj</button></div>
-      <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type}>{type}<button onClick={() => removeType(type)}>×</button></span>)}</div>
+      <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type.id}>{type.name}<button onClick={() => removeType(type)}>×</button></span>)}</div>
     </div>
   </div>;
 }

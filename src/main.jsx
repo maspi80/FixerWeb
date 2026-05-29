@@ -2008,29 +2008,29 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   };
 
   const renderEquipmentDictionaryCard = (type, title, description, items, value, setValue) => (
-    <div className="settings-card compact-admin-card settings-dictionary-card">
-      <div className="settings-card-header compact-card-header">
+    <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+      <div className="settings-card-header compact-card-header dictionary-card-header">
         <div>
           <h3>{title}</h3>
           <p className="muted">{description}</p>
         </div>
-        <button type="button" className="secondary-button" onClick={() => resetEquipmentDictionary(type)}>Domyślne</button>
+        <button type="button" className="secondary-button dictionary-reset-button" onClick={() => resetEquipmentDictionary(type)}>Domyślne</button>
       </div>
-      <div className="inline-form compact-settings-form dictionary-add-row">
-        <input value={value} onChange={(event) => setValue(event.target.value)} placeholder={type === 'category' ? 'np. Reżyserka, Statyw, Recorder' : 'np. Do sprawdzenia, Zarezerwowany'} />
-        <button type="button" className="primary-button" onClick={() => addEquipmentDictionaryItem(type)}>Dodaj</button>
+      <div className="dictionary-add-compact">
+        <input value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addEquipmentDictionaryItem(type); }} placeholder={type === 'category' ? 'np. Reżyserka, Statyw, Recorder' : 'np. Do sprawdzenia, Zarezerwowany'} />
+        <button type="button" className="dictionary-icon-button add" onClick={() => addEquipmentDictionaryItem(type)} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
       </div>
-      <div className="dictionary-list">
+      <div className="dictionary-list dictionary-list-compact">
         {items.map((item) => {
           const isEditing = editingDictionaryItem?.type === type && editingDictionaryItem?.id === item.id;
-          return <div className="dictionary-row" key={item.id}>
+          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
             {isEditing
               ? <input value={editingDictionaryValue} onChange={(event) => setEditingDictionaryValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveEquipmentDictionaryItem(); if (event.key === 'Escape') cancelEditDictionaryItem(); }} autoFocus />
-              : <span>{item.name}</span>}
-            <div className="dictionary-row-actions">
+              : <button type="button" className="dictionary-name-button" onClick={() => startEditDictionaryItem(type, item)} title="Edytuj">{item.name}</button>}
+            <div className="dictionary-row-actions dictionary-icon-actions">
               {isEditing
-                ? <><button type="button" className="secondary-button compact-table-button" onClick={saveEquipmentDictionaryItem}>Zapisz</button><button type="button" className="secondary-button compact-table-button" onClick={cancelEditDictionaryItem}>Anuluj</button></>
-                : <><button type="button" className="secondary-button compact-table-button" onClick={() => startEditDictionaryItem(type, item)}>Edytuj</button><button type="button" className="secondary-button compact-table-button danger-bulk-button" onClick={() => removeEquipmentDictionaryItem(type, item)}>Usuń</button></>}
+                ? <><button type="button" className="dictionary-icon-button save" onClick={saveEquipmentDictionaryItem} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditDictionaryItem} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
+                : <><button type="button" className="dictionary-icon-button edit" onClick={() => startEditDictionaryItem(type, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeEquipmentDictionaryItem(type, item)} aria-label="Usuń" title="Usuń">−</button></>}
             </div>
           </div>;
         })}

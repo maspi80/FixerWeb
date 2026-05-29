@@ -526,6 +526,27 @@ function ClientsModule() {
     await loadClients();
   };
 
+  const handleBulkDelete = async (clients) => {
+    const selected = clients.filter((client) => client?.id);
+    if (!selected.length) {
+      alert('Zaznaczone pozycje nie mają identyfikatorów w bazie.');
+      return;
+    }
+    if (!confirm(`Usunąć zaznaczone pozycje: ${selected.length}?`)) return;
+    if (!isSupabaseConfigured) {
+      alert('Brak konfiguracji bazy danych Supabase. Nie można usunąć klientów.');
+      return;
+    }
+    for (const client of selected) {
+      const { error } = await deleteClientRecord(client.id);
+      if (error) {
+        alert(`Nie udało się usunąć klienta ${client.name}: ${error.message}`);
+        return;
+      }
+    }
+    await loadClients();
+  };
+
   return (
     <div className="module-page">
       <section className="panel hero-panel">
@@ -564,7 +585,7 @@ function ClientsModule() {
           <button type="button" className="secondary-button compact-button" onClick={clearClientFilters}>Wyczyść filtry</button>
           <span className="filter-count">{filteredRows.length} / {rows.length}</span>
         </div>
-        <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} />
+        <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
       {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -1013,7 +1034,7 @@ function getStoredJson(key, fallback) {
   }
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -1031,6 +1052,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const [visibleColumns, setVisibleColumns] = useState(initialPreference.visibleColumns);
   const [columnOrder, setColumnOrder] = useState(initialPreference.columnOrder);
   const [columnWidths, setColumnWidths] = useState(initialPreference.columnWidths);
+  const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const persistTablePreference = (nextPreference) => {
     saveTablePreference(storageKey, {
@@ -1106,6 +1129,20 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     });
   }, [rows, sortKey, sortDir]);
 
+  const getRowKey = (row, index) => String(row.id ?? row.localId ?? row.number ?? row.name ?? index);
+  const selectedRows = sortedRows.filter((row, index) => selectedRowKeys.has(getRowKey(row, index)));
+  const allVisibleSelected = sortedRows.length > 0 && sortedRows.every((row, index) => selectedRowKeys.has(getRowKey(row, index)));
+  const hasSelectionActions = Boolean(onBulkDelete);
+
+  useEffect(() => {
+    setSelectedRowKeys((current) => {
+      if (!current.size) return current;
+      const available = new Set(sortedRows.map((row, index) => getRowKey(row, index)));
+      const next = new Set([...current].filter((key) => available.has(key)));
+      return next.size === current.size ? current : next;
+    });
+  }, [sortedRows]);
+
   const orderedColumns = useMemo(() => {
     const columnMap = new Map(columns.map((column) => [column.key, column]));
     return columnOrder.map((key) => columnMap.get(key)).filter(Boolean);
@@ -1136,6 +1173,41 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       return;
     }
     clearSort();
+  };
+
+  const toggleRowSelection = (row, index) => {
+    const key = getRowKey(row, index);
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAllVisibleRows = () => {
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) {
+        sortedRows.forEach((row, index) => next.delete(getRowKey(row, index)));
+      } else {
+        sortedRows.forEach((row, index) => next.add(getRowKey(row, index)));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedRowKeys(new Set());
+
+  const runBulkDelete = async () => {
+    if (!selectedRows.length || !onBulkDelete) return;
+    setBulkBusy(true);
+    try {
+      await onBulkDelete(selectedRows);
+      clearSelection();
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   const toggleColumn = (key) => {
@@ -1242,11 +1314,20 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   return (
     <div className="table-shell">
       {loading && <div className="loading-line">Ładowanie danych...</div>}
+      {hasSelectionActions && selectedRows.length > 0 && <div className="bulk-actions-bar">
+        <strong>{selectedRows.length} zaznaczono</strong>
+        <button type="button" className="secondary-button compact-table-button" onClick={clearSelection} disabled={bulkBusy}>Odznacz</button>
+        {onBulkDelete && <button type="button" className="secondary-button compact-table-button danger-bulk-button" onClick={runBulkDelete} disabled={bulkBusy}><Trash2 size={14} />Usuń zaznaczone</button>}
+      </div>}
       <div className="table-scroll">
         <table>
-          <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
-          <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={hasActions ? 'editable-row' : ''} onDoubleClick={() => (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>)}</tbody>
+          <colgroup>{hasSelectionActions && <col className="selection-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
+          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
+          <tbody>{sortedRows.map((row, index) => {
+            const rowKey = getRowKey(row, index);
+            const selected = selectedRowKeys.has(rowKey);
+            return <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={`${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''}`.trim()} onDoubleClick={() => (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : undefined}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>;
+          })}</tbody>
         </table>
       </div>
 

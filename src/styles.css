@@ -36,3 +36,4 @@ th span{display:inline-flex;align-items:center;gap:4px}th em{margin-left:8px;col
 .client-modal .notes-label{display:block;margin:0 0 8px;color:#cbd5e1;font-size:14px;font-weight:700}
 .client-modal .notes-textarea{display:block;width:100%;min-height:128px;max-height:220px;margin:0;border-radius:9px;border:1px solid rgba(148,163,184,.16);background:rgba(8,13,21,.72);color:#fff;padding:10px;font-size:16px;resize:vertical}
 .client-modal .notes-textarea:focus{outline:1px solid rgba(96,165,250,.75);outline-offset:0}
+.table-shell tbody tr.editable-row{cursor:pointer}

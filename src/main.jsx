@@ -440,8 +440,10 @@ function ClientsModule() {
 
 
 const CLIENT_MODAL_SIZE_KEY = 'fixer-client-modal-size';
+const CLIENT_MODAL_POSITION_KEY = 'fixer-client-modal-position';
 const DEFAULT_CLIENT_MODAL_SIZE = { width: 940, height: 560 };
 const MIN_CLIENT_MODAL_SIZE = { width: 720, height: 420 };
+const CLIENT_MODAL_SCREEN_MARGIN = 16;
 
 function clampClientModalSize(size) {
   if (typeof window === 'undefined') return size;
@@ -464,13 +466,45 @@ function getSavedClientModalSize() {
   return clampClientModalSize(DEFAULT_CLIENT_MODAL_SIZE);
 }
 
+function getCenteredClientModalPosition(size) {
+  if (typeof window === 'undefined') return { left: CLIENT_MODAL_SCREEN_MARGIN, top: CLIENT_MODAL_SCREEN_MARGIN };
+  return {
+    left: Math.max(CLIENT_MODAL_SCREEN_MARGIN, Math.round((window.innerWidth - size.width) / 2)),
+    top: Math.max(CLIENT_MODAL_SCREEN_MARGIN, Math.round((window.innerHeight - size.height) / 2))
+  };
+}
+
+function clampClientModalPosition(position, size) {
+  if (typeof window === 'undefined') return position;
+  const maxLeft = Math.max(CLIENT_MODAL_SCREEN_MARGIN, window.innerWidth - size.width - CLIENT_MODAL_SCREEN_MARGIN);
+  const maxTop = Math.max(CLIENT_MODAL_SCREEN_MARGIN, window.innerHeight - size.height - CLIENT_MODAL_SCREEN_MARGIN);
+  return {
+    left: Math.min(Math.max(position.left, CLIENT_MODAL_SCREEN_MARGIN), maxLeft),
+    top: Math.min(Math.max(position.top, CLIENT_MODAL_SCREEN_MARGIN), maxTop)
+  };
+}
+
+function getSavedClientModalPosition(size) {
+  if (typeof window === 'undefined') return getCenteredClientModalPosition(size);
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CLIENT_MODAL_POSITION_KEY) || 'null');
+    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+      return clampClientModalPosition(parsed, size);
+    }
+  } catch {}
+  return clampClientModalPosition(getCenteredClientModalPosition(size), size);
+}
+
 function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
   const [errors, setErrors] = useState({});
   const [modalSize, setModalSize] = useState(getSavedClientModalSize);
+  const [modalPosition, setModalPosition] = useState(() => getSavedClientModalPosition(getSavedClientModalSize()));
   const modalSizeRef = useRef(modalSize);
+  const modalPositionRef = useRef(modalPosition);
   const resizeStateRef = useRef(null);
+  const dragStateRef = useRef(null);
   const [form, setForm] = useState(() => ({
     id: client?.id ?? null,
     localId: client?.localId ?? null,
@@ -506,25 +540,46 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   useEffect(() => {
     modalSizeRef.current = modalSize;
     localStorage.setItem(CLIENT_MODAL_SIZE_KEY, JSON.stringify(modalSize));
+    setModalPosition((current) => clampClientModalPosition(current, modalSize));
   }, [modalSize]);
 
   useEffect(() => {
-    const handleWindowResize = () => setModalSize((current) => clampClientModalSize(current));
+    modalPositionRef.current = modalPosition;
+    localStorage.setItem(CLIENT_MODAL_POSITION_KEY, JSON.stringify(modalPosition));
+  }, [modalPosition]);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setModalSize((current) => clampClientModalSize(current));
+      setModalPosition((current) => clampClientModalPosition(current, modalSizeRef.current));
+    };
     window.addEventListener('resize', handleWindowResize);
     return () => window.removeEventListener('resize', handleWindowResize);
   }, []);
 
   useEffect(() => {
     const handlePointerMove = (event) => {
-      const state = resizeStateRef.current;
-      if (!state) return;
+      const resizeState = resizeStateRef.current;
+      if (resizeState) {
+        event.preventDefault();
+        setModalSize(clampClientModalSize({
+          width: resizeState.startWidth + event.clientX - resizeState.startX,
+          height: resizeState.startHeight + event.clientY - resizeState.startY
+        }));
+        return;
+      }
+      const dragState = dragStateRef.current;
+      if (!dragState) return;
       event.preventDefault();
-      setModalSize(clampClientModalSize({
-        width: state.startWidth + event.clientX - state.startX,
-        height: state.startHeight + event.clientY - state.startY
-      }));
+      setModalPosition(clampClientModalPosition({
+        left: dragState.startLeft + event.clientX - dragState.startX,
+        top: dragState.startTop + event.clientY - dragState.startY
+      }, modalSizeRef.current));
     };
-    const handlePointerUp = () => { resizeStateRef.current = null; };
+    const handlePointerUp = () => {
+      resizeStateRef.current = null;
+      dragStateRef.current = null;
+    };
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     return () => {
@@ -535,11 +590,23 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
 
   const startResize = (event) => {
     event.preventDefault();
+    event.stopPropagation();
     resizeStateRef.current = {
       startX: event.clientX,
       startY: event.clientY,
       startWidth: modalSizeRef.current.width,
       startHeight: modalSizeRef.current.height
+    };
+  };
+
+  const startDrag = (event) => {
+    if (event.target.closest('button, input, select, textarea, a')) return;
+    event.preventDefault();
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: modalPositionRef.current.left,
+      startTop: modalPositionRef.current.top
     };
   };
 
@@ -559,9 +626,9 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   ];
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card client-modal resizable-client-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px` }}>
-        <div className="modal-header"><div><p className="eyebrow">Klient</p><h2>{client ? 'Kartoteka klienta' : 'Nowy klient'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
+    <div className="modal-backdrop draggable-modal-backdrop">
+      <div className="modal-card client-modal resizable-client-modal draggable-client-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${modalPosition.left}px`, top: `${modalPosition.top}px` }}>
+        <div className="modal-header draggable-modal-header" onPointerDown={startDrag}><div><p className="eyebrow">Klient</p><h2>{client ? 'Kartoteka klienta' : 'Nowy klient'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
         <div className="tabs">
           <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
           <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>

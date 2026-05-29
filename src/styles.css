@@ -236,3 +236,31 @@ th span{display:inline-flex;align-items:center;gap:6px;min-width:0}.column-conte
     height:calc(100vh - 24px)!important;
   }
 }
+
+/* v0.5.10 — przesuwalna kartoteka klienta z zapamiętaniem pozycji */
+.draggable-modal-backdrop{
+  display:block;
+  padding:0;
+}
+.client-modal.draggable-client-modal{
+  position:fixed;
+  margin:0;
+}
+.draggable-modal-header{
+  cursor:move;
+  user-select:none;
+  touch-action:none;
+}
+.draggable-modal-header .icon-button{
+  cursor:pointer;
+}
+.resizing-table-column .draggable-modal-header,
+.client-modal .modal-resize-handle{
+  touch-action:none;
+}
+@media(max-width:760px){
+  .client-modal.draggable-client-modal{
+    left:12px!important;
+    top:12px!important;
+  }
+}

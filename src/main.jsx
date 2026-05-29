@@ -530,19 +530,53 @@ function PanelHeader({ title, action, onClick }) {
   return <div className="panel-header"><h2>{title}</h2>{action && <button onClick={onClick}>{action}<ChevronRight size={16} /></button>}</div>;
 }
 
+function getStoredJson(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelete }) {
   const [sortKey, setSortKey] = useState(columns[0]?.key);
   const [sortDir, setSortDir] = useState('asc');
-  const [visibleColumns, setVisibleColumns] = useState(() => {
-    const saved = localStorage.getItem(`${storageKey}-columns`);
-    return saved ? JSON.parse(saved) : columns.map((column) => column.key);
-  });
+  const [draggedColumn, setDraggedColumn] = useState(null);
+  const [visibleColumns, setVisibleColumns] = useState(() => getStoredJson(`${storageKey}-columns`, columns.map((column) => column.key)));
+  const [columnOrder, setColumnOrder] = useState(() => getStoredJson(`${storageKey}-column-order`, columns.map((column) => column.key)));
+  const [columnWidths, setColumnWidths] = useState(() => getStoredJson(`${storageKey}-column-widths`, {}));
+
+  useEffect(() => {
+    const availableKeys = columns.map((column) => column.key);
+    setColumnOrder((current) => {
+      const orderedExisting = current.filter((key) => availableKeys.includes(key));
+      const missing = availableKeys.filter((key) => !orderedExisting.includes(key));
+      const next = [...orderedExisting, ...missing];
+      localStorage.setItem(`${storageKey}-column-order`, JSON.stringify(next));
+      return next;
+    });
+    setVisibleColumns((current) => {
+      const next = current.filter((key) => availableKeys.includes(key));
+      const safeNext = next.length ? next : availableKeys;
+      localStorage.setItem(`${storageKey}-columns`, JSON.stringify(safeNext));
+      return safeNext;
+    });
+  }, [columns, storageKey]);
 
   const sortedRows = useMemo(() => [...rows].sort((a, b) => {
     const left = String(a[sortKey] ?? '');
     const right = String(b[sortKey] ?? '');
     return sortDir === 'asc' ? left.localeCompare(right, 'pl') : right.localeCompare(left, 'pl');
   }), [rows, sortKey, sortDir]);
+
+  const orderedColumns = useMemo(() => {
+    const columnMap = new Map(columns.map((column) => [column.key, column]));
+    return columnOrder.map((key) => columnMap.get(key)).filter(Boolean);
+  }, [columns, columnOrder]);
+
+  const activeColumns = orderedColumns.filter((column) => visibleColumns.includes(column.key));
+  const hasActions = onEdit || onDelete;
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -555,15 +589,61 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
     localStorage.setItem(`${storageKey}-columns`, JSON.stringify(next));
   };
 
-  const activeColumns = columns.filter((column) => visibleColumns.includes(column.key));
-  const hasActions = onEdit || onDelete;
+  const moveColumn = (sourceKey, targetKey) => {
+    if (!sourceKey || sourceKey === targetKey) return;
+    setColumnOrder((current) => {
+      const next = [...current];
+      const sourceIndex = next.indexOf(sourceKey);
+      const targetIndex = next.indexOf(targetKey);
+      if (sourceIndex === -1 || targetIndex === -1) return current;
+      next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, sourceKey);
+      localStorage.setItem(`${storageKey}-column-order`, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const startResize = (event, key) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const th = event.currentTarget.closest('th');
+    const startWidth = th?.offsetWidth ?? columnWidths[key] ?? 140;
+
+    const onMouseMove = (moveEvent) => {
+      const nextWidth = Math.max(72, startWidth + moveEvent.clientX - startX);
+      setColumnWidths((current) => {
+        const next = { ...current, [key]: nextWidth };
+        localStorage.setItem(`${storageKey}-column-widths`, JSON.stringify(next));
+        return next;
+      });
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.classList.remove('resizing-table-column');
+    };
+
+    document.body.classList.add('resizing-table-column');
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   return (
     <div className="table-shell">
-      <div className="table-tools"><div className="table-tool-label"><Columns3 size={16} />Widoczność kolumn</div><div className="column-toggles">{columns.map((column) => <button key={column.key} className={visibleColumns.includes(column.key) ? 'active' : ''} onClick={() => toggleColumn(column.key)}>{visibleColumns.includes(column.key) ? <Eye size={14} /> : <EyeOff size={14} />}{column.label}</button>)}</div></div>
+      <div className="table-tools">
+        <div className="table-tool-label"><Columns3 size={16} />Widoczność kolumn</div>
+        <div className="column-toggles">{orderedColumns.map((column) => <button key={column.key} className={visibleColumns.includes(column.key) ? 'active' : ''} onClick={() => toggleColumn(column.key)}>{visibleColumns.includes(column.key) ? <Eye size={14} /> : <EyeOff size={14} />}{column.label}</button>)}</div>
+      </div>
       {loading && <div className="loading-line">Ładowanie danych...</div>}
-      <table><thead><tr>{activeColumns.map((column) => <th key={column.key} onClick={() => handleSort(column.key)}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}</th>)}{hasActions && <th>Akcje</th>}</tr></thead>
-      <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={onEdit ? 'editable-row' : ''} onDoubleClick={() => onEdit?.(row)} title={onEdit ? 'Dwuklik otwiera edycję' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}{hasActions && <td><div className="row-actions">{onEdit && <button onClick={() => onEdit(row)}>Edytuj</button>}{onDelete && <button className="danger-action" onClick={() => onDelete(row)}><Trash2 size={14} />Usuń</button>}</div></td>}</tr>)}</tbody></table>
+      <div className="table-scroll">
+        <table>
+          <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}{hasActions && <col style={{ width: '150px' }} />}</colgroup>
+          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}{hasActions && <th>Akcje</th>}</tr></thead>
+          <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={onEdit ? 'editable-row' : ''} onDoubleClick={() => onEdit?.(row)} title={onEdit ? 'Dwuklik otwiera edycję' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}{hasActions && <td><div className="row-actions">{onEdit && <button onClick={() => onEdit(row)}>Edytuj</button>}{onDelete && <button className="danger-action" onClick={() => onDelete(row)}><Trash2 size={14} />Usuń</button>}</div></td>}</tr>)}</tbody>
+        </table>
+      </div>
     </div>
   );
 }

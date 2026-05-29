@@ -10,6 +10,7 @@ import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients, equipment as demoEquipment } from './data/mockData';
 import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecord } from './services/clientsService';
 import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetClientTypesRecords } from './services/clientTypesService';
+import { fetchTablePreference, getLocalTablePreference, saveTablePreference } from './services/tablePreferencesService';
 import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
 
 const DEFAULT_CLIENT_TYPES = ['Stały', 'Pracownik', 'VIP', 'Problematyczny', 'Nowy', 'Zablokowany'];
@@ -557,30 +558,52 @@ function getStoredJson(key, fallback) {
 }
 
 function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelete }) {
+  const columnsSignature = columns.map((column) => column.key).join('|');
+  const defaultPreference = useMemo(() => ({
+    visibleColumns: columns.map((column) => column.key),
+    columnOrder: columns.map((column) => column.key),
+    columnWidths: {}
+  }), [columnsSignature]);
+  const initialPreference = getLocalTablePreference(storageKey, defaultPreference);
   const [sortKey, setSortKey] = useState(columns[0]?.key);
   const [sortDir, setSortDir] = useState('asc');
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
-  const [visibleColumns, setVisibleColumns] = useState(() => getStoredJson(`${storageKey}-columns`, columns.map((column) => column.key)));
-  const [columnOrder, setColumnOrder] = useState(() => getStoredJson(`${storageKey}-column-order`, columns.map((column) => column.key)));
-  const [columnWidths, setColumnWidths] = useState(() => getStoredJson(`${storageKey}-column-widths`, {}));
+  const [visibleColumns, setVisibleColumns] = useState(initialPreference.visibleColumns);
+  const [columnOrder, setColumnOrder] = useState(initialPreference.columnOrder);
+  const [columnWidths, setColumnWidths] = useState(initialPreference.columnWidths);
+
+  const persistTablePreference = (nextPreference) => {
+    saveTablePreference(storageKey, {
+      visibleColumns: nextPreference.visibleColumns ?? visibleColumns,
+      columnOrder: nextPreference.columnOrder ?? columnOrder,
+      columnWidths: nextPreference.columnWidths ?? columnWidths
+    });
+  };
+
+  useEffect(() => {
+    let active = true;
+    fetchTablePreference(storageKey, defaultPreference).then(({ data }) => {
+      if (!active || !data) return;
+      setVisibleColumns(data.visibleColumns);
+      setColumnOrder(data.columnOrder);
+      setColumnWidths(data.columnWidths);
+    });
+    return () => { active = false; };
+  }, [storageKey, defaultPreference]);
 
   useEffect(() => {
     const availableKeys = columns.map((column) => column.key);
     setColumnOrder((current) => {
       const orderedExisting = current.filter((key) => availableKeys.includes(key));
       const missing = availableKeys.filter((key) => !orderedExisting.includes(key));
-      const next = [...orderedExisting, ...missing];
-      localStorage.setItem(`${storageKey}-column-order`, JSON.stringify(next));
-      return next;
+      return [...orderedExisting, ...missing];
     });
     setVisibleColumns((current) => {
       const next = current.filter((key) => availableKeys.includes(key));
-      const safeNext = next.length ? next : availableKeys;
-      localStorage.setItem(`${storageKey}-columns`, JSON.stringify(safeNext));
-      return safeNext;
+      return next.length ? next : availableKeys;
     });
-  }, [columns, storageKey]);
+  }, [columnsSignature]);
 
   useEffect(() => {
     if (!contextMenu) return undefined;
@@ -619,7 +642,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
     if (isVisible && visibleColumns.length === 1) return;
     const next = isVisible ? visibleColumns.filter((columnKey) => columnKey !== key) : [...visibleColumns, key];
     setVisibleColumns(next);
-    localStorage.setItem(`${storageKey}-columns`, JSON.stringify(next));
+    persistTablePreference({ visibleColumns: next });
   };
 
   const moveColumn = (sourceKey, targetKey) => {
@@ -631,7 +654,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
       if (sourceIndex === -1 || targetIndex === -1) return current;
       next.splice(sourceIndex, 1);
       next.splice(targetIndex, 0, sourceKey);
-      localStorage.setItem(`${storageKey}-column-order`, JSON.stringify(next));
+      persistTablePreference({ columnOrder: next });
       return next;
     });
   };
@@ -647,7 +670,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
       const nextWidth = Math.max(72, startWidth + moveEvent.clientX - startX);
       setColumnWidths((current) => {
         const next = { ...current, [key]: nextWidth };
-        localStorage.setItem(`${storageKey}-column-widths`, JSON.stringify(next));
+        persistTablePreference({ columnWidths: next });
         return next;
       });
     };
@@ -668,9 +691,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
     setVisibleColumns(keys);
     setColumnOrder(keys);
     setColumnWidths({});
-    localStorage.setItem(`${storageKey}-columns`, JSON.stringify(keys));
-    localStorage.setItem(`${storageKey}-column-order`, JSON.stringify(keys));
-    localStorage.setItem(`${storageKey}-column-widths`, JSON.stringify({}));
+    persistTablePreference({ visibleColumns: keys, columnOrder: keys, columnWidths: {} });
     setContextMenu(null);
   };
 

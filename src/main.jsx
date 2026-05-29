@@ -12,6 +12,14 @@ import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecor
 import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetClientTypesRecords } from './services/clientTypesService';
 import { fetchTablePreference, getLocalTablePreference, saveTablePreference } from './services/tablePreferencesService';
 import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
+import {
+  addEquipmentDictionaryRecord,
+  deleteEquipmentDictionaryRecord,
+  fetchEquipmentDictionary,
+  getLocalEquipmentDictionaryNames,
+  resetEquipmentDictionaryRecords,
+  updateEquipmentDictionaryRecord
+} from './services/equipmentDictionariesService';
 
 
 function onlyDigits(value) {
@@ -856,6 +864,17 @@ function EquipmentModule() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState(null);
   const [notice, setNotice] = useState('');
+  const [equipmentCategories, setEquipmentCategories] = useState(() => getLocalEquipmentDictionaryNames('category'));
+  const [equipmentStatuses, setEquipmentStatuses] = useState(() => getLocalEquipmentDictionaryNames('status'));
+
+  const loadEquipmentDictionaries = async () => {
+    const [categoriesResult, statusesResult] = await Promise.all([
+      fetchEquipmentDictionary('category'),
+      fetchEquipmentDictionary('status')
+    ]);
+    setEquipmentCategories(categoriesResult.data.map((item) => item.name));
+    setEquipmentStatuses(statusesResult.data.map((item) => item.name));
+  };
 
   const loadEquipment = async () => {
     setLoading(true);
@@ -871,7 +890,7 @@ function EquipmentModule() {
     setLoading(false);
   };
 
-  useEffect(() => { loadEquipment(); }, []);
+  useEffect(() => { loadEquipment(); loadEquipmentDictionaries(); }, []);
 
   const openEquipmentEditor = (item = null) => {
     setEditingEquipment(item);
@@ -989,7 +1008,7 @@ function EquipmentModule() {
           { key: 'location', label: 'Lokalizacja' }
         ]} rows={rows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
-      {editorOpen && <EquipmentEditor equipment={editingEquipment} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {editorOpen && <EquipmentEditor equipment={editingEquipment} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
   );
 }
@@ -1109,7 +1128,7 @@ function getSavedEquipmentModalPosition(size) {
   return clampEquipmentModalPosition(getCenteredEquipmentModalPosition(size), size);
 }
 
-function EquipmentEditor({ equipment, onClose, onSave }) {
+function EquipmentEditor({ equipment, categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const [activeTab, setActiveTab] = useState('basic');
   const [errors, setErrors] = useState({});
@@ -1127,13 +1146,13 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
     id: equipment?.id ?? null,
     localId: equipment?.localId ?? null,
     name: equipment?.name ?? '',
-    category: equipment?.category ?? 'Kamera',
+    category: equipment?.category ?? categories[0] ?? 'Kamera',
     brand: equipment?.brand ?? '',
     model: equipment?.model ?? '',
     serial: equipment?.serial ?? '',
     inventory_number: equipment?.inventory_number ?? '',
     barcode: equipment?.barcode ?? equipment?.serial ?? '',
-    status: equipment?.status ?? 'Dostępny',
+    status: equipment?.status ?? statuses[0] ?? 'Dostępny',
     location: equipment?.location ?? 'Magazyn',
     purchase_date: equipment?.purchase_date ?? '',
     condition: equipment?.condition ?? cardData.condition,
@@ -1335,8 +1354,8 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
             <label>Model<input value={form.model} onChange={(event) => update('model', event.target.value)} placeholder="np. ATEM Mini Pro" /></label>
             <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} /></label>
             <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
-            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}><option>Kamera</option><option>Obiektyw</option><option>Audio</option><option>Mikser Video</option><option>Streaming</option><option>Oświetlenie</option><option>Komputer</option><option>Akcesoria</option><option>Zestaw</option></select></label>
-            <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}><option>Dostępny</option><option>Wypożyczony</option><option>Rezerwacja</option><option>Serwis</option><option>Uszkodzony</option><option>Wycofany</option><option>Zestaw</option></select></label>
+            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}>{categories.map((option) => <option key={option}>{option}</option>)}</select></label>
+            <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}>{statuses.map((option) => <option key={option}>{option}</option>)}</select></label>
             <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
             <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Szafka Magazyn" /></label>
             <label>Wartość zakupu<input value={form.purchase_value} onChange={(event) => update('purchase_value', event.target.value)} placeholder="np. 2500" /></label>
@@ -1818,6 +1837,12 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   const [activeSection, setActiveSection] = useState('company');
   const [clientTypes, setClientTypes] = useState([]);
   const [newType, setNewType] = useState('');
+  const [equipmentCategories, setEquipmentCategories] = useState([]);
+  const [equipmentStatuses, setEquipmentStatuses] = useState([]);
+  const [newEquipmentCategory, setNewEquipmentCategory] = useState('');
+  const [newEquipmentStatus, setNewEquipmentStatus] = useState('');
+  const [editingDictionaryItem, setEditingDictionaryItem] = useState(null);
+  const [editingDictionaryValue, setEditingDictionaryValue] = useState('');
   const [notice, setNotice] = useState('');
   const [preferences, setPreferences] = useState(() => getStoredJson('fixer-ui-preferences', {
     rememberWindowSize: true,
@@ -1904,6 +1929,116 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
 
   useEffect(() => { loadTypes(); }, []);
 
+  const loadEquipmentSettings = async () => {
+    const [categoriesResult, statusesResult] = await Promise.all([
+      fetchEquipmentDictionary('category'),
+      fetchEquipmentDictionary('status')
+    ]);
+    setEquipmentCategories(categoriesResult.data);
+    setEquipmentStatuses(statusesResult.data);
+    if (categoriesResult.error || statusesResult.error) {
+      setNotice('Nie udało się pobrać ustawień sprzętu z bazy. Program używa lokalnej listy zapasowej.');
+    }
+  };
+
+  useEffect(() => { loadEquipmentSettings(); }, []);
+
+  const startEditDictionaryItem = (type, item) => {
+    setEditingDictionaryItem({ type, id: item.id });
+    setEditingDictionaryValue(item.name);
+  };
+
+  const cancelEditDictionaryItem = () => {
+    setEditingDictionaryItem(null);
+    setEditingDictionaryValue('');
+  };
+
+  const addEquipmentDictionaryItem = async (type) => {
+    const value = (type === 'category' ? newEquipmentCategory : newEquipmentStatus).trim();
+    if (!value) return;
+    const list = type === 'category' ? equipmentCategories : equipmentStatuses;
+    if (list.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
+      type === 'category' ? setNewEquipmentCategory('') : setNewEquipmentStatus('');
+      return;
+    }
+    const { error } = await addEquipmentDictionaryRecord(type, value, list.length + 1);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    type === 'category' ? setNewEquipmentCategory('') : setNewEquipmentStatus('');
+    await loadEquipmentSettings();
+  };
+
+  const saveEquipmentDictionaryItem = async () => {
+    const value = editingDictionaryValue.trim();
+    if (!editingDictionaryItem || !value) return;
+    const { error } = await updateEquipmentDictionaryRecord(editingDictionaryItem.id, editingDictionaryItem.type, value);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    cancelEditDictionaryItem();
+    await loadEquipmentSettings();
+  };
+
+  const removeEquipmentDictionaryItem = async (type, item) => {
+    const list = type === 'category' ? equipmentCategories : equipmentStatuses;
+    if (list.length <= 1) {
+      alert('Musi zostać przynajmniej jedna pozycja.');
+      return;
+    }
+    if (!confirm(`Usunąć pozycję: ${item.name}?`)) return;
+    const { error } = await deleteEquipmentDictionaryRecord(item.id, type);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadEquipmentSettings();
+  };
+
+  const resetEquipmentDictionary = async (type) => {
+    if (!confirm('Przywrócić domyślną listę?')) return;
+    const { error } = await resetEquipmentDictionaryRecords(type);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadEquipmentSettings();
+  };
+
+  const renderEquipmentDictionaryCard = (type, title, description, items, value, setValue) => (
+    <div className="settings-card compact-admin-card settings-dictionary-card">
+      <div className="settings-card-header compact-card-header">
+        <div>
+          <h3>{title}</h3>
+          <p className="muted">{description}</p>
+        </div>
+        <button type="button" className="secondary-button" onClick={() => resetEquipmentDictionary(type)}>Domyślne</button>
+      </div>
+      <div className="inline-form compact-settings-form dictionary-add-row">
+        <input value={value} onChange={(event) => setValue(event.target.value)} placeholder={type === 'category' ? 'np. Reżyserka, Statyw, Recorder' : 'np. Do sprawdzenia, Zarezerwowany'} />
+        <button type="button" className="primary-button" onClick={() => addEquipmentDictionaryItem(type)}>Dodaj</button>
+      </div>
+      <div className="dictionary-list">
+        {items.map((item) => {
+          const isEditing = editingDictionaryItem?.type === type && editingDictionaryItem?.id === item.id;
+          return <div className="dictionary-row" key={item.id}>
+            {isEditing
+              ? <input value={editingDictionaryValue} onChange={(event) => setEditingDictionaryValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveEquipmentDictionaryItem(); if (event.key === 'Escape') cancelEditDictionaryItem(); }} autoFocus />
+              : <span>{item.name}</span>}
+            <div className="dictionary-row-actions">
+              {isEditing
+                ? <><button type="button" className="secondary-button compact-table-button" onClick={saveEquipmentDictionaryItem}>Zapisz</button><button type="button" className="secondary-button compact-table-button" onClick={cancelEditDictionaryItem}>Anuluj</button></>
+                : <><button type="button" className="secondary-button compact-table-button" onClick={() => startEditDictionaryItem(type, item)}>Edytuj</button><button type="button" className="secondary-button compact-table-button danger-bulk-button" onClick={() => removeEquipmentDictionaryItem(type, item)}>Usuń</button></>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+  );
+
+
   const addType = async () => {
     const value = newType.trim();
     if (!value) return;
@@ -1943,7 +2078,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   };
 
   const placeholderGroups = {
-    equipment: ['Kategorie sprzętu', 'Marki i modele', 'Lokalizacje', 'Statusy sprzętu', 'Pola dodatkowe'],
     service: ['Statusy serwisu', 'Priorytety', 'Typy zgłoszeń', 'Numeracja zleceń'],
     rentals: ['Statusy wypożyczeń', 'Statusy zwrotów', 'Domyślne okresy', 'Numeracja wypożyczeń'],
     documents: ['Szablony PDF', 'Numeracja dokumentów', 'Nagłówki dokumentów', 'Stopki dokumentów']
@@ -2069,6 +2203,16 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         <div className="settings-card compact-admin-card">
           <h3>Widok klientów</h3>
           <p className="muted">Domyślne filtry, kolumny i pola dodatkowe będą konfigurowane w tej sekcji.</p>
+        </div>
+      </div>}
+
+      {activeSection === 'equipment' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid equipment-settings-grid">
+        {renderEquipmentDictionaryCard('category', 'Kategorie sprzętu', 'Lista kategorii widoczna w karcie sprzętu.', equipmentCategories, newEquipmentCategory, setNewEquipmentCategory)}
+        {renderEquipmentDictionaryCard('status', 'Statusy sprzętu', 'Lista statusów widoczna w karcie sprzętu i tabelach.', equipmentStatuses, newEquipmentStatus, setNewEquipmentStatus)}
+        <div className="settings-card compact-admin-card settings-dictionary-card">
+          <h3>Widok sprzętu</h3>
+          <p className="muted">Układ tabeli, ukrywanie kolumn i menu kontekstowe działają globalnie tak jak w module Klienci.</p>
+          <div className="tag-list"><span className="config-tag">Tabela</span><span className="config-tag">Kartoteka</span><span className="config-tag">Zestawy</span></div>
         </div>
       </div>}
 

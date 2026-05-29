@@ -1417,3 +1417,88 @@ th.selection-cell{cursor:default}
 .compact .equipment-card-modal .equipment-basic-grid{
   padding:12px;
 }
+
+/* v0.7.4 — spójna konfiguracja słowników sprzętu w ustawieniach */
+.equipment-settings-grid{
+  align-items:start;
+}
+.settings-dictionary-card{
+  min-height:0;
+  gap:12px;
+}
+.dictionary-add-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:0;
+}
+.dictionary-add-row input{
+  min-height:40px;
+  border-radius:13px;
+  border:1px solid rgba(148,163,184,.16);
+  background:rgba(8,13,21,.72);
+  color:#fff;
+  padding:0 12px;
+  font-weight:700;
+}
+.dictionary-list{
+  display:grid;
+  gap:7px;
+  max-height:300px;
+  overflow:auto;
+  padding-right:3px;
+}
+.dictionary-row{
+  min-height:42px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:10px;
+  padding:7px 8px 7px 11px;
+  border:1px solid rgba(148,163,184,.12);
+  border-radius:14px;
+  background:rgba(148,163,184,.06);
+}
+.dictionary-row span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:800;
+  color:#e2e8f0;
+}
+.dictionary-row input{
+  min-height:34px;
+  border-radius:11px;
+  border:1px solid rgba(96,165,250,.42);
+  background:rgba(8,13,21,.72);
+  color:#fff;
+  padding:0 10px;
+  font-weight:800;
+}
+.dictionary-row-actions{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.dictionary-row-actions .compact-table-button{
+  min-height:32px;
+  padding:0 10px;
+}
+.app-shell.theme-light .dictionary-add-row input,
+.app-shell.theme-light .dictionary-row input{
+  background:#fff;
+  border-color:#d8e1ee;
+  color:#0f172a;
+}
+.app-shell.theme-light .dictionary-row{
+  background:#fff;
+  border-color:#dbe3ef;
+}
+.app-shell.theme-light .dictionary-row span{
+  color:#172033;
+}
+@media(max-width:1100px){
+  .dictionary-row{grid-template-columns:1fr}
+  .dictionary-row-actions{justify-content:flex-start;flex-wrap:wrap}
+}

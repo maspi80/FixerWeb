@@ -35,6 +35,13 @@ function getClientAddress(client) {
     .join(' ');
 }
 
+function getSafeMenuPosition(event, width = 240, height = 320) {
+  const padding = 12;
+  const x = Math.min(event.clientX, Math.max(padding, window.innerWidth - width - padding));
+  const y = Math.min(event.clientY, Math.max(padding, window.innerHeight - height - padding));
+  return { x: Math.max(padding, x), y: Math.max(padding, y) };
+}
+
 const modules = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'clients', label: 'Klienci', icon: Users },
@@ -211,6 +218,33 @@ function ClientsModule() {
   const [editingClient, setEditingClient] = useState(null);
   const [editorInitialTab, setEditorInitialTab] = useState('data');
   const [notice, setNotice] = useState('');
+  const [clientTypeFilter, setClientTypeFilter] = useState('all');
+  const [clientKindFilter, setClientKindFilter] = useState('all');
+  const [clientSearch, setClientSearch] = useState('');
+
+  const clientKinds = useMemo(() => {
+    const values = [...DEFAULT_CLIENT_TYPES, ...rows.map((client) => client.client_kind).filter(Boolean)];
+    return [...new Set(values)];
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    const query = clientSearch.trim().toLocaleLowerCase('pl');
+    return rows.filter((client) => {
+      const matchesType = clientTypeFilter === 'all' || client.type === clientTypeFilter;
+      const matchesKind = clientKindFilter === 'all' || client.client_kind === clientKindFilter;
+      const searchable = [client.name, client.type, client.client_kind, client.phone, client.email, client.city, client.nip]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase('pl');
+      return matchesType && matchesKind && (!query || searchable.includes(query));
+    });
+  }, [rows, clientTypeFilter, clientKindFilter, clientSearch]);
+
+  const clearClientFilters = () => {
+    setClientTypeFilter('all');
+    setClientKindFilter('all');
+    setClientSearch('');
+  };
 
   const loadClients = async () => {
     setLoading(true);
@@ -304,8 +338,31 @@ function ClientsModule() {
         </div>
         {notice && <div className="notice">{notice}</div>}
       </section>
-      <section className="panel">
-        <DataTable storageKey="clients-table" loading={loading} columns={[{ key: 'name', label: 'Nazwa' },{ key: 'type', label: 'Typ' },{ key: 'client_kind', label: 'Rodzaj klienta' },{ key: 'phone', label: 'Telefon' },{ key: 'email', label: 'Email' },{ key: 'city', label: 'Miasto' },{ key: 'nip', label: 'NIP' }]} rows={rows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} />
+      <section className="panel clients-list-panel">
+        <div className="client-filter-bar">
+          <label>
+            Szukaj
+            <input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nazwa, miasto, telefon, email, NIP" />
+          </label>
+          <label>
+            Typ
+            <select value={clientTypeFilter} onChange={(event) => setClientTypeFilter(event.target.value)}>
+              <option value="all">Wszyscy</option>
+              <option value="Firma">Tylko firmy</option>
+              <option value="Osoba prywatna">Tylko osoby prywatne</option>
+            </select>
+          </label>
+          <label>
+            Rodzaj klienta
+            <select value={clientKindFilter} onChange={(event) => setClientKindFilter(event.target.value)}>
+              <option value="all">Wszystkie rodzaje</option>
+              {clientKinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+            </select>
+          </label>
+          <button type="button" className="secondary-button compact-button" onClick={clearClientFilters}>Wyczyść filtry</button>
+          <span className="filter-count">{filteredRows.length} / {rows.length}</span>
+        </div>
+        <DataTable storageKey="clients-table" loading={loading} columns={[{ key: 'name', label: 'Nazwa' },{ key: 'type', label: 'Typ' },{ key: 'client_kind', label: 'Rodzaj klienta' },{ key: 'phone', label: 'Telefon' },{ key: 'email', label: 'Email' },{ key: 'city', label: 'Miasto' },{ key: 'nip', label: 'NIP' }]} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} />
       </section>
       {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -780,14 +837,14 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const openColumnMenu = (event, columnKey = null) => {
     event.preventDefault();
     setRowContextMenu(null);
-    setContextMenu({ x: event.clientX, y: event.clientY, columnKey });
+    setContextMenu({ ...getSafeMenuPosition(event, 250, 380), columnKey });
   };
 
   const openRowMenu = (event, row) => {
     if (!hasActions) return;
     event.preventDefault();
     setContextMenu(null);
-    setRowContextMenu({ x: event.clientX, y: event.clientY, row });
+    setRowContextMenu({ ...getSafeMenuPosition(event, 230, 330), row });
   };
 
   const copyText = async (text) => {
@@ -841,13 +898,6 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
         {onDelete && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />Usuń</button></>}
       </div>}
       {contextMenu && <div className="column-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()}>
-        {contextMenu.columnKey && <>
-          <div className="context-menu-title">Sortowanie</div>
-          <button type="button" onClick={() => { applySort(contextMenu.columnKey, 'asc'); setContextMenu(null); }}>Sortuj rosnąco</button>
-          <button type="button" onClick={() => { applySort(contextMenu.columnKey, 'desc'); setContextMenu(null); }}>Sortuj malejąco</button>
-          {sortKey && <button type="button" onClick={() => { clearSort(); setContextMenu(null); }}>Wyczyść sortowanie</button>}
-          <div className="context-menu-separator" />
-        </>}
         <div className="context-menu-title">Widoczne kolumny</div>
         {orderedColumns.map((column) => {
           const checked = visibleColumns.includes(column.key);

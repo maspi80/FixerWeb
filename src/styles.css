@@ -72,3 +72,13 @@ td,th{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 th em{margin-left:6px;color:#60a5fa;font-style:normal;font-size:13px;font-weight:900}
 th span{display:inline-flex;align-items:center;gap:6px;min-width:0}.column-context-menu .context-menu-separator{height:1px;background:rgba(148,163,184,.12);margin:4px 2px}.column-context-menu button{display:flex;align-items:center;gap:8px}
+
+.clients-list-panel{gap:14px}
+.client-filter-bar{display:grid;grid-template-columns:minmax(260px,1fr) 190px 220px auto auto;gap:12px;align-items:end;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(148,163,184,.12)}
+.client-filter-bar label{display:grid;gap:6px;color:#94a3b8;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.client-filter-bar input,.client-filter-bar select{height:42px;border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.95);color:#e2e8f0;border-radius:12px;padding:0 12px;outline:0;text-transform:none;letter-spacing:0;font-weight:600}
+.client-filter-bar input:focus,.client-filter-bar select:focus{border-color:rgba(96,165,250,.5);box-shadow:0 0 0 3px rgba(96,165,250,.12)}
+.compact-button{min-height:42px;white-space:nowrap}
+.filter-count{height:42px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-weight:800;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:0 12px;white-space:nowrap}
+.column-context-menu,.row-context-menu{max-height:calc(100vh - 24px);overflow:auto}
+@media (max-width:1300px){.client-filter-bar{grid-template-columns:1fr 180px 200px}.compact-button,.filter-count{justify-content:center}}

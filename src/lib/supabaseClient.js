@@ -7,8 +7,4 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
-  : {
-      auth: {
-        signOut: async () => ({ error: null })
-      }
-    };
+  : null;

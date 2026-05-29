@@ -8,27 +8,9 @@ export const dashboardCards = [
 ];
 
 export const alerts = [
-  {
-    title: 'Zwrot przeterminowany',
-    description: 'Kamera Sony PXW-Z190 — Adam Kowalski',
-    time: '2 dni po terminie',
-    tone: 'danger',
-    target: 'rentals'
-  },
-  {
-    title: 'Serwis czeka na odbiór',
-    description: 'Mikser Yamaha MG12XU — Studio Alfa',
-    time: '7 dni',
-    tone: 'info',
-    target: 'service'
-  },
-  {
-    title: 'Rezerwacja na dziś',
-    description: 'Walizka realizacyjna #CASE-04',
-    time: '10:00',
-    tone: 'success',
-    target: 'calendar'
-  }
+  { title: 'Zwrot przeterminowany', description: 'Kamera Sony PXW-Z190 — Adam Kowalski', time: '2 dni po terminie', tone: 'danger', target: 'rentals' },
+  { title: 'Serwis czeka na odbiór', description: 'Mikser Yamaha MG12XU — Studio Alfa', time: '7 dni', tone: 'info', target: 'service' },
+  { title: 'Rezerwacja na dziś', description: 'Walizka realizacyjna #CASE-04', time: '10:00', tone: 'success', target: 'calendar' }
 ];
 
 export const rentals = [
@@ -44,9 +26,9 @@ export const serviceOrders = [
 ];
 
 export const clients = [
-  { name: 'Adam Kowalski', type: 'Osoba prywatna', phone: '+48 600 100 200', email: 'adam@example.com', rating: 'Ryzykowny' },
-  { name: 'Studio Alfa', type: 'Firma', phone: '+48 600 300 400', email: 'kontakt@studioalfa.pl', rating: 'Dobry' },
-  { name: 'BMX Media', type: 'Firma', phone: '+48 600 500 600', email: 'office@bmxmedia.pl', rating: 'Bardzo dobry' }
+  { localId: 'demo-1', name: 'Adam Kowalski', type: 'Osoba prywatna', phone: '+48 600 100 200', email: 'adam@example.com', rating: 'Ryzykowny', notes: 'Klient testowy z historią opóźnień.' },
+  { localId: 'demo-2', name: 'Studio Alfa', type: 'Firma', phone: '+48 600 300 400', email: 'kontakt@studioalfa.pl', rating: 'Dobry', notes: 'Stały klient firmowy.' },
+  { localId: 'demo-3', name: 'BMX Media', type: 'Firma', phone: '+48 600 500 600', email: 'office@bmxmedia.pl', rating: 'Bardzo dobry', notes: 'Klient testowy.' }
 ];
 
 export const equipment = [

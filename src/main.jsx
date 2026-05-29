@@ -983,7 +983,72 @@ function EquipmentModule() {
   );
 }
 
+const EQUIPMENT_CARD_MARKER = '__fixerEquipmentCard';
+
+function parseEquipmentCardNotes(notes) {
+  const raw = String(notes ?? '').trim();
+  const fallback = {
+    description: raw,
+    condition: 'Bardzo dobry',
+    purchase_value: '',
+    deposit: '',
+    price_day: '',
+    price_week: '',
+    gallery: [],
+    attachments: [],
+    set_items: [],
+    service_notes: '',
+    history_notes: ''
+  };
+
+  if (!raw) return fallback;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed[EQUIPMENT_CARD_MARKER] !== 1) return fallback;
+    return {
+      description: parsed.description ?? '',
+      condition: parsed.condition ?? 'Bardzo dobry',
+      purchase_value: parsed.purchase_value ?? '',
+      deposit: parsed.deposit ?? '',
+      price_day: parsed.price_day ?? '',
+      price_week: parsed.price_week ?? '',
+      gallery: Array.isArray(parsed.gallery) ? parsed.gallery : [],
+      attachments: Array.isArray(parsed.attachments) ? parsed.attachments : [],
+      set_items: Array.isArray(parsed.set_items) ? parsed.set_items : [],
+      service_notes: parsed.service_notes ?? '',
+      history_notes: parsed.history_notes ?? ''
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function buildEquipmentCardNotes(form) {
+  return JSON.stringify({
+    [EQUIPMENT_CARD_MARKER]: 1,
+    description: form.description ?? '',
+    condition: form.condition ?? 'Bardzo dobry',
+    purchase_value: form.purchase_value ?? '',
+    deposit: form.deposit ?? '',
+    price_day: form.price_day ?? '',
+    price_week: form.price_week ?? '',
+    gallery: Array.isArray(form.gallery) ? form.gallery : [],
+    attachments: Array.isArray(form.attachments) ? form.attachments : [],
+    set_items: Array.isArray(form.set_items) ? form.set_items : [],
+    service_notes: form.service_notes ?? '',
+    history_notes: form.history_notes ?? ''
+  });
+}
+
 function EquipmentEditor({ equipment, onClose, onSave }) {
+  const cardData = parseEquipmentCardNotes(equipment?.notes);
+  const [activeTab, setActiveTab] = useState('basic');
+  const [errors, setErrors] = useState({});
+  const [newGalleryItem, setNewGalleryItem] = useState('');
+  const [newAttachmentName, setNewAttachmentName] = useState('');
+  const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
+  const [newSetItem, setNewSetItem] = useState('');
   const [form, setForm] = useState(() => ({
     id: equipment?.id ?? null,
     localId: equipment?.localId ?? null,
@@ -997,40 +1062,168 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
     status: equipment?.status ?? 'Dostępny',
     location: equipment?.location ?? 'Magazyn',
     purchase_date: equipment?.purchase_date ?? '',
-    notes: equipment?.notes ?? ''
+    condition: cardData.condition,
+    purchase_value: cardData.purchase_value,
+    deposit: cardData.deposit,
+    price_day: cardData.price_day,
+    price_week: cardData.price_week,
+    description: cardData.description,
+    gallery: cardData.gallery,
+    attachments: cardData.attachments,
+    set_items: cardData.set_items,
+    service_notes: cardData.service_notes,
+    history_notes: cardData.history_notes
   }));
+
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
 
-  const saveClient = () => {
-    const nextErrors = validateClientForm(form);
+  const addGalleryItem = () => {
+    const value = newGalleryItem.trim();
+    if (!value) return;
+    update('gallery', [...form.gallery, value]);
+    setNewGalleryItem('');
+  };
+
+  const removeGalleryItem = (index) => {
+    update('gallery', form.gallery.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const addAttachment = () => {
+    const name = newAttachmentName.trim();
+    const url = newAttachmentUrl.trim();
+    if (!name && !url) return;
+    update('attachments', [...form.attachments, { name: name || url, url }]);
+    setNewAttachmentName('');
+    setNewAttachmentUrl('');
+  };
+
+  const removeAttachment = (index) => {
+    update('attachments', form.attachments.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const addSetItem = () => {
+    const value = newSetItem.trim();
+    if (!value) return;
+    update('set_items', [...form.set_items, { name: value, required: true }]);
+    setNewSetItem('');
+  };
+
+  const removeSetItem = (index) => {
+    update('set_items', form.set_items.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const saveEquipment = () => {
+    const nextErrors = {};
+    if (!form.name.trim()) nextErrors.name = 'Nazwa sprzętu jest wymagana.';
     setErrors(nextErrors);
-    if (Object.keys(nextErrors).length) return;
-    onSave(form);
+    if (Object.keys(nextErrors).length) {
+      setActiveTab('basic');
+      return;
+    }
+
+    onSave({
+      id: form.id,
+      localId: form.localId,
+      name: form.name.trim(),
+      category: form.category,
+      brand: form.brand.trim(),
+      model: form.model.trim(),
+      serial: form.serial.trim(),
+      inventory_number: form.inventory_number.trim(),
+      barcode: form.barcode.trim(),
+      status: form.status,
+      location: form.location.trim(),
+      purchase_date: form.purchase_date,
+      notes: buildEquipmentCardNotes(form)
+    });
   };
 
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
 
+  const tabs = [
+    { id: 'basic', label: 'Dane podstawowe' },
+    { id: 'gallery', label: 'Galeria' },
+    { id: 'attachments', label: 'Załączniki' },
+    { id: 'history', label: 'Historia' },
+    { id: 'service', label: 'Serwis' },
+    { id: 'relations', label: 'Powiązania / Zestawy' }
+  ];
+
   return (
     <div className="modal-backdrop">
-      <div className="modal-card equipment-modal">
-        <div className="modal-header"><div><p className="eyebrow">Sprzęt</p><h2>{equipment ? 'Edycja sprzętu' : 'Nowy sprzęt'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
-        <div className="form-grid">
-          <label className="wide-field">Nazwa sprzętu<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
-          <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}><option>Kamera</option><option>Obiektyw</option><option>Audio</option><option>Streaming</option><option>Oświetlenie</option><option>Komputer</option><option>Akcesoria</option><option>Zestaw</option></select></label>
-          <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}><option>Dostępny</option><option>Wypożyczony</option><option>Rezerwacja</option><option>Serwis</option><option>Uszkodzony</option><option>Wycofany</option><option>Zestaw</option></select></label>
-          <label>Marka<input value={form.brand} onChange={(event) => update('brand', event.target.value)} /></label>
-          <label>Model<input value={form.model} onChange={(event) => update('model', event.target.value)} /></label>
-          <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} /></label>
-          <label>Numer inwentarzowy<input value={form.inventory_number} onChange={(event) => update('inventory_number', event.target.value)} /></label>
-          <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
-          <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} /></label>
-          <label>Data zakupu<input type="date" value={form.purchase_date} onChange={(event) => update('purchase_date', event.target.value)} /></label>
-          <label className="wide-field">Notatki<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
+      <div className="modal-card equipment-card-modal">
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Sprzęt</p>
+            <h2>Karta sprzętu</h2>
+            <p className="muted">Dodawanie i edycja urządzenia w module Sprzęt.</p>
+          </div>
+          <button className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveClient}><Save size={18} />Zapisz</button></div>
+
+        <div className="equipment-tabs" role="tablist" aria-label="Sekcje karty sprzętu">
+          {tabs.map((tab) => (
+            <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
+          ))}
+        </div>
+
+        <div className="equipment-tab-panel">
+          {activeTab === 'basic' && <div className="equipment-basic-grid">
+            <label className="equipment-name-field">Nazwa sprzętu *<input className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Mikser Video" />{errors.name && <span className="field-hint">{errors.name}</span>}</label>
+            <label>Marka<input value={form.brand} onChange={(event) => update('brand', event.target.value)} placeholder="np. Blackmagic" /></label>
+            <label>Model<input value={form.model} onChange={(event) => update('model', event.target.value)} placeholder="np. ATEM Mini Pro" /></label>
+            <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} /></label>
+            <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
+            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}><option>Kamera</option><option>Obiektyw</option><option>Audio</option><option>Mikser Video</option><option>Streaming</option><option>Oświetlenie</option><option>Komputer</option><option>Akcesoria</option><option>Zestaw</option></select></label>
+            <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}><option>Dostępny</option><option>Wypożyczony</option><option>Rezerwacja</option><option>Serwis</option><option>Uszkodzony</option><option>Wycofany</option><option>Zestaw</option></select></label>
+            <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
+            <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Szafka Magazyn" /></label>
+            <label>Wartość zakupu<input value={form.purchase_value} onChange={(event) => update('purchase_value', event.target.value)} placeholder="np. 2500" /></label>
+            <label>Kaucja<input value={form.deposit} onChange={(event) => update('deposit', event.target.value)} placeholder="np. 500" /></label>
+            <label>Cena / dzień<input value={form.price_day} onChange={(event) => update('price_day', event.target.value)} placeholder="np. 120" /></label>
+            <label>Cena / tydzień<input value={form.price_week} onChange={(event) => update('price_week', event.target.value)} placeholder="np. 600" /></label>
+            <label className="equipment-description-field">Opis / zawartość zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
+          </div>}
+
+          {activeTab === 'gallery' && <div className="equipment-section-panel">
+            <div className="section-title">Galeria sprzętu</div>
+            <div className="inline-add-row"><input value={newGalleryItem} onChange={(event) => setNewGalleryItem(event.target.value)} placeholder="Adres zdjęcia lub opis zdjęcia" /><button type="button" className="secondary-button compact-table-button" onClick={addGalleryItem}>Dodaj</button></div>
+            <div className="equipment-list-box">
+              {form.gallery.length ? form.gallery.map((item, index) => <div key={`${item}-${index}`} className="equipment-list-row"><span>{item}</span><button type="button" className="ghost-mini-button" onClick={() => removeGalleryItem(index)}>Usuń</button></div>) : <p className="muted">Brak zdjęć w galerii.</p>}
+            </div>
+          </div>}
+
+          {activeTab === 'attachments' && <div className="equipment-section-panel">
+            <div className="section-title">Załączniki</div>
+            <div className="attachment-add-grid"><input value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa załącznika" /><input value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link lub numer dokumentu" /><button type="button" className="secondary-button compact-table-button" onClick={addAttachment}>Dodaj</button></div>
+            <div className="equipment-list-box">
+              {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.name}</strong>{item.url ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Brak załączników.</p>}
+            </div>
+          </div>}
+
+          {activeTab === 'history' && <div className="equipment-section-panel">
+            <div className="section-title">Historia sprzętu</div>
+            <textarea className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
+          </div>}
+
+          {activeTab === 'service' && <div className="equipment-section-panel">
+            <div className="section-title">Serwis</div>
+            <textarea className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
+          </div>}
+
+          {activeTab === 'relations' && <div className="equipment-section-panel">
+            <div className="section-title">Powiązania / Zestawy</div>
+            <div className="inline-add-row"><input value={newSetItem} onChange={(event) => setNewSetItem(event.target.value)} placeholder="Nazwa składnika zestawu lub powiązanego sprzętu" /><button type="button" className="secondary-button compact-table-button" onClick={addSetItem}>Dodaj</button></div>
+            <div className="equipment-list-box">
+              {form.set_items.length ? form.set_items.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span>{item.name}</span><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></div>) : <p className="muted">Brak składników zestawu lub powiązań.</p>}
+            </div>
+          </div>}
+        </div>
+
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</button></div>
       </div>
     </div>
   );

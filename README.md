@@ -35,3 +35,10 @@ W Vercel muszą być ustawione zmienne środowiskowe:
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
 ```
+
+
+## v0.5.5
+- Zablokowano przewijanie całego widoku modułu przy długich tabelach.
+- Górna sekcja modułu pozostaje w miejscu.
+- Przewija się wyłącznie zawartość tabeli.
+- Nagłówek tabeli pozostaje widoczny podczas przewijania listy.

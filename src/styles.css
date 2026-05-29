@@ -66,3 +66,6 @@ td,th{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row-context-menu{min-width:210px}
 .row-context-menu .context-menu-separator{height:1px;background:rgba(148,163,184,.12);margin:4px 2px}
 .row-context-menu button svg{flex:0 0 auto;color:currentColor;opacity:.86}
+
+/* v0.5.5 — stała sekcja modułu i przewijanie wyłącznie zawartości tabel */
+.main-area{height:100vh;overflow:hidden;display:flex;flex-direction:column}.page-content{height:calc(100vh - 96px);min-height:0;overflow:hidden;display:flex;flex-direction:column}.module-page{height:100%;min-height:0;grid-template-rows:auto minmax(0,1fr)}.module-page>.panel:last-child{min-height:0;display:flex;flex-direction:column}.module-page>.panel:last-child .table-shell{flex:1;min-height:0;display:flex;flex-direction:column}.table-scroll{flex:1;min-height:0;overflow:auto}.table-scroll thead th{position:sticky;top:0;z-index:4;background:#111827;box-shadow:0 1px 0 rgba(148,163,184,.16)}.dashboard-grid{min-height:0;overflow:auto;padding-right:4px}.client-modal .table-scroll{max-height:260px}

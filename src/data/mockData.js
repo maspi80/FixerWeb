@@ -32,7 +32,7 @@ export const clients = [
 ];
 
 export const equipment = [
-  { name: 'Kamera Sony PXW-Z190', brand: 'Sony', model: 'PXW-Z190', serial: 'Y80413N232910D', status: 'Wypożyczony' },
-  { name: 'Walizka stream CASE-04', brand: 'Custom', model: 'CASE-04', serial: 'CASE-04', status: 'Zestaw' },
-  { name: 'Mikser Yamaha MG12XU', brand: 'Yamaha', model: 'MG12XU', serial: 'MG12XU-7781', status: 'Serwis' }
+  { localId: 'eq-demo-1', name: 'Kamera Sony PXW-Z190', category: 'Kamera', brand: 'Sony', model: 'PXW-Z190', serial: 'Y80413N232910D', inventory_number: 'KAM-001', barcode: 'Y80413N232910D', status: 'Wypożyczony', location: 'U klienta', purchase_date: '2024-03-12', notes: 'Główna kamera ENG.' },
+  { localId: 'eq-demo-2', name: 'Walizka stream CASE-04', category: 'Zestaw', brand: 'Custom', model: 'CASE-04', serial: 'CASE-04', inventory_number: 'SET-004', barcode: 'CASE-04', status: 'Zestaw', location: 'Magazyn', purchase_date: '2025-01-18', notes: 'Zestaw streamingowy do realizacji mobilnych.' },
+  { localId: 'eq-demo-3', name: 'Mikser Yamaha MG12XU', category: 'Audio', brand: 'Yamaha', model: 'MG12XU', serial: 'MG12XU-7781', inventory_number: 'AUD-012', barcode: 'MG12XU-7781', status: 'Serwis', location: 'Serwis wewnętrzny', purchase_date: '2023-09-04', notes: 'Do weryfikacji potencjometr kanału 3.' }
 ];

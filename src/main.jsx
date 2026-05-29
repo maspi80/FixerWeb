@@ -7,8 +7,9 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
-import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients, equipment } from './data/mockData';
+import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients, equipment as demoEquipment } from './data/mockData';
 import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecord } from './services/clientsService';
+import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
 
 const modules = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -274,7 +275,141 @@ function ClientEditor({ client, onClose, onSave }) {
 }
 
 function EquipmentModule() {
-  return <ModulePage title="Magazyn sprzętu" description="Sprzęt, numery seryjne, kody kreskowe, zestawy, statusy i skaner." table={<DataTable storageKey="equipment-table" columns={[{ key: 'name', label: 'Nazwa' },{ key: 'brand', label: 'Marka' },{ key: 'model', label: 'Model' },{ key: 'serial', label: 'Numer seryjny' },{ key: 'status', label: 'Status' }]} rows={equipment} />} />;
+  const [rows, setRows] = useState(demoEquipment);
+  const [loading, setLoading] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState(null);
+  const [notice, setNotice] = useState('');
+
+  const loadEquipment = async () => {
+    setLoading(true);
+    setNotice('');
+    const { data, error } = await fetchEquipment();
+    if (error) {
+      setRows(demoEquipment);
+      setNotice('Tryb demo: tabela Supabase equipment nie jest jeszcze podpięta albo nie uruchomiono aktualnego schema.sql.');
+    } else {
+      setRows(data.length ? data : demoEquipment);
+      setNotice('Dane sprzętu pobrane z Supabase.');
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadEquipment(); }, []);
+
+  const normalizePayload = (item) => ({
+    name: item.name,
+    category: item.category,
+    brand: item.brand,
+    model: item.model,
+    serial: item.serial,
+    inventory_number: item.inventory_number,
+    barcode: item.barcode,
+    status: item.status,
+    location: item.location,
+    purchase_date: item.purchase_date || null,
+    notes: item.notes
+  });
+
+  const handleSave = async (item) => {
+    if (!item.name.trim()) {
+      alert('Nazwa sprzętu jest wymagana.');
+      return;
+    }
+
+    const payload = normalizePayload(item);
+    if (isSupabaseConfigured) {
+      const result = item.id ? await updateEquipmentRecord(item.id, payload) : await createEquipmentRecord(payload);
+      if (result.error) alert(result.error.message);
+      await loadEquipment();
+    } else {
+      setRows((current) => item.localId
+        ? current.map((row) => row.localId === item.localId ? item : row)
+        : [{ ...item, localId: crypto.randomUUID() }, ...current]);
+    }
+    setEditorOpen(false);
+  };
+
+  const handleDelete = async (item) => {
+    if (!confirm(`Usunąć sprzęt: ${item.name}?`)) return;
+    if (item.id && isSupabaseConfigured) {
+      const { error } = await deleteEquipmentRecord(item.id);
+      if (error) alert(error.message);
+      await loadEquipment();
+    } else {
+      setRows((current) => current.filter((row) => row !== item));
+    }
+  };
+
+  return (
+    <div className="module-page">
+      <section className="panel hero-panel">
+        <p className="eyebrow">Moduł</p><h2>Magazyn sprzętu</h2>
+        <p className="muted">Kartoteka urządzeń, numery seryjne, kody, lokalizacje, statusy i przygotowanie pod zestawy oraz wypożyczenia.</p>
+        <div className="module-actions">
+          <button className="primary-button" onClick={() => { setEditingEquipment(null); setEditorOpen(true); }}><Plus size={18} />Dodaj sprzęt</button>
+          <button className="secondary-button" onClick={loadEquipment}>Odśwież</button>
+          <button className="secondary-button">Eksport PDF</button>
+          <button className="secondary-button">Ustawienia modułu</button>
+        </div>
+        {notice && <div className="notice">{notice}</div>}
+      </section>
+      <section className="panel">
+        <DataTable storageKey="equipment-table" loading={loading} columns={[
+          { key: 'name', label: 'Nazwa' },
+          { key: 'category', label: 'Kategoria' },
+          { key: 'brand', label: 'Marka' },
+          { key: 'model', label: 'Model' },
+          { key: 'serial', label: 'Numer seryjny' },
+          { key: 'inventory_number', label: 'Nr inw.' },
+          { key: 'status', label: 'Status' },
+          { key: 'location', label: 'Lokalizacja' }
+        ]} rows={rows} onEdit={(item) => { setEditingEquipment(item); setEditorOpen(true); }} onDelete={handleDelete} />
+      </section>
+      {editorOpen && <EquipmentEditor equipment={editingEquipment} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+    </div>
+  );
+}
+
+function EquipmentEditor({ equipment, onClose, onSave }) {
+  const [form, setForm] = useState(() => ({
+    id: equipment?.id ?? null,
+    localId: equipment?.localId ?? null,
+    name: equipment?.name ?? '',
+    category: equipment?.category ?? 'Kamera',
+    brand: equipment?.brand ?? '',
+    model: equipment?.model ?? '',
+    serial: equipment?.serial ?? '',
+    inventory_number: equipment?.inventory_number ?? '',
+    barcode: equipment?.barcode ?? equipment?.serial ?? '',
+    status: equipment?.status ?? 'Dostępny',
+    location: equipment?.location ?? 'Magazyn',
+    purchase_date: equipment?.purchase_date ?? '',
+    notes: equipment?.notes ?? ''
+  }));
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card equipment-modal">
+        <div className="modal-header"><div><p className="eyebrow">Sprzęt</p><h2>{equipment ? 'Edycja sprzętu' : 'Nowy sprzęt'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
+        <div className="form-grid">
+          <label className="wide-field">Nazwa sprzętu<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
+          <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}><option>Kamera</option><option>Obiektyw</option><option>Audio</option><option>Streaming</option><option>Oświetlenie</option><option>Komputer</option><option>Akcesoria</option><option>Zestaw</option></select></label>
+          <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}><option>Dostępny</option><option>Wypożyczony</option><option>Rezerwacja</option><option>Serwis</option><option>Uszkodzony</option><option>Wycofany</option><option>Zestaw</option></select></label>
+          <label>Marka<input value={form.brand} onChange={(event) => update('brand', event.target.value)} /></label>
+          <label>Model<input value={form.model} onChange={(event) => update('model', event.target.value)} /></label>
+          <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} /></label>
+          <label>Numer inwentarzowy<input value={form.inventory_number} onChange={(event) => update('inventory_number', event.target.value)} /></label>
+          <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
+          <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} /></label>
+          <label>Data zakupu<input type="date" value={form.purchase_date} onChange={(event) => update('purchase_date', event.target.value)} /></label>
+          <label className="wide-field">Notatki<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
+        </div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={() => onSave(form)}><Save size={18} />Zapisz</button></div>
+      </div>
+    </div>
+  );
 }
 function RentalsModule() {
   return <ModulePage title="Wypożyczenia" description="Wypożyczenia, zwroty, rezerwacje, checklisty zestawów i automatyczna historia klienta." table={<DataTable storageKey="rentals-table" columns={[{ key: 'number', label: 'Numer' },{ key: 'client', label: 'Klient' },{ key: 'item', label: 'Sprzęt' },{ key: 'status', label: 'Status' },{ key: 'date', label: 'Termin' }]} rows={rentals} />} />;

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Bell, CalendarDays, CheckCircle2, ChevronRight, Columns3, LayoutDashboard, LockKeyhole,
+  Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Eye, EyeOff, GripVertical, Plus, Save, Trash2, X
+  ClipboardList, Barcode, GripVertical, Plus, Save, Trash2, X
 } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -543,6 +543,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
   const [sortKey, setSortKey] = useState(columns[0]?.key);
   const [sortDir, setSortDir] = useState('asc');
   const [draggedColumn, setDraggedColumn] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState(() => getStoredJson(`${storageKey}-columns`, columns.map((column) => column.key)));
   const [columnOrder, setColumnOrder] = useState(() => getStoredJson(`${storageKey}-column-order`, columns.map((column) => column.key)));
   const [columnWidths, setColumnWidths] = useState(() => getStoredJson(`${storageKey}-column-widths`, {}));
@@ -564,6 +565,19 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
     });
   }, [columns, storageKey]);
 
+  useEffect(() => {
+    if (!contextMenu) return undefined;
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('keydown', closeMenu);
+    window.addEventListener('resize', closeMenu);
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('keydown', closeMenu);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [contextMenu]);
+
   const sortedRows = useMemo(() => [...rows].sort((a, b) => {
     const left = String(a[sortKey] ?? '');
     const right = String(b[sortKey] ?? '');
@@ -584,7 +598,9 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
   };
 
   const toggleColumn = (key) => {
-    const next = visibleColumns.includes(key) ? visibleColumns.filter((columnKey) => columnKey !== key) : [...visibleColumns, key];
+    const isVisible = visibleColumns.includes(key);
+    if (isVisible && visibleColumns.length === 1) return;
+    const next = isVisible ? visibleColumns.filter((columnKey) => columnKey !== key) : [...visibleColumns, key];
     setVisibleColumns(next);
     localStorage.setItem(`${storageKey}-columns`, JSON.stringify(next));
   };
@@ -630,20 +646,41 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
     document.addEventListener('mouseup', onMouseUp);
   };
 
+  const resetColumns = () => {
+    const keys = columns.map((column) => column.key);
+    setVisibleColumns(keys);
+    setColumnOrder(keys);
+    setColumnWidths({});
+    localStorage.setItem(`${storageKey}-columns`, JSON.stringify(keys));
+    localStorage.setItem(`${storageKey}-column-order`, JSON.stringify(keys));
+    localStorage.setItem(`${storageKey}-column-widths`, JSON.stringify({}));
+    setContextMenu(null);
+  };
+
+  const openColumnMenu = (event) => {
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY });
+  };
+
   return (
     <div className="table-shell">
-      <div className="table-tools">
-        <div className="table-tool-label"><Columns3 size={16} />Widoczność kolumn</div>
-        <div className="column-toggles">{orderedColumns.map((column) => <button key={column.key} className={visibleColumns.includes(column.key) ? 'active' : ''} onClick={() => toggleColumn(column.key)}>{visibleColumns.includes(column.key) ? <Eye size={14} /> : <EyeOff size={14} />}{column.label}</button>)}</div>
-      </div>
       {loading && <div className="loading-line">Ładowanie danych...</div>}
       <div className="table-scroll">
         <table>
           <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}{hasActions && <col style={{ width: '150px' }} />}</colgroup>
-          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}{hasActions && <th>Akcje</th>}</tr></thead>
+          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={openColumnMenu} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}{hasActions && <th onContextMenu={openColumnMenu}>Akcje</th>}</tr></thead>
           <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={onEdit ? 'editable-row' : ''} onDoubleClick={() => onEdit?.(row)} title={onEdit ? 'Dwuklik otwiera edycję' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}{hasActions && <td><div className="row-actions">{onEdit && <button onClick={() => onEdit(row)}>Edytuj</button>}{onDelete && <button className="danger-action" onClick={() => onDelete(row)}><Trash2 size={14} />Usuń</button>}</div></td>}</tr>)}</tbody>
         </table>
       </div>
+      {contextMenu && <div className="column-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()}>
+        <div className="context-menu-title">Widoczne kolumny</div>
+        {orderedColumns.map((column) => {
+          const checked = visibleColumns.includes(column.key);
+          const disabled = checked && visibleColumns.length === 1;
+          return <label key={column.key} className={disabled ? 'disabled' : ''}><input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleColumn(column.key)} />{column.label}</label>;
+        })}
+        <button type="button" onClick={resetColumns}>Przywróć domyślne kolumny</button>
+      </div>}
     </div>
   );
 }

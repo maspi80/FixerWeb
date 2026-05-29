@@ -1041,10 +1041,73 @@ function buildEquipmentCardNotes(form) {
   });
 }
 
+
+const EQUIPMENT_MODAL_SIZE_KEY = 'fixer-equipment-modal-size';
+const EQUIPMENT_MODAL_POSITION_KEY = 'fixer-equipment-modal-position';
+const DEFAULT_EQUIPMENT_MODAL_SIZE = { width: 1120, height: 720 };
+const MIN_EQUIPMENT_MODAL_SIZE = { width: 860, height: 560 };
+const EQUIPMENT_MODAL_SCREEN_MARGIN = 16;
+
+function clampEquipmentModalSize(size) {
+  if (typeof window === 'undefined') return size;
+  const maxWidth = Math.max(MIN_EQUIPMENT_MODAL_SIZE.width, window.innerWidth - 32);
+  const maxHeight = Math.max(MIN_EQUIPMENT_MODAL_SIZE.height, window.innerHeight - 32);
+  return {
+    width: Math.min(Math.max(size.width, MIN_EQUIPMENT_MODAL_SIZE.width), maxWidth),
+    height: Math.min(Math.max(size.height, MIN_EQUIPMENT_MODAL_SIZE.height), maxHeight)
+  };
+}
+
+function getSavedEquipmentModalSize() {
+  if (typeof window === 'undefined') return DEFAULT_EQUIPMENT_MODAL_SIZE;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(EQUIPMENT_MODAL_SIZE_KEY) || 'null');
+    if (parsed && Number.isFinite(parsed.width) && Number.isFinite(parsed.height)) {
+      return clampEquipmentModalSize(parsed);
+    }
+  } catch {}
+  return clampEquipmentModalSize(DEFAULT_EQUIPMENT_MODAL_SIZE);
+}
+
+function getCenteredEquipmentModalPosition(size) {
+  if (typeof window === 'undefined') return { left: EQUIPMENT_MODAL_SCREEN_MARGIN, top: EQUIPMENT_MODAL_SCREEN_MARGIN };
+  return {
+    left: Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, Math.round((window.innerWidth - size.width) / 2)),
+    top: Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, Math.round((window.innerHeight - size.height) / 2))
+  };
+}
+
+function clampEquipmentModalPosition(position, size) {
+  if (typeof window === 'undefined') return position;
+  const maxLeft = Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, window.innerWidth - size.width - EQUIPMENT_MODAL_SCREEN_MARGIN);
+  const maxTop = Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, window.innerHeight - size.height - EQUIPMENT_MODAL_SCREEN_MARGIN);
+  return {
+    left: Math.min(Math.max(position.left, EQUIPMENT_MODAL_SCREEN_MARGIN), maxLeft),
+    top: Math.min(Math.max(position.top, EQUIPMENT_MODAL_SCREEN_MARGIN), maxTop)
+  };
+}
+
+function getSavedEquipmentModalPosition(size) {
+  if (typeof window === 'undefined') return getCenteredEquipmentModalPosition(size);
+  try {
+    const parsed = JSON.parse(localStorage.getItem(EQUIPMENT_MODAL_POSITION_KEY) || 'null');
+    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+      return clampEquipmentModalPosition(parsed, size);
+    }
+  } catch {}
+  return clampEquipmentModalPosition(getCenteredEquipmentModalPosition(size), size);
+}
+
 function EquipmentEditor({ equipment, onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const [activeTab, setActiveTab] = useState('basic');
   const [errors, setErrors] = useState({});
+  const [modalSize, setModalSize] = useState(getSavedEquipmentModalSize);
+  const [modalPosition, setModalPosition] = useState(() => getSavedEquipmentModalPosition(getSavedEquipmentModalSize()));
+  const modalSizeRef = useRef(modalSize);
+  const modalPositionRef = useRef(modalPosition);
+  const resizeStateRef = useRef(null);
+  const dragStateRef = useRef(null);
   const [newGalleryItem, setNewGalleryItem] = useState('');
   const [newAttachmentName, setNewAttachmentName] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
@@ -1143,6 +1206,79 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
 
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
 
+  useEffect(() => {
+    modalSizeRef.current = modalSize;
+    localStorage.setItem(EQUIPMENT_MODAL_SIZE_KEY, JSON.stringify(modalSize));
+    setModalPosition((current) => clampEquipmentModalPosition(current, modalSize));
+  }, [modalSize]);
+
+  useEffect(() => {
+    modalPositionRef.current = modalPosition;
+    localStorage.setItem(EQUIPMENT_MODAL_POSITION_KEY, JSON.stringify(modalPosition));
+  }, [modalPosition]);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setModalSize((current) => clampEquipmentModalSize(current));
+      setModalPosition((current) => clampEquipmentModalPosition(current, modalSizeRef.current));
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const resizeState = resizeStateRef.current;
+      if (resizeState) {
+        event.preventDefault();
+        setModalSize(clampEquipmentModalSize({
+          width: resizeState.startWidth + event.clientX - resizeState.startX,
+          height: resizeState.startHeight + event.clientY - resizeState.startY
+        }));
+        return;
+      }
+      const dragState = dragStateRef.current;
+      if (!dragState) return;
+      event.preventDefault();
+      setModalPosition(clampEquipmentModalPosition({
+        left: dragState.startLeft + event.clientX - dragState.startX,
+        top: dragState.startTop + event.clientY - dragState.startY
+      }, modalSizeRef.current));
+    };
+    const handlePointerUp = () => {
+      resizeStateRef.current = null;
+      dragStateRef.current = null;
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, []);
+
+  const startResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: modalSizeRef.current.width,
+      startHeight: modalSizeRef.current.height
+    };
+  };
+
+  const startDrag = (event) => {
+    if (event.target.closest('button, input, select, textarea, a')) return;
+    event.preventDefault();
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: modalPositionRef.current.left,
+      startTop: modalPositionRef.current.top
+    };
+  };
+
   const tabs = [
     { id: 'basic', label: 'Dane podstawowe' },
     { id: 'gallery', label: 'Galeria' },
@@ -1153,9 +1289,9 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
   ];
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card equipment-card-modal">
-        <div className="modal-header">
+    <div className="modal-backdrop draggable-modal-backdrop">
+      <div className="modal-card equipment-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${modalPosition.left}px`, top: `${modalPosition.top}px` }}>
+        <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
           <div>
             <p className="eyebrow">Sprzęt</p>
             <h2>Karta sprzętu</h2>
@@ -1224,6 +1360,7 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
         </div>
 
         <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</button></div>
+        <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
       </div>
     </div>
   );

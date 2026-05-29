@@ -1250,3 +1250,140 @@ th.selection-cell{cursor:default}
 }
 
 .equipment-card-modal{width:min(940px,96vw);max-height:calc(100vh - 36px);display:flex;flex-direction:column;overflow:hidden;padding:18px}.equipment-card-modal .modal-header{margin-bottom:12px}.equipment-tabs{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid rgba(148,163,184,.14);padding-bottom:10px}.equipment-tabs button{border:1px solid rgba(148,163,184,.14);background:rgba(148,163,184,.08);color:#cbd5e1;border-radius:12px;min-height:38px;padding:0 13px;font-weight:800}.equipment-tabs button.active{background:rgba(96,165,250,.18);border-color:rgba(96,165,250,.45);color:#eff6ff}.equipment-tab-panel{flex:1;min-height:0;overflow:auto;padding-right:4px}.equipment-basic-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:9px 12px}.equipment-basic-grid label,.equipment-section-panel label{display:grid;gap:4px;color:#cbd5e1;font-size:13px;font-weight:800;line-height:1.15;grid-column:span 6}.equipment-basic-grid input,.equipment-basic-grid select,.equipment-basic-grid textarea,.equipment-section-panel input,.equipment-section-panel textarea{width:100%;min-width:0;min-height:32px;height:32px;border-radius:9px;border:1px solid rgba(148,163,184,.16);background:rgba(8,13,21,.72);color:#fff;padding:0 9px}.equipment-basic-grid textarea,.equipment-section-panel textarea{height:auto;min-height:76px;padding:9px;resize:vertical}.equipment-name-field,.equipment-description-field{grid-column:1/-1!important}.equipment-description-field textarea{min-height:86px}.equipment-section-panel{border:1px solid rgba(148,163,184,.11);background:rgba(8,13,21,.22);border-radius:16px;padding:12px;display:grid;gap:12px}.inline-add-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}.attachment-add-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) auto;gap:10px;align-items:center}.equipment-list-box{display:grid;gap:8px;min-height:120px}.equipment-list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid rgba(148,163,184,.12);background:rgba(148,163,184,.07);border-radius:12px;padding:9px 10px;color:#dbe7f8}.ghost-mini-button{border:1px solid rgba(148,163,184,.16);background:transparent;color:#cbd5e1;border-radius:9px;min-height:30px;padding:0 10px}.large-notes{min-height:260px!important}.field-hint{color:#fca5a5;font-size:12px;font-weight:700}.field-error{border-color:rgba(248,113,113,.75)!important;box-shadow:0 0 0 2px rgba(248,113,113,.14)}.app-shell.theme-light .equipment-tabs button{background:rgba(248,250,252,.95);border-color:rgba(15,23,42,.12);color:#475569}.app-shell.theme-light .equipment-tabs button.active{background:rgba(219,234,254,.85);border-color:rgba(59,130,246,.35);color:#1d4ed8}.app-shell.theme-light .equipment-section-panel{background:rgba(248,250,252,.75);border-color:rgba(15,23,42,.10)}.app-shell.theme-light .equipment-basic-grid label,.app-shell.theme-light .equipment-section-panel label{color:#334155}.app-shell.theme-light .equipment-basic-grid input,.app-shell.theme-light .equipment-basic-grid select,.app-shell.theme-light .equipment-basic-grid textarea,.app-shell.theme-light .equipment-section-panel input,.app-shell.theme-light .equipment-section-panel textarea{background:rgba(255,255,255,.96);border-color:rgba(15,23,42,.13);color:#0f172a}.app-shell.theme-light .equipment-list-row{background:rgba(255,255,255,.86);border-color:rgba(15,23,42,.1);color:#172033}.app-shell.theme-light .ghost-mini-button{border-color:rgba(15,23,42,.13);color:#334155}.compact .equipment-card-modal{padding:14px}.compact .equipment-basic-grid{gap:7px 10px}.compact .equipment-tabs button{min-height:34px;border-radius:10px;padding:0 10px}.compact .equipment-basic-grid input,.compact .equipment-basic-grid select,.compact .equipment-section-panel input{min-height:30px;height:30px}@media(max-width:860px){.equipment-basic-grid{grid-template-columns:1fr 1fr}.equipment-basic-grid label{grid-column:auto}.equipment-name-field,.equipment-description-field{grid-column:1/-1!important}.attachment-add-grid{grid-template-columns:1fr}.inline-add-row{grid-template-columns:1fr}}
+
+/* v0.5.13 — karta sprzętu pełnowymiarowa, przesuwalna i skalowalna jak kartoteka klienta */
+.equipment-card-modal.resizable-equipment-modal{
+  width:auto;
+  max-width:calc(100vw - 32px);
+  max-height:calc(100vh - 32px);
+  min-width:860px;
+  min-height:560px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  position:fixed;
+  margin:0;
+  padding:18px 20px;
+}
+.equipment-card-modal .modal-header{
+  flex:0 0 auto;
+  margin-bottom:10px;
+  align-items:center;
+}
+.equipment-card-modal .modal-header .eyebrow{
+  font-size:12px;
+  margin-bottom:4px;
+}
+.equipment-card-modal .modal-header h2{
+  font-size:24px;
+  line-height:1.12;
+}
+.equipment-card-modal .modal-header .muted{
+  font-size:15px;
+}
+.equipment-card-modal .modal-header .icon-button{
+  width:42px;
+  height:42px;
+  border-radius:14px;
+}
+.equipment-tabs{
+  flex:0 0 auto;
+  gap:8px;
+  margin-bottom:12px;
+  padding-bottom:12px;
+}
+.equipment-tabs button{
+  min-height:36px;
+  border-radius:12px;
+  padding:6px 13px;
+  font-size:15px;
+}
+.equipment-tab-panel{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+  padding-right:6px;
+}
+.equipment-basic-grid{
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:12px 14px;
+}
+.equipment-basic-grid label,
+.equipment-section-panel label{
+  font-size:15px;
+  line-height:1.18;
+  gap:6px;
+  min-width:0;
+}
+.equipment-basic-grid input,
+.equipment-basic-grid select,
+.equipment-basic-grid textarea,
+.equipment-section-panel input,
+.equipment-section-panel textarea{
+  min-height:38px;
+  height:38px;
+  border-radius:10px;
+  font-size:15px;
+  padding:0 11px;
+  min-width:0;
+  width:100%;
+}
+.equipment-basic-grid textarea,
+.equipment-section-panel textarea{
+  height:auto;
+  min-height:105px;
+  padding:11px;
+}
+.equipment-description-field textarea{
+  min-height:120px;
+}
+.equipment-section-panel{
+  min-height:100%;
+  padding:14px;
+  border-radius:16px;
+  display:flex;
+  flex-direction:column;
+}
+.equipment-section-panel .section-title{
+  font-size:12px;
+}
+.equipment-list-box{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+}
+.equipment-list-row{
+  font-size:15px;
+  min-height:42px;
+}
+.equipment-card-modal .large-notes{
+  flex:1 1 auto;
+  min-height:260px!important;
+  resize:none;
+}
+.equipment-card-modal .modal-actions{
+  flex:0 0 auto;
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px solid rgba(148,163,184,.1);
+}
+.equipment-card-modal .modal-actions button{
+  min-height:40px;
+  padding:0 16px;
+  border-radius:12px;
+}
+.app-shell.theme-light .equipment-card-modal.resizable-equipment-modal{
+  background:#fff;
+}
+@media(max-width:900px){
+  .equipment-card-modal.resizable-equipment-modal{
+    min-width:0;
+    width:calc(100vw - 24px)!important;
+    height:calc(100vh - 24px)!important;
+    left:12px!important;
+    top:12px!important;
+  }
+  .equipment-basic-grid{grid-template-columns:1fr 1fr}
+  .equipment-basic-grid label{grid-column:auto}
+  .equipment-name-field,.equipment-description-field{grid-column:1/-1!important}
+}

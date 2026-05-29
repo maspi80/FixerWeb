@@ -36,10 +36,15 @@ function getClientAddress(client) {
 }
 
 function getSafeMenuPosition(event, width = 240, height = 320) {
-  const padding = 12;
-  const x = Math.min(event.clientX, Math.max(padding, window.innerWidth - width - padding));
-  const y = Math.min(event.clientY, Math.max(padding, window.innerHeight - height - padding));
-  return { x: Math.max(padding, x), y: Math.max(padding, y) };
+  const padding = 18;
+  const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  const maxX = Math.max(padding, viewportWidth - width - padding);
+  const maxY = Math.max(padding, viewportHeight - height - padding);
+  const x = Math.min(Math.max(padding, event.clientX), maxX);
+  const preferredY = event.clientY + height + padding > viewportHeight ? event.clientY - height : event.clientY;
+  const y = Math.min(Math.max(padding, preferredY), maxY);
+  return { x, y };
 }
 
 const modules = [
@@ -837,14 +842,14 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const openColumnMenu = (event, columnKey = null) => {
     event.preventDefault();
     setRowContextMenu(null);
-    setContextMenu({ ...getSafeMenuPosition(event, 250, 380), columnKey });
+    setContextMenu({ ...getSafeMenuPosition(event, 250, 420), columnKey });
   };
 
   const openRowMenu = (event, row) => {
     if (!hasActions) return;
     event.preventDefault();
     setContextMenu(null);
-    setRowContextMenu({ ...getSafeMenuPosition(event, 230, 330), row });
+    setRowContextMenu({ ...getSafeMenuPosition(event, 230, 420), row });
   };
 
   const copyText = async (text) => {

@@ -7,7 +7,6 @@ export const clientSelectColumns = [
   'client_kind',
   'phone',
   'email',
-  'contact_person',
   'street',
   'building_number',
   'apartment_number',

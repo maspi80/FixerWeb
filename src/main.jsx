@@ -232,7 +232,6 @@ function ClientsModule() {
       client_kind: client.client_kind,
       phone: client.phone,
       email: client.email,
-      contact_person: '',
       street: client.street,
       building_number: client.building_number,
       apartment_number: client.apartment_number,

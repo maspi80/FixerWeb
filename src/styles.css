@@ -1387,3 +1387,33 @@ th.selection-cell{cursor:default}
   .equipment-basic-grid label{grid-column:auto}
   .equipment-name-field,.equipment-description-field{grid-column:1/-1!important}
 }
+
+/* v0.5.14 — kartoteka sprzętu stylistycznie zgodna z kartoteką klienta */
+.equipment-card-modal .equipment-basic-grid{
+  border:1px solid rgba(148,163,184,.12);
+  background:rgba(8,13,21,.22);
+  border-radius:16px;
+  padding:14px;
+}
+.equipment-card-modal .equipment-section-panel{
+  border:1px solid rgba(148,163,184,.12);
+  background:rgba(8,13,21,.22);
+}
+.equipment-card-modal .equipment-tab-panel{
+  padding-top:0;
+}
+.app-shell.theme-light .equipment-card-modal .equipment-basic-grid,
+.app-shell.theme-light .equipment-card-modal .equipment-section-panel{
+  background:rgba(248,250,252,.82);
+  border-color:rgba(15,23,42,.12);
+}
+.app-shell.theme-light .equipment-card-modal.resizable-equipment-modal{
+  background:#fff;
+  border-color:rgba(15,23,42,.12);
+}
+.app-shell.theme-light .equipment-card-modal .modal-actions{
+  border-top-color:rgba(15,23,42,.10);
+}
+.compact .equipment-card-modal .equipment-basic-grid{
+  padding:12px;
+}

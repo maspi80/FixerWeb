@@ -7,7 +7,7 @@ export async function fetchEquipment() {
 
   const { data, error } = await supabase
     .from('equipment')
-    .select('id, name, category, brand, model, serial, inventory_number, barcode, status, location, purchase_date, notes, created_at, updated_at')
+    .select('id, name, category, brand, model, serial, inventory_number, barcode, status, location, purchase_date, notes, description, condition, purchase_value, deposit, price_day, price_week, gallery, attachments, set_items, service_notes, history_notes, created_at, updated_at')
     .order('created_at', { ascending: false });
 
   return { data: data ?? [], error };

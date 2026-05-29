@@ -902,7 +902,18 @@ function EquipmentModule() {
     status: item.status,
     location: item.location,
     purchase_date: item.purchase_date || null,
-    notes: item.notes
+    notes: item.notes,
+    description: item.description ?? '',
+    condition: item.condition ?? 'Bardzo dobry',
+    purchase_value: item.purchase_value ?? '',
+    deposit: item.deposit ?? '',
+    price_day: item.price_day ?? '',
+    price_week: item.price_week ?? '',
+    gallery: Array.isArray(item.gallery) ? item.gallery : [],
+    attachments: Array.isArray(item.attachments) ? item.attachments : [],
+    set_items: Array.isArray(item.set_items) ? item.set_items : [],
+    service_notes: item.service_notes ?? '',
+    history_notes: item.history_notes ?? ''
   });
 
   const handleSave = async (item) => {
@@ -1125,17 +1136,17 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
     status: equipment?.status ?? 'Dostępny',
     location: equipment?.location ?? 'Magazyn',
     purchase_date: equipment?.purchase_date ?? '',
-    condition: cardData.condition,
-    purchase_value: cardData.purchase_value,
-    deposit: cardData.deposit,
-    price_day: cardData.price_day,
-    price_week: cardData.price_week,
-    description: cardData.description,
-    gallery: cardData.gallery,
-    attachments: cardData.attachments,
-    set_items: cardData.set_items,
-    service_notes: cardData.service_notes,
-    history_notes: cardData.history_notes
+    condition: equipment?.condition ?? cardData.condition,
+    purchase_value: equipment?.purchase_value ?? cardData.purchase_value,
+    deposit: equipment?.deposit ?? cardData.deposit,
+    price_day: equipment?.price_day ?? cardData.price_day,
+    price_week: equipment?.price_week ?? cardData.price_week,
+    description: equipment?.description ?? cardData.description,
+    gallery: Array.isArray(equipment?.gallery) ? equipment.gallery : cardData.gallery,
+    attachments: Array.isArray(equipment?.attachments) ? equipment.attachments : cardData.attachments,
+    set_items: Array.isArray(equipment?.set_items) ? equipment.set_items : cardData.set_items,
+    service_notes: equipment?.service_notes ?? cardData.service_notes,
+    history_notes: equipment?.history_notes ?? cardData.history_notes
   }));
 
   const update = (key, value) => {
@@ -1200,7 +1211,18 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
       status: form.status,
       location: form.location.trim(),
       purchase_date: form.purchase_date,
-      notes: buildEquipmentCardNotes(form)
+      notes: buildEquipmentCardNotes(form),
+      description: form.description,
+      condition: form.condition,
+      purchase_value: form.purchase_value,
+      deposit: form.deposit,
+      price_day: form.price_day,
+      price_week: form.price_week,
+      gallery: form.gallery,
+      attachments: form.attachments,
+      set_items: form.set_items,
+      service_notes: form.service_notes,
+      history_notes: form.history_notes
     });
   };
 

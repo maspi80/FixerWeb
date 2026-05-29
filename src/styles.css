@@ -617,3 +617,158 @@ th.selection-cell{cursor:default}
 .company-preview-box{display:grid;gap:6px;border:1px solid rgba(148,163,184,.14);background:rgba(8,13,21,.24);border-radius:16px;padding:14px;margin:14px 0}.company-preview-box strong{font-size:18px}.company-preview-box span{color:#94a3b8;font-size:13px}
 .theme-light .company-field{color:#334155}.theme-light .company-field input,.theme-light .company-field textarea{background:#fff;color:#0f172a;border-color:#d6deea}.theme-light .company-logo-preview{background:#f8fbff;border-color:#cbd7ea;color:#64748b}.theme-light .company-preview-box{background:#f8fbff;border-color:#d6deea}.theme-light .company-preview-box span{color:#52647c}
 @media(max-width:1180px){.company-settings-grid{grid-template-columns:1fr}.company-settings-card,.company-logo-card,.company-document-preview{grid-column:1/2;grid-row:auto}.company-settings-form{grid-template-columns:1fr 1fr}.company-name,.company-legal-name,.company-street,.company-bank,.company-footer,.company-city{grid-column:span 2}}
+
+/* Company settings refinement: compact professional layout without affecting other modules */
+.company-settings-grid{
+  grid-template-columns:minmax(0,1fr) 320px;
+  gap:14px;
+  align-items:start;
+}
+.company-settings-card{
+  grid-column:1/2;
+  grid-row:1/3;
+  display:grid !important;
+  gap:14px;
+  align-content:start;
+  min-height:0;
+}
+.company-settings-card .settings-card-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding-bottom:12px;
+  border-bottom:1px solid rgba(148,163,184,.13);
+}
+.company-settings-card .settings-card-header h3,
+.company-logo-card h3,
+.company-document-preview h3{
+  margin-top:2px;
+}
+.company-settings-card .settings-card-header .muted{
+  max-width:560px;
+}
+.company-settings-card .settings-action-row{
+  flex:0 0 auto;
+  justify-content:flex-end;
+}
+.company-settings-form{
+  display:grid;
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:10px 12px;
+  margin-top:0;
+  align-items:end;
+}
+.company-field{
+  grid-column:span 3;
+  gap:5px;
+  font-size:12px;
+  line-height:1.15;
+}
+.company-field input,
+.company-field textarea{
+  min-height:38px;
+  border-radius:11px;
+  padding:0 11px;
+  font-size:14px;
+  font-weight:700;
+}
+.company-field textarea{
+  min-height:74px;
+  padding:10px 11px;
+}
+.company-name,
+.company-legal-name{grid-column:span 6}
+.company-street{grid-column:span 6}
+.company-city{grid-column:span 4}
+.company-bank{grid-column:span 5}
+.company-footer{grid-column:span 7}
+.company-logo-card,
+.company-document-preview{
+  grid-column:2/3;
+  min-height:0;
+}
+.company-logo-card .muted,
+.company-document-preview .muted{
+  line-height:1.35;
+}
+.company-logo-preview{
+  height:142px;
+  margin:12px 0;
+  border-radius:14px;
+}
+.company-logo-card .settings-action-row{
+  justify-content:stretch;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+}
+.company-logo-card .settings-action-row .secondary-button{
+  width:100%;
+  justify-content:center;
+}
+.company-preview-box{
+  margin:12px 0;
+  padding:13px;
+  gap:5px;
+}
+.company-preview-box strong{font-size:16px}
+
+.app-shell.theme-light .company-settings-card .settings-card-header{
+  border-bottom-color:#dbe3ef;
+}
+.app-shell.theme-light .company-field{
+  color:#334155;
+}
+.app-shell.theme-light .company-field input,
+.app-shell.theme-light .company-field textarea{
+  background:#ffffff;
+  color:#0f172a;
+  border-color:#cfd8e6;
+  box-shadow:0 1px 0 rgba(15,23,42,.03);
+}
+.app-shell.theme-light .company-field input:focus,
+.app-shell.theme-light .company-field textarea:focus{
+  border-color:#3b82f6;
+  box-shadow:0 0 0 3px rgba(59,130,246,.13);
+  outline:none;
+}
+.app-shell.theme-light .company-field input::placeholder,
+.app-shell.theme-light .company-field textarea::placeholder{
+  color:#94a3b8;
+}
+.app-shell.theme-light .company-logo-preview{
+  background:linear-gradient(180deg,#ffffff,#f8fbff);
+  border-color:#c9d5e6;
+  color:#64748b;
+}
+.app-shell.theme-light .company-preview-box{
+  background:#ffffff;
+  border-color:#cfd8e6;
+}
+.app-shell.theme-light .company-preview-box span{color:#52647c}
+
+@media(max-width:1380px){
+  .company-settings-grid{grid-template-columns:minmax(0,1fr) 300px}
+  .company-settings-form{gap:9px 10px}
+  .company-field{grid-column:span 4}
+  .company-name,.company-legal-name{grid-column:span 6}
+  .company-street{grid-column:span 8}
+  .company-city{grid-column:span 5}
+  .company-bank{grid-column:span 6}
+  .company-footer{grid-column:span 6}
+}
+@media(max-width:1180px){
+  .company-settings-grid{grid-template-columns:1fr}
+  .company-settings-card,.company-logo-card,.company-document-preview{grid-column:1/2;grid-row:auto}
+  .company-settings-form{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .company-field{grid-column:span 3}
+  .company-name,.company-legal-name,.company-street,.company-bank,.company-footer,.company-city{grid-column:span 6}
+}
+@media(max-width:760px){
+  .company-settings-card .settings-card-header{display:grid}
+  .company-settings-card .settings-action-row{justify-content:stretch}
+  .company-settings-card .settings-action-row .primary-button,
+  .company-settings-card .settings-action-row .secondary-button{width:100%;justify-content:center}
+  .company-settings-form{grid-template-columns:1fr}
+  .company-field,.company-name,.company-legal-name,.company-street,.company-bank,.company-footer,.company-city{grid-column:1/-1}
+}

@@ -935,6 +935,24 @@ function EquipmentModule() {
     }
   };
 
+  const handleBulkDelete = async (items) => {
+    const selected = items.filter((item) => item?.id || item?.localId || item?.name || item?.serial);
+    if (!selected.length) return;
+    if (!confirm(`Usunąć zaznaczone pozycje sprzętu: ${selected.length}?`)) return;
+
+    if (isSupabaseConfigured) {
+      for (const item of selected) {
+        if (!item.id) continue;
+        const { error } = await deleteEquipmentRecord(item.id);
+        if (error) alert(error.message);
+      }
+      await loadEquipment();
+      return;
+    }
+
+    setRows((current) => current.filter((row) => !selected.includes(row)));
+  };
+
   return (
     <div className="module-page">
       <section className="panel hero-panel">
@@ -958,7 +976,7 @@ function EquipmentModule() {
           { key: 'inventory_number', label: 'Nr inw.' },
           { key: 'status', label: 'Status' },
           { key: 'location', label: 'Lokalizacja' }
-        ]} rows={rows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} />
+        ]} rows={rows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -1192,7 +1210,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const getRowKey = (row, index) => String(row.id ?? row.localId ?? row.number ?? row.name ?? index);
   const selectedRows = sortedRows.filter((row, index) => selectedRowKeys.has(getRowKey(row, index)));
   const allVisibleSelected = sortedRows.length > 0 && sortedRows.every((row, index) => selectedRowKeys.has(getRowKey(row, index)));
-  const hasSelectionActions = Boolean(onBulkDelete);
+  const hasSelectionActions = true;
 
   useEffect(() => {
     setSelectedRowKeys((current) => {
@@ -1209,7 +1227,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   }, [columns, columnOrder]);
 
   const activeColumns = orderedColumns.filter((column) => visibleColumns.includes(column.key));
-  const hasActions = onOpen || onEdit || onDuplicate || onHistory || onDelete;
+  const hasActions = Boolean(onOpen || onEdit || onDuplicate || onHistory || onDelete);
 
   const applySort = (key, direction = 'asc') => {
     setSortKey(key);
@@ -1337,7 +1355,6 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   };
 
   const openRowMenu = (event, row) => {
-    if (!hasActions) return;
     event.preventDefault();
     setContextMenu(null);
     setRowContextMenu({ ...getSafeMenuPosition(event, 230, 420), row });
@@ -1374,7 +1391,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   return (
     <div className="table-shell">
       {loading && <div className="loading-line">Ładowanie danych...</div>}
-      {hasSelectionActions && selectedRows.length > 0 && <div className="bulk-actions-bar">
+      {selectedRows.length > 0 && <div className="bulk-actions-bar">
         <strong>{selectedRows.length} zaznaczono</strong>
         <button type="button" className="secondary-button compact-table-button" onClick={clearSelection} disabled={bulkBusy}>Odznacz</button>
         {onBulkDelete && <button type="button" className="secondary-button compact-table-button danger-bulk-button" onClick={runBulkDelete} disabled={bulkBusy}><Trash2 size={14} />Usuń zaznaczone</button>}
@@ -1386,7 +1403,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
           <tbody>{sortedRows.map((row, index) => {
             const rowKey = getRowKey(row, index);
             const selected = selectedRowKeys.has(rowKey);
-            return <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={`${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''}`.trim()} onDoubleClick={() => (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : undefined}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>;
+            return <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={`${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''}`.trim()} onDoubleClick={() => (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>;
           })}</tbody>
         </table>
       </div>

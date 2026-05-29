@@ -264,3 +264,4 @@ th span{display:inline-flex;align-items:center;gap:6px;min-width:0}.column-conte
     top:12px!important;
   }
 }
+.table-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;min-height:34px}.table-toolbar-info{font-size:12px;font-weight:700;color:#8491a9}.compact-table-button{min-height:34px;padding:0 11px;border-radius:10px;font-size:13px}.compact-table-button:disabled{opacity:.45;cursor:not-allowed}

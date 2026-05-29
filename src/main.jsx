@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, FilePlus2, FolderOpen, GripVertical, History, Plus, Save, Trash2, X
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FolderOpen, GripVertical, History, Plus, Save, Trash2, X
 } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -109,6 +109,48 @@ function getSafeMenuPosition(event, width = 240, height = 320) {
   const preferredY = openUp ? event.clientY - height - 8 : event.clientY;
   const y = Math.min(Math.max(minY, preferredY), maxY);
   return { x, y };
+}
+
+
+function normalizeFileNamePart(value) {
+  const text = String(value ?? 'tabela').trim().toLocaleLowerCase('pl');
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ł/g, 'l')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'tabela';
+}
+
+function formatExportCell(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value).replace(/\s+/g, ' ').trim();
+}
+
+function buildCsv(columns, rows) {
+  const separator = ';';
+  const escapeCell = (value) => {
+    const text = formatExportCell(value);
+    const escaped = text.replace(/"/g, '""');
+    return /[";\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
+  };
+  const header = columns.map((column) => escapeCell(column.label)).join(separator);
+  const body = rows.map((row) => columns.map((column) => escapeCell(row[column.key])).join(separator));
+  return `\ufeff${[header, ...body].join('\r\n')}`;
+}
+
+function downloadTextFile(fileName, content, mimeType = 'text/csv;charset=utf-8') {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 const modules = [
@@ -1106,9 +1148,22 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     if (action === 'delete') onDelete?.(row);
   };
 
+  const exportVisibleRows = () => {
+    const csv = buildCsv(activeColumns, sortedRows);
+    const date = new Date().toISOString().slice(0, 10);
+    const fileName = `${normalizeFileNamePart(storageKey)}-${date}.csv`;
+    downloadTextFile(fileName, csv);
+  };
+
   return (
     <div className="table-shell">
       {loading && <div className="loading-line">Ładowanie danych...</div>}
+      <div className="table-toolbar">
+        <div className="table-toolbar-info">{sortedRows.length} wpisów</div>
+        <button type="button" className="secondary-button compact-table-button" onClick={exportVisibleRows} disabled={!sortedRows.length}>
+          <Download size={15} />Eksport CSV
+        </button>
+      </div>
       <div className="table-scroll">
         <table>
           <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>

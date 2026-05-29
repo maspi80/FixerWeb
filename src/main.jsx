@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
@@ -438,10 +438,39 @@ function ClientsModule() {
   );
 }
 
+
+const CLIENT_MODAL_SIZE_KEY = 'fixer-client-modal-size';
+const DEFAULT_CLIENT_MODAL_SIZE = { width: 940, height: 560 };
+const MIN_CLIENT_MODAL_SIZE = { width: 720, height: 420 };
+
+function clampClientModalSize(size) {
+  if (typeof window === 'undefined') return size;
+  const maxWidth = Math.max(MIN_CLIENT_MODAL_SIZE.width, window.innerWidth - 32);
+  const maxHeight = Math.max(MIN_CLIENT_MODAL_SIZE.height, window.innerHeight - 32);
+  return {
+    width: Math.min(Math.max(size.width, MIN_CLIENT_MODAL_SIZE.width), maxWidth),
+    height: Math.min(Math.max(size.height, MIN_CLIENT_MODAL_SIZE.height), maxHeight)
+  };
+}
+
+function getSavedClientModalSize() {
+  if (typeof window === 'undefined') return DEFAULT_CLIENT_MODAL_SIZE;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CLIENT_MODAL_SIZE_KEY) || 'null');
+    if (parsed && Number.isFinite(parsed.width) && Number.isFinite(parsed.height)) {
+      return clampClientModalSize(parsed);
+    }
+  } catch {}
+  return clampClientModalSize(DEFAULT_CLIENT_MODAL_SIZE);
+}
+
 function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
   const [errors, setErrors] = useState({});
+  const [modalSize, setModalSize] = useState(getSavedClientModalSize);
+  const modalSizeRef = useRef(modalSize);
+  const resizeStateRef = useRef(null);
   const [form, setForm] = useState(() => ({
     id: client?.id ?? null,
     localId: client?.localId ?? null,
@@ -475,6 +504,46 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
 
   useEffect(() => {
+    modalSizeRef.current = modalSize;
+    localStorage.setItem(CLIENT_MODAL_SIZE_KEY, JSON.stringify(modalSize));
+  }, [modalSize]);
+
+  useEffect(() => {
+    const handleWindowResize = () => setModalSize((current) => clampClientModalSize(current));
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const state = resizeStateRef.current;
+      if (!state) return;
+      event.preventDefault();
+      setModalSize(clampClientModalSize({
+        width: state.startWidth + event.clientX - state.startX,
+        height: state.startHeight + event.clientY - state.startY
+      }));
+    };
+    const handlePointerUp = () => { resizeStateRef.current = null; };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, []);
+
+  const startResize = (event) => {
+    event.preventDefault();
+    resizeStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: modalSizeRef.current.width,
+      startHeight: modalSizeRef.current.height
+    };
+  };
+
+  useEffect(() => {
     let active = true;
     fetchClientTypes().then(({ data }) => {
       if (!active) return;
@@ -491,7 +560,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal-card client-modal">
+      <div className="modal-card client-modal resizable-client-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px` }}>
         <div className="modal-header"><div><p className="eyebrow">Klient</p><h2>{client ? 'Kartoteka klienta' : 'Nowy klient'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
         <div className="tabs">
           <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
@@ -540,6 +609,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
           {clientHistoryRows.length ? <DataTable storageKey={`client-history-${form.id ?? form.localId ?? 'new'}`} columns={[{ key: 'date', label: 'Data' },{ key: 'type', label: 'Typ' },{ key: 'description', label: 'Opis' },{ key: 'status', label: 'Status' }]} rows={clientHistoryRows} /> : <div className="notice">Brak powiązanych wypożyczeń lub zleceń serwisowych dla tego klienta.</div>}
         </div>}
         <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveClient}><Save size={18} />Zapisz</button></div>
+        <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
       </div>
     </div>
   );

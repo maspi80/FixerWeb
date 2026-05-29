@@ -159,3 +159,80 @@ th span{display:inline-flex;align-items:center;gap:6px;min-width:0}.column-conte
   .client-modal .client-basic-grid,.client-modal .compact-address-grid,.client-modal .company-data-grid{grid-template-columns:1fr 1fr}
   .client-modal .client-name-field,.client-modal .client-type-field,.client-modal .client-kind-field,.client-modal .phone-field,.client-modal .email-field,.client-modal .street-field,.client-modal .building-field,.client-modal .apartment-field,.client-modal .postal-field,.client-modal .city-field,.client-modal .country-field{grid-column:auto;max-width:none}
 }
+
+/* v0.5.9 — skalowalna kartoteka klienta z zapamiętaniem rozmiaru */
+.client-modal.resizable-client-modal{
+  width:auto;
+  max-width:calc(100vw - 32px);
+  max-height:calc(100vh - 32px);
+  min-width:720px;
+  min-height:420px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  position:relative;
+  padding:14px 16px;
+}
+.client-modal.resizable-client-modal .client-form-compact,
+.client-modal.resizable-client-modal .history-panel,
+.client-modal.resizable-client-modal .notes-panel{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:hidden;
+}
+.client-modal.resizable-client-modal .history-panel{
+  display:flex;
+  flex-direction:column;
+}
+.client-modal.resizable-client-modal .history-panel .table-shell{
+  flex:1 1 auto;
+  min-height:0;
+}
+.client-modal.resizable-client-modal .history-panel .table-scroll{
+  max-height:none;
+  flex:1 1 auto;
+  min-height:0;
+}
+.client-modal.resizable-client-modal .notes-section{
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+.client-modal.resizable-client-modal .notes-textarea{
+  flex:1 1 auto;
+  min-height:90px;
+  max-height:none;
+  resize:none;
+}
+.client-modal.resizable-client-modal .modal-actions{
+  flex:0 0 auto;
+}
+.modal-resize-handle{
+  position:absolute;
+  right:4px;
+  bottom:4px;
+  width:22px;
+  height:22px;
+  cursor:nwse-resize;
+  border-radius:6px;
+  opacity:.75;
+}
+.modal-resize-handle::before,
+.modal-resize-handle::after{
+  content:"";
+  position:absolute;
+  right:5px;
+  bottom:5px;
+  border-right:2px solid rgba(148,163,184,.72);
+  border-bottom:2px solid rgba(148,163,184,.72);
+}
+.modal-resize-handle::before{width:13px;height:13px}
+.modal-resize-handle::after{width:7px;height:7px}
+@media(max-width:760px){
+  .client-modal.resizable-client-modal{
+    min-width:0;
+    width:calc(100vw - 24px)!important;
+    height:calc(100vh - 24px)!important;
+  }
+}

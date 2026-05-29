@@ -1030,11 +1030,10 @@ function OrganizerModule() {
   return <ModulePage title="Organizer" description="Projekty, zadania, komentarze, załączniki i przypomnienia inspirowane Asaną." table={<OrganizerBoard />} />;
 }
 function SettingsModule({ colorTheme, onChangeColorTheme }) {
-  return <div className="module-page settings-module-page">
-    <section className="panel hero-panel settings-hero-panel">
+  return <div className="module-page settings-module-page compact-settings-page">
+    <section className="panel settings-module-strip">
       <p className="eyebrow">Moduł</p>
       <h2>Ustawienia</h2>
-      <p className="muted">Centrum konfiguracji systemu, modułów, wyglądu, dokumentów i preferencji pracy.</p>
     </section>
     <SettingsGrid colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} />
   </div>;
@@ -1468,7 +1467,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   const [companySaveNotice, setCompanySaveNotice] = useState('');
 
   const activeSectionData = sections.find((section) => section.id === activeSection) ?? sections[0];
-  const ActiveIcon = activeSectionData.icon;
 
   const updatePreference = (key, value) => {
     setPreferences((current) => {
@@ -1585,10 +1583,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
 
   return <div className="settings-tabs-layout">
     <section className="panel settings-content settings-tabs-panel">
-      <div className="settings-content-header settings-tabs-header">
-        <div className="settings-section-title"><ActiveIcon size={22} /><div><p className="eyebrow">Konfiguracja</p><h2>{activeSectionData.label}</h2><p className="muted">{activeSectionData.description}</p></div></div>
-      </div>
-
       <div className="settings-top-tabs" role="tablist" aria-label="Sekcje ustawień programu">
         {sections.map((section) => {
           const Icon = section.icon;
@@ -1608,13 +1602,9 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
           })}
         </div>
 
-        {activeCompanyTab === 'data' && <div className="settings-card company-settings-card company-settings-card-full">
-          <div className="settings-card-header">
-            <div>
-              <p className="eyebrow">Firma</p>
-              <h3>Dane firmy</h3>
-              <p className="muted">Dane będą umieszczane w nagłówkach i stopkach wydruków PDF generowanych z programu.</p>
-            </div>
+        {activeCompanyTab === 'data' && <div className="settings-card company-settings-card company-settings-card-full compact-admin-card">
+          <div className="settings-card-header compact-card-header">
+            <h3>Dane firmy</h3>
             <div className="settings-action-row">
               <button type="button" className="secondary-button" onClick={resetCompanySettings}>Wyczyść</button>
               <button type="button" className="primary-button" onClick={saveCompanySettings}><Save size={17} />Zapisz dane firmy</button>
@@ -1640,10 +1630,8 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
           </div>
         </div>}
 
-        {activeCompanyTab === 'logo' && <div className="settings-card company-logo-card company-tab-card">
-          <p className="eyebrow">Dokumenty</p>
+        {activeCompanyTab === 'logo' && <div className="settings-card company-logo-card company-tab-card compact-admin-card">
           <h3>Logo firmy</h3>
-          <p className="muted">Logo będzie widoczne w nagłówku wydruków PDF. Najlepiej użyć pliku PNG albo SVG z przezroczystym tłem.</p>
           <div className="company-logo-preview company-logo-preview-large">
             {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Brak logo</span>}
           </div>
@@ -1655,8 +1643,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
           {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
         </div>}
 
-        {activeCompanyTab === 'documents' && <div className="settings-card company-document-preview company-tab-card">
-          <p className="eyebrow">Podgląd danych</p>
+        {activeCompanyTab === 'documents' && <div className="settings-card company-document-preview company-tab-card compact-admin-card">
           <h3>Wydruk dokumentów</h3>
           <div className="company-preview-document">
             <div className="company-preview-logo-block">
@@ -1708,23 +1695,20 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>}
 
-      {activeSection === 'clients' && <div className="settings-pane-grid settings-pane-grid-wide">
-        <div className="settings-card wide-settings-card settings-editor-card">
-          <div className="settings-card-header"><div><p className="eyebrow">Klienci</p><h3>Rodzaje klientów</h3><p className="muted">Lista zasila pole „Rodzaj klienta” w kartotece klienta i filtry w module Klienci.</p></div><button className="secondary-button" onClick={resetTypes}>Przywróć domyślne</button></div>
+      {activeSection === 'clients' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        <div className="settings-card wide-settings-card settings-editor-card compact-admin-card">
+          <div className="settings-card-header compact-card-header"><h3>Rodzaje klientów</h3><button className="secondary-button" onClick={resetTypes}>Przywróć domyślne</button></div>
           {notice && <div className="notice">{notice}</div>}
           <div className="inline-form compact-settings-form"><input value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><button className="primary-button" onClick={addType}>Dodaj</button></div>
           <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type.id}>{type.name}<button onClick={() => removeType(type)}>×</button></span>)}</div>
         </div>
-        <div className="settings-card">
-          <p className="eyebrow">Kartoteka</p>
+        <div className="settings-card compact-admin-card">
           <h3>Typy klientów</h3>
-          <p className="muted">Aktualnie używane typy: Firma oraz Osoba prywatna. Edycja typów zostanie podłączona jako osobna konfiguracja.</p>
           <div className="tag-list"><span className="config-tag">Firma</span><span className="config-tag">Osoba prywatna</span></div>
         </div>
-        <div className="settings-card">
-          <p className="eyebrow">Widok</p>
-          <h3>Domyślne ustawienia klientów</h3>
-          <p className="muted">Tu docelowo trafią domyślne filtry, kolumny i pola dodatkowe klienta.</p>
+        <div className="settings-card compact-admin-card">
+          <h3>Widok klientów</h3>
+          <p className="muted">Domyślne filtry, kolumny i pola dodatkowe będą konfigurowane w tej sekcji.</p>
         </div>
       </div>}
 

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, Save, Trash2, X
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, Save, Trash2, X, Sun, Moon
 } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -252,6 +252,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('fixer-sidebar') === 'collapsed');
   const [globalSearch, setGlobalSearch] = useState('');
   const [themeCompact, setThemeCompact] = useState(() => localStorage.getItem('fixer-density') === 'compact');
+  const [colorTheme, setColorTheme] = useState(() => localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark');
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -279,7 +280,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''}`}>
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}`}>
       <Sidebar
         activeModule={activeModule}
         setActiveModule={setActiveModule}
@@ -303,6 +304,11 @@ function App() {
             localStorage.setItem('fixer-density', next ? 'compact' : 'comfortable');
           }}
           themeCompact={themeCompact}
+          colorTheme={colorTheme}
+          onChangeColorTheme={(nextTheme) => {
+            setColorTheme(nextTheme);
+            localStorage.setItem('fixer-color-theme', nextTheme);
+          }}
         />
         <section className="page-content">
           {activeModule === 'dashboard' && <Dashboard setActiveModule={setActiveModule} />}
@@ -312,7 +318,7 @@ function App() {
           {activeModule === 'service' && <ServiceModule />}
           {activeModule === 'calendar' && <CalendarModule />}
           {activeModule === 'organizer' && <OrganizerModule />}
-          {activeModule === 'settings' && <SettingsModule />}
+          {activeModule === 'settings' && <SettingsModule colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} />}
         </section>
       </main>
     </div>
@@ -374,13 +380,14 @@ function Sidebar({ activeModule, setActiveModule, collapsed, onToggle, onLogout,
   );
 }
 
-function Topbar({ module, globalSearch, setGlobalSearch, onToggleDensity, themeCompact }) {
+function Topbar({ module, globalSearch, setGlobalSearch, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme }) {
   return (
     <header className="topbar">
       <div><p className="eyebrow">Panel systemu</p><h1>{module.label}</h1></div>
       <div className="topbar-actions">
         <div className="global-search"><Search size={18} /><input value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} placeholder="Szukaj globalnie: klient, sprzęt, serwis, wypożyczenie..." /></div>
         <button className="icon-button" onClick={onToggleDensity}><SlidersHorizontal size={18} /><span>{themeCompact ? 'Kompakt' : 'Wygodny'}</span></button>
+        <button className="icon-button" onClick={() => onChangeColorTheme(colorTheme === 'light' ? 'dark' : 'light')} title="Zmień motyw">{colorTheme === 'light' ? <Moon size={18} /> : <Sun size={18} />}<span>{colorTheme === 'light' ? 'Ciemny' : 'Jasny'}</span></button>
         <button className="icon-button"><Bell size={18} /></button>
       </div>
     </header>
@@ -1015,8 +1022,8 @@ function CalendarModule() {
 function OrganizerModule() {
   return <ModulePage title="Organizer" description="Projekty, zadania, komentarze, załączniki i przypomnienia inspirowane Asaną." table={<OrganizerBoard />} />;
 }
-function SettingsModule() {
-  return <ModulePage title="Ustawienia" description="Konfiguracja firmy, statusów, rodzajów klientów, numeracji dokumentów i preferencji." table={<SettingsGrid />} />;
+function SettingsModule({ colorTheme, onChangeColorTheme }) {
+  return <ModulePage title="Ustawienia" description="Konfiguracja firmy, statusów, rodzajów klientów, numeracji dokumentów i preferencji." table={<SettingsGrid colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} />} />;
 }
 function ModulePage({ title, description, table }) {
   return <div className="module-page"><section className="panel hero-panel"><p className="eyebrow">Moduł</p><h2>{title}</h2><p className="muted">{description}</p><div className="module-actions"><button className="primary-button">Dodaj wpis</button><button className="secondary-button">Eksport PDF</button><button className="secondary-button">Ustawienia modułu</button></div></section><section className="panel">{table}</section></div>;
@@ -1372,7 +1379,11 @@ function OrganizerBoard() {
   const columns = ['Do zrobienia', 'W trakcie', 'Gotowe'];
   return <div className="kanban">{columns.map((column, index) => <div className="kanban-column" key={column}><h3>{column}</h3><div className="task-card"><strong>{index === 0 ? 'Uzupełnić dane klienta' : index === 1 ? 'Zweryfikować zestaw CASE-04' : 'Przygotować szablon umowy'}</strong><span>{index === 0 ? 'Klienci' : index === 1 ? 'Wypożyczenia' : 'Dokumenty'}</span></div></div>)}</div>;
 }
-function SettingsGrid() {
+function SettingsGrid({ colorTheme, onChangeColorTheme }) {
+  const themeOptions = [
+    { id: 'dark', label: 'Ciemny', icon: Moon },
+    { id: 'light', label: 'Jasny', icon: Sun }
+  ];
   const [clientTypes, setClientTypes] = useState([]);
   const [newType, setNewType] = useState('');
   const [notice, setNotice] = useState('');
@@ -1431,6 +1442,19 @@ function SettingsGrid() {
   };
 
   return <div className="settings-section">
+    <div className="panel theme-settings-panel">
+      <div>
+        <p className="eyebrow">Wygląd</p>
+        <h3>Motyw aplikacji</h3>
+        <p className="muted">Wybierz jasny albo ciemny wygląd interfejsu. Ustawienie jest zapamiętywane w przeglądarce.</p>
+      </div>
+      <div className="theme-choice-row">
+        {themeOptions.map((option) => {
+          const Icon = option.icon;
+          return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={18} /><span>{option.label}</span></button>;
+        })}
+      </div>
+    </div>
     <div className="settings-grid">{items.map((item) => <button key={item}><Settings size={18} /><span>{item}</span></button>)}</div>
     <div className="panel settings-editor">
       <div className="panel-header"><h2>Ustawienia programu / Klienci</h2><button onClick={resetTypes}>Przywróć domyślne</button></div>

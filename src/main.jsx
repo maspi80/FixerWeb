@@ -13,6 +13,63 @@ import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetCli
 import { fetchTablePreference, getLocalTablePreference, saveTablePreference } from './services/tablePreferencesService';
 import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
 
+
+function onlyDigits(value) {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+function isValidEmail(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(text);
+}
+
+function isValidPhone(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return true;
+  const digits = onlyDigits(text);
+  return /^[+\d\s()-]+$/.test(text) && digits.length >= 7 && digits.length <= 15;
+}
+
+function isValidPostalCode(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return true;
+  return /^\d{2}-\d{3}$/.test(text);
+}
+
+function isValidNip(value) {
+  const digits = onlyDigits(value);
+  if (!digits) return true;
+  if (digits.length !== 10) return false;
+  const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+  const sum = weights.reduce((total, weight, index) => total + weight * Number(digits[index]), 0);
+  return sum % 11 === Number(digits[9]);
+}
+
+function isValidRegon(value) {
+  const digits = onlyDigits(value);
+  if (!digits) return true;
+  const check = (numbers, weights) => {
+    const sum = weights.reduce((total, weight, index) => total + weight * Number(numbers[index]), 0);
+    const control = sum % 11 === 10 ? 0 : sum % 11;
+    return control === Number(numbers[weights.length]);
+  };
+  if (digits.length === 9) return check(digits, [8, 9, 2, 3, 4, 5, 6, 7]);
+  if (digits.length === 14) return check(digits.slice(0, 9), [8, 9, 2, 3, 4, 5, 6, 7]) && check(digits, [2, 4, 8, 5, 0, 9, 7, 3, 6, 1, 2, 4, 8]);
+  return false;
+}
+
+function validateClientForm(form) {
+  const errors = {};
+  if (!String(form.name ?? '').trim()) errors.name = 'Podaj nazwę klienta.';
+  if (!isValidEmail(form.email)) errors.email = 'Podaj poprawny adres email.';
+  if (!isValidPhone(form.phone)) errors.phone = 'Podaj poprawny numer telefonu.';
+  if (!isValidPostalCode(form.postal_code)) errors.postal_code = 'Kod pocztowy wpisz w formacie 00-000.';
+  if (form.type === 'Firma' && !isValidNip(form.nip)) errors.nip = 'NIP powinien mieć poprawną sumę kontrolną.';
+  if (form.type === 'Firma' && !isValidRegon(form.regon)) errors.regon = 'REGON powinien mieć 9 lub 14 cyfr i poprawną sumę kontrolną.';
+  return errors;
+}
+
 const DEFAULT_CLIENT_TYPES = ['Stały', 'Pracownik', 'VIP', 'Problematyczny', 'Nowy', 'Zablokowany'];
 
 function getClientTypes() {
@@ -37,13 +94,20 @@ function getClientAddress(client) {
 
 function getSafeMenuPosition(event, width = 240, height = 320) {
   const padding = 18;
-  const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-  const maxX = Math.max(padding, viewportWidth - width - padding);
-  const maxY = Math.max(padding, viewportHeight - height - padding);
-  const x = Math.min(Math.max(padding, event.clientX), maxX);
-  const preferredY = event.clientY + height + padding > viewportHeight ? event.clientY - height : event.clientY;
-  const y = Math.min(Math.max(padding, preferredY), maxY);
+  const bottomSafeArea = 48;
+  const viewport = window.visualViewport;
+  const viewportWidth = viewport?.width ?? window.innerWidth;
+  const viewportHeight = viewport?.height ?? window.innerHeight;
+  const offsetLeft = viewport?.offsetLeft ?? 0;
+  const offsetTop = viewport?.offsetTop ?? 0;
+  const minX = offsetLeft + padding;
+  const minY = offsetTop + padding;
+  const maxX = Math.max(minX, offsetLeft + viewportWidth - width - padding);
+  const maxY = Math.max(minY, offsetTop + viewportHeight - height - bottomSafeArea);
+  const x = Math.min(Math.max(minX, event.clientX), maxX);
+  const openUp = event.clientY + height + bottomSafeArea > offsetTop + viewportHeight;
+  const preferredY = openUp ? event.clientY - height - 8 : event.clientY;
+  const y = Math.min(Math.max(minY, preferredY), maxY);
   return { x, y };
 }
 
@@ -377,6 +441,7 @@ function ClientsModule() {
 function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
+  const [errors, setErrors] = useState({});
   const [form, setForm] = useState(() => ({
     id: client?.id ?? null,
     localId: client?.localId ?? null,
@@ -395,7 +460,19 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
     regon: client?.regon ?? '',
     notes: client?.notes ?? ''
   }));
-  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const update = (key, value) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setErrors((current) => ({ ...current, [key]: undefined }));
+  };
+
+  const saveClient = () => {
+    const nextErrors = validateClientForm(form);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+    onSave(form);
+  };
+
+  const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
 
   useEffect(() => {
     let active = true;
@@ -422,32 +499,32 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
           <button className={activeTab === 'notes' ? 'active' : ''} onClick={() => setActiveTab('notes')}>Notatki</button>
         </div>
         {activeTab === 'data' && <div className="client-form-compact">
-          <div className="form-section">
+          <div className="form-section flat-form-section">
             <div className="section-title">Dane podstawowe</div>
             <div className="form-grid client-basic-grid">
-              <label>Nazwa klienta<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
-              <label>Typ<select value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></select></label>
-              <label>Rodzaj klienta<select value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-              <label>Telefon<input value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
-              <label className="span-2">Email<input value={form.email} onChange={(event) => update('email', event.target.value)} /></label>
+              <label className="client-name-field">Nazwa klienta<input className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} />{errors.name && <small>{errors.name}</small>}</label>
+              <label className="client-type-field">Typ<select value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></select></label>
+              <label className="client-kind-field">Rodzaj klienta<select value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+              <label className="phone-field">Telefon<input className={fieldClass('phone')} value={form.phone} onChange={(event) => update('phone', event.target.value)} />{errors.phone && <small>{errors.phone}</small>}</label>
+              <label className="email-field">Email<input className={fieldClass('email')} value={form.email} onChange={(event) => update('email', event.target.value)} />{errors.email && <small>{errors.email}</small>}</label>
             </div>
           </div>
-          <div className="form-section">
+          <div className="form-section flat-form-section">
             <div className="section-title">Adres</div>
             <div className="form-grid compact-address-grid">
-              <label className="span-2">Ulica<input value={form.street} onChange={(event) => update('street', event.target.value)} /></label>
-              <label>Nr budynku<input value={form.building_number} onChange={(event) => update('building_number', event.target.value)} /></label>
-              <label>Nr lokalu<input value={form.apartment_number} onChange={(event) => update('apartment_number', event.target.value)} /></label>
-              <label>Kod pocztowy<input value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} /></label>
-              <label>Miasto<input value={form.city} onChange={(event) => update('city', event.target.value)} /></label>
-              <label className="span-2">Kraj<input value={form.country} onChange={(event) => update('country', event.target.value)} /></label>
+              <label className="street-field">Ulica<input value={form.street} onChange={(event) => update('street', event.target.value)} /></label>
+              <label className="building-field">Nr budynku<input value={form.building_number} onChange={(event) => update('building_number', event.target.value)} /></label>
+              <label className="apartment-field">Nr lokalu<input value={form.apartment_number} onChange={(event) => update('apartment_number', event.target.value)} /></label>
+              <label className="postal-field">Kod pocztowy<input className={fieldClass('postal_code')} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} />{errors.postal_code && <small>{errors.postal_code}</small>}</label>
+              <label className="city-field">Miasto<input value={form.city} onChange={(event) => update('city', event.target.value)} /></label>
+              <label className="country-field">Kraj<input value={form.country} onChange={(event) => update('country', event.target.value)} /></label>
             </div>
           </div>
-          {form.type === 'Firma' && <div className="form-section">
+          {form.type === 'Firma' && <div className="form-section flat-form-section">
             <div className="section-title">Dane firmowe</div>
-            <div className="form-grid compact-client-grid">
-              <label>NIP<input value={form.nip} onChange={(event) => update('nip', event.target.value)} /></label>
-              <label>REGON<input value={form.regon} onChange={(event) => update('regon', event.target.value)} /></label>
+            <div className="form-grid company-data-grid">
+              <label>NIP<input className={fieldClass('nip')} value={form.nip} onChange={(event) => update('nip', event.target.value)} />{errors.nip && <small>{errors.nip}</small>}</label>
+              <label>REGON<input className={fieldClass('regon')} value={form.regon} onChange={(event) => update('regon', event.target.value)} />{errors.regon && <small>{errors.regon}</small>}</label>
             </div>
           </div>}
         </div>}
@@ -462,7 +539,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
           <div className="summary-box"><strong>Informacje o kliencie</strong><span>{form.notes || 'Brak notatek.'}</span></div>
           {clientHistoryRows.length ? <DataTable storageKey={`client-history-${form.id ?? form.localId ?? 'new'}`} columns={[{ key: 'date', label: 'Data' },{ key: 'type', label: 'Typ' },{ key: 'description', label: 'Opis' },{ key: 'status', label: 'Status' }]} rows={clientHistoryRows} /> : <div className="notice">Brak powiązanych wypożyczeń lub zleceń serwisowych dla tego klienta.</div>}
         </div>}
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={() => onSave(form)}><Save size={18} />Zapisz</button></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveClient}><Save size={18} />Zapisz</button></div>
       </div>
     </div>
   );
@@ -599,7 +676,19 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
     purchase_date: equipment?.purchase_date ?? '',
     notes: equipment?.notes ?? ''
   }));
-  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const update = (key, value) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setErrors((current) => ({ ...current, [key]: undefined }));
+  };
+
+  const saveClient = () => {
+    const nextErrors = validateClientForm(form);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+    onSave(form);
+  };
+
+  const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
 
   return (
     <div className="modal-backdrop">
@@ -618,7 +707,7 @@ function EquipmentEditor({ equipment, onClose, onSave }) {
           <label>Data zakupu<input type="date" value={form.purchase_date} onChange={(event) => update('purchase_date', event.target.value)} /></label>
           <label className="wide-field">Notatki<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
         </div>
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={() => onSave(form)}><Save size={18} />Zapisz</button></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveClient}><Save size={18} />Zapisz</button></div>
       </div>
     </div>
   );

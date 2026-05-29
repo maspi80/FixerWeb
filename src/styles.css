@@ -85,3 +85,33 @@ th span{display:inline-flex;align-items:center;gap:6px;min-width:0}.column-conte
 
 /* v0.5.6 — bezpieczniejsze menu kontekstowe i bardziej kompaktowe nagłówki */
 .topbar{height:76px;padding:14px 28px}.topbar h1{font-size:26px}.topbar .eyebrow{font-size:11px;margin-bottom:4px}.global-search input{height:42px}.icon-button,.primary-button,.secondary-button{min-height:40px;border-radius:12px}.page-content{padding:18px 28px 36px;height:calc(100vh - 76px)}.module-page{gap:14px}.hero-panel{padding:14px 18px;gap:6px}.hero-panel h2{font-size:25px}.hero-panel .muted{font-size:14px}.module-actions{margin-top:6px}.panel{padding:14px;border-radius:18px}.client-filter-bar{margin-bottom:12px;padding-bottom:12px}.table-scroll thead th{top:0}.row-context-menu,.column-context-menu{max-height:calc(100vh - 36px);overscroll-behavior:contain}.row-context-menu{padding:6px}.row-context-menu button{padding:8px 10px}.context-menu-title{padding:6px 9px 7px}.compact .topbar{height:68px}.compact .page-content{height:calc(100vh - 68px)}
+
+/* Kompaktowy układ kartoteki klienta */
+.client-modal{width:min(780px,96vw);max-height:calc(100vh - 32px);display:flex;flex-direction:column;overflow:hidden}
+.client-modal .modal-header{margin-bottom:8px;align-items:center}
+.client-modal .modal-header h2{font-size:21px;line-height:1.15}
+.client-modal .tabs{margin-bottom:10px;padding-bottom:10px}
+.client-modal .tabs button{font-size:15px;min-height:34px;padding:6px 12px;border-radius:12px}
+.client-form-compact{gap:8px;overflow:auto;padding-right:2px}
+.client-modal .flat-form-section{padding:9px 10px;border-radius:13px;background:rgba(8,13,21,.18)}
+.client-modal .section-title{font-size:10px;margin-bottom:7px;letter-spacing:.16em}
+.client-modal .client-basic-grid{grid-template-columns:minmax(210px,1.25fr) minmax(120px,.62fr) minmax(150px,.78fr);gap:8px 10px}
+.client-modal .client-name-field{grid-column:1/2}
+.client-modal .client-type-field{grid-column:2/3}
+.client-modal .client-kind-field{grid-column:3/4}
+.client-modal .phone-field{grid-column:1/2}
+.client-modal .email-field{grid-column:2/4}
+.client-modal .compact-address-grid{grid-template-columns:minmax(260px,1.8fr) minmax(92px,.5fr) minmax(92px,.5fr) minmax(110px,.55fr) minmax(150px,.85fr) minmax(120px,.65fr);gap:8px 10px}
+.client-modal .street-field{grid-column:1/4}
+.client-modal .building-field{grid-column:4/5}
+.client-modal .apartment-field{grid-column:5/6}
+.client-modal .postal-field{grid-column:1/2;max-width:150px}
+.client-modal .city-field{grid-column:2/5}
+.client-modal .country-field{grid-column:5/7}
+.client-modal .company-data-grid{grid-template-columns:minmax(150px,190px) minmax(150px,210px);gap:8px 12px}
+.client-modal .form-grid label,.client-modal .form-section label{font-size:13px;gap:4px}
+.client-modal .form-grid input,.client-modal .form-grid select,.client-modal .form-section textarea{min-height:33px;font-size:15px;border-radius:9px}
+.client-modal label small{color:#fecaca;font-size:11px;font-weight:700;line-height:1.2}
+.client-modal .field-error{border-color:rgba(248,113,113,.72)!important;box-shadow:0 0 0 1px rgba(248,113,113,.28)}
+.client-modal .modal-actions{margin-top:10px;padding-top:10px;border-top:1px solid rgba(148,163,184,.1)}
+@media(max-width:880px){.client-modal .client-basic-grid,.client-modal .compact-address-grid,.client-modal .company-data-grid{grid-template-columns:1fr 1fr}.client-modal .client-name-field,.client-modal .client-type-field,.client-modal .client-kind-field,.client-modal .phone-field,.client-modal .email-field,.client-modal .street-field,.client-modal .building-field,.client-modal .apartment-field,.client-modal .postal-field,.client-modal .city-field,.client-modal .country-field{grid-column:auto;max-width:none}}

@@ -1031,10 +1031,6 @@ function OrganizerModule() {
 }
 function SettingsModule({ colorTheme, onChangeColorTheme }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <section className="panel settings-module-strip">
-      <p className="eyebrow">Moduł</p>
-      <h2>Ustawienia</h2>
-    </section>
     <SettingsGrid colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} />
   </div>;
 }
@@ -1583,13 +1579,19 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
 
   return <div className="settings-tabs-layout">
     <section className="panel settings-content settings-tabs-panel">
-      <div className="settings-top-tabs" role="tablist" aria-label="Sekcje ustawień programu">
+      <div className="settings-compact-header">
+        <div>
+          <p className="eyebrow">Moduł</p>
+          <h2>Ustawienia</h2>
+        </div>
+        <div className="settings-top-tabs" role="tablist" aria-label="Sekcje ustawień programu">
         {sections.map((section) => {
           const Icon = section.icon;
           return <button key={section.id} type="button" role="tab" aria-selected={activeSection === section.id} className={`settings-top-tab ${activeSection === section.id ? 'active' : ''}`} onClick={() => setActiveSection(section.id)}>
             <Icon size={17} />{section.label}
           </button>;
         })}
+        </div>
       </div>
 
       {activeSection === 'company' && <div className="settings-company-pane">

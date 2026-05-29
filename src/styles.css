@@ -967,3 +967,61 @@ th.selection-cell{cursor:default}
   .company-settings-form-wide{grid-template-columns:1fr}
   .company-settings-form-wide .company-field,.company-settings-form-wide .company-name,.company-settings-form-wide .company-legal-name,.company-settings-form-wide .company-street,.company-settings-form-wide .company-city,.company-settings-form-wide .company-bank,.company-settings-form-wide .company-footer{grid-column:1/-1}
 }
+
+/* v0.7.3 — Ustawienia: zakładki w nagłówku modułu, bez pustej sekcji pośredniej. */
+.settings-module-page.compact-settings-page{
+  gap:10px;
+}
+.settings-tabs-layout{
+  display:block;
+}
+.settings-tabs-panel{
+  min-height:0;
+  padding:12px;
+  gap:12px;
+  align-content:start;
+}
+.settings-compact-header{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:end;
+  gap:18px;
+  padding:2px 0 12px;
+  margin:0 0 12px;
+  border-bottom:1px solid rgba(148,163,184,.14);
+}
+.settings-compact-header h2{
+  margin:2px 0 0;
+  font-size:24px;
+  line-height:1.05;
+}
+.settings-compact-header .settings-top-tabs{
+  min-width:0;
+  margin:0;
+  padding:0;
+  border-bottom:0;
+  align-self:center;
+}
+.settings-company-pane,
+.settings-pane-grid{
+  margin-top:0;
+}
+.settings-inner-tabs{
+  margin:0 0 10px;
+  padding:0;
+  min-height:38px;
+}
+.app-shell.theme-light .settings-compact-header{
+  border-bottom-color:#dbe3ef;
+}
+@media(max-width:1280px){
+  .settings-compact-header{
+    grid-template-columns:1fr;
+    align-items:start;
+    gap:10px;
+  }
+  .settings-compact-header .settings-top-tabs{
+    flex-wrap:wrap;
+    overflow:visible;
+  }
+}

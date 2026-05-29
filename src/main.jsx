@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FolderOpen, GripVertical, History, Plus, Save, Trash2, X
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, Save, Trash2, X
 } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -151,6 +151,85 @@ function downloadTextFile(fileName, content, mimeType = 'text/csv;charset=utf-8'
   link.click();
   document.body.removeChild(link);
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function normalizeExportValue(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') return value;
+  const text = String(value).trim();
+  const numberText = text.replace(/\s/g, '').replace(',', '.');
+  if (numberText && !Number.isNaN(Number(numberText))) return Number(numberText);
+  const timestamp = Date.parse(text);
+  if (!Number.isNaN(timestamp) && /\d{4}-\d{2}-\d{2}|\d{2}[./-]\d{2}[./-]\d{4}/.test(text)) return timestamp;
+  return text.toLocaleLowerCase('pl');
+}
+
+function sortRowsForExport(rows, sortKey, sortDir = 'asc') {
+  if (!sortKey) return rows;
+  return [...rows].sort((a, b) => {
+    const left = normalizeExportValue(a[sortKey]);
+    const right = normalizeExportValue(b[sortKey]);
+    if (left === right) return 0;
+    if (left === '') return 1;
+    if (right === '') return -1;
+    const result = typeof left === 'number' && typeof right === 'number'
+      ? left - right
+      : String(left).localeCompare(String(right), 'pl', { numeric: true, sensitivity: 'base' });
+    return sortDir === 'asc' ? result : -result;
+  });
+}
+
+function getExportTableData(storageKey, columns, rows) {
+  const fallback = {
+    visibleColumns: columns.map((column) => column.key),
+    columnOrder: columns.map((column) => column.key),
+    columnWidths: {},
+    sortKey: null,
+    sortDir: 'asc'
+  };
+  const preference = getLocalTablePreference(storageKey, fallback);
+  const columnMap = new Map(columns.map((column) => [column.key, column]));
+  const orderedColumns = (preference.columnOrder ?? fallback.columnOrder).map((key) => columnMap.get(key)).filter(Boolean);
+  const visible = preference.visibleColumns ?? fallback.visibleColumns;
+  const activeColumns = orderedColumns.filter((column) => visible.includes(column.key));
+  const safeColumns = activeColumns.length ? activeColumns : columns;
+  return {
+    columns: safeColumns,
+    rows: sortRowsForExport(rows, preference.sortKey, preference.sortDir)
+  };
+}
+
+function exportTableToCsv(storageKey, columns, rows) {
+  const exportData = getExportTableData(storageKey, columns, rows);
+  const csv = buildCsv(exportData.columns, exportData.rows);
+  const date = new Date().toISOString().slice(0, 10);
+  const fileName = `${normalizeFileNamePart(storageKey)}-${date}.csv`;
+  downloadTextFile(fileName, csv);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function exportTableToPdf(title, storageKey, columns, rows) {
+  const exportData = getExportTableData(storageKey, columns, rows);
+  const date = new Date().toLocaleDateString('pl-PL');
+  const header = exportData.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
+  const body = exportData.rows.map((row) => `<tr>${exportData.columns.map((column) => `<td>${escapeHtml(formatExportCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
+  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
+  if (!printWindow) {
+    alert('Przeglądarka zablokowała okno eksportu PDF. Zezwól na wyskakujące okna dla FIXER WEB.');
+    return;
+  }
+  printWindow.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}h1{font-size:20px;margin:0 0 4px}p{margin:0 0 14px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}tr:nth-child(even) td{background:#f8fafc}.meta{display:flex;justify-content:space-between;gap:16px;margin-bottom:12px}.meta strong{font-size:11px;color:#334155}@media print{button{display:none}}
+  </style></head><body><div class="meta"><div><h1>${escapeHtml(title)}</h1><p>Eksport danych z FIXER WEB</p></div><strong>${escapeHtml(date)} · ${exportData.rows.length} wpisów</strong></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table><script>window.onload=function(){window.focus();window.print();};</script></body></html>`);
+  printWindow.document.close();
 }
 
 const modules = [
@@ -322,6 +401,17 @@ function Dashboard({ setActiveModule }) {
   );
 }
 
+const CLIENTS_TABLE_KEY = 'clients-table';
+const CLIENTS_TABLE_COLUMNS = [
+  { key: 'name', label: 'Nazwa' },
+  { key: 'type', label: 'Typ' },
+  { key: 'client_kind', label: 'Rodzaj klienta' },
+  { key: 'phone', label: 'Telefon' },
+  { key: 'email', label: 'Email' },
+  { key: 'city', label: 'Miasto' },
+  { key: 'nip', label: 'NIP' }
+];
+
 function ClientsModule() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -442,9 +532,10 @@ function ClientsModule() {
         <p className="eyebrow">Moduł</p><h2>Baza klientów</h2>
         <p className="muted">Kartoteka klientów, dane adresowe, dane firmowe, rodzaje klientów i historia współpracy.</p>
         <div className="module-actions">
-          <button className="primary-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</button>
-          <button className="secondary-button" onClick={loadClients}>Odśwież</button>
-          <button className="secondary-button">Eksport PDF</button>
+          <button className="primary-button module-action-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</button>
+          <button className="secondary-button module-action-button" onClick={loadClients}>Odśwież</button>
+          <button className="secondary-button module-action-button" onClick={() => exportTableToCsv(CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><Download size={16} />Eksport CSV</button>
+          <button className="secondary-button module-action-button" onClick={() => exportTableToPdf('Baza klientów', CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />Eksport PDF</button>
 
         </div>
         {notice && <div className="notice">{notice}</div>}
@@ -473,7 +564,7 @@ function ClientsModule() {
           <button type="button" className="secondary-button compact-button" onClick={clearClientFilters}>Wyczyść filtry</button>
           <span className="filter-count">{filteredRows.length} / {rows.length}</span>
         </div>
-        <DataTable storageKey="clients-table" loading={loading} columns={[{ key: 'name', label: 'Nazwa' },{ key: 'type', label: 'Typ' },{ key: 'client_kind', label: 'Rodzaj klienta' },{ key: 'phone', label: 'Telefon' },{ key: 'email', label: 'Email' },{ key: 'city', label: 'Miasto' },{ key: 'nip', label: 'NIP' }]} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} />
+        <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} />
       </section>
       {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -1148,22 +1239,9 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     if (action === 'delete') onDelete?.(row);
   };
 
-  const exportVisibleRows = () => {
-    const csv = buildCsv(activeColumns, sortedRows);
-    const date = new Date().toISOString().slice(0, 10);
-    const fileName = `${normalizeFileNamePart(storageKey)}-${date}.csv`;
-    downloadTextFile(fileName, csv);
-  };
-
   return (
     <div className="table-shell">
       {loading && <div className="loading-line">Ładowanie danych...</div>}
-      <div className="table-toolbar">
-        <div className="table-toolbar-info">{sortedRows.length} wpisów</div>
-        <button type="button" className="secondary-button compact-table-button" onClick={exportVisibleRows} disabled={!sortedRows.length}>
-          <Download size={15} />Eksport CSV
-        </button>
-      </div>
       <div className="table-scroll">
         <table>
           <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>

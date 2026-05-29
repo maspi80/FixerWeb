@@ -1023,14 +1023,7 @@ function OrganizerModule() {
   return <ModulePage title="Organizer" description="Projekty, zadania, komentarze, załączniki i przypomnienia inspirowane Asaną." table={<OrganizerBoard />} />;
 }
 function SettingsModule({ colorTheme, onChangeColorTheme }) {
-  return <div className="module-page settings-module-page">
-    <section className="panel hero-panel settings-hero-panel">
-      <p className="eyebrow">Moduł</p>
-      <h2>Ustawienia</h2>
-      <p className="muted">Centrum konfiguracji systemu, modułów, wyglądu, dokumentów i preferencji pracy.</p>
-    </section>
-    <SettingsGrid colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} />
-  </div>;
+  return <ModulePage title="Ustawienia" description="Konfiguracja firmy, statusów, rodzajów klientów, numeracji dokumentów i preferencji." table={<SettingsGrid colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} />} />;
 }
 function ModulePage({ title, description, table }) {
   return <div className="module-page"><section className="panel hero-panel"><p className="eyebrow">Moduł</p><h2>{title}</h2><p className="muted">{description}</p><div className="module-actions"><button className="primary-button">Dodaj wpis</button><button className="secondary-button">Eksport PDF</button><button className="secondary-button">Ustawienia modułu</button></div></section><section className="panel">{table}</section></div>;
@@ -1391,44 +1384,16 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     { id: 'dark', label: 'Ciemny', icon: Moon },
     { id: 'light', label: 'Jasny', icon: Sun }
   ];
-  const sections = [
-    { id: 'company', label: 'Firma', icon: FileText, description: 'Dane firmy, logo i dane do dokumentów.' },
-    { id: 'clients', label: 'Klienci', icon: Users, description: 'Typy klientów, rodzaje klientów i domyślne ustawienia kartoteki.' },
-    { id: 'equipment', label: 'Sprzęt', icon: Package, description: 'Kategorie, marki, lokalizacje i statusy sprzętu.' },
-    { id: 'service', label: 'Serwis', icon: Wrench, description: 'Statusy serwisowe, priorytety i typy zgłoszeń.' },
-    { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList, description: 'Statusy wypożyczeń, zwrotów i domyślne okresy.' },
-    { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony PDF, numeracja, stopki i nagłówki.' },
-    { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, układ tabel, okna i preferencje pracy.' }
-  ];
-  const [activeSection, setActiveSection] = useState('interface');
   const [clientTypes, setClientTypes] = useState([]);
   const [newType, setNewType] = useState('');
   const [notice, setNotice] = useState('');
-  const [preferences, setPreferences] = useState(() => getStoredJson('fixer-ui-preferences', {
-    rememberWindowSize: true,
-    rememberWindowPosition: true,
-    rememberColumnLayout: true,
-    confirmDelete: true,
-    rememberFilters: true,
-    defaultRowsPerPage: '10'
-  }));
-
-  const activeSectionData = sections.find((section) => section.id === activeSection) ?? sections[0];
-  const ActiveIcon = activeSectionData.icon;
-
-  const updatePreference = (key, value) => {
-    setPreferences((current) => {
-      const next = { ...current, [key]: value };
-      localStorage.setItem('fixer-ui-preferences', JSON.stringify(next));
-      return next;
-    });
-  };
+  const items = ['Dane firmy', 'Statusy sprzętu', 'Statusy serwisu', 'Numeracja dokumentów', 'Marki i modele', 'Szablony PDF'];
 
   const loadTypes = async () => {
     const { data, error } = await fetchClientTypes();
     if (error) {
       setNotice(`Nie udało się pobrać rodzajów klientów z bazy: ${error.message}`);
-      setClientTypes(getClientTypes().map((name, index) => ({ id: name, name, sort_order: index }))); 
+      setClientTypes(getClientTypes().map((name, index) => ({ id: name, name, sort_order: index })));
       return;
     }
     setClientTypes(data);
@@ -1476,107 +1441,30 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     await loadTypes();
   };
 
-  const placeholderGroups = {
-    company: [
-      'Dane firmy', 'Logo firmy', 'Dane do dokumentów', 'Domyślna stopka PDF'
-    ],
-    equipment: [
-      'Kategorie sprzętu', 'Marki i modele', 'Lokalizacje', 'Statusy sprzętu', 'Pola dodatkowe'
-    ],
-    service: [
-      'Statusy serwisu', 'Priorytety', 'Typy zgłoszeń', 'Numeracja zleceń'
-    ],
-    rentals: [
-      'Statusy wypożyczeń', 'Statusy zwrotów', 'Domyślne okresy', 'Numeracja wypożyczeń'
-    ],
-    documents: [
-      'Szablony PDF', 'Numeracja dokumentów', 'Nagłówki dokumentów', 'Stopki dokumentów'
-    ]
-  };
-
-  return <div className="settings-layout">
-    <aside className="settings-sidebar panel">
-      <p className="eyebrow">Sekcje programu</p>
-      <div className="settings-nav-list">
-        {sections.map((section) => {
-          const Icon = section.icon;
-          return <button key={section.id} type="button" className={`settings-nav-item ${activeSection === section.id ? 'active' : ''}`} onClick={() => setActiveSection(section.id)}>
-            <Icon size={18} />
-            <span><strong>{section.label}</strong><small>{section.description}</small></span>
-          </button>;
+  return <div className="settings-section">
+    <div className="panel theme-settings-panel">
+      <div>
+        <p className="eyebrow">Wygląd</p>
+        <h3>Motyw aplikacji</h3>
+        <p className="muted">Wybierz jasny albo ciemny wygląd interfejsu. Ustawienie jest zapamiętywane w przeglądarce.</p>
+      </div>
+      <div className="theme-choice-row">
+        {themeOptions.map((option) => {
+          const Icon = option.icon;
+          return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={18} /><span>{option.label}</span></button>;
         })}
       </div>
-    </aside>
-
-    <section className="settings-content panel">
-      <div className="settings-content-header">
-        <div className="settings-section-title"><ActiveIcon size={22} /><div><p className="eyebrow">Konfiguracja</p><h2>{activeSectionData.label}</h2><p className="muted">{activeSectionData.description}</p></div></div>
-      </div>
-
-      {activeSection === 'interface' && <div className="settings-pane-grid">
-        <div className="settings-card wide-settings-card">
-          <div>
-            <p className="eyebrow">Wygląd</p>
-            <h3>Motyw aplikacji</h3>
-            <p className="muted">Motyw jest zapamiętywany w przeglądarce. Jasny i ciemny wariant mają osobną kolorystykę.</p>
-          </div>
-          <div className="theme-choice-row">
-            {themeOptions.map((option) => {
-              const Icon = option.icon;
-              return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={18} /><span>{option.label}</span></button>;
-            })}
-          </div>
-        </div>
-        <div className="settings-card">
-          <p className="eyebrow">Okna robocze</p>
-          <h3>Zachowanie okien</h3>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowSize} onChange={(event) => updatePreference('rememberWindowSize', event.target.checked)} />Zapamiętuj rozmiary okien</label>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowPosition} onChange={(event) => updatePreference('rememberWindowPosition', event.target.checked)} />Zapamiętuj pozycje okien</label>
-        </div>
-        <div className="settings-card">
-          <p className="eyebrow">Tabele</p>
-          <h3>Układ danych</h3>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} />Zapamiętuj układ kolumn</label>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} />Zapamiętuj filtry tabel</label>
-          <label className="settings-field">Domyślna liczba wierszy<select value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></select></label>
-        </div>
-        <div className="settings-card">
-          <p className="eyebrow">Bezpieczeństwo pracy</p>
-          <h3>Potwierdzenia</h3>
-          <label className="settings-check"><input type="checkbox" checked={preferences.confirmDelete} onChange={(event) => updatePreference('confirmDelete', event.target.checked)} />Pokazuj potwierdzenie usunięcia</label>
-        </div>
-      </div>}
-
-      {activeSection === 'clients' && <div className="settings-pane-grid">
-        <div className="settings-card wide-settings-card settings-editor-card">
-          <div className="settings-card-header"><div><p className="eyebrow">Klienci</p><h3>Rodzaje klientów</h3><p className="muted">Lista zasila pole „Rodzaj klienta” w kartotece klienta i filtry w module Klienci.</p></div><button className="secondary-button" onClick={resetTypes}>Przywróć domyślne</button></div>
-          {notice && <div className="notice">{notice}</div>}
-          <div className="inline-form compact-settings-form"><input value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><button className="primary-button" onClick={addType}>Dodaj</button></div>
-          <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type.id}>{type.name}<button onClick={() => removeType(type)}>×</button></span>)}</div>
-        </div>
-        <div className="settings-card">
-          <p className="eyebrow">Kartoteka</p>
-          <h3>Typy klientów</h3>
-          <p className="muted">Aktualnie używane typy: Firma oraz Osoba prywatna. Edycja typów zostanie podłączona jako osobna konfiguracja.</p>
-          <div className="tag-list"><span className="config-tag">Firma</span><span className="config-tag">Osoba prywatna</span></div>
-        </div>
-        <div className="settings-card">
-          <p className="eyebrow">Widok</p>
-          <h3>Domyślne ustawienia klientów</h3>
-          <p className="muted">Tu docelowo trafią domyślne filtry, kolumny i pola dodatkowe klienta.</p>
-        </div>
-      </div>}
-
-      {placeholderGroups[activeSection] && <div className="settings-pane-grid">
-        {placeholderGroups[activeSection].map((item) => <div className="settings-card" key={item}>
-          <p className="eyebrow">{activeSectionData.label}</p>
-          <h3>{item}</h3>
-          <p className="muted">Sekcja przygotowana pod konfigurację. Nie zmienia jeszcze działania istniejących modułów.</p>
-          <button className="secondary-button" type="button" disabled>W przygotowaniu</button>
-        </div>)}
-      </div>}
-    </section>
+    </div>
+    <div className="settings-grid">{items.map((item) => <button key={item}><Settings size={18} /><span>{item}</span></button>)}</div>
+    <div className="panel settings-editor">
+      <div className="panel-header"><h2>Ustawienia programu / Klienci</h2><button onClick={resetTypes}>Przywróć domyślne</button></div>
+      <p className="muted">Rodzaje klientów są zapisywane w bazie i zasilają pole „Rodzaj klienta” w kartotece klienta.</p>
+      {notice && <div className="notice">{notice}</div>}
+      <div className="inline-form"><input value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><button className="primary-button" onClick={addType}>Dodaj</button></div>
+      <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type.id}>{type.name}<button onClick={() => removeType(type)}>×</button></span>)}</div>
+    </div>
   </div>;
 }
+
 
 createRoot(document.getElementById('root')).render(<App />);

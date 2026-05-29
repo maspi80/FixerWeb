@@ -600,3 +600,20 @@ th.selection-cell{cursor:default}
   border-bottom-color:#94a3b8;
   opacity:.85;
 }
+
+.company-settings-grid{grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr)}
+.company-settings-card{grid-column:1/2;grid-row:1/4}
+.company-logo-card,.company-document-preview{grid-column:2/3}
+.settings-action-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.company-settings-form{display:grid;grid-template-columns:1.3fr 1.3fr .65fr .65fr;gap:12px;margin-top:16px}
+.company-field{display:grid;gap:6px;color:#cbd5e1;font-weight:800;font-size:13px;min-width:0}
+.company-field input,.company-field textarea{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(148,163,184,.16);background:rgba(8,13,21,.72);color:#fff;padding:0 12px;min-width:0}
+.company-field textarea{min-height:82px;padding:10px 12px;resize:vertical}
+.company-name,.company-legal-name,.company-street,.company-bank,.company-footer{grid-column:span 2}
+.company-city{grid-column:span 2}
+.company-logo-preview{height:150px;border:1px dashed rgba(148,163,184,.28);background:rgba(8,13,21,.28);border-radius:16px;display:grid;place-items:center;margin:16px 0;color:#94a3b8;font-weight:800;overflow:hidden}
+.company-logo-preview img{max-width:100%;max-height:100%;object-fit:contain;padding:12px}
+.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.company-preview-box{display:grid;gap:6px;border:1px solid rgba(148,163,184,.14);background:rgba(8,13,21,.24);border-radius:16px;padding:14px;margin:14px 0}.company-preview-box strong{font-size:18px}.company-preview-box span{color:#94a3b8;font-size:13px}
+.theme-light .company-field{color:#334155}.theme-light .company-field input,.theme-light .company-field textarea{background:#fff;color:#0f172a;border-color:#d6deea}.theme-light .company-logo-preview{background:#f8fbff;border-color:#cbd7ea;color:#64748b}.theme-light .company-preview-box{background:#f8fbff;border-color:#d6deea}.theme-light .company-preview-box span{color:#52647c}
+@media(max-width:1180px){.company-settings-grid{grid-template-columns:1fr}.company-settings-card,.company-logo-card,.company-document-preview{grid-column:1/2;grid-row:auto}.company-settings-form{grid-template-columns:1fr 1fr}.company-name,.company-legal-name,.company-street,.company-bank,.company-footer,.company-city{grid-column:span 2}}

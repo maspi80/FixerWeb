@@ -218,17 +218,24 @@ function escapeHtml(value) {
 
 function exportTableToPdf(title, storageKey, columns, rows) {
   const exportData = getExportTableData(storageKey, columns, rows);
+  const company = getCompanyProfile();
   const date = new Date().toLocaleDateString('pl-PL');
   const header = exportData.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
   const body = exportData.rows.map((row) => `<tr>${exportData.columns.map((column) => `<td>${escapeHtml(formatExportCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
+  const companyName = company.name || company.legalName || 'FIXER WEB';
+  const companyAddress = formatCompanyAddress(company);
+  const companyTax = formatCompanyTaxData(company);
+  const companyContact = formatCompanyContact(company);
+  const companyFooter = company.documentFooter?.trim();
+  const logo = company.logoDataUrl ? `<img src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>` : `<div class="print-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`;
   const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
   if (!printWindow) {
     alert('Przeglądarka zablokowała okno eksportu PDF. Zezwól na wyskakujące okna dla FIXER WEB.');
     return;
   }
   printWindow.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}h1{font-size:20px;margin:0 0 4px}p{margin:0 0 14px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}tr:nth-child(even) td{background:#f8fafc}.meta{display:flex;justify-content:space-between;gap:16px;margin-bottom:12px}.meta strong{font-size:11px;color:#334155}@media print{button{display:none}}
-  </style></head><body><div class="meta"><div><h1>${escapeHtml(title)}</h1><p>Eksport danych z FIXER WEB</p></div><strong>${escapeHtml(date)} · ${exportData.rows.length} wpisów</strong></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table><script>window.onload=function(){window.focus();window.print();};</script></body></html>`);
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}@media print{button{display:none}}
+  </style></head><body><div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddress ? `<p class="company-line">${escapeHtml(companyAddress)}</p>` : ''}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}<script>window.onload=function(){window.focus();window.print();};</script></body></html>`);
   printWindow.document.close();
 }
 
@@ -1048,6 +1055,50 @@ function getStoredJson(key, fallback) {
   }
 }
 
+const COMPANY_PROFILE_STORAGE_KEY = 'fixer-company-profile';
+const DEFAULT_COMPANY_PROFILE = {
+  name: '',
+  legalName: '',
+  nip: '',
+  regon: '',
+  street: '',
+  buildingNumber: '',
+  apartmentNumber: '',
+  postalCode: '',
+  city: '',
+  country: 'Polska',
+  phone: '',
+  email: '',
+  website: '',
+  bankAccount: '',
+  documentFooter: '',
+  logoDataUrl: ''
+};
+
+function getCompanyProfile() {
+  return { ...DEFAULT_COMPANY_PROFILE, ...getStoredJson(COMPANY_PROFILE_STORAGE_KEY, DEFAULT_COMPANY_PROFILE) };
+}
+
+function saveCompanyProfile(profile) {
+  const nextProfile = { ...DEFAULT_COMPANY_PROFILE, ...profile };
+  localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(nextProfile));
+  return nextProfile;
+}
+
+function formatCompanyAddress(profile) {
+  const line1 = [profile.street, profile.buildingNumber, profile.apartmentNumber ? `/${profile.apartmentNumber}` : ''].filter(Boolean).join(' ');
+  const line2 = [profile.postalCode, profile.city].filter(Boolean).join(' ');
+  return [line1, line2, profile.country].filter(Boolean).join(', ');
+}
+
+function formatCompanyTaxData(profile) {
+  return [profile.nip ? `NIP: ${profile.nip}` : '', profile.regon ? `REGON: ${profile.regon}` : ''].filter(Boolean).join(' · ');
+}
+
+function formatCompanyContact(profile) {
+  return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
+}
+
 function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
@@ -1412,6 +1463,8 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     rememberFilters: true,
     defaultRowsPerPage: '10'
   }));
+  const [companyProfile, setCompanyProfile] = useState(getCompanyProfile);
+  const [companySaveNotice, setCompanySaveNotice] = useState('');
 
   const activeSectionData = sections.find((section) => section.id === activeSection) ?? sections[0];
   const ActiveIcon = activeSectionData.icon;
@@ -1422,6 +1475,47 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       localStorage.setItem('fixer-ui-preferences', JSON.stringify(next));
       return next;
     });
+  };
+
+  const updateCompanyProfile = (key, value) => {
+    setCompanyProfile((current) => ({ ...current, [key]: value }));
+    setCompanySaveNotice('');
+  };
+
+  const saveCompanySettings = () => {
+    const saved = saveCompanyProfile(companyProfile);
+    setCompanyProfile(saved);
+    setCompanySaveNotice('Dane firmy zapisane. Będą używane na wydrukach PDF.');
+  };
+
+  const resetCompanySettings = () => {
+    if (!confirm('Przywrócić puste dane firmy?')) return;
+    const saved = saveCompanyProfile(DEFAULT_COMPANY_PROFILE);
+    setCompanyProfile(saved);
+    setCompanySaveNotice('Dane firmy zostały wyczyszczone.');
+  };
+
+  const handleCompanyLogoUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Wybierz plik graficzny logo, np. PNG, JPG albo SVG.');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > 1500 * 1024) {
+      alert('Logo jest za duże. Wybierz plik do 1,5 MB.');
+      event.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => updateCompanyProfile('logoDataUrl', String(reader.result || ''));
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  };
+
+  const removeCompanyLogo = () => {
+    updateCompanyProfile('logoDataUrl', '');
   };
 
   const loadTypes = async () => {
@@ -1477,9 +1571,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   };
 
   const placeholderGroups = {
-    company: [
-      'Dane firmy', 'Logo firmy', 'Dane do dokumentów', 'Domyślna stopka PDF'
-    ],
     equipment: [
       'Kategorie sprzętu', 'Marki i modele', 'Lokalizacje', 'Statusy sprzętu', 'Pola dodatkowe'
     ],
@@ -1512,6 +1603,65 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       <div className="settings-content-header">
         <div className="settings-section-title"><ActiveIcon size={22} /><div><p className="eyebrow">Konfiguracja</p><h2>{activeSectionData.label}</h2><p className="muted">{activeSectionData.description}</p></div></div>
       </div>
+
+      {activeSection === 'company' && <div className="settings-pane-grid company-settings-grid">
+        <div className="settings-card wide-settings-card company-settings-card">
+          <div className="settings-card-header">
+            <div>
+              <p className="eyebrow">Firma</p>
+              <h3>Dane firmy</h3>
+              <p className="muted">Te dane będą umieszczane w nagłówkach i stopkach wydruków PDF generowanych z programu.</p>
+            </div>
+            <div className="settings-action-row">
+              <button type="button" className="secondary-button" onClick={resetCompanySettings}>Wyczyść</button>
+              <button type="button" className="primary-button" onClick={saveCompanySettings}><Save size={17} />Zapisz dane firmy</button>
+            </div>
+          </div>
+          {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
+          <div className="company-settings-form">
+            <label className="company-field company-name">Nazwa firmy<input value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
+            <label className="company-field company-legal-name">Pełna nazwa / nazwa do dokumentów<input value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
+            <label className="company-field">NIP<input value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
+            <label className="company-field">REGON<input value={companyProfile.regon} onChange={(event) => updateCompanyProfile('regon', event.target.value)} /></label>
+            <label className="company-field company-street">Ulica<input value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
+            <label className="company-field">Nr budynku<input value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
+            <label className="company-field">Nr lokalu<input value={companyProfile.apartmentNumber} onChange={(event) => updateCompanyProfile('apartmentNumber', event.target.value)} /></label>
+            <label className="company-field">Kod pocztowy<input value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} placeholder="00-000" /></label>
+            <label className="company-field company-city">Miasto<input value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
+            <label className="company-field">Kraj<input value={companyProfile.country} onChange={(event) => updateCompanyProfile('country', event.target.value)} /></label>
+            <label className="company-field">Telefon<input value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
+            <label className="company-field">Email<input value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} /></label>
+            <label className="company-field">Strona WWW<input value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} placeholder="https://..." /></label>
+            <label className="company-field company-bank">Numer konta<input value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
+            <label className="company-field company-footer">Stopka dokumentów<textarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę." /></label>
+          </div>
+        </div>
+
+        <div className="settings-card company-logo-card">
+          <p className="eyebrow">Dokumenty</p>
+          <h3>Logo firmy</h3>
+          <p className="muted">Logo będzie widoczne w nagłówku wydruków PDF. Najlepiej użyć pliku PNG albo SVG z przezroczystym tłem.</p>
+          <div className="company-logo-preview">
+            {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Brak logo</span>}
+          </div>
+          <div className="settings-action-row">
+            <label className="secondary-button file-button"><FolderOpen size={17} />Wczytaj logo<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
+            <button type="button" className="secondary-button" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń logo</button>
+          </div>
+        </div>
+
+        <div className="settings-card company-document-preview">
+          <p className="eyebrow">Podgląd danych</p>
+          <h3>Wydruk dokumentów</h3>
+          <div className="company-preview-box">
+            <strong>{companyProfile.name || companyProfile.legalName || 'Nazwa firmy'}</strong>
+            <span>{formatCompanyAddress(companyProfile) || 'Adres firmy'}</span>
+            <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON'}</span>
+            <span>{formatCompanyContact(companyProfile) || 'Telefon / email / WWW'}</span>
+          </div>
+          <p className="muted">Aktualnie dane są używane przy eksporcie tabel do PDF. Kolejne dokumenty programu będą korzystać z tego samego profilu firmy.</p>
+        </div>
+      </div>}
 
       {activeSection === 'interface' && <div className="settings-pane-grid">
         <div className="settings-card wide-settings-card">

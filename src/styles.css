@@ -380,3 +380,53 @@ th.selection-cell{cursor:default}
   background:#fef3c7;
   color:#b45309;
 }
+
+/* v0.6.5 — finalna korekta tabel w jasnym motywie; oddzielna kolorystyka tylko dla theme-light */
+.app-shell.theme-light .table-scroll thead th{
+  background:linear-gradient(180deg,#eff5ff 0%,#e6eefb 100%);
+  color:#0f172a;
+  border-bottom-color:#cbd5e1;
+  font-weight:800;
+}
+.app-shell.theme-light .table-scroll thead th span{
+  color:#0f172a;
+}
+.app-shell.theme-light .table-scroll thead th em{
+  color:#2563eb;
+  font-weight:900;
+}
+.app-shell.theme-light .table-scroll thead th:hover,
+.app-shell.theme-light .table-scroll thead th:hover span{
+  color:#1d4ed8;
+}
+.app-shell.theme-light .status-pill{
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 1px 0 rgba(15,23,42,.04);
+}
+.app-shell.theme-light .status-pill.success{
+  background:#dcfce7;
+  color:#166534;
+  border-color:#bbf7d0;
+}
+.app-shell.theme-light .status-pill.warning{
+  background:#ffedd5;
+  color:#c2410c;
+  border-color:#fed7aa;
+}
+.app-shell.theme-light .status-pill.danger{
+  background:#fee2e2;
+  color:#991b1b;
+  border-color:#fecaca;
+}
+.app-shell.theme-light .status-pill.neutral{
+  background:#e2e8f0;
+  color:#334155;
+  border-color:#cbd5e1;
+}
+.app-shell.theme-light .table-shell tbody td{
+  color:#111827;
+}
+.app-shell.theme-light .table-shell tbody td a,
+.app-shell.theme-light .table-shell tbody td .link-like{
+  color:#2563eb;
+}

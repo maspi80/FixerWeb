@@ -37,10 +37,14 @@ export async function fetchTablePreference(tableKey, fallback) {
   if (error) return { data: localPreference, error };
   if (!data) return { data: localPreference, error: null };
 
+  const localSortKey = localPreference.sortKey ?? fallback.sortKey ?? null;
+  const localSortDir = localPreference.sortDir ?? fallback.sortDir ?? 'asc';
   const preference = {
     visibleColumns: Array.isArray(data.visible_columns) ? data.visible_columns : fallback.visibleColumns,
     columnOrder: Array.isArray(data.column_order) ? data.column_order : fallback.columnOrder,
-    columnWidths: data.column_widths && typeof data.column_widths === 'object' ? data.column_widths : fallback.columnWidths
+    columnWidths: data.column_widths && typeof data.column_widths === 'object' ? data.column_widths : fallback.columnWidths,
+    sortKey: localSortKey,
+    sortDir: localSortDir
   };
 
   saveLocalTablePreference(tableKey, preference);

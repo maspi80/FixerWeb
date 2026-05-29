@@ -597,11 +597,13 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
     columnOrder: columns.map((column) => column.key),
-    columnWidths: {}
+    columnWidths: {},
+    sortKey: null,
+    sortDir: 'asc'
   }), [columnsSignature]);
   const initialPreference = getLocalTablePreference(storageKey, defaultPreference);
-  const [sortKey, setSortKey] = useState(columns[0]?.key);
-  const [sortDir, setSortDir] = useState('asc');
+  const [sortKey, setSortKey] = useState(initialPreference.sortKey);
+  const [sortDir, setSortDir] = useState(initialPreference.sortDir ?? 'asc');
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [rowContextMenu, setRowContextMenu] = useState(null);
@@ -613,7 +615,9 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     saveTablePreference(storageKey, {
       visibleColumns: nextPreference.visibleColumns ?? visibleColumns,
       columnOrder: nextPreference.columnOrder ?? columnOrder,
-      columnWidths: nextPreference.columnWidths ?? columnWidths
+      columnWidths: nextPreference.columnWidths ?? columnWidths,
+      sortKey: Object.prototype.hasOwnProperty.call(nextPreference, 'sortKey') ? nextPreference.sortKey : sortKey,
+      sortDir: nextPreference.sortDir ?? sortDir
     });
   };
 
@@ -624,6 +628,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       setVisibleColumns(data.visibleColumns);
       setColumnOrder(data.columnOrder);
       setColumnWidths(data.columnWidths);
+      setSortKey(data.sortKey ?? null);
+      setSortDir(data.sortDir ?? 'asc');
     });
     return () => { active = false; };
   }, [storageKey, defaultPreference]);
@@ -654,11 +660,30 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     };
   }, [contextMenu, rowContextMenu]);
 
-  const sortedRows = useMemo(() => [...rows].sort((a, b) => {
-    const left = String(a[sortKey] ?? '');
-    const right = String(b[sortKey] ?? '');
-    return sortDir === 'asc' ? left.localeCompare(right, 'pl') : right.localeCompare(left, 'pl');
-  }), [rows, sortKey, sortDir]);
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    const normalize = (value) => {
+      if (value === null || value === undefined) return '';
+      if (typeof value === 'number') return value;
+      const text = String(value).trim();
+      const numberText = text.replace(/\s/g, '').replace(',', '.');
+      if (numberText && !Number.isNaN(Number(numberText))) return Number(numberText);
+      const timestamp = Date.parse(text);
+      if (!Number.isNaN(timestamp) && /\d{4}-\d{2}-\d{2}|\d{2}[./-]\d{2}[./-]\d{4}/.test(text)) return timestamp;
+      return text.toLocaleLowerCase('pl');
+    };
+    return [...rows].sort((a, b) => {
+      const left = normalize(a[sortKey]);
+      const right = normalize(b[sortKey]);
+      if (left === right) return 0;
+      if (left === '') return 1;
+      if (right === '') return -1;
+      const result = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : String(left).localeCompare(String(right), 'pl', { numeric: true, sensitivity: 'base' });
+      return sortDir === 'asc' ? result : -result;
+    });
+  }, [rows, sortKey, sortDir]);
 
   const orderedColumns = useMemo(() => {
     const columnMap = new Map(columns.map((column) => [column.key, column]));
@@ -668,9 +693,28 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const activeColumns = orderedColumns.filter((column) => visibleColumns.includes(column.key));
   const hasActions = onOpen || onEdit || onDuplicate || onHistory || onDelete;
 
+  const applySort = (key, direction = 'asc') => {
+    setSortKey(key);
+    setSortDir(direction);
+    persistTablePreference({ sortKey: key, sortDir: direction });
+  };
+
+  const clearSort = () => {
+    setSortKey(null);
+    setSortDir('asc');
+    persistTablePreference({ sortKey: null, sortDir: 'asc' });
+  };
+
   const handleSort = (key) => {
-    if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
+    if (sortKey !== key) {
+      applySort(key, 'asc');
+      return;
+    }
+    if (sortDir === 'asc') {
+      applySort(key, 'desc');
+      return;
+    }
+    clearSort();
   };
 
   const toggleColumn = (key) => {
@@ -727,14 +771,16 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     setVisibleColumns(keys);
     setColumnOrder(keys);
     setColumnWidths({});
-    persistTablePreference({ visibleColumns: keys, columnOrder: keys, columnWidths: {} });
+    setSortKey(null);
+    setSortDir('asc');
+    persistTablePreference({ visibleColumns: keys, columnOrder: keys, columnWidths: {}, sortKey: null, sortDir: 'asc' });
     setContextMenu(null);
   };
 
-  const openColumnMenu = (event) => {
+  const openColumnMenu = (event, columnKey = null) => {
     event.preventDefault();
     setRowContextMenu(null);
-    setContextMenu({ x: event.clientX, y: event.clientY });
+    setContextMenu({ x: event.clientX, y: event.clientY, columnKey });
   };
 
   const openRowMenu = (event, row) => {
@@ -778,7 +824,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       <div className="table-scroll">
         <table>
           <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={openColumnMenu} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
+          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
           <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={hasActions ? 'editable-row' : ''} onDoubleClick={() => (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>)}</tbody>
         </table>
       </div>
@@ -795,6 +841,13 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
         {onDelete && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />Usuń</button></>}
       </div>}
       {contextMenu && <div className="column-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()}>
+        {contextMenu.columnKey && <>
+          <div className="context-menu-title">Sortowanie</div>
+          <button type="button" onClick={() => { applySort(contextMenu.columnKey, 'asc'); setContextMenu(null); }}>Sortuj rosnąco</button>
+          <button type="button" onClick={() => { applySort(contextMenu.columnKey, 'desc'); setContextMenu(null); }}>Sortuj malejąco</button>
+          {sortKey && <button type="button" onClick={() => { clearSort(); setContextMenu(null); }}>Wyczyść sortowanie</button>}
+          <div className="context-menu-separator" />
+        </>}
         <div className="context-menu-title">Widoczne kolumny</div>
         {orderedColumns.map((column) => {
           const checked = visibleColumns.includes(column.key);

@@ -1461,6 +1461,16 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   const [companyProfile, setCompanyProfile] = useState(getCompanyProfile);
   const [companySaveNotice, setCompanySaveNotice] = useState('');
 
+  useEffect(() => {
+    if (!companySaveNotice) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setCompanySaveNotice('');
+    }, 4000);
+
+    return () => window.clearTimeout(timer);
+  }, [companySaveNotice]);
+
   const activeSectionData = sections.find((section) => section.id === activeSection) ?? sections[0];
 
   const updatePreference = (key, value) => {

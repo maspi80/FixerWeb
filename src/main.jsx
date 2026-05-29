@@ -462,7 +462,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
   const hasActions = onEdit || onDelete;
 
   return (
-    <div className={`table-shell ${storageKey === 'clients-table' ? 'clients-table-shell' : ''}`}>
+    <div className="table-shell">
       <div className="table-tools"><div className="table-tool-label"><Columns3 size={16} />Widoczność kolumn</div><div className="column-toggles">{columns.map((column) => <button key={column.key} className={visibleColumns.includes(column.key) ? 'active' : ''} onClick={() => toggleColumn(column.key)}>{visibleColumns.includes(column.key) ? <Eye size={14} /> : <EyeOff size={14} />}{column.label}</button>)}</div></div>
       {loading && <div className="loading-line">Ładowanie danych...</div>}
       <table><thead><tr>{activeColumns.map((column) => <th key={column.key} onClick={() => handleSort(column.key)}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}</th>)}{hasActions && <th>Akcje</th>}</tr></thead>

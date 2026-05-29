@@ -381,11 +381,81 @@ th.selection-cell{cursor:default}
   color:#b45309;
 }
 
-/* v0.6.5 — poprawa czytelności kolumny „Rodzaj klienta” w jasnym motywie.
-   Reguły są zawężone do .theme-light, więc nie wpływają na motyw ciemny. */
+/* v0.6.6 — uporządkowany moduł ustawień */
+.settings-module-page .settings-hero-panel .module-actions{display:none}
+.settings-layout{display:grid;grid-template-columns:330px minmax(0,1fr);gap:16px;align-items:start}
+.settings-sidebar{padding:14px}
+.settings-nav-list{display:grid;gap:8px;margin-top:10px}
+.settings-nav-item{width:100%;border:1px solid rgba(148,163,184,.14);background:rgba(148,163,184,.06);color:#dbe7f8;border-radius:14px;padding:11px 12px;display:flex;align-items:flex-start;gap:10px;text-align:left}
+.settings-nav-item span{display:grid;gap:3px;min-width:0}
+.settings-nav-item strong{font-size:14px;line-height:1.15}
+.settings-nav-item small{color:#94a3b8;font-size:12px;line-height:1.25}
+.settings-nav-item:hover{border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.10)}
+.settings-nav-item.active{background:linear-gradient(135deg,rgba(37,99,235,.28),rgba(79,70,229,.22));border-color:rgba(96,165,250,.42);color:#fff}
+.settings-nav-item.active small{color:#cfe0ff}
+.settings-content{padding:16px;min-height:520px}
+.settings-content-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid rgba(148,163,184,.12)}
+.settings-section-title{display:flex;align-items:flex-start;gap:12px}
+.settings-section-title h2{margin:0 0 3px;font-size:24px}
+.settings-pane-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.settings-card{border:1px solid rgba(148,163,184,.13);background:rgba(8,13,21,.28);border-radius:16px;padding:14px;display:grid;gap:10px;align-content:start;min-height:132px}
+.settings-card h3{margin:0;font-size:17px;color:#eef4ff}
+.settings-card .muted{font-size:13px;line-height:1.45}
+.wide-settings-card{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.settings-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.settings-check{display:flex;align-items:center;gap:9px;color:#cbd5e1;font-weight:700;font-size:14px}
+.settings-check input{width:16px;height:16px;accent-color:#4f7cff}
+.settings-field{display:grid;gap:6px;color:#cbd5e1;font-weight:700;font-size:14px}
+.settings-field select{min-height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.16);background:rgba(8,13,21,.72);color:#fff;padding:0 10px}
+.compact-settings-form{margin:4px 0 0}.compact-settings-form input{flex:1;min-width:220px}
+.settings-card .secondary-button:disabled{opacity:.52;cursor:not-allowed}
+
+.app-shell.theme-light .settings-sidebar,
+.app-shell.theme-light .settings-content{background:rgba(255,255,255,.90);border-color:rgba(15,23,42,.10)}
+.app-shell.theme-light .settings-nav-item{background:#f8fafc;border-color:rgba(15,23,42,.10);color:#172033}
+.app-shell.theme-light .settings-nav-item small{color:#64748b}
+.app-shell.theme-light .settings-nav-item:hover{background:#eef4ff;border-color:rgba(37,99,235,.22)}
+.app-shell.theme-light .settings-nav-item.active{background:linear-gradient(135deg,#e7f0ff,#eef2ff);border-color:rgba(37,99,235,.30);color:#1d4ed8}
+.app-shell.theme-light .settings-nav-item.active small{color:#475569}
+.app-shell.theme-light .settings-content-header{border-bottom-color:rgba(15,23,42,.10)}
+.app-shell.theme-light .settings-section-title h2{color:#111827}
+.app-shell.theme-light .settings-card{background:#f8fafc;border-color:rgba(15,23,42,.10)}
+.app-shell.theme-light .settings-card h3{color:#0f172a}
+.app-shell.theme-light .settings-check,
+.app-shell.theme-light .settings-field{color:#334155}
+.app-shell.theme-light .settings-field select{background:#fff;border-color:rgba(15,23,42,.13);color:#0f172a}
+
+@media(max-width:1100px){
+  .settings-layout{grid-template-columns:1fr}
+  .settings-nav-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* v0.6.8 — punktowa naprawa jasnego motywu bez cofania przebudowy ustawień.
+   Reguły są zawężone do .theme-light, żeby nie wpływały na motyw ciemny. */
+.app-shell.theme-light .table-scroll table thead th{
+  background:linear-gradient(180deg,#eef5ff 0%,#e7effb 100%);
+  color:#0f172a;
+  border-bottom-color:#cbd5e1;
+}
+
+.app-shell.theme-light .table-scroll table thead th button,
+.app-shell.theme-light .table-scroll table thead th .drag-handle,
+.app-shell.theme-light .table-scroll table thead th svg{
+  color:#0f172a;
+  opacity:1;
+}
+
+.app-shell.theme-light .table-scroll table thead th[aria-sort="ascending"],
+.app-shell.theme-light .table-scroll table thead th[aria-sort="descending"],
+.app-shell.theme-light .table-scroll table thead th.sorted,
+.app-shell.theme-light .table-scroll table thead th.active{
+  color:#2563eb;
+}
+
 .app-shell.theme-light .status-pill{
   border:1px solid transparent;
   box-shadow:0 1px 2px rgba(15,23,42,.06);
+  opacity:1;
 }
 
 .app-shell.theme-light .status-pill.success{
@@ -412,7 +482,42 @@ th.selection-cell{cursor:default}
   color:#075985;
 }
 
-.app-shell.theme-light .table-scroll tbody td:first-child .status-pill,
 .app-shell.theme-light .table-scroll tbody td .status-pill{
   opacity:1;
+  filter:none;
+}
+
+/* Jasny motyw ustawień — czytelne pola, chipy i komunikaty bez wpływu na ciemny motyw. */
+.app-shell.theme-light .settings-card .client-type-chip,
+.app-shell.theme-light .settings-content .client-type-chip{
+  background:#eff6ff;
+  border-color:#bfdbfe;
+  color:#1d4ed8;
+  opacity:1;
+}
+
+.app-shell.theme-light .settings-card .client-type-chip button,
+.app-shell.theme-light .settings-content .client-type-chip button{
+  color:#1d4ed8;
+  opacity:.75;
+}
+
+.app-shell.theme-light .compact-settings-form input,
+.app-shell.theme-light .settings-content input,
+.app-shell.theme-light .settings-content select{
+  background:#ffffff;
+  color:#0f172a;
+  border-color:#cbd5e1;
+}
+
+.app-shell.theme-light .compact-settings-form input::placeholder,
+.app-shell.theme-light .settings-content input::placeholder{
+  color:#64748b;
+}
+
+.app-shell.theme-light .settings-content .notice,
+.app-shell.theme-light .settings-content .error-message{
+  background:#eff6ff;
+  border-color:#bfdbfe;
+  color:#1e40af;
 }

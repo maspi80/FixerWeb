@@ -1447,7 +1447,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, układ tabel, okna i preferencje pracy.' }
   ];
   const [activeSection, setActiveSection] = useState('company');
-  const [activeCompanyTab, setActiveCompanyTab] = useState('data');
   const [clientTypes, setClientTypes] = useState([]);
   const [newType, setNewType] = useState('');
   const [notice, setNotice] = useState('');
@@ -1571,11 +1570,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     documents: ['Szablony PDF', 'Numeracja dokumentów', 'Nagłówki dokumentów', 'Stopki dokumentów']
   };
 
-  const companyTabs = [
-    { id: 'data', label: 'Dane firmy', icon: FileText },
-    { id: 'logo', label: 'Logo', icon: FolderOpen },
-    { id: 'documents', label: 'Dokumenty', icon: FileText }
-  ];
 
   return <div className="settings-tabs-layout">
     <section className="panel settings-content settings-tabs-panel">
@@ -1594,73 +1588,58 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>
 
-      {activeSection === 'company' && <div className="settings-company-pane">
-        <div className="settings-inner-tabs" role="tablist" aria-label="Ustawienia firmy">
-          {companyTabs.map((tab) => {
-            const Icon = tab.icon;
-            return <button key={tab.id} type="button" role="tab" aria-selected={activeCompanyTab === tab.id} className={`settings-inner-tab ${activeCompanyTab === tab.id ? 'active' : ''}`} onClick={() => setActiveCompanyTab(tab.id)}>
-              <Icon size={16} />{tab.label}
-            </button>;
-          })}
-        </div>
-
-        {activeCompanyTab === 'data' && <div className="settings-card company-settings-card company-settings-card-full compact-admin-card">
+      {activeSection === 'company' && <div className="settings-company-pane company-one-page">
+        <div className="settings-card company-settings-card company-settings-card-full compact-admin-card company-unified-card">
           <div className="settings-card-header compact-card-header">
             <h3>Dane firmy</h3>
             <div className="settings-action-row">
               <button type="button" className="secondary-button" onClick={resetCompanySettings}>Wyczyść</button>
-              <button type="button" className="primary-button" onClick={saveCompanySettings}><Save size={17} />Zapisz dane firmy</button>
+              <button type="button" className="primary-button" onClick={saveCompanySettings}><Save size={17} />Zapisz</button>
             </div>
           </div>
           {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
-          <div className="company-settings-form company-settings-form-wide">
-            <label className="company-field company-name">Nazwa firmy<input value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
-            <label className="company-field company-legal-name">Pełna nazwa / nazwa do dokumentów<input value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
-            <label className="company-field">NIP<input value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
-            <label className="company-field">REGON<input value={companyProfile.regon} onChange={(event) => updateCompanyProfile('regon', event.target.value)} /></label>
-            <label className="company-field company-street">Ulica<input value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
-            <label className="company-field">Nr budynku<input value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
-            <label className="company-field">Nr lokalu<input value={companyProfile.apartmentNumber} onChange={(event) => updateCompanyProfile('apartmentNumber', event.target.value)} /></label>
-            <label className="company-field">Kod pocztowy<input value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} placeholder="00-000" /></label>
-            <label className="company-field company-city">Miasto<input value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
-            <label className="company-field">Kraj<input value={companyProfile.country} onChange={(event) => updateCompanyProfile('country', event.target.value)} /></label>
-            <label className="company-field">Telefon<input value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
-            <label className="company-field">Email<input value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} /></label>
-            <label className="company-field">Strona WWW<input value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} placeholder="https://..." /></label>
-            <label className="company-field company-bank">Numer konta<input value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
-            <label className="company-field company-footer">Stopka dokumentów<textarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę." /></label>
-          </div>
-        </div>}
 
-        {activeCompanyTab === 'logo' && <div className="settings-card company-logo-card company-tab-card compact-admin-card">
-          <h3>Logo firmy</h3>
-          <div className="company-logo-preview company-logo-preview-large">
-            {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Brak logo</span>}
-          </div>
-          <div className="settings-action-row logo-actions-row">
-            <label className="secondary-button file-button"><FolderOpen size={17} />Wczytaj logo<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
-            <button type="button" className="secondary-button" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń logo</button>
-            <button type="button" className="primary-button" onClick={saveCompanySettings}><Save size={17} />Zapisz</button>
-          </div>
-          {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
-        </div>}
+          <div className="company-unified-layout">
+            <div className="company-settings-form company-settings-form-wide company-settings-form-compact">
+              <label className="company-field company-name">Nazwa firmy<input value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
+              <label className="company-field company-legal-name">Nazwa do dokumentów<input value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
+              <label className="company-field">NIP<input value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
+              <label className="company-field">REGON<input value={companyProfile.regon} onChange={(event) => updateCompanyProfile('regon', event.target.value)} /></label>
+              <label className="company-field company-street">Ulica<input value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
+              <label className="company-field">Nr budynku<input value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
+              <label className="company-field">Nr lokalu<input value={companyProfile.apartmentNumber} onChange={(event) => updateCompanyProfile('apartmentNumber', event.target.value)} /></label>
+              <label className="company-field">Kod pocztowy<input value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} placeholder="00-000" /></label>
+              <label className="company-field company-city">Miasto<input value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
+              <label className="company-field">Kraj<input value={companyProfile.country} onChange={(event) => updateCompanyProfile('country', event.target.value)} /></label>
+              <label className="company-field">Telefon<input value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
+              <label className="company-field">Email<input value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} /></label>
+              <label className="company-field">Strona WWW<input value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} placeholder="https://..." /></label>
+              <label className="company-field company-bank">Numer konta<input value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
+              <label className="company-field company-footer">Stopka dokumentów<textarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę." /></label>
+            </div>
 
-        {activeCompanyTab === 'documents' && <div className="settings-card company-document-preview company-tab-card compact-admin-card">
-          <h3>Wydruk dokumentów</h3>
-          <div className="company-preview-document">
-            <div className="company-preview-logo-block">
-              {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>{(companyProfile.name || 'F').slice(0, 1).toUpperCase()}</span>}
-            </div>
-            <div className="company-preview-box">
-              <strong>{companyProfile.name || companyProfile.legalName || 'Nazwa firmy'}</strong>
-              <span>{formatCompanyAddress(companyProfile) || 'Adres firmy'}</span>
-              <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON'}</span>
-              <span>{formatCompanyContact(companyProfile) || 'Telefon / email / WWW'}</span>
-              {companyProfile.bankAccount && <span>Konto: {companyProfile.bankAccount}</span>}
-            </div>
+            <aside className="company-side-panel">
+              <div className="company-logo-box">
+                <h3>Logo</h3>
+                <div className="company-logo-preview company-logo-preview-compact">
+                  {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Brak logo</span>}
+                </div>
+                <div className="settings-action-row logo-actions-row">
+                  <label className="secondary-button file-button"><FolderOpen size={17} />Wczytaj<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
+                  <button type="button" className="secondary-button" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń</button>
+                </div>
+              </div>
+
+              <div className="company-preview-box company-preview-box-compact">
+                <strong>{companyProfile.name || companyProfile.legalName || 'Nazwa firmy'}</strong>
+                <span>{formatCompanyAddress(companyProfile) || 'Adres firmy'}</span>
+                <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON'}</span>
+                <span>{formatCompanyContact(companyProfile) || 'Telefon / email / WWW'}</span>
+                {companyProfile.bankAccount && <span>Konto: {companyProfile.bankAccount}</span>}
+              </div>
+            </aside>
           </div>
-          <p className="muted">Aktualnie dane są używane przy eksporcie tabel do PDF. Kolejne dokumenty programu będą korzystać z tego samego profilu firmy.</p>
-        </div>}
+        </div>
       </div>}
 
       {activeSection === 'interface' && <div className="settings-pane-grid settings-pane-grid-wide">

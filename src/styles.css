@@ -1025,3 +1025,180 @@ th.selection-cell{cursor:default}
     overflow:visible;
   }
 }
+
+/* FIXER global button standard and compact company settings without regressions */
+:root{
+  --fixer-button-height:40px;
+  --fixer-button-min-width:124px;
+  --fixer-button-radius:13px;
+}
+.primary-button,
+.secondary-button,
+.file-button{
+  min-height:var(--fixer-button-height);
+  min-width:var(--fixer-button-min-width);
+  border-radius:var(--fixer-button-radius);
+  justify-content:center;
+  padding:0 14px;
+  font-weight:800;
+  line-height:1;
+}
+.icon-button{
+  min-height:var(--fixer-button-height);
+  min-width:var(--fixer-button-height);
+  border-radius:var(--fixer-button-radius);
+  justify-content:center;
+}
+.settings-top-tab,
+.settings-inner-tab,
+.tabs button{
+  min-height:var(--fixer-button-height);
+  border-radius:var(--fixer-button-radius);
+  padding:0 14px;
+  font-weight:800;
+}
+
+.settings-compact-header{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:18px;
+  min-height:58px;
+  padding-bottom:12px;
+  border-bottom:1px solid rgba(148,163,184,.14);
+}
+.settings-compact-header .eyebrow{margin-bottom:2px}
+.settings-compact-header h2{margin:0;font-size:25px;line-height:1.1}
+.settings-compact-header .settings-top-tabs{
+  flex:1;
+  min-width:0;
+  padding:0;
+}
+
+.company-one-page{
+  display:block;
+}
+.company-unified-card{
+  min-height:0;
+  padding:12px;
+}
+.company-unified-card .settings-card-header{
+  align-items:center;
+  margin-bottom:8px;
+  padding-bottom:8px;
+  border-bottom:1px solid rgba(148,163,184,.12);
+}
+.company-unified-card .settings-card-header h3{
+  margin:0;
+  font-size:18px;
+}
+.company-unified-layout{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 300px;
+  gap:14px;
+  align-items:start;
+}
+.company-settings-form-compact{
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:8px 10px;
+  margin-top:0;
+}
+.company-settings-form-compact .company-field{
+  grid-column:span 3;
+  gap:4px;
+  font-size:12px;
+}
+.company-settings-form-compact .company-field input,
+.company-settings-form-compact .company-field textarea{
+  min-height:36px;
+  border-radius:11px;
+  padding:0 10px;
+}
+.company-settings-form-compact .company-field textarea{
+  min-height:56px;
+  padding:9px 10px;
+  resize:none;
+}
+.company-settings-form-compact .company-name,
+.company-settings-form-compact .company-legal-name{
+  grid-column:span 6;
+}
+.company-settings-form-compact .company-street{
+  grid-column:span 6;
+}
+.company-settings-form-compact .company-city{
+  grid-column:span 4;
+}
+.company-settings-form-compact .company-bank{
+  grid-column:span 5;
+}
+.company-settings-form-compact .company-footer{
+  grid-column:span 7;
+}
+.company-side-panel{
+  display:grid;
+  gap:10px;
+}
+.company-logo-box,
+.company-preview-box-compact{
+  border:1px solid rgba(148,163,184,.13);
+  background:rgba(8,13,21,.20);
+  border-radius:16px;
+  padding:12px;
+}
+.company-logo-box h3{
+  margin:0 0 8px;
+  font-size:16px;
+}
+.company-logo-preview-compact{
+  height:132px;
+  margin:0 0 10px;
+  border-radius:14px;
+}
+.company-logo-preview-compact img{
+  padding:10px;
+}
+.company-logo-box .settings-action-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.company-logo-box .secondary-button{
+  min-width:0;
+  width:100%;
+}
+.company-preview-box-compact{
+  margin:0;
+  gap:4px;
+}
+.company-preview-box-compact strong{font-size:15px}
+.company-preview-box-compact span{font-size:12px}
+
+.app-shell.theme-light .settings-compact-header{border-bottom-color:#dbe3ef}
+.app-shell.theme-light .company-unified-card{background:#f8fbff;border-color:#dbe3ef}
+.app-shell.theme-light .company-unified-card .settings-card-header{border-bottom-color:#dbe3ef}
+.app-shell.theme-light .company-logo-box,
+.app-shell.theme-light .company-preview-box-compact{background:#ffffff;border-color:#d8e1ee}
+.app-shell.theme-light .company-logo-box h3{color:#0f172a}
+
+@media(max-width:1320px){
+  .company-unified-layout{grid-template-columns:minmax(0,1fr) 260px;gap:12px}
+  .company-settings-form-compact .company-field{grid-column:span 4}
+  .company-settings-form-compact .company-name,
+  .company-settings-form-compact .company-legal-name{grid-column:span 6}
+  .company-settings-form-compact .company-street{grid-column:span 8}
+  .company-settings-form-compact .company-city{grid-column:span 5}
+  .company-settings-form-compact .company-bank{grid-column:span 6}
+  .company-settings-form-compact .company-footer{grid-column:span 6}
+}
+@media(max-width:1180px){
+  .company-unified-layout{grid-template-columns:1fr}
+  .company-settings-form-compact{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .company-settings-form-compact .company-field{grid-column:span 3}
+  .company-settings-form-compact .company-name,
+  .company-settings-form-compact .company-legal-name,
+  .company-settings-form-compact .company-street,
+  .company-settings-form-compact .company-city,
+  .company-settings-form-compact .company-bank,
+  .company-settings-form-compact .company-footer{grid-column:1/-1}
+}

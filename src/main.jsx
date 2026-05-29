@@ -1451,7 +1451,8 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony PDF, numeracja, stopki i nagłówki.' },
     { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, układ tabel, okna i preferencje pracy.' }
   ];
-  const [activeSection, setActiveSection] = useState('interface');
+  const [activeSection, setActiveSection] = useState('company');
+  const [activeCompanyTab, setActiveCompanyTab] = useState('data');
   const [clientTypes, setClientTypes] = useState([]);
   const [newType, setNewType] = useState('');
   const [notice, setNotice] = useState('');
@@ -1514,15 +1515,14 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     event.target.value = '';
   };
 
-  const removeCompanyLogo = () => {
-    updateCompanyProfile('logoDataUrl', '');
-  };
+  const removeCompanyLogo = () => updateCompanyProfile('logoDataUrl', '');
 
   const loadTypes = async () => {
     const { data, error } = await fetchClientTypes();
     if (error) {
-      setNotice(`Nie udało się pobrać rodzajów klientów z bazy: ${error.message}`);
-      setClientTypes(getClientTypes().map((name, index) => ({ id: name, name, sort_order: index }))); 
+      setNotice('Nie udało się pobrać rodzajów klientów. Program używa lokalnej listy zapasowej.');
+      console.error('Client types load error:', error.message);
+      setClientTypes(getClientTypes().map((name, index) => ({ id: name, name, sort_order: index })));
       return;
     }
     setClientTypes(data);
@@ -1571,46 +1571,49 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   };
 
   const placeholderGroups = {
-    equipment: [
-      'Kategorie sprzętu', 'Marki i modele', 'Lokalizacje', 'Statusy sprzętu', 'Pola dodatkowe'
-    ],
-    service: [
-      'Statusy serwisu', 'Priorytety', 'Typy zgłoszeń', 'Numeracja zleceń'
-    ],
-    rentals: [
-      'Statusy wypożyczeń', 'Statusy zwrotów', 'Domyślne okresy', 'Numeracja wypożyczeń'
-    ],
-    documents: [
-      'Szablony PDF', 'Numeracja dokumentów', 'Nagłówki dokumentów', 'Stopki dokumentów'
-    ]
+    equipment: ['Kategorie sprzętu', 'Marki i modele', 'Lokalizacje', 'Statusy sprzętu', 'Pola dodatkowe'],
+    service: ['Statusy serwisu', 'Priorytety', 'Typy zgłoszeń', 'Numeracja zleceń'],
+    rentals: ['Statusy wypożyczeń', 'Statusy zwrotów', 'Domyślne okresy', 'Numeracja wypożyczeń'],
+    documents: ['Szablony PDF', 'Numeracja dokumentów', 'Nagłówki dokumentów', 'Stopki dokumentów']
   };
 
-  return <div className="settings-layout">
-    <aside className="settings-sidebar panel">
-      <p className="eyebrow">Sekcje programu</p>
-      <div className="settings-nav-list">
-        {sections.map((section) => {
-          const Icon = section.icon;
-          return <button key={section.id} type="button" className={`settings-nav-item ${activeSection === section.id ? 'active' : ''}`} onClick={() => setActiveSection(section.id)}>
-            <Icon size={18} />
-            <span><strong>{section.label}</strong><small>{section.description}</small></span>
-          </button>;
-        })}
-      </div>
-    </aside>
+  const companyTabs = [
+    { id: 'data', label: 'Dane firmy', icon: FileText },
+    { id: 'logo', label: 'Logo', icon: FolderOpen },
+    { id: 'documents', label: 'Dokumenty', icon: FileText }
+  ];
 
-    <section className="settings-content panel">
-      <div className="settings-content-header">
+  return <div className="settings-tabs-layout">
+    <section className="panel settings-content settings-tabs-panel">
+      <div className="settings-content-header settings-tabs-header">
         <div className="settings-section-title"><ActiveIcon size={22} /><div><p className="eyebrow">Konfiguracja</p><h2>{activeSectionData.label}</h2><p className="muted">{activeSectionData.description}</p></div></div>
       </div>
 
-      {activeSection === 'company' && <div className="settings-pane-grid company-settings-grid">
-        <div className="settings-card wide-settings-card company-settings-card">
+      <div className="settings-top-tabs" role="tablist" aria-label="Sekcje ustawień programu">
+        {sections.map((section) => {
+          const Icon = section.icon;
+          return <button key={section.id} type="button" role="tab" aria-selected={activeSection === section.id} className={`settings-top-tab ${activeSection === section.id ? 'active' : ''}`} onClick={() => setActiveSection(section.id)}>
+            <Icon size={17} />{section.label}
+          </button>;
+        })}
+      </div>
+
+      {activeSection === 'company' && <div className="settings-company-pane">
+        <div className="settings-inner-tabs" role="tablist" aria-label="Ustawienia firmy">
+          {companyTabs.map((tab) => {
+            const Icon = tab.icon;
+            return <button key={tab.id} type="button" role="tab" aria-selected={activeCompanyTab === tab.id} className={`settings-inner-tab ${activeCompanyTab === tab.id ? 'active' : ''}`} onClick={() => setActiveCompanyTab(tab.id)}>
+              <Icon size={16} />{tab.label}
+            </button>;
+          })}
+        </div>
+
+        {activeCompanyTab === 'data' && <div className="settings-card company-settings-card company-settings-card-full">
           <div className="settings-card-header">
             <div>
               <p className="eyebrow">Firma</p>
               <h3>Dane firmy</h3>
-              <p className="muted">Te dane będą umieszczane w nagłówkach i stopkach wydruków PDF generowanych z programu.</p>
+              <p className="muted">Dane będą umieszczane w nagłówkach i stopkach wydruków PDF generowanych z programu.</p>
             </div>
             <div className="settings-action-row">
               <button type="button" className="secondary-button" onClick={resetCompanySettings}>Wyczyść</button>
@@ -1618,7 +1621,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
             </div>
           </div>
           {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
-          <div className="company-settings-form">
+          <div className="company-settings-form company-settings-form-wide">
             <label className="company-field company-name">Nazwa firmy<input value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
             <label className="company-field company-legal-name">Pełna nazwa / nazwa do dokumentów<input value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
             <label className="company-field">NIP<input value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
@@ -1635,35 +1638,43 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
             <label className="company-field company-bank">Numer konta<input value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
             <label className="company-field company-footer">Stopka dokumentów<textarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę." /></label>
           </div>
-        </div>
+        </div>}
 
-        <div className="settings-card company-logo-card">
+        {activeCompanyTab === 'logo' && <div className="settings-card company-logo-card company-tab-card">
           <p className="eyebrow">Dokumenty</p>
           <h3>Logo firmy</h3>
           <p className="muted">Logo będzie widoczne w nagłówku wydruków PDF. Najlepiej użyć pliku PNG albo SVG z przezroczystym tłem.</p>
-          <div className="company-logo-preview">
+          <div className="company-logo-preview company-logo-preview-large">
             {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Brak logo</span>}
           </div>
-          <div className="settings-action-row">
+          <div className="settings-action-row logo-actions-row">
             <label className="secondary-button file-button"><FolderOpen size={17} />Wczytaj logo<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
             <button type="button" className="secondary-button" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń logo</button>
+            <button type="button" className="primary-button" onClick={saveCompanySettings}><Save size={17} />Zapisz</button>
           </div>
-        </div>
+          {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
+        </div>}
 
-        <div className="settings-card company-document-preview">
+        {activeCompanyTab === 'documents' && <div className="settings-card company-document-preview company-tab-card">
           <p className="eyebrow">Podgląd danych</p>
           <h3>Wydruk dokumentów</h3>
-          <div className="company-preview-box">
-            <strong>{companyProfile.name || companyProfile.legalName || 'Nazwa firmy'}</strong>
-            <span>{formatCompanyAddress(companyProfile) || 'Adres firmy'}</span>
-            <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON'}</span>
-            <span>{formatCompanyContact(companyProfile) || 'Telefon / email / WWW'}</span>
+          <div className="company-preview-document">
+            <div className="company-preview-logo-block">
+              {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>{(companyProfile.name || 'F').slice(0, 1).toUpperCase()}</span>}
+            </div>
+            <div className="company-preview-box">
+              <strong>{companyProfile.name || companyProfile.legalName || 'Nazwa firmy'}</strong>
+              <span>{formatCompanyAddress(companyProfile) || 'Adres firmy'}</span>
+              <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON'}</span>
+              <span>{formatCompanyContact(companyProfile) || 'Telefon / email / WWW'}</span>
+              {companyProfile.bankAccount && <span>Konto: {companyProfile.bankAccount}</span>}
+            </div>
           </div>
           <p className="muted">Aktualnie dane są używane przy eksporcie tabel do PDF. Kolejne dokumenty programu będą korzystać z tego samego profilu firmy.</p>
-        </div>
+        </div>}
       </div>}
 
-      {activeSection === 'interface' && <div className="settings-pane-grid">
+      {activeSection === 'interface' && <div className="settings-pane-grid settings-pane-grid-wide">
         <div className="settings-card wide-settings-card">
           <div>
             <p className="eyebrow">Wygląd</p>
@@ -1697,7 +1708,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>}
 
-      {activeSection === 'clients' && <div className="settings-pane-grid">
+      {activeSection === 'clients' && <div className="settings-pane-grid settings-pane-grid-wide">
         <div className="settings-card wide-settings-card settings-editor-card">
           <div className="settings-card-header"><div><p className="eyebrow">Klienci</p><h3>Rodzaje klientów</h3><p className="muted">Lista zasila pole „Rodzaj klienta” w kartotece klienta i filtry w module Klienci.</p></div><button className="secondary-button" onClick={resetTypes}>Przywróć domyślne</button></div>
           {notice && <div className="notice">{notice}</div>}
@@ -1717,7 +1728,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>}
 
-      {placeholderGroups[activeSection] && <div className="settings-pane-grid">
+      {placeholderGroups[activeSection] && <div className="settings-pane-grid settings-pane-grid-wide">
         {placeholderGroups[activeSection].map((item) => <div className="settings-card" key={item}>
           <p className="eyebrow">{activeSectionData.label}</p>
           <h3>{item}</h3>

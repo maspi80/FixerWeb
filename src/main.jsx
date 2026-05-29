@@ -569,6 +569,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
   const [sortDir, setSortDir] = useState('asc');
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
+  const [rowContextMenu, setRowContextMenu] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState(initialPreference.visibleColumns);
   const [columnOrder, setColumnOrder] = useState(initialPreference.columnOrder);
   const [columnWidths, setColumnWidths] = useState(initialPreference.columnWidths);
@@ -606,8 +607,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
   }, [columnsSignature]);
 
   useEffect(() => {
-    if (!contextMenu) return undefined;
-    const closeMenu = () => setContextMenu(null);
+    if (!contextMenu && !rowContextMenu) return undefined;
+    const closeMenu = () => { setContextMenu(null); setRowContextMenu(null); };
     window.addEventListener('click', closeMenu);
     window.addEventListener('keydown', closeMenu);
     window.addEventListener('resize', closeMenu);
@@ -616,7 +617,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
       window.removeEventListener('keydown', closeMenu);
       window.removeEventListener('resize', closeMenu);
     };
-  }, [contextMenu]);
+  }, [contextMenu, rowContextMenu]);
 
   const sortedRows = useMemo(() => [...rows].sort((a, b) => {
     const left = String(a[sortKey] ?? '');
@@ -697,7 +698,23 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
 
   const openColumnMenu = (event) => {
     event.preventDefault();
+    setRowContextMenu(null);
     setContextMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const openRowMenu = (event, row) => {
+    if (!hasActions) return;
+    event.preventDefault();
+    setContextMenu(null);
+    setRowContextMenu({ x: event.clientX, y: event.clientY, row });
+  };
+
+  const runRowAction = (action) => {
+    const row = rowContextMenu?.row;
+    setRowContextMenu(null);
+    if (!row) return;
+    if (action === 'edit') onEdit?.(row);
+    if (action === 'delete') onDelete?.(row);
   };
 
   return (
@@ -705,11 +722,17 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
       {loading && <div className="loading-line">Ładowanie danych...</div>}
       <div className="table-scroll">
         <table>
-          <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}{hasActions && <col style={{ width: '150px' }} />}</colgroup>
-          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={openColumnMenu} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}{hasActions && <th onContextMenu={openColumnMenu}>Akcje</th>}</tr></thead>
-          <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={onEdit ? 'editable-row' : ''} onDoubleClick={() => onEdit?.(row)} title={onEdit ? 'Dwuklik otwiera edycję' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}{hasActions && <td><div className="row-actions">{onEdit && <button onClick={() => onEdit(row)}>Edytuj</button>}{onDelete && <button className="danger-action" onClick={() => onDelete(row)}><Trash2 size={14} />Usuń</button>}</div></td>}</tr>)}</tbody>
+          <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
+          <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={openColumnMenu} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
+          <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={onEdit ? 'editable-row' : ''} onDoubleClick={() => onEdit?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={onEdit ? 'Dwuklik otwiera edycję. Prawy klik pokazuje operacje.' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>)}</tbody>
         </table>
       </div>
+
+      {rowContextMenu && <div className="row-context-menu" style={{ left: rowContextMenu.x, top: rowContextMenu.y }} onClick={(event) => event.stopPropagation()}>
+        <div className="context-menu-title">Operacje</div>
+        {onEdit && <button type="button" onClick={() => runRowAction('edit')}>Edytuj</button>}
+        {onDelete && <button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />Usuń</button>}
+      </div>}
       {contextMenu && <div className="column-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()}>
         <div className="context-menu-title">Widoczne kolumny</div>
         {orderedColumns.map((column) => {

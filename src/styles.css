@@ -11,3 +11,21 @@ th span{display:inline-flex;align-items:center;gap:4px}th em{margin-left:8px;col
 .summary-box{display:grid;gap:6px;border:1px solid rgba(148,163,184,.14);background:rgba(148,163,184,.07);border-radius:15px;padding:14px;color:#dbe7f8}
 .summary-box span{color:#9aa6bb}.history-panel{display:grid;gap:14px}.settings-section{display:grid;gap:16px}.settings-editor{padding:18px}.inline-form{display:flex;gap:10px;margin:14px 0}.inline-form input{min-height:44px;border-radius:14px;border:1px solid rgba(148,163,184,.16);background:rgba(8,13,21,.72);color:#fff;padding:0 12px;min-width:280px}.tag-list{display:flex;gap:8px;flex-wrap:wrap}.config-tag{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(96,165,250,.28);background:rgba(96,165,250,.12);color:#dbeafe;border-radius:999px;padding:7px 10px}.config-tag button{border:0;background:transparent;color:#bfdbfe;font-size:18px;line-height:1;padding:0 2px}.client-modal .table-tools{display:none}
 .client-modal{width:min(820px,100%);padding:18px}.client-modal .modal-header{margin-bottom:12px}.client-modal .tabs{margin-bottom:12px}.client-form-compact{display:grid;gap:12px}.form-section{border:1px solid rgba(148,163,184,.1);background:rgba(8,13,21,.22);border-radius:16px;padding:12px}.section-title{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;font-weight:900;margin-bottom:10px}.compact-client-grid{grid-template-columns:1.4fr 1fr}.compact-address-grid{grid-template-columns:1.5fr .65fr .65fr}.client-modal .form-grid{gap:10px 12px}.client-modal .form-grid label,.client-modal .form-section label{gap:5px;font-size:13px}.client-modal .form-grid input,.client-modal .form-grid select,.client-modal .form-section textarea{min-height:36px;border-radius:10px;padding:0 10px}.client-modal .form-section textarea{min-height:66px;padding:9px 10px}.span-2{grid-column:span 2}.client-modal .modal-actions{margin-top:12px}.client-modal .tabs button{padding:8px 12px}.client-modal .summary-box{padding:12px}@media(max-width:760px){.compact-client-grid,.compact-address-grid{grid-template-columns:1fr}.span-2{grid-column:auto}.client-modal{width:min(96vw,100%)}}
+
+/* v0.4.6 — kompaktowa kartoteka klienta: notatki jako osobna zakładka */
+.client-modal{width:min(760px,100%);padding:16px}
+.client-modal .modal-header h2{font-size:22px}
+.client-modal .tabs{gap:8px}
+.client-modal .tabs button{padding:7px 11px;font-size:13px}
+.client-form-compact{gap:10px}
+.client-basic-grid{grid-template-columns:1.25fr .9fr .9fr}
+.client-modal .form-section{padding:10px 12px;border-radius:14px}
+.client-modal .section-title{margin-bottom:8px}
+.client-modal .form-grid{gap:9px 10px}
+.client-modal .form-grid label,.client-modal .form-section label{font-size:12px}
+.client-modal .form-grid input,.client-modal .form-grid select,.client-modal .form-section textarea{min-height:32px;border-radius:9px;font-size:13px}
+.client-modal .compact-address-grid{grid-template-columns:1.55fr .55fr .55fr}
+.client-modal .notes-panel{display:grid;gap:10px}
+.client-modal .notes-section textarea{min-height:170px;padding:10px;resize:vertical}
+.client-modal .modal-actions{margin-top:10px}
+@media(max-width:760px){.client-basic-grid{grid-template-columns:1fr}.client-basic-grid .span-2{grid-column:auto}}

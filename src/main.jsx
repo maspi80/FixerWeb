@@ -232,7 +232,7 @@ function ClientsModule() {
       client_kind: client.client_kind,
       phone: client.phone,
       email: client.email,
-      contact_person: client.contact_person,
+      contact_person: '',
       street: client.street,
       building_number: client.building_number,
       apartment_number: client.apartment_number,
@@ -298,7 +298,6 @@ function ClientEditor({ client, onClose, onSave }) {
     client_kind: client?.client_kind ?? client?.rating ?? getClientTypes()[0],
     phone: client?.phone ?? '',
     email: client?.email ?? '',
-    contact_person: client?.contact_person ?? '',
     street: client?.street ?? '',
     building_number: client?.building_number ?? '',
     apartment_number: client?.apartment_number ?? '',
@@ -323,15 +322,15 @@ function ClientEditor({ client, onClose, onSave }) {
         <div className="tabs">
           <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
           <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
+          <button className={activeTab === 'notes' ? 'active' : ''} onClick={() => setActiveTab('notes')}>Notatki</button>
         </div>
         {activeTab === 'data' && <div className="client-form-compact">
           <div className="form-section">
             <div className="section-title">Dane podstawowe</div>
-            <div className="form-grid compact-client-grid">
-              <label className="span-2">Nazwa klienta<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
+            <div className="form-grid client-basic-grid">
+              <label>Nazwa klienta<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
               <label>Typ<select value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></select></label>
               <label>Rodzaj klienta<select value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-              <label>Osoba kontaktowa<input value={form.contact_person} onChange={(event) => update('contact_person', event.target.value)} /></label>
               <label>Telefon<input value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
               <label className="span-2">Email<input value={form.email} onChange={(event) => update('email', event.target.value)} /></label>
             </div>
@@ -354,8 +353,11 @@ function ClientEditor({ client, onClose, onSave }) {
               <label>REGON<input value={form.regon} onChange={(event) => update('regon', event.target.value)} /></label>
             </div>
           </div>}
-          <div className="form-section">
-            <label>Notatki<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
+        </div>}
+        {activeTab === 'notes' && <div className="notes-panel">
+          <div className="form-section notes-section">
+            <div className="section-title">Notatki</div>
+            <label>Informacje wewnętrzne o kliencie<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
           </div>
         </div>}
         {activeTab === 'history' && <div className="history-panel">

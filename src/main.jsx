@@ -311,16 +311,6 @@ function ClientEditor({ client, onClose, onSave }) {
   }));
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  const addClientKind = () => {
-    const value = prompt('Podaj nowy rodzaj klienta:');
-    const cleanValue = value?.trim();
-    if (!cleanValue) return;
-    const next = Array.from(new Set([...clientTypes, cleanValue]));
-    setClientTypes(next);
-    saveClientTypes(next);
-    update('client_kind', cleanValue);
-  };
-
   const clientHistoryRows = [
     ...rentals.filter((rental) => rental.client === form.name).map((rental) => ({ date: rental.date, type: 'Wypożyczenie', description: `${rental.number} — ${rental.item}`, status: rental.status })),
     ...serviceOrders.filter((order) => order.client === form.name).map((order) => ({ date: '—', type: 'Serwis', description: `${order.number} — ${order.item}`, status: order.status }))
@@ -331,32 +321,42 @@ function ClientEditor({ client, onClose, onSave }) {
       <div className="modal-card client-modal">
         <div className="modal-header"><div><p className="eyebrow">Klient</p><h2>{client ? 'Kartoteka klienta' : 'Nowy klient'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
         <div className="tabs">
-          <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane</button>
-          <button className={activeTab === 'address' ? 'active' : ''} onClick={() => setActiveTab('address')}>Adres i firma</button>
+          <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
           <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
         </div>
-        {activeTab === 'data' && <div className="form-grid">
-          <label>Nazwa klienta<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
-          <label>Typ<select value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></select></label>
-          <label>Rodzaj klienta<select value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-          <label>Osoba kontaktowa<input value={form.contact_person} onChange={(event) => update('contact_person', event.target.value)} /></label>
-          <label>Telefon<input value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
-          <label>Email<input value={form.email} onChange={(event) => update('email', event.target.value)} /></label>
-          <div className="wide-field inline-actions"><button className="secondary-button" onClick={addClientKind}>Dodaj rodzaj klienta</button><span className="muted">Lista jest zapisywana w ustawieniach przeglądarki i używana w kartotece klienta.</span></div>
-          <label className="wide-field">Notatki<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
-        </div>}
-        {activeTab === 'address' && <div className="form-grid">
-          <label>Ulica<input value={form.street} onChange={(event) => update('street', event.target.value)} /></label>
-          <label>Nr budynku<input value={form.building_number} onChange={(event) => update('building_number', event.target.value)} /></label>
-          <label>Nr lokalu<input value={form.apartment_number} onChange={(event) => update('apartment_number', event.target.value)} /></label>
-          <label>Kod pocztowy<input value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} /></label>
-          <label>Miasto<input value={form.city} onChange={(event) => update('city', event.target.value)} /></label>
-          <label>Kraj<input value={form.country} onChange={(event) => update('country', event.target.value)} /></label>
-          {form.type === 'Firma' && <>
-            <label>NIP<input value={form.nip} onChange={(event) => update('nip', event.target.value)} /></label>
-            <label>REGON<input value={form.regon} onChange={(event) => update('regon', event.target.value)} /></label>
-          </>}
-          <div className="wide-field summary-box"><strong>Adres do kartoteki</strong><span>{getClientAddress(form) || 'Brak adresu'}</span></div>
+        {activeTab === 'data' && <div className="client-form-compact">
+          <div className="form-section">
+            <div className="section-title">Dane podstawowe</div>
+            <div className="form-grid compact-client-grid">
+              <label className="span-2">Nazwa klienta<input value={form.name} onChange={(event) => update('name', event.target.value)} /></label>
+              <label>Typ<select value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></select></label>
+              <label>Rodzaj klienta<select value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+              <label>Osoba kontaktowa<input value={form.contact_person} onChange={(event) => update('contact_person', event.target.value)} /></label>
+              <label>Telefon<input value={form.phone} onChange={(event) => update('phone', event.target.value)} /></label>
+              <label className="span-2">Email<input value={form.email} onChange={(event) => update('email', event.target.value)} /></label>
+            </div>
+          </div>
+          <div className="form-section">
+            <div className="section-title">Adres</div>
+            <div className="form-grid compact-address-grid">
+              <label className="span-2">Ulica<input value={form.street} onChange={(event) => update('street', event.target.value)} /></label>
+              <label>Nr budynku<input value={form.building_number} onChange={(event) => update('building_number', event.target.value)} /></label>
+              <label>Nr lokalu<input value={form.apartment_number} onChange={(event) => update('apartment_number', event.target.value)} /></label>
+              <label>Kod pocztowy<input value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} /></label>
+              <label>Miasto<input value={form.city} onChange={(event) => update('city', event.target.value)} /></label>
+              <label className="span-2">Kraj<input value={form.country} onChange={(event) => update('country', event.target.value)} /></label>
+            </div>
+          </div>
+          {form.type === 'Firma' && <div className="form-section">
+            <div className="section-title">Dane firmowe</div>
+            <div className="form-grid compact-client-grid">
+              <label>NIP<input value={form.nip} onChange={(event) => update('nip', event.target.value)} /></label>
+              <label>REGON<input value={form.regon} onChange={(event) => update('regon', event.target.value)} /></label>
+            </div>
+          </div>}
+          <div className="form-section">
+            <label>Notatki<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
+          </div>
         </div>}
         {activeTab === 'history' && <div className="history-panel">
           <div className="summary-box"><strong>Informacje o kliencie</strong><span>{form.notes || 'Brak notatek.'}</span></div>

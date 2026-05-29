@@ -521,3 +521,82 @@ th.selection-cell{cursor:default}
   border-color:#bfdbfe;
   color:#1e40af;
 }
+
+/* v0.6.9 — punktowa naprawa kolorów kartoteki klienta w jasnym motywie.
+   Tylko .theme-light + .client-modal, bez wpływu na ustawienia i motyw ciemny. */
+.app-shell.theme-light .client-modal{
+  background:#ffffff;
+  border-color:#d8e1ee;
+  box-shadow:0 28px 90px rgba(15,23,42,.22);
+  color:#0f172a;
+}
+
+.app-shell.theme-light .client-modal .modal-header,
+.app-shell.theme-light .client-modal .tabs{
+  border-color:rgba(15,23,42,.10);
+}
+
+.app-shell.theme-light .client-modal .eyebrow,
+.app-shell.theme-light .client-modal .section-title{
+  color:#64748b;
+}
+
+.app-shell.theme-light .client-modal .form-section,
+.app-shell.theme-light .client-modal .flat-form-section,
+.app-shell.theme-light .client-modal .notes-section{
+  background:#f8fafc;
+  border-color:#d8e1ee;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+}
+
+.app-shell.theme-light .client-modal .form-grid label,
+.app-shell.theme-light .client-modal .form-section label,
+.app-shell.theme-light .client-modal .notes-label{
+  color:#334155;
+}
+
+.app-shell.theme-light .client-modal .form-grid input,
+.app-shell.theme-light .client-modal .form-grid select,
+.app-shell.theme-light .client-modal .form-section textarea,
+.app-shell.theme-light .client-modal .notes-textarea{
+  background:#ffffff;
+  border-color:#cbd5e1;
+  color:#0f172a;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+
+.app-shell.theme-light .client-modal .form-grid input:focus,
+.app-shell.theme-light .client-modal .form-grid select:focus,
+.app-shell.theme-light .client-modal .form-section textarea:focus,
+.app-shell.theme-light .client-modal .notes-textarea:focus{
+  border-color:#60a5fa;
+  outline:0;
+  box-shadow:0 0 0 3px rgba(37,99,235,.12);
+}
+
+.app-shell.theme-light .client-modal .form-grid input::placeholder,
+.app-shell.theme-light .client-modal .form-section textarea::placeholder,
+.app-shell.theme-light .client-modal .notes-textarea::placeholder{
+  color:#94a3b8;
+}
+
+.app-shell.theme-light .client-modal .summary-box,
+.app-shell.theme-light .client-modal .notice{
+  background:#f8fafc;
+  border-color:#d8e1ee;
+  color:#334155;
+}
+
+.app-shell.theme-light .client-modal .summary-box span{
+  color:#64748b;
+}
+
+.app-shell.theme-light .client-modal .modal-actions{
+  border-top-color:rgba(15,23,42,.10);
+}
+
+.app-shell.theme-light .client-modal .modal-resize-handle{
+  border-right-color:#94a3b8;
+  border-bottom-color:#94a3b8;
+  opacity:.85;
+}

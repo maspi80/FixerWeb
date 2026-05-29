@@ -357,7 +357,8 @@ function ClientEditor({ client, onClose, onSave }) {
         {activeTab === 'notes' && <div className="notes-panel">
           <div className="form-section notes-section">
             <div className="section-title">Notatki</div>
-            <label>Informacje wewnętrzne o kliencie<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></label>
+            <label className="notes-label" htmlFor="client-notes">Informacje wewnętrzne o kliencie</label>
+            <textarea id="client-notes" className="notes-textarea" value={form.notes} onChange={(event) => update('notes', event.target.value)} />
           </div>
         </div>}
         {activeTab === 'history' && <div className="history-panel">

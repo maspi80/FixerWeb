@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, GripVertical, Plus, Save, Trash2, X
+  ClipboardList, Barcode, Copy, FilePlus2, FolderOpen, GripVertical, History, Plus, Save, Trash2, X
 } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -209,6 +209,7 @@ function ClientsModule() {
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
+  const [editorInitialTab, setEditorInitialTab] = useState('data');
   const [notice, setNotice] = useState('');
 
   const loadClients = async () => {
@@ -225,6 +226,22 @@ function ClientsModule() {
   };
 
   useEffect(() => { loadClients(); }, []);
+
+  const openClientEditor = (client = null, tab = 'data') => {
+    setEditingClient(client);
+    setEditorInitialTab(tab);
+    setEditorOpen(true);
+  };
+
+  const duplicateClient = (client) => {
+    const copy = {
+      ...client,
+      id: null,
+      localId: null,
+      name: `${client.name || 'Klient'} kopia`
+    };
+    openClientEditor(copy, 'data');
+  };
 
   const handleSave = async (client) => {
     const payload = {
@@ -280,7 +297,7 @@ function ClientsModule() {
         <p className="eyebrow">Moduł</p><h2>Baza klientów</h2>
         <p className="muted">Kartoteka klientów, dane adresowe, dane firmowe, rodzaje klientów i historia współpracy.</p>
         <div className="module-actions">
-          <button className="primary-button" onClick={() => { setEditingClient(null); setEditorOpen(true); }}><Plus size={18} />Dodaj klienta</button>
+          <button className="primary-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</button>
           <button className="secondary-button" onClick={loadClients}>Odśwież</button>
           <button className="secondary-button">Eksport PDF</button>
 
@@ -288,15 +305,15 @@ function ClientsModule() {
         {notice && <div className="notice">{notice}</div>}
       </section>
       <section className="panel">
-        <DataTable storageKey="clients-table" loading={loading} columns={[{ key: 'name', label: 'Nazwa' },{ key: 'type', label: 'Typ' },{ key: 'client_kind', label: 'Rodzaj klienta' },{ key: 'phone', label: 'Telefon' },{ key: 'email', label: 'Email' },{ key: 'city', label: 'Miasto' },{ key: 'nip', label: 'NIP' }]} rows={rows} onEdit={(client) => { setEditingClient(client); setEditorOpen(true); }} onDelete={handleDelete} />
+        <DataTable storageKey="clients-table" loading={loading} columns={[{ key: 'name', label: 'Nazwa' },{ key: 'type', label: 'Typ' },{ key: 'client_kind', label: 'Rodzaj klienta' },{ key: 'phone', label: 'Telefon' },{ key: 'email', label: 'Email' },{ key: 'city', label: 'Miasto' },{ key: 'nip', label: 'NIP' }]} rows={rows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} />
       </section>
-      {editorOpen && <ClientEditor client={editingClient} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
   );
 }
 
-function ClientEditor({ client, onClose, onSave }) {
-  const [activeTab, setActiveTab] = useState('data');
+function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
   const [form, setForm] = useState(() => ({
     id: client?.id ?? null,
@@ -412,6 +429,24 @@ function EquipmentModule() {
 
   useEffect(() => { loadEquipment(); }, []);
 
+  const openEquipmentEditor = (item = null) => {
+    setEditingEquipment(item);
+    setEditorOpen(true);
+  };
+
+  const duplicateEquipment = (item) => {
+    const copy = {
+      ...item,
+      id: null,
+      localId: null,
+      name: `${item.name || 'Sprzęt'} kopia`,
+      serial: '',
+      inventory_number: '',
+      barcode: ''
+    };
+    openEquipmentEditor(copy);
+  };
+
   const normalizePayload = (item) => ({
     name: item.name,
     category: item.category,
@@ -462,7 +497,7 @@ function EquipmentModule() {
         <p className="eyebrow">Moduł</p><h2>Magazyn sprzętu</h2>
         <p className="muted">Kartoteka urządzeń, numery seryjne, kody, lokalizacje, statusy i przygotowanie pod zestawy oraz wypożyczenia.</p>
         <div className="module-actions">
-          <button className="primary-button" onClick={() => { setEditingEquipment(null); setEditorOpen(true); }}><Plus size={18} />Dodaj sprzęt</button>
+          <button className="primary-button" onClick={() => openEquipmentEditor(null)}><Plus size={18} />Dodaj sprzęt</button>
           <button className="secondary-button" onClick={loadEquipment}>Odśwież</button>
           <button className="secondary-button">Eksport PDF</button>
           <button className="secondary-button">Ustawienia modułu</button>
@@ -479,7 +514,7 @@ function EquipmentModule() {
           { key: 'inventory_number', label: 'Nr inw.' },
           { key: 'status', label: 'Status' },
           { key: 'location', label: 'Lokalizacja' }
-        ]} rows={rows} onEdit={(item) => { setEditingEquipment(item); setEditorOpen(true); }} onDelete={handleDelete} />
+        ]} rows={rows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -557,7 +592,7 @@ function getStoredJson(key, fallback) {
   }
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelete }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -631,7 +666,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
   }, [columns, columnOrder]);
 
   const activeColumns = orderedColumns.filter((column) => visibleColumns.includes(column.key));
-  const hasActions = onEdit || onDelete;
+  const hasActions = onOpen || onEdit || onDuplicate || onHistory || onDelete;
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -709,11 +744,31 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
     setRowContextMenu({ x: event.clientX, y: event.clientY, row });
   };
 
+  const copyText = async (text) => {
+    const value = String(text ?? '').trim();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const input = document.createElement('textarea');
+      input.value = value;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+    }
+  };
+
   const runRowAction = (action) => {
     const row = rowContextMenu?.row;
     setRowContextMenu(null);
     if (!row) return;
+    if (action === 'open') (onOpen ?? onEdit)?.(row);
     if (action === 'edit') onEdit?.(row);
+    if (action === 'duplicate') onDuplicate?.(row);
+    if (action === 'history') onHistory?.(row);
+    if (action === 'copyName') copyText(row.name ?? row.number ?? row.client ?? '');
+    if (action === 'copyId') copyText(row.id ?? row.localId ?? row.number ?? '');
     if (action === 'delete') onDelete?.(row);
   };
 
@@ -724,14 +779,20 @@ function DataTable({ columns, rows, storageKey, loading = false, onEdit, onDelet
         <table>
           <colgroup>{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
           <thead><tr>{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={openColumnMenu} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
-          <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={onEdit ? 'editable-row' : ''} onDoubleClick={() => onEdit?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={onEdit ? 'Dwuklik otwiera edycję. Prawy klik pokazuje operacje.' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>)}</tbody>
+          <tbody>{sortedRows.map((row, index) => <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={hasActions ? 'editable-row' : ''} onDoubleClick={() => (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : undefined}>{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>)}</tbody>
         </table>
       </div>
 
       {rowContextMenu && <div className="row-context-menu" style={{ left: rowContextMenu.x, top: rowContextMenu.y }} onClick={(event) => event.stopPropagation()}>
         <div className="context-menu-title">Operacje</div>
-        {onEdit && <button type="button" onClick={() => runRowAction('edit')}>Edytuj</button>}
-        {onDelete && <button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />Usuń</button>}
+        {(onOpen || onEdit) && <button type="button" onClick={() => runRowAction('open')}><FolderOpen size={14} />Otwórz</button>}
+        {onEdit && <button type="button" onClick={() => runRowAction('edit')}><Save size={14} />Edytuj</button>}
+        {onDuplicate && <button type="button" onClick={() => runRowAction('duplicate')}><FilePlus2 size={14} />Duplikuj</button>}
+        {onHistory && <button type="button" onClick={() => runRowAction('history')}><History size={14} />Historia</button>}
+        <div className="context-menu-separator" />
+        <button type="button" onClick={() => runRowAction('copyName')}><Copy size={14} />Kopiuj nazwę</button>
+        {(rowContextMenu.row?.id || rowContextMenu.row?.localId || rowContextMenu.row?.number) && <button type="button" onClick={() => runRowAction('copyId')}><Copy size={14} />Kopiuj ID / numer</button>}
+        {onDelete && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />Usuń</button></>}
       </div>}
       {contextMenu && <div className="column-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()}>
         <div className="context-menu-title">Widoczne kolumny</div>

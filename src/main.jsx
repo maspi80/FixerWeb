@@ -1170,6 +1170,36 @@ function EquipmentModule() {
     setRows((current) => current.filter((row) => !selected.includes(row)));
   };
 
+  const handleDisassembleSet = async (item) => {
+    if (!isEquipmentSet(item)) return;
+    const setItems = Array.isArray(item.set_items) ? item.set_items : [];
+    if (!setItems.length) {
+      alert('Ten zestaw nie ma składników do rozmontowania.');
+      return;
+    }
+    if (!confirm(`Rozmontować zestaw: ${item.name}? Składniki wrócą do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}”.`)) return;
+
+    const emptySetPayload = normalizePayload({
+      ...item,
+      status: 'Niekompletny',
+      set_items: []
+    });
+
+    try {
+      if (isSupabaseConfigured && item.id) {
+        const result = await updateEquipmentRecord(item.id, emptySetPayload);
+        if (result.error) throw result.error;
+        await updateSetComponentStatuses(setItems, [], item);
+        await loadEquipment();
+      } else {
+        await updateSetComponentStatuses(setItems, [], item);
+        setRows((current) => current.map((row) => sameEquipmentKey(row, item) ? { ...row, status: 'Niekompletny', set_items: [] } : row));
+      }
+      setNotice(`Rozmontowano zestaw „${item.name}”. Składniki wróciły do magazynu jako „${EQUIPMENT_AVAILABLE_STATUS}”.`);
+    } catch (error) {
+      alert(error.message ?? 'Nie udało się rozmontować zestawu.');
+    }
+  };
 
   const displayRows = useMemo(() => rows.filter((item) => !isEquipmentSetComponent(item)), [rows]);
 
@@ -1178,7 +1208,7 @@ function EquipmentModule() {
     if (!components.length) return <div className="expanded-set-empty">Ten zestaw nie ma jeszcze przypisanych składników.</div>;
     const resolveComponent = (setItem) => rows.find((row) => sameEquipmentKey(row, setItem)) ?? setItem;
     return <div className="expanded-set-panel">
-      <div className="expanded-set-header"><strong>Zawartość zestawu</strong><span>{components.length} pozycji</span></div>
+      <div className="expanded-set-header"><strong>Zawartość zestawu</strong><span>{components.length} pozycji</span><button type="button" className="secondary-button compact-table-button" onClick={(event) => { event.stopPropagation(); handleDisassembleSet(setRow); }}><Package size={14} />Rozmontuj zestaw</button></div>
       <table className="expanded-set-table">
         <thead><tr><th>Kategoria</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th></tr></thead>
         <tbody>{components.map((setItem, index) => {
@@ -1215,7 +1245,7 @@ function EquipmentModule() {
           { key: 'status', label: 'Status' },
           { key: 'location', label: 'Lokalizacja' },
           { key: 'set_items_count', label: 'Składniki' }
-        ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
+        ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'disassemble-set', label: 'Rozmontuj zestaw', icon: Package, visible: (row) => isEquipmentSet(row) && Array.isArray(row.set_items) && row.set_items.length > 0, onClick: handleDisassembleSet }]} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -1856,7 +1886,7 @@ function formatCompanyContact(profile) {
   return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, isRowLocked = null, isRowExpandable = null, renderExpandedRow = null }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -1984,7 +2014,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   }, [columns, columnOrder]);
 
   const activeColumns = orderedColumns.filter((column) => visibleColumns.includes(column.key));
-  const hasActions = Boolean(onOpen || onEdit || onDuplicate || onHistory || onDelete);
+  const hasActions = Boolean(onOpen || onEdit || onDuplicate || onHistory || onDelete || customRowActions.length);
 
   const applySort = (key, direction = 'asc') => {
     setSortKey(key);
@@ -2159,6 +2189,11 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     if (action === 'copyName') copyText(row.name ?? row.number ?? row.client ?? '');
     if (action === 'copyId') copyText(row.id ?? row.localId ?? row.number ?? '');
     if (action === 'delete') onDelete?.(row);
+    if (String(action).startsWith('custom:')) {
+      const customKey = String(action).replace('custom:', '');
+      const customAction = customRowActions.find((item) => item.key === customKey);
+      customAction?.onClick?.(row);
+    }
   };
 
   return (
@@ -2193,6 +2228,10 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
         {onEdit && <button type="button" onClick={() => runRowAction('edit')}><Save size={14} />Edytuj</button>}
         {onDuplicate && <button type="button" onClick={() => runRowAction('duplicate')}><FilePlus2 size={14} />Duplikuj</button>}
         {onHistory && <button type="button" onClick={() => runRowAction('history')}><History size={14} />Historia</button>}
+        {customRowActions.filter((action) => !action.visible || action.visible(rowContextMenu.row)).map((action) => {
+          const Icon = action.icon ?? Package;
+          return <button key={action.key} type="button" className={action.className ?? ''} onClick={() => runRowAction(`custom:${action.key}`)}><Icon size={14} />{action.label}</button>;
+        })}
         <div className="context-menu-separator" />
         <button type="button" onClick={() => runRowAction('copyName')}><Copy size={14} />Kopiuj nazwę</button>
         {(rowContextMenu.row?.id || rowContextMenu.row?.localId || rowContextMenu.row?.number) && <button type="button" onClick={() => runRowAction('copyId')}><Copy size={14} />Kopiuj ID / numer</button>}

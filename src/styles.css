@@ -1829,3 +1829,11 @@ th.expand-cell{cursor:default}
 .app-shell.theme-light .set-location-modal label{
   color:#334155;
 }
+
+.set-card-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}

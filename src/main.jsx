@@ -1282,12 +1282,12 @@ function EquipmentModule() {
     if (!components.length) return <div className="expanded-set-empty">Ten zestaw nie ma jeszcze przypisanych składników.</div>;
     const resolveComponent = (setItem) => rows.find((row) => sameEquipmentKey(row, setItem)) ?? setItem;
     return <div className="expanded-set-panel">
-      <div className="expanded-set-header"><strong>Zawartość zestawu</strong><span>{components.length} pozycji</span><div className="expanded-set-actions"><button type="button" className="secondary-button compact-table-button" onClick={(event) => { event.stopPropagation(); setLocationEditorTarget(setRow); }}><FolderOpen size={14} />Zmień lokalizację</button><button type="button" className="secondary-button compact-table-button" onClick={(event) => { event.stopPropagation(); handleDisassembleSet(setRow); }}><Package size={14} />Rozmontuj zestaw</button></div></div>
+      <div className="expanded-set-header"><strong>Zawartość zestawu</strong><span>{components.length} pozycji</span></div>
       <table className="expanded-set-table">
-        <thead><tr><th>Kategoria</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th><th>Operacje</th></tr></thead>
+        <thead><tr><th>Kategoria</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th></tr></thead>
         <tbody>{components.map((setItem, index) => {
           const item = resolveComponent(setItem);
-          return <tr key={`${getSetItemKey(setItem)}-${index}`}><td>{item.category || '—'}</td><td><strong>{item.name || '—'}</strong></td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={(event) => { event.stopPropagation(); handleRemoveSetComponent(setRow, item); }}>Usuń składnik</button></td></tr>;
+          return <tr key={`${getSetItemKey(setItem)}-${index}`}><td>{item.category || '—'}</td><td><strong>{item.name || '—'}</strong></td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td></tr>;
         })}</tbody>
       </table>
     </div>;
@@ -1319,7 +1319,7 @@ function EquipmentModule() {
           { key: 'status', label: 'Status' },
           { key: 'location', label: 'Lokalizacja' },
           { key: 'set_items_count', label: 'Składniki' }
-        ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'change-set-location', label: 'Zmień lokalizację zestawu', icon: FolderOpen, visible: (row) => isEquipmentSet(row), onClick: (row) => setLocationEditorTarget(row) }, { key: 'disassemble-set', label: 'Rozmontuj zestaw', icon: Package, visible: (row) => isEquipmentSet(row) && Array.isArray(row.set_items) && row.set_items.length > 0, onClick: handleDisassembleSet }]} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
+        ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
       {locationEditorTarget && <SetLocationEditor setItem={locationEditorTarget} onClose={() => setLocationEditorTarget(null)} onSave={(location) => handleChangeSetLocation(locationEditorTarget, location)} />}
@@ -1570,7 +1570,34 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   };
 
   const removeSetItem = (index) => {
+    const item = form.set_items[index];
+    const itemName = item?.name || 'wybrany składnik';
+    if (!confirm(`Usunąć składnik „${itemName}” z zestawu? Po zapisaniu sprzęt wróci do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}”.`)) return;
     update('set_items', form.set_items.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const changeSetLocationInCard = () => {
+    const nextLocation = prompt('Podaj nową lokalizację zestawu i jego składników:', form.location || 'Magazyn');
+    if (nextLocation === null) return;
+    const location = nextLocation.trim();
+    if (!location) {
+      alert('Podaj lokalizację zestawu.');
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      location,
+      set_items: (current.set_items ?? []).map((item) => ({ ...item, location }))
+    }));
+  };
+
+  const disassembleSetInCard = () => {
+    if (!form.set_items.length) {
+      alert('Ten zestaw nie ma składników do rozmontowania.');
+      return;
+    }
+    if (!confirm(`Rozmontować zestaw „${form.name || 'Zestaw'}”? Po zapisaniu wszystkie składniki wrócą do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}”.`)) return;
+    update('set_items', []);
   };
 
   const saveEquipment = () => {
@@ -1741,7 +1768,11 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
                   <div className="section-title">Składniki zestawu</div>
                   <p className="muted">Składniki wybierasz z magazynu. Po zapisaniu zostaną zablokowane jako „Składnik zestawu”.</p>
                 </div>
-                <button type="button" className="secondary-button compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</button>
+                <div className="set-card-action-row">
+                  <button type="button" className="secondary-button compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</button>
+                  <button type="button" className="secondary-button compact-table-button" onClick={changeSetLocationInCard}><FolderOpen size={15} />Zmień lokalizację</button>
+                  <button type="button" className="secondary-button compact-table-button" onClick={disassembleSetInCard}><Package size={15} />Rozmontuj zestaw</button>
+                </div>
               </div>
               {form.set_items.length ? <div className="set-components-table-shell">
                 <table className="set-components-table">

@@ -933,6 +933,15 @@ function isItemUsedInOtherSet(item, equipmentRows, currentSet) {
   });
 }
 
+function getEquipmentSetStatus(setItems = []) {
+  const items = Array.isArray(setItems) ? setItems : [];
+  if (!items.length) return 'Niekompletny';
+  const statuses = items.map((item) => String(item?.status ?? '').toLocaleLowerCase('pl'));
+  if (statuses.some((status) => status.includes('wypo'))) return 'Wypożyczony';
+  if (statuses.some((status) => status.includes('serwis') || status.includes('uszk') || status.includes('kontro'))) return 'Serwis';
+  return EQUIPMENT_AVAILABLE_STATUS;
+}
+
 function EquipmentModule() {
   const [rows, setRows] = useState(demoEquipment);
   const [loading, setLoading] = useState(false);
@@ -1309,6 +1318,7 @@ function getSavedEquipmentModalPosition(size) {
 
 function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
+  const isInitialSetCard = equipment?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(equipment?.set_items) && equipment.set_items.length > 0;
   const [activeTab, setActiveTab] = useState('basic');
   const [errors, setErrors] = useState({});
   const [modalSize, setModalSize] = useState(getSavedEquipmentModalSize);
@@ -1325,29 +1335,30 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
     id: equipment?.id ?? null,
     localId: equipment?.localId ?? null,
     name: equipment?.name ?? '',
-    category: equipment?.category ?? categories[0] ?? 'Kamera',
-    brand: equipment?.brand ?? '',
-    model: equipment?.model ?? '',
+    category: isInitialSetCard ? EQUIPMENT_SET_CATEGORY : equipment?.category ?? categories[0] ?? 'Kamera',
+    brand: isInitialSetCard ? '' : equipment?.brand ?? '',
+    model: isInitialSetCard ? '' : equipment?.model ?? '',
     serial: equipment?.serial ?? '',
     inventory_number: equipment?.inventory_number ?? '',
     barcode: equipment?.barcode ?? equipment?.serial ?? '',
-    status: equipment?.status ?? statuses[0] ?? 'Dostępny',
+    status: isInitialSetCard ? getEquipmentSetStatus(equipment?.set_items ?? cardData.set_items) : equipment?.status ?? statuses[0] ?? 'Dostępny',
     location: equipment?.location ?? 'Magazyn',
     purchase_date: equipment?.purchase_date ?? '',
     condition: equipment?.condition ?? cardData.condition,
-    purchase_value: equipment?.purchase_value ?? cardData.purchase_value,
-    deposit: equipment?.deposit ?? cardData.deposit,
-    price_day: equipment?.price_day ?? cardData.price_day,
-    price_week: equipment?.price_week ?? cardData.price_week,
+    purchase_value: isInitialSetCard ? '' : equipment?.purchase_value ?? cardData.purchase_value,
+    deposit: isInitialSetCard ? '' : equipment?.deposit ?? cardData.deposit,
+    price_day: isInitialSetCard ? '' : equipment?.price_day ?? cardData.price_day,
+    price_week: isInitialSetCard ? '' : equipment?.price_week ?? cardData.price_week,
     description: equipment?.description ?? cardData.description,
-    gallery: Array.isArray(equipment?.gallery) ? equipment.gallery : cardData.gallery,
-    attachments: Array.isArray(equipment?.attachments) ? equipment.attachments : cardData.attachments,
+    gallery: isInitialSetCard ? [] : Array.isArray(equipment?.gallery) ? equipment.gallery : cardData.gallery,
+    attachments: isInitialSetCard ? [] : Array.isArray(equipment?.attachments) ? equipment.attachments : cardData.attachments,
     set_items: Array.isArray(equipment?.set_items) ? equipment.set_items : cardData.set_items,
-    service_notes: equipment?.service_notes ?? cardData.service_notes,
-    history_notes: equipment?.history_notes ?? cardData.history_notes
+    service_notes: isInitialSetCard ? '' : equipment?.service_notes ?? cardData.service_notes,
+    history_notes: isInitialSetCard ? '' : equipment?.history_notes ?? cardData.history_notes
   }));
 
-
+  const isSetCard = form.category === EQUIPMENT_SET_CATEGORY;
+  const calculatedSetStatus = isSetCard ? getEquipmentSetStatus(form.set_items) : form.status;
   const setItemKeys = useMemo(() => new Set((form.set_items ?? []).map(getSetItemKey).filter(Boolean).map(String)), [form.set_items]);
   const availableSetComponents = useMemo(() => equipmentRows.filter((item) => {
     if (sameEquipmentKey(item, form)) return false;
@@ -1358,7 +1369,6 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
     return true;
   }), [equipmentRows, form, setItemKeys]);
 
-  const isSetCard = form.category === EQUIPMENT_SET_CATEGORY;
   const safeStatuses = statuses.includes(EQUIPMENT_SET_COMPONENT_STATUS) ? statuses : [...statuses, EQUIPMENT_SET_COMPONENT_STATUS];
 
   const update = (key, value) => {
@@ -1405,7 +1415,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 
   const saveEquipment = () => {
     const nextErrors = {};
-    if (!form.name.trim()) nextErrors.name = 'Nazwa sprzętu jest wymagana.';
+    if (!form.name.trim()) nextErrors.name = isSetCard ? 'Nazwa zestawu jest wymagana.' : 'Nazwa sprzętu jest wymagana.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
       setActiveTab('basic');
@@ -1416,27 +1426,41 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
       id: form.id,
       localId: form.localId,
       name: form.name.trim(),
-      category: form.category,
-      brand: form.brand.trim(),
-      model: form.model.trim(),
+      category: isSetCard ? EQUIPMENT_SET_CATEGORY : form.category,
+      brand: isSetCard ? '' : form.brand.trim(),
+      model: isSetCard ? '' : form.model.trim(),
       serial: form.serial.trim(),
       inventory_number: form.inventory_number.trim(),
       barcode: form.barcode.trim(),
-      status: form.status,
+      status: isSetCard ? calculatedSetStatus : form.status,
       location: form.location.trim(),
-      purchase_date: form.purchase_date,
-      notes: buildEquipmentCardNotes(form),
+      purchase_date: isSetCard ? '' : form.purchase_date,
+      notes: buildEquipmentCardNotes({
+        ...form,
+        category: isSetCard ? EQUIPMENT_SET_CATEGORY : form.category,
+        status: isSetCard ? calculatedSetStatus : form.status,
+        brand: isSetCard ? '' : form.brand,
+        model: isSetCard ? '' : form.model,
+        purchase_value: isSetCard ? '' : form.purchase_value,
+        deposit: isSetCard ? '' : form.deposit,
+        price_day: isSetCard ? '' : form.price_day,
+        price_week: isSetCard ? '' : form.price_week,
+        gallery: isSetCard ? [] : form.gallery,
+        attachments: isSetCard ? [] : form.attachments,
+        service_notes: isSetCard ? '' : form.service_notes,
+        history_notes: isSetCard ? '' : form.history_notes
+      }),
       description: form.description,
       condition: form.condition,
-      purchase_value: form.purchase_value,
-      deposit: form.deposit,
-      price_day: form.price_day,
-      price_week: form.price_week,
-      gallery: form.gallery,
-      attachments: form.attachments,
-      set_items: form.set_items,
-      service_notes: form.service_notes,
-      history_notes: form.history_notes
+      purchase_value: isSetCard ? '' : form.purchase_value,
+      deposit: isSetCard ? '' : form.deposit,
+      price_day: isSetCard ? '' : form.price_day,
+      price_week: isSetCard ? '' : form.price_week,
+      gallery: isSetCard ? [] : form.gallery,
+      attachments: isSetCard ? [] : form.attachments,
+      set_items: isSetCard ? form.set_items : [],
+      service_notes: isSetCard ? '' : form.service_notes,
+      history_notes: isSetCard ? '' : form.history_notes
     });
   };
 
@@ -1524,6 +1548,58 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
     { id: 'relations', label: 'Powiązania / Zestawy' }
   ];
 
+  if (isSetCard) {
+    return (
+      <div className="modal-backdrop draggable-modal-backdrop">
+        <div className="modal-card equipment-card-modal set-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${modalPosition.left}px`, top: `${modalPosition.top}px` }}>
+          <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
+            <div>
+              <p className="eyebrow">Zestaw sprzętu</p>
+              <h2>Karta zestawu</h2>
+              <p className="muted">Definicja zestawu składającego się z wielu urządzeń magazynowych.</p>
+            </div>
+            <button className="icon-button" onClick={onClose}><X size={18} /></button>
+          </div>
+
+          <div className="set-card-content">
+            <div className="equipment-section-panel set-details-panel">
+              <div className="section-title">Dane zestawu</div>
+              <div className="set-basic-grid">
+                <label className="set-name-field">Nazwa zestawu *<input className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Walizka streamingowa" />{errors.name && <span className="field-hint">{errors.name}</span>}</label>
+                <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} placeholder="opcjonalnie" /></label>
+                <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} placeholder="opcjonalnie" /></label>
+                <label>Status<input value={calculatedSetStatus} readOnly className="readonly-input" /></label>
+                <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Magazyn" /></label>
+                <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
+                <label className="set-description-field">Opis zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></label>
+              </div>
+            </div>
+
+            <div className="equipment-section-panel set-builder-panel set-card-components-panel">
+              <div className="set-builder-header">
+                <div>
+                  <div className="section-title">Składniki zestawu</div>
+                  <p className="muted">Składniki wybierasz z magazynu. Po zapisaniu zostaną zablokowane jako „Składnik zestawu”.</p>
+                </div>
+                <button type="button" className="secondary-button compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</button>
+              </div>
+              {form.set_items.length ? <div className="set-components-table-shell">
+                <table className="set-components-table">
+                  <thead><tr><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th><th></th></tr></thead>
+                  <tbody>{form.set_items.map((item, index) => <tr key={`${getSetItemKey(item)}-${index}`}><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></td></tr>)}</tbody>
+                </table>
+              </div> : <div className="empty-set-box">Brak składników zestawu. Użyj przycisku „Dodaj składniki”, żeby wybrać pozycje z magazynu.</div>}
+            </div>
+          </div>
+
+          <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveEquipment}><Save size={18} />Zapisz zestaw</button></div>
+          <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
+        </div>
+        {setPickerOpen && <EquipmentSetPicker availableItems={availableSetComponents} onClose={() => setSetPickerOpen(false)} onConfirm={(items) => { addSetItems(items); setSetPickerOpen(false); }} />}
+      </div>
+    );
+  }
+
   return (
     <div className="modal-backdrop draggable-modal-backdrop">
       <div className="modal-card equipment-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${modalPosition.left}px`, top: `${modalPosition.top}px` }}>
@@ -1549,7 +1625,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
             <label>Model<input value={form.model} onChange={(event) => update('model', event.target.value)} placeholder="np. ATEM Mini Pro" /></label>
             <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} /></label>
             <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
-            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}>{(categories.includes(EQUIPMENT_SET_CATEGORY) ? categories : [...categories, EQUIPMENT_SET_CATEGORY]).map((option) => <option key={option}>{option}</option>)}</select></label>
+            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}>{categories.filter((option) => option !== EQUIPMENT_SET_CATEGORY).map((option) => <option key={option}>{option}</option>)}</select></label>
             <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}>{safeStatuses.map((option) => <option key={option}>{option}</option>)}</select></label>
             <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
             <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Szafka Magazyn" /></label>
@@ -1586,30 +1662,15 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
             <textarea className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
           </div>}
 
-          {activeTab === 'relations' && <div className="equipment-section-panel set-builder-panel">
-            <div className="set-builder-header">
-              <div>
-                <div className="section-title">Składniki zestawu</div>
-                <p className="muted">Składniki wybierasz z magazynu w osobnym oknie. Po zapisaniu zestawu zostaną zablokowane jako „Składnik zestawu”.</p>
-              </div>
-              {isSetCard && <button type="button" className="secondary-button compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</button>}
-            </div>
-            {isSetCard ? <>
-              <div className="set-builder-note">Dodany składnik zostanie zablokowany w magazynie i otrzyma status „Składnik zestawu”.</div>
-              {form.set_items.length ? <div className="set-components-table-shell">
-                <table className="set-components-table">
-                  <thead><tr><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Nr inw.</th><th></th></tr></thead>
-                  <tbody>{form.set_items.map((item, index) => <tr key={`${getSetItemKey(item)}-${index}`}><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.inventory_number || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></td></tr>)}</tbody>
-                </table>
-              </div> : <div className="empty-set-box">Brak składników zestawu. Użyj przycisku „Dodaj składniki”, żeby wybrać pozycje z magazynu.</div>}
-            </> : <div className="notice">Składniki można dodawać tylko w kartotece sprzętu z kategorią „Zestaw”.</div>}
+          {activeTab === 'relations' && <div className="equipment-section-panel">
+            <div className="section-title">Powiązania / zestawy</div>
+            <div className="notice">Ten ekran służy do sprzętu pojedynczego. Zestawy tworzy się przez przycisk „Dodaj zestaw” w module Sprzęt.</div>
           </div>}
         </div>
 
         <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</button></div>
         <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
       </div>
-      {setPickerOpen && <EquipmentSetPicker availableItems={availableSetComponents} onClose={() => setSetPickerOpen(false)} onConfirm={(items) => { addSetItems(items); setSetPickerOpen(false); }} />}
     </div>
   );
 }

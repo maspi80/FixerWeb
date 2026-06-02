@@ -951,7 +951,6 @@ function EquipmentModule() {
   const [notice, setNotice] = useState('');
   const [equipmentCategories, setEquipmentCategories] = useState(() => getLocalEquipmentDictionaryNames('category'));
   const [equipmentStatuses, setEquipmentStatuses] = useState(() => getLocalEquipmentDictionaryNames('status'));
-  const [locationEditorTarget, setLocationEditorTarget] = useState(null);
 
   const loadEquipmentDictionaries = async () => {
     const [categoriesResult, statusesResult] = await Promise.all([
@@ -1044,16 +1043,18 @@ function EquipmentModule() {
   const updateSetComponentStatuses = async (previousItems = [], nextItems = [], parentItem = null) => {
     const previousKeys = new Set(previousItems.map(getSetItemKey).filter(Boolean).map(String));
     const nextKeys = new Set(nextItems.map(getSetItemKey).filter(Boolean).map(String));
-    const toAttach = [...nextKeys].filter((key) => !previousKeys.has(key));
     const toRelease = [...previousKeys].filter((key) => !nextKeys.has(key));
+    const setLocation = String(parentItem?.location ?? '').trim();
 
     const findRowByKey = (key) => rows.find((row) => sameEquipmentKey(row, key));
 
     if (isSupabaseConfigured) {
-      for (const key of toAttach) {
+      for (const key of nextKeys) {
         const row = findRowByKey(key);
         if (!row?.id) continue;
-        const { error } = await updateEquipmentRecord(row.id, { status: EQUIPMENT_SET_COMPONENT_STATUS });
+        const updatePayload = { status: EQUIPMENT_SET_COMPONENT_STATUS };
+        if (setLocation) updatePayload.location = setLocation;
+        const { error } = await updateEquipmentRecord(row.id, updatePayload);
         if (error) throw error;
       }
       for (const key of toRelease) {
@@ -1065,16 +1066,16 @@ function EquipmentModule() {
           return (candidate.set_items ?? []).some((setItem) => sameEquipmentKey(setItem, key));
         });
         if (stillUsed) continue;
-        const { error } = await updateEquipmentRecord(row.id, { status: EQUIPMENT_AVAILABLE_STATUS });
+        const { error } = await updateEquipmentRecord(row.id, { status: EQUIPMENT_AVAILABLE_STATUS, location: 'Magazyn' });
         if (error) throw error;
       }
       return;
     }
 
     setRows((current) => current.map((row) => {
-      const key = getEquipmentKey(row);
-      if (toAttach.includes(String(key))) return { ...row, status: EQUIPMENT_SET_COMPONENT_STATUS };
-      if (toRelease.includes(String(key))) return { ...row, status: EQUIPMENT_AVAILABLE_STATUS };
+      const key = String(getEquipmentKey(row) ?? '');
+      if (nextKeys.has(key)) return { ...row, status: EQUIPMENT_SET_COMPONENT_STATUS, ...(setLocation ? { location: setLocation } : {}) };
+      if (toRelease.includes(key)) return { ...row, status: EQUIPMENT_AVAILABLE_STATUS, location: 'Magazyn' };
       return row;
     }));
   };
@@ -1171,109 +1172,6 @@ function EquipmentModule() {
     setRows((current) => current.filter((row) => !selected.includes(row)));
   };
 
-  const handleDisassembleSet = async (item) => {
-    if (!isEquipmentSet(item)) return;
-    const setItems = Array.isArray(item.set_items) ? item.set_items : [];
-    if (!setItems.length) {
-      alert('Ten zestaw nie ma składników do rozmontowania.');
-      return;
-    }
-    if (!confirm(`Rozmontować zestaw: ${item.name}? Składniki wrócą do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}”.`)) return;
-
-    const emptySetPayload = normalizePayload({
-      ...item,
-      status: 'Niekompletny',
-      set_items: []
-    });
-
-    try {
-      if (isSupabaseConfigured && item.id) {
-        const result = await updateEquipmentRecord(item.id, emptySetPayload);
-        if (result.error) throw result.error;
-        await updateSetComponentStatuses(setItems, [], item);
-        await loadEquipment();
-      } else {
-        await updateSetComponentStatuses(setItems, [], item);
-        setRows((current) => current.map((row) => sameEquipmentKey(row, item) ? { ...row, status: 'Niekompletny', set_items: [] } : row));
-      }
-      setNotice(`Rozmontowano zestaw „${item.name}”. Składniki wróciły do magazynu jako „${EQUIPMENT_AVAILABLE_STATUS}”.`);
-    } catch (error) {
-      alert(error.message ?? 'Nie udało się rozmontować zestawu.');
-    }
-  };
-
-  const handleRemoveSetComponent = async (setRow, component) => {
-    if (!isEquipmentSet(setRow)) return;
-    const setItems = Array.isArray(setRow.set_items) ? setRow.set_items : [];
-    const componentName = component?.name || 'wybrany składnik';
-    if (!setItems.some((setItem) => sameEquipmentKey(setItem, component))) return;
-    if (!confirm(`Usunąć składnik „${componentName}” z zestawu „${setRow.name}”? Sprzęt wróci do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}”.`)) return;
-
-    const nextSetItems = setItems.filter((setItem) => !sameEquipmentKey(setItem, component));
-    const nextSetStatus = getEquipmentSetStatus(nextSetItems);
-    const nextSetPayload = normalizePayload({
-      ...setRow,
-      status: nextSetStatus,
-      set_items: nextSetItems
-    });
-
-    try {
-      if (isSupabaseConfigured && setRow.id) {
-        const result = await updateEquipmentRecord(setRow.id, nextSetPayload);
-        if (result.error) throw result.error;
-        await updateSetComponentStatuses(setItems, nextSetItems, setRow);
-        await loadEquipment();
-      } else {
-        await updateSetComponentStatuses(setItems, nextSetItems, setRow);
-        setRows((current) => current.map((row) => sameEquipmentKey(row, setRow) ? { ...row, status: nextSetStatus, set_items: nextSetItems } : row));
-      }
-      setNotice(`Usunięto składnik „${componentName}” z zestawu „${setRow.name}”.`);
-    } catch (error) {
-      alert(error.message ?? 'Nie udało się usunąć składnika z zestawu.');
-    }
-  };
-
-  const handleChangeSetLocation = async (setRow, nextLocation) => {
-    if (!isEquipmentSet(setRow)) return;
-    const location = String(nextLocation ?? '').trim();
-    if (!location) {
-      alert('Podaj lokalizację zestawu.');
-      return;
-    }
-
-    const setItems = Array.isArray(setRow.set_items) ? setRow.set_items : [];
-    const nextSetItems = setItems.map((setItem) => ({ ...setItem, location }));
-    const nextSetPayload = normalizePayload({
-      ...setRow,
-      location,
-      set_items: nextSetItems
-    });
-
-    try {
-      if (isSupabaseConfigured && setRow.id) {
-        const setResult = await updateEquipmentRecord(setRow.id, nextSetPayload);
-        if (setResult.error) throw setResult.error;
-
-        for (const setItem of setItems) {
-          const row = rows.find((candidate) => sameEquipmentKey(candidate, setItem));
-          if (!row?.id) continue;
-          const { error } = await updateEquipmentRecord(row.id, { location });
-          if (error) throw error;
-        }
-        await loadEquipment();
-      } else {
-        setRows((current) => current.map((row) => {
-          if (sameEquipmentKey(row, setRow)) return { ...row, location, set_items: nextSetItems };
-          if (setItems.some((setItem) => sameEquipmentKey(row, setItem))) return { ...row, location };
-          return row;
-        }));
-      }
-      setLocationEditorTarget(null);
-      setNotice(`Zmieniono lokalizację zestawu „${setRow.name}” na „${location}”.`);
-    } catch (error) {
-      alert(error.message ?? 'Nie udało się zmienić lokalizacji zestawu.');
-    }
-  };
 
   const displayRows = useMemo(() => rows.filter((item) => !isEquipmentSetComponent(item)), [rows]);
 
@@ -1322,7 +1220,6 @@ function EquipmentModule() {
         ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
-      {locationEditorTarget && <SetLocationEditor setItem={locationEditorTarget} onClose={() => setLocationEditorTarget(null)} onSave={(location) => handleChangeSetLocation(locationEditorTarget, location)} />}
     </div>
   );
 }
@@ -1442,40 +1339,6 @@ function getSavedEquipmentModalPosition(size) {
   return clampEquipmentModalPosition(getCenteredEquipmentModalPosition(size), size);
 }
 
-function SetLocationEditor({ setItem, onClose, onSave }) {
-  const [location, setLocation] = useState(setItem?.location ?? 'Magazyn');
-  const componentCount = Array.isArray(setItem?.set_items) ? setItem.set_items.length : 0;
-
-  const save = () => {
-    const value = location.trim();
-    if (!value) {
-      alert('Podaj lokalizację zestawu.');
-      return;
-    }
-    onSave(value);
-  };
-
-  return (
-    <div className="modal-backdrop">
-      <div className="modal-card set-location-modal">
-        <div className="modal-header">
-          <div>
-            <p className="eyebrow">Zestaw sprzętu</p>
-            <h2>Zmień lokalizację</h2>
-            <p className="muted">Nowa lokalizacja zostanie wpisana w karcie zestawu i we wszystkich jego składnikach.</p>
-          </div>
-          <button className="icon-button" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="equipment-section-panel">
-          <div className="summary-box"><strong>{setItem?.name || 'Zestaw'}</strong><span>{componentCount} składników</span></div>
-          <label>Lokalizacja<input autoFocus value={location} onChange={(event) => setLocation(event.target.value)} placeholder="np. Magazyn, Klient, Sala A" onKeyDown={(event) => { if (event.key === 'Enter') save(); }} /></label>
-        </div>
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={save}><Save size={18} />Zapisz lokalizację</button></div>
-      </div>
-    </div>
-  );
-}
-
 function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const isInitialSetCard = equipment?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(equipment?.set_items) && equipment.set_items.length > 0;
@@ -1576,30 +1439,6 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
     update('set_items', form.set_items.filter((_, itemIndex) => itemIndex !== index));
   };
 
-  const changeSetLocationInCard = () => {
-    const nextLocation = prompt('Podaj nową lokalizację zestawu i jego składników:', form.location || 'Magazyn');
-    if (nextLocation === null) return;
-    const location = nextLocation.trim();
-    if (!location) {
-      alert('Podaj lokalizację zestawu.');
-      return;
-    }
-    setForm((current) => ({
-      ...current,
-      location,
-      set_items: (current.set_items ?? []).map((item) => ({ ...item, location }))
-    }));
-  };
-
-  const disassembleSetInCard = () => {
-    if (!form.set_items.length) {
-      alert('Ten zestaw nie ma składników do rozmontowania.');
-      return;
-    }
-    if (!confirm(`Rozmontować zestaw „${form.name || 'Zestaw'}”? Po zapisaniu wszystkie składniki wrócą do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}”.`)) return;
-    update('set_items', []);
-  };
-
   const saveEquipment = () => {
     const nextErrors = {};
     if (!form.name.trim()) nextErrors.name = isSetCard ? 'Nazwa zestawu jest wymagana.' : 'Nazwa sprzętu jest wymagana.';
@@ -1645,7 +1484,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
       price_week: isSetCard ? '' : form.price_week,
       gallery: isSetCard ? [] : form.gallery,
       attachments: isSetCard ? [] : form.attachments,
-      set_items: isSetCard ? form.set_items : [],
+      set_items: isSetCard ? form.set_items.map((item) => ({ ...item, location: form.location.trim() || item.location || 'Magazyn' })) : [],
       service_notes: isSetCard ? '' : form.service_notes,
       history_notes: isSetCard ? '' : form.history_notes
     });
@@ -1770,8 +1609,6 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
                 </div>
                 <div className="set-card-action-row">
                   <button type="button" className="secondary-button compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</button>
-                  <button type="button" className="secondary-button compact-table-button" onClick={changeSetLocationInCard}><FolderOpen size={15} />Zmień lokalizację</button>
-                  <button type="button" className="secondary-button compact-table-button" onClick={disassembleSetInCard}><Package size={15} />Rozmontuj zestaw</button>
                 </div>
               </div>
               {form.set_items.length ? <div className="set-components-table-shell">

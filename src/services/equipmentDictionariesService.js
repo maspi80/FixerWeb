@@ -2,12 +2,15 @@ import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const DEFAULT_EQUIPMENT_CATEGORIES = ['Kamera', 'Obiektyw', 'Audio', 'Mikser Video', 'Streaming', 'Oświetlenie', 'Komputer', 'Akcesoria', 'Zestaw'];
 export const DEFAULT_EQUIPMENT_STATUSES = ['Dostępny', 'Wypożyczony', 'Rezerwacja', 'Serwis', 'Uszkodzony', 'Wycofany', 'Składnik zestawu'];
+export const DEFAULT_EQUIPMENT_LOCATIONS = ['Magazyn'];
 
 const storageKey = 'fixer-equipment-dictionaries';
 const columns = 'id, dictionary_type, name, sort_order, created_at, updated_at';
 
 function defaultsByType(type) {
-  return type === 'status' ? DEFAULT_EQUIPMENT_STATUSES : DEFAULT_EQUIPMENT_CATEGORIES;
+  if (type === 'status') return DEFAULT_EQUIPMENT_STATUSES;
+  if (type === 'location') return DEFAULT_EQUIPMENT_LOCATIONS;
+  return DEFAULT_EQUIPMENT_CATEGORIES;
 }
 
 function readLocal() {
@@ -15,7 +18,7 @@ function readLocal() {
     const parsed = JSON.parse(localStorage.getItem(storageKey) || 'null');
     if (parsed && Array.isArray(parsed.category) && Array.isArray(parsed.status)) return parsed;
   } catch {}
-  return { category: DEFAULT_EQUIPMENT_CATEGORIES, status: DEFAULT_EQUIPMENT_STATUSES };
+  return { category: DEFAULT_EQUIPMENT_CATEGORIES, status: DEFAULT_EQUIPMENT_STATUSES, location: DEFAULT_EQUIPMENT_LOCATIONS };
 }
 
 function writeLocal(next) {

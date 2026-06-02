@@ -79,7 +79,6 @@ function validateClientForm(form) {
 }
 
 const DEFAULT_CLIENT_TYPES = ['Stały', 'Pracownik', 'VIP', 'Problematyczny', 'Nowy', 'Zablokowany'];
-const DEFAULT_LOCATIONS = ['Magazyn'];
 
 function getClientTypes() {
   try {
@@ -1596,7 +1595,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
                 <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Status<input value={calculatedSetStatus} readOnly className="readonly-input" /></label>
-                <label>Lokalizacja<select value={form.location} onChange={(event) => update('location', event.target.value)}>{(equipmentDictionary?.locations?.length ? equipmentDictionary.locations : DEFAULT_LOCATIONS).map(location => <option key={location} value={location}>{location}</option>)}</select></label>
+                <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Magazyn" /></label>
                 <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
                 <label className="set-description-field">Opis zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></label>
               </div>
@@ -1614,8 +1613,8 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
               </div>
               {form.set_items.length ? <div className="set-components-table-shell">
                 <table className="set-components-table">
-                  <thead><tr><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Lokalizacja</th><th>Operacje</th></tr></thead>
-                  <tbody>{form.set_items.map((item, index) => <tr key={`${getSetItemKey(item)}-${index}`}><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td>{item.location || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></td></tr>)}</tbody>
+                  <thead><tr><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th><th></th></tr></thead>
+                  <tbody>{form.set_items.map((item, index) => <tr key={`${getSetItemKey(item)}-${index}`}><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></td></tr>)}</tbody>
                 </table>
               </div> : <div className="empty-set-box">Brak składników zestawu. Użyj przycisku „Dodaj składniki”, żeby wybrać pozycje z magazynu.</div>}
             </div>

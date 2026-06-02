@@ -1795,3 +1795,37 @@ th.expand-cell{cursor:default}
 .app-shell.theme-light .expanded-set-table th{background:rgba(241,245,249,.98);color:#334155}
 .app-shell.theme-light .expanded-set-table td{border-bottom-color:rgba(15,23,42,.08)}
 .app-shell.theme-light .expanded-set-empty{background:rgba(255,255,255,.78);border-color:rgba(15,23,42,.14);color:#64748b}
+
+.expanded-set-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.set-location-modal{
+  width:min(520px, calc(100vw - 32px));
+  max-height:calc(100vh - 48px);
+}
+
+.set-location-modal .equipment-section-panel{
+  margin:0 18px 0;
+}
+
+.set-location-modal label{
+  display:grid;
+  gap:6px;
+  margin-top:12px;
+  color:#cbd5e1;
+  font-size:12px;
+  font-weight:800;
+}
+
+.set-location-modal input{
+  width:100%;
+}
+
+.app-shell.theme-light .set-location-modal label{
+  color:#334155;
+}

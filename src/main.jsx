@@ -570,24 +570,6 @@ function ClientsModule() {
   };
 
 
-  const displayRows = useMemo(() => rows.filter((item) => !isEquipmentSetComponent(item)), [rows]);
-
-  const renderSetContents = (setRow) => {
-    const components = Array.isArray(setRow.set_items) ? setRow.set_items : [];
-    if (!components.length) return <div className="expanded-set-empty">Ten zestaw nie ma jeszcze przypisanych składników.</div>;
-    const resolveComponent = (setItem) => rows.find((row) => sameEquipmentKey(row, setItem)) ?? setItem;
-    return <div className="expanded-set-panel">
-      <div className="expanded-set-header"><strong>Zawartość zestawu</strong><span>{components.length} pozycji</span></div>
-      <table className="expanded-set-table">
-        <thead><tr><th>Kategoria</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th></tr></thead>
-        <tbody>{components.map((setItem, index) => {
-          const item = resolveComponent(setItem);
-          return <tr key={`${getSetItemKey(setItem)}-${index}`}><td>{item.category || '—'}</td><td><strong>{item.name || '—'}</strong></td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td></tr>;
-        })}</tbody>
-      </table>
-    </div>;
-  };
-
   return (
     <div className="module-page">
       <section className="panel hero-panel">
@@ -1186,6 +1168,25 @@ function EquipmentModule() {
       }
     }
     setRows((current) => current.filter((row) => !selected.includes(row)));
+  };
+
+
+  const displayRows = useMemo(() => rows.filter((item) => !isEquipmentSetComponent(item)), [rows]);
+
+  const renderSetContents = (setRow) => {
+    const components = Array.isArray(setRow.set_items) ? setRow.set_items : [];
+    if (!components.length) return <div className="expanded-set-empty">Ten zestaw nie ma jeszcze przypisanych składników.</div>;
+    const resolveComponent = (setItem) => rows.find((row) => sameEquipmentKey(row, setItem)) ?? setItem;
+    return <div className="expanded-set-panel">
+      <div className="expanded-set-header"><strong>Zawartość zestawu</strong><span>{components.length} pozycji</span></div>
+      <table className="expanded-set-table">
+        <thead><tr><th>Kategoria</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th></tr></thead>
+        <tbody>{components.map((setItem, index) => {
+          const item = resolveComponent(setItem);
+          return <tr key={`${getSetItemKey(setItem)}-${index}`}><td>{item.category || '—'}</td><td><strong>{item.name || '—'}</strong></td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td></tr>;
+        })}</tbody>
+      </table>
+    </div>;
   };
 
   return (

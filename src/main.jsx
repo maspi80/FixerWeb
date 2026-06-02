@@ -5,6 +5,24 @@ import {
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
   ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, Save, Trash2, X, Sun, Moon
 } from 'lucide-react';
+import './design-system/tokens.css';
+import './design-system/components.css';
+import {
+  AppButton,
+  AppInput,
+  AppSelect,
+  AppTable,
+  AppTextarea,
+  ButtonPrimary,
+  ButtonSecondary,
+  ButtonDanger,
+  ButtonGhost,
+  ModalFrame,
+  FormField,
+  SectionPanel,
+  StatusPill as DSStatusPill,
+  EmptyState
+} from './design-system';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients, equipment as demoEquipment } from './data/mockData';
@@ -12,6 +30,7 @@ import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecor
 import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetClientTypesRecords } from './services/clientTypesService';
 import { fetchTablePreference, getLocalTablePreference, saveTablePreference } from './services/tablePreferencesService';
 import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
+import { createRentalRecord, deleteRentalRecord, fetchRentals, updateRentalRecord } from './services/rentalsService';
 import {
   addEquipmentDictionaryRecord,
   deleteEquipmentDictionaryRecord,
@@ -362,11 +381,11 @@ function LoginScreen({ onDemoLogin }) {
         <h1>Logowanie do systemu</h1>
         <p className="muted">System logowania i zapisu danych działa przez Supabase.</p>
         <form onSubmit={handleSupabaseLogin} className="login-form">
-          <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email użytkownika" /></label>
-          <label>Hasło<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="hasło" /></label>
-          <button className="primary-button" type="submit"><LockKeyhole size={18} />Zaloguj</button>
+          <label>Email<AppInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email użytkownika" /></label>
+          <label>Hasło<AppInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="hasło" /></label>
+          <AppButton variant="primary" type="submit"><LockKeyhole size={18} />Zaloguj</AppButton>
         </form>
-        {!isSupabaseConfigured && <button className="secondary-button full-width" onClick={onDemoLogin}>Wejdź lokalnie</button>}
+        {!isSupabaseConfigured && <AppButton variant="secondary" className="full-width" onClick={onDemoLogin}>Wejdź lokalnie</AppButton>}
         <div className="login-note">Baza danych: {isSupabaseConfigured ? 'połączona' : 'brak konfiguracji Supabase'}</div>
       </div>
     </div>
@@ -576,10 +595,10 @@ function ClientsModule() {
         <p className="eyebrow">Moduł</p><h2>Baza klientów</h2>
         <p className="muted">Kartoteka klientów, dane adresowe, dane firmowe, rodzaje klientów i historia współpracy.</p>
         <div className="module-actions">
-          <button className="primary-button module-action-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</button>
-          <button className="secondary-button module-action-button" onClick={loadClients}>Odśwież</button>
-          <button className="secondary-button module-action-button" onClick={() => exportTableToCsv(CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><Download size={16} />Eksport CSV</button>
-          <button className="secondary-button module-action-button" onClick={() => exportTableToPdf('Baza klientów', CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />Eksport PDF</button>
+          <AppButton variant="primary" className="module-action-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</AppButton>
+          <AppButton variant="secondary" className="module-action-button" onClick={loadClients}>Odśwież</AppButton>
+          <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><Download size={16} />Eksport CSV</AppButton>
+          <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Baza klientów', CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />Eksport PDF</AppButton>
 
         </div>
         {notice && <div className="notice">{notice}</div>}
@@ -588,24 +607,24 @@ function ClientsModule() {
         <div className="client-filter-bar">
           <label>
             Szukaj
-            <input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nazwa, miasto, telefon, email, NIP" />
+            <AppInput value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nazwa, miasto, telefon, email, NIP" />
           </label>
           <label>
             Typ
-            <select value={clientTypeFilter} onChange={(event) => setClientTypeFilter(event.target.value)}>
+            <AppSelect value={clientTypeFilter} onChange={(event) => setClientTypeFilter(event.target.value)}>
               <option value="all">Wszyscy</option>
               <option value="Firma">Tylko firmy</option>
               <option value="Osoba prywatna">Tylko osoby prywatne</option>
-            </select>
+            </AppSelect>
           </label>
           <label>
             Rodzaj klienta
-            <select value={clientKindFilter} onChange={(event) => setClientKindFilter(event.target.value)}>
+            <AppSelect value={clientKindFilter} onChange={(event) => setClientKindFilter(event.target.value)}>
               <option value="all">Wszystkie rodzaje</option>
               {clientKinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
-            </select>
+            </AppSelect>
           </label>
-          <button type="button" className="secondary-button compact-button" onClick={clearClientFilters}>Wyczyść filtry</button>
+          <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearClientFilters}>Wyczyść filtry</AppButton>
           <span className="filter-count">{filteredRows.length} / {rows.length}</span>
         </div>
         <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
@@ -700,19 +719,6 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
     regon: client?.regon ?? '',
     notes: client?.notes ?? ''
   }));
-
-  const setItemKeys = useMemo(() => new Set((form.set_items ?? []).map(getSetItemKey).filter(Boolean).map(String)), [form.set_items]);
-  const availableSetComponents = useMemo(() => equipmentRows.filter((item) => {
-    if (sameEquipmentKey(item, form)) return false;
-    if (isEquipmentSet(item)) return false;
-    if (isEquipmentSetComponent(item) && !setItemKeys.has(String(getEquipmentKey(item)))) return false;
-    if (setItemKeys.has(String(getEquipmentKey(item)))) return false;
-    if (isItemUsedInOtherSet(item, equipmentRows, form)) return false;
-    return true;
-  }), [equipmentRows, form, setItemKeys]);
-
-  const isSetCard = form.category === EQUIPMENT_SET_CATEGORY;
-  const safeStatuses = statuses.includes(EQUIPMENT_SET_COMPONENT_STATUS) ? statuses : [...statuses, EQUIPMENT_SET_COMPONENT_STATUS];
 
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -866,7 +872,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
           <div className="summary-box"><strong>Informacje o kliencie</strong><span>{form.notes || 'Brak notatek.'}</span></div>
           {clientHistoryRows.length ? <DataTable storageKey={`client-history-${form.id ?? form.localId ?? 'new'}`} columns={[{ key: 'date', label: 'Data' },{ key: 'type', label: 'Typ' },{ key: 'description', label: 'Opis' },{ key: 'status', label: 'Status' }]} rows={clientHistoryRows} /> : <div className="notice">Brak powiązanych wypożyczeń lub zleceń serwisowych dla tego klienta.</div>}
         </div>}
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveClient}><Save size={18} />Zapisz</button></div>
+        <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveClient}><Save size={18} />Zapisz</AppButton></div>
         <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
       </div>
     </div>
@@ -1196,11 +1202,11 @@ function EquipmentModule() {
         <p className="eyebrow">Moduł</p><h2>Magazyn sprzętu</h2>
         <p className="muted">Kartoteka urządzeń, numery seryjne, kody, lokalizacje, statusy i przygotowanie pod zestawy oraz wypożyczenia.</p>
         <div className="module-actions">
-          <button className="primary-button" onClick={() => openEquipmentEditor(null)}><Plus size={18} />Dodaj sprzęt</button>
-          <button className="secondary-button" onClick={openSetEditor}><Package size={18} />Dodaj zestaw</button>
-          <button className="secondary-button" onClick={loadEquipment}>Odśwież</button>
-          <button className="secondary-button">Eksport PDF</button>
-          <button className="secondary-button">Ustawienia modułu</button>
+          <AppButton variant="primary" onClick={() => openEquipmentEditor(null)}><Plus size={18} />Dodaj sprzęt</AppButton>
+          <AppButton variant="secondary" onClick={openSetEditor}><Package size={18} />Dodaj zestaw</AppButton>
+          <AppButton variant="secondary" onClick={loadEquipment}>Odśwież</AppButton>
+          <AppButton variant="secondary">Eksport PDF</AppButton>
+          <AppButton variant="secondary">Ustawienia modułu</AppButton>
         </div>
         {notice && <div className="notice">{notice}</div>}
       </section>
@@ -1490,6 +1496,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   };
 
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
+  const visibleModalPosition = clampEquipmentModalPosition(modalPosition, modalSize);
 
   useEffect(() => {
     modalSizeRef.current = modalSize;
@@ -1504,8 +1511,9 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 
   useEffect(() => {
     const handleWindowResize = () => {
-      setModalSize((current) => clampEquipmentModalSize(current));
-      setModalPosition((current) => clampEquipmentModalPosition(current, modalSizeRef.current));
+      const nextSize = clampEquipmentModalSize(modalSizeRef.current);
+      setModalSize(nextSize);
+      setModalPosition((position) => clampEquipmentModalPosition(position, nextSize));
     };
     window.addEventListener('resize', handleWindowResize);
     return () => window.removeEventListener('resize', handleWindowResize);
@@ -1576,7 +1584,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   if (isSetCard) {
     return (
       <div className="modal-backdrop draggable-modal-backdrop">
-        <div className="modal-card equipment-card-modal set-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${modalPosition.left}px`, top: `${modalPosition.top}px` }}>
+        <div className="modal-card equipment-card-modal set-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
           <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
             <div>
               <p className="eyebrow">Zestaw sprzętu</p>
@@ -1607,7 +1615,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
                   <p className="muted">Składniki wybierasz z magazynu. Po zapisaniu zostaną zablokowane jako „Składnik zestawu”.</p>
                 </div>
                 <div className="set-card-action-row">
-                  <button type="button" className="secondary-button compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</button>
+                  <AppButton variant="secondary" size="sm" className="compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</AppButton>
                 </div>
               </div>
               {form.set_items.length ? <div className="set-components-table-shell">
@@ -1619,7 +1627,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
             </div>
           </div>
 
-          <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveEquipment}><Save size={18} />Zapisz zestaw</button></div>
+          <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz zestaw</AppButton></div>
           <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
         </div>
         {setPickerOpen && <EquipmentSetPicker availableItems={availableSetComponents} onClose={() => setSetPickerOpen(false)} onConfirm={(items) => { addSetItems(items); setSetPickerOpen(false); }} />}
@@ -1629,7 +1637,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 
   return (
     <div className="modal-backdrop draggable-modal-backdrop">
-      <div className="modal-card equipment-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${modalPosition.left}px`, top: `${modalPosition.top}px` }}>
+      <div className="modal-card equipment-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
         <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
           <div>
             <p className="eyebrow">Sprzęt</p>
@@ -1665,7 +1673,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 
           {activeTab === 'gallery' && <div className="equipment-section-panel">
             <div className="section-title">Galeria sprzętu</div>
-            <div className="inline-add-row"><input value={newGalleryItem} onChange={(event) => setNewGalleryItem(event.target.value)} placeholder="Adres zdjęcia lub opis zdjęcia" /><button type="button" className="secondary-button compact-table-button" onClick={addGalleryItem}>Dodaj</button></div>
+            <div className="inline-add-row"><AppInput value={newGalleryItem} onChange={(event) => setNewGalleryItem(event.target.value)} placeholder="Adres zdjęcia lub opis zdjęcia" /><AppButton variant="secondary" size="sm" className="compact-table-button" onClick={addGalleryItem}>Dodaj</AppButton></div>
             <div className="equipment-list-box">
               {form.gallery.length ? form.gallery.map((item, index) => <div key={`${item}-${index}`} className="equipment-list-row"><span>{item}</span><button type="button" className="ghost-mini-button" onClick={() => removeGalleryItem(index)}>Usuń</button></div>) : <p className="muted">Brak zdjęć w galerii.</p>}
             </div>
@@ -1673,7 +1681,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 
           {activeTab === 'attachments' && <div className="equipment-section-panel">
             <div className="section-title">Załączniki</div>
-            <div className="attachment-add-grid"><input value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa załącznika" /><input value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link lub numer dokumentu" /><button type="button" className="secondary-button compact-table-button" onClick={addAttachment}>Dodaj</button></div>
+            <div className="attachment-add-grid"><AppInput value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa załącznika" /><AppInput value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link lub numer dokumentu" /><AppButton variant="secondary" size="sm" className="compact-table-button" onClick={addAttachment}>Dodaj</AppButton></div>
             <div className="equipment-list-box">
               {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.name}</strong>{item.url ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Brak załączników.</p>}
             </div>
@@ -1695,7 +1703,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
           </div>}
         </div>
 
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</button></div>
+        <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</AppButton></div>
         <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
       </div>
     </div>
@@ -1703,11 +1711,556 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 }
 
 function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
+  return <EquipmentPickerModal title="Wybierz składniki z magazynu" availableItems={availableItems} selectedIds={[]} onClose={onClose} onConfirm={onConfirm} />;
+}
+const RENTALS_TABLE_KEY = 'rentals-table';
+const RENTAL_MODAL_SIZE_KEY = 'fixer-rental-modal-size';
+const RENTAL_MODAL_POSITION_KEY = 'fixer-rental-modal-position';
+const DEFAULT_RENTAL_MODAL_SIZE = { width: 1120, height: 720 };
+const MIN_RENTAL_MODAL_SIZE = { width: 900, height: 600 };
+const RENTAL_MODAL_SCREEN_MARGIN = 16;
+const RENTALS_TABLE_COLUMNS = [
+  { key: 'rental_number', label: 'Numer' },
+  { key: 'client', label: 'Klient' },
+  { key: 'items_count', label: 'Pozycje' },
+  { key: 'items_summary', label: 'Sprzęt' },
+  { key: 'status', label: 'Status' },
+  { key: 'start_date', label: 'Wydanie' },
+  { key: 'planned_return_date', label: 'Termin zwrotu' }
+];
+
+function formatRentalStatus(status) {
+  if (status === 'partially_returned') return 'Częściowo zwrócone';
+  if (status === 'returned') return 'Zwrócone';
+  return 'Aktywne';
+}
+
+function clampRentalModalSize(size) {
+  if (typeof window === 'undefined') return size;
+  const maxWidth = Math.max(MIN_RENTAL_MODAL_SIZE.width, window.innerWidth - 32);
+  const maxHeight = Math.max(MIN_RENTAL_MODAL_SIZE.height, window.innerHeight - 32);
+  return {
+    width: Math.min(Math.max(size.width, MIN_RENTAL_MODAL_SIZE.width), maxWidth),
+    height: Math.min(Math.max(size.height, MIN_RENTAL_MODAL_SIZE.height), maxHeight)
+  };
+}
+
+function getSavedRentalModalSize() {
+  if (typeof window === 'undefined') return DEFAULT_RENTAL_MODAL_SIZE;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RENTAL_MODAL_SIZE_KEY) || 'null');
+    if (parsed && Number.isFinite(parsed.width) && Number.isFinite(parsed.height)) {
+      return clampRentalModalSize(parsed);
+    }
+  } catch {}
+  return clampRentalModalSize(DEFAULT_RENTAL_MODAL_SIZE);
+}
+
+function getCenteredRentalModalPosition(size) {
+  if (typeof window === 'undefined') return { left: RENTAL_MODAL_SCREEN_MARGIN, top: RENTAL_MODAL_SCREEN_MARGIN };
+  return {
+    left: Math.max(RENTAL_MODAL_SCREEN_MARGIN, Math.round((window.innerWidth - size.width) / 2)),
+    top: Math.max(RENTAL_MODAL_SCREEN_MARGIN, Math.round((window.innerHeight - size.height) / 2))
+  };
+}
+
+function clampRentalModalPosition(position, size) {
+  if (typeof window === 'undefined') return position;
+  const maxLeft = Math.max(RENTAL_MODAL_SCREEN_MARGIN, window.innerWidth - size.width - RENTAL_MODAL_SCREEN_MARGIN);
+  const maxTop = Math.max(RENTAL_MODAL_SCREEN_MARGIN, window.innerHeight - size.height - RENTAL_MODAL_SCREEN_MARGIN);
+  return {
+    left: Math.min(Math.max(position.left, RENTAL_MODAL_SCREEN_MARGIN), maxLeft),
+    top: Math.min(Math.max(position.top, RENTAL_MODAL_SCREEN_MARGIN), maxTop)
+  };
+}
+
+function getSavedRentalModalPosition(size) {
+  if (typeof window === 'undefined') return getCenteredRentalModalPosition(size);
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RENTAL_MODAL_POSITION_KEY) || 'null');
+    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+      return clampRentalModalPosition(parsed, size);
+    }
+  } catch {}
+  return clampRentalModalPosition(getCenteredRentalModalPosition(size), size);
+}
+
+function getRentalItemEquipmentId(item) {
+  return item?.equipment_id ?? item?.id ?? '';
+}
+
+function getRentalBaseItems(rental) {
+  return (rental?.rental_items ?? []).filter((item) => item.item_type !== 'set_component');
+}
+
+function buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows) {
+  const rows = [];
+  selectedEquipment.forEach((item) => {
+    const isSet = isEquipmentSet(item);
+    rows.push({
+      equipment_id: item.id,
+      parent_set_equipment_id: null,
+      item_type: isSet ? 'set' : 'single',
+      name_snapshot: item.name ?? '',
+      serial_snapshot: item.serial ?? '',
+      inventory_number_snapshot: item.inventory_number ?? '',
+      barcode_snapshot: item.barcode ?? '',
+      status: 'issued',
+      price_day: item.price_day ?? '',
+      price_week: item.price_week ?? '',
+      deposit: item.deposit ?? '',
+      condition_out: item.condition ?? ''
+    });
+
+    if (!isSet) return;
+    (item.set_items ?? []).forEach((setItem) => {
+      const component = equipmentRows.find((row) => sameEquipmentKey(row, setItem)) ?? setItem;
+      const componentId = component.id ?? setItem.id ?? null;
+      if (!componentId) return;
+      rows.push({
+        equipment_id: componentId,
+        parent_set_equipment_id: item.id,
+        item_type: 'set_component',
+        name_snapshot: component.name ?? '',
+        serial_snapshot: component.serial ?? '',
+        inventory_number_snapshot: component.inventory_number ?? '',
+        barcode_snapshot: component.barcode ?? '',
+        status: 'issued',
+        price_day: '',
+        price_week: '',
+        deposit: '',
+        condition_out: component.condition ?? ''
+      });
+    });
+  });
+  return rows;
+}
+
+function RentalsModule() {
+  const [rows, setRows] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [equipmentRows, setEquipmentRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingRental, setEditingRental] = useState(null);
+  const [notice, setNotice] = useState('');
+
+  const loadRentals = async () => {
+    setLoading(true);
+    setNotice('');
+    const { data, error } = await fetchRentals();
+    if (error) {
+      setRows([]);
+      setNotice(`Nie udało się pobrać wypożyczeń z bazy: ${error.message}`);
+    } else {
+      setRows(data);
+    }
+    setLoading(false);
+  };
+
+  const loadRentalDictionaries = async () => {
+    const [clientsResult, equipmentResult] = await Promise.all([fetchClients(), fetchEquipment()]);
+    if (clientsResult.error || equipmentResult.error) {
+      setNotice('Nie udało się pobrać klientów lub sprzętu z bazy. Sprawdź konfigurację Supabase i schemat.');
+    }
+    setClients(clientsResult.data ?? []);
+    setEquipmentRows(equipmentResult.data ?? []);
+  };
+
+  useEffect(() => {
+    loadRentals();
+    loadRentalDictionaries();
+  }, []);
+
+  const openRentalEditor = (rental = null) => {
+    setEditingRental(rental);
+    setEditorOpen(true);
+  };
+
+  const handleSave = async ({ rental, selectedEquipmentIds }) => {
+    if (!rental.client_id) {
+      alert('Wybierz klienta.');
+      return;
+    }
+    const selectedEquipment = equipmentRows.filter((item) => selectedEquipmentIds.includes(item.id));
+    if (!selectedEquipment.length) {
+      alert('Wybierz przynajmniej jedną pozycję sprzętu.');
+      return;
+    }
+    const items = buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows);
+    const result = rental.id
+      ? await updateRentalRecord(rental.id, rental, items)
+      : await createRentalRecord(rental, items);
+    if (result.error) {
+      alert(result.error.message);
+      return;
+    }
+    await loadRentals();
+    await loadRentalDictionaries();
+    setEditorOpen(false);
+  };
+
+  const handleDelete = async (row) => {
+    const rental = row._rental ?? row;
+    if (!confirm(`Usunąć wypożyczenie: ${rental.rental_number}? Sprzęt wróci do statusu „Dostępny”.`)) return;
+    const { error } = await deleteRentalRecord(rental.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadRentals();
+    await loadRentalDictionaries();
+  };
+
+  const handleBulkDelete = async (items) => {
+    if (!items.length) return;
+    if (!confirm(`Usunąć zaznaczone wypożyczenia: ${items.length}? Sprzęt wróci do statusu „Dostępny”.`)) return;
+    for (const row of items) {
+      const rental = row._rental ?? row;
+      const { error } = await deleteRentalRecord(rental.id);
+      if (error) {
+        alert(`Nie udało się usunąć wypożyczenia ${rental.rental_number}: ${error.message}`);
+        return;
+      }
+    }
+    await loadRentals();
+    await loadRentalDictionaries();
+  };
+
+  const displayRows = rows.map((rental) => {
+    const baseItems = getRentalBaseItems(rental);
+    return {
+      ...rental,
+      _rental: rental,
+      rental_number: rental.rental_number,
+      client: rental.clients?.name ?? '—',
+      items_count: baseItems.length,
+      items_summary: baseItems.map((item) => item.name_snapshot).filter(Boolean).join(', ') || '—',
+      status: formatRentalStatus(rental.status),
+      planned_return_date: rental.planned_return_date ?? '—'
+    };
+  });
+
+  const renderRentalItems = (row) => {
+    const rental = row._rental ?? row;
+    const items = rental.rental_items ?? [];
+    if (!items.length) return <div className="expanded-set-empty">Brak pozycji w wypożyczeniu.</div>;
+    return <div className="expanded-set-panel">
+      <div className="expanded-set-header"><strong>Pozycje wypożyczenia</strong><span>{items.length} pozycji</span></div>
+      <table className="expanded-set-table">
+        <thead><tr><th>Typ</th><th>Nazwa</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th></tr></thead>
+        <tbody>{items.map((item, index) => <tr key={`${item.id ?? item.equipment_id}-${index}`}><td>{item.item_type === 'set' ? 'Zestaw' : item.item_type === 'set_component' ? 'Składnik' : 'Sprzęt'}</td><td><strong>{item.name_snapshot}</strong></td><td>{item.serial_snapshot || '—'}</td><td>{item.barcode_snapshot || item.inventory_number_snapshot || '—'}</td><td><StatusPill value={item.status} /></td></tr>)}</tbody>
+      </table>
+    </div>;
+  };
+
+  return <div className="module-page rentals-module-page">
+    <section className="panel rentals-command-panel">
+      <div className="rentals-command-copy">
+        <p className="eyebrow">Operacje</p>
+        <h2>Wypożyczenia</h2>
+        <p className="muted">Dokumenty wydań, pozycje sprzętowe i statusy pracy magazynu.</p>
+      </div>
+      <div className="rentals-command-actions">
+        <ButtonPrimary onClick={() => openRentalEditor(null)}><Plus size={17} />Nowe wypożyczenie</ButtonPrimary>
+        <ButtonSecondary onClick={() => { loadRentals(); loadRentalDictionaries(); }}>Odśwież</ButtonSecondary>
+        <ButtonSecondary onClick={() => exportTableToCsv(RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><Download size={15} />CSV</ButtonSecondary>
+        <ButtonSecondary onClick={() => exportTableToPdf('Wypożyczenia', RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><FileText size={15} />PDF</ButtonSecondary>
+      </div>
+      {notice && <div className="notice rentals-command-notice">{notice}</div>}
+    </section>
+    <section className="panel rentals-table-panel">
+      <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={displayRows} onOpen={(row) => openRentalEditor(row._rental)} onEdit={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
+    </section>
+    {editorOpen && <RentalEditor rental={editingRental} clients={clients} equipmentRows={equipmentRows} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+  </div>;
+}
+
+function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
+  const selectedBaseItems = getRentalBaseItems(rental);
+  const initialClient = clients.find((client) => client.id === rental?.client_id) ?? null;
+  const [form, setForm] = useState(() => ({
+    id: rental?.id ?? null,
+    rental_number: rental?.rental_number ?? '',
+    client_id: rental?.client_id ?? '',
+    status: rental?.status ?? 'active',
+    rental_type: rental?.rental_type ?? 'Płatne',
+    start_date: rental?.start_date ?? new Date().toISOString().slice(0, 10),
+    planned_return_date: rental?.planned_return_date ?? '',
+    actual_return_date: rental?.actual_return_date ?? '',
+    notes: rental?.notes ?? '',
+    total_deposit: rental?.total_deposit ?? '',
+    total_price: rental?.total_price ?? ''
+  }));
+  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState(() => selectedBaseItems.map(getRentalItemEquipmentId).filter(Boolean));
+  const [selectedClient, setSelectedClient] = useState(initialClient);
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [equipmentPickerOpen, setEquipmentPickerOpen] = useState(false);
+  const [selectedRentalItemIds, setSelectedRentalItemIds] = useState(new Set());
+  const [modalSize, setModalSize] = useState(getSavedRentalModalSize);
+  const [modalPosition, setModalPosition] = useState(() => getSavedRentalModalPosition(getSavedRentalModalSize()));
+  const modalSizeRef = useRef(modalSize);
+  const modalPositionRef = useRef(modalPosition);
+  const resizeStateRef = useRef(null);
+  const dragStateRef = useRef(null);
+
+  const availableEquipment = equipmentRows.filter((item) => {
+    if (!item.id) return false;
+    if (isEquipmentSetComponent(item)) return false;
+    if (selectedEquipmentIds.includes(item.id)) return true;
+    return item.status !== 'Wypożyczony';
+  });
+
+  const selectedEquipment = equipmentRows.filter((item) => selectedEquipmentIds.includes(item.id));
+  const selectedSetCount = selectedEquipment.filter(isEquipmentSet).length;
+  const settlementOptional = form.rental_type === 'Bezpłatne' || form.rental_type === 'Wewnętrzne';
+  const rentalSummary = {
+    items: selectedEquipment.length,
+    sets: selectedSetCount,
+    price: form.total_price || '0',
+    deposit: form.total_deposit || '0'
+  };
+
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const chooseClient = (client) => {
+    setSelectedClient(client);
+    update('client_id', client.id);
+    setClientPickerOpen(false);
+  };
+  const addEquipment = (items) => {
+    const ids = items.map((item) => item.id).filter(Boolean);
+    setSelectedEquipmentIds((current) => [...new Set([...current, ...ids])]);
+    setEquipmentPickerOpen(false);
+  };
+  const toggleRentalItemSelection = (id) => {
+    setSelectedRentalItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const removeSelectedEquipment = () => {
+    setSelectedEquipmentIds((current) => current.filter((id) => !selectedRentalItemIds.has(id)));
+    setSelectedRentalItemIds(new Set());
+  };
+
+  useEffect(() => {
+    setSelectedRentalItemIds((current) => new Set([...current].filter((id) => selectedEquipmentIds.includes(id))));
+  }, [selectedEquipmentIds]);
+
+  const visibleModalPosition = clampRentalModalPosition(modalPosition, modalSize);
+
+  useEffect(() => {
+    modalSizeRef.current = modalSize;
+    localStorage.setItem(RENTAL_MODAL_SIZE_KEY, JSON.stringify(modalSize));
+    setModalPosition((current) => clampRentalModalPosition(current, modalSize));
+  }, [modalSize]);
+
+  useEffect(() => {
+    modalPositionRef.current = modalPosition;
+    localStorage.setItem(RENTAL_MODAL_POSITION_KEY, JSON.stringify(modalPosition));
+  }, [modalPosition]);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const nextSize = clampRentalModalSize(modalSizeRef.current);
+      setModalSize(nextSize);
+      setModalPosition((position) => clampRentalModalPosition(position, nextSize));
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const resizeState = resizeStateRef.current;
+      if (resizeState) {
+        event.preventDefault();
+        setModalSize(clampRentalModalSize({
+          width: resizeState.startWidth + event.clientX - resizeState.startX,
+          height: resizeState.startHeight + event.clientY - resizeState.startY
+        }));
+        return;
+      }
+      const dragState = dragStateRef.current;
+      if (!dragState) return;
+      event.preventDefault();
+      setModalPosition(clampRentalModalPosition({
+        left: dragState.startLeft + event.clientX - dragState.startX,
+        top: dragState.startTop + event.clientY - dragState.startY
+      }, modalSizeRef.current));
+    };
+    const handlePointerUp = () => {
+      resizeStateRef.current = null;
+      dragStateRef.current = null;
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, []);
+
+  const startResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: modalSizeRef.current.width,
+      startHeight: modalSizeRef.current.height
+    };
+  };
+
+  const startDrag = (event) => {
+    if (event.target.closest('button, input, select, textarea, a')) return;
+    event.preventDefault();
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: modalPositionRef.current.left,
+      startTop: modalPositionRef.current.top
+    };
+  };
+
+  if (clientPickerOpen) {
+    return <ClientPickerModal clients={clients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={chooseClient} />;
+  }
+
+  if (equipmentPickerOpen) {
+    return <EquipmentPickerModal title="Wybierz sprzęt do wypożyczenia" availableItems={availableEquipment} selectedIds={selectedEquipmentIds} onClose={() => setEquipmentPickerOpen(false)} onConfirm={addEquipment} />;
+  }
+
+  return <div className="modal-backdrop draggable-modal-backdrop">
+    <div className="modal-card equipment-card-modal rental-record-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
+      <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
+        <div>
+          <p className="eyebrow">Wypożyczenia</p>
+          <h2>{rental ? 'Kartoteka wypożyczenia' : 'Nowe wypożyczenie'}</h2>
+          <p className="muted">Dokument wydania sprzętu do klienta.</p>
+        </div>
+        <button className="icon-button" onClick={onClose}><X size={18} /></button>
+      </div>
+      <div className="rental-record-layout">
+        <SectionPanel className="rental-record-section rental-record-header-section" title="Dokument">
+          <div className="rental-document-grid">
+            <FormField className="rental-number-field" label="Numer"><AppInput value={form.rental_number} onChange={(event) => update('rental_number', event.target.value)} placeholder="automatycznie" /></FormField>
+            <div className="rental-status-field"><span>Status</span><DSStatusPill value={formatRentalStatus(form.status)} /></div>
+            <div className="rental-client-field">
+              <span>Klient</span>
+              <ButtonSecondary className={selectedClient ? 'rental-choice-button selected' : 'rental-choice-button'} onClick={() => setClientPickerOpen(true)}>
+                <strong>{selectedClient ? selectedClient.name : 'Wybierz klienta'}</strong>
+                {selectedClient?.client_kind && <small>({selectedClient.client_kind})</small>}
+              </ButtonSecondary>
+            </div>
+            <FormField label="Typ wypożyczenia">
+              <AppSelect value={form.rental_type} onChange={(event) => update('rental_type', event.target.value)}>
+                <option value="Płatne">Płatne</option>
+                <option value="Bezpłatne">Bezpłatne</option>
+                <option value="Wewnętrzne">Wewnętrzne</option>
+              </AppSelect>
+            </FormField>
+            <FormField label="Wydanie"><AppInput type="date" value={form.start_date} onChange={(event) => update('start_date', event.target.value)} /></FormField>
+            <FormField label="Termin zwrotu"><AppInput type="date" value={form.planned_return_date} onChange={(event) => update('planned_return_date', event.target.value)} /></FormField>
+          </div>
+        </SectionPanel>
+
+        <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<><ButtonPrimary className="rental-add-equipment-button" onClick={() => setEquipmentPickerOpen(true)}><Plus size={14} />Dodaj sprzęt</ButtonPrimary><ButtonDanger onClick={removeSelectedEquipment} disabled={!selectedRentalItemIds.size}><Trash2 size={14} />Usuń zaznaczone</ButtonDanger></>}>
+          <div className="rental-items-meta">
+            <span>{selectedRentalItemIds.size ? `${selectedRentalItemIds.size} zaznaczono` : 'Zaznacz pozycje, aby wykonać operację'}</span>
+            <span className="rental-document-summary">{rentalSummary.items} pozycji · {rentalSummary.sets} zestawów · cena {rentalSummary.price} · kaucja {rentalSummary.deposit}</span>
+          </div>
+          <div className="rental-items-table-shell">
+            {selectedEquipment.length ? <AppTable className="set-components-table rental-items-table">
+              <thead><tr><th className="selection-cell"></th><th>Nazwa</th><th>Typ</th><th>Kategoria</th><th>Status</th><th>Lokalizacja</th></tr></thead>
+              <tbody>{selectedEquipment.map((item) => (
+                <tr key={item.id} className={selectedRentalItemIds.has(item.id) ? 'selected-row' : ''} onClick={() => toggleRentalItemSelection(item.id)}>
+                  <td className="selection-cell"><input type="checkbox" checked={selectedRentalItemIds.has(item.id)} onChange={() => toggleRentalItemSelection(item.id)} onClick={(event) => event.stopPropagation()} /></td>
+                  <td><strong>{item.name}</strong></td>
+                  <td>{isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt'}</td>
+                  <td>{item.category || '—'}</td>
+                  <td><DSStatusPill value="Do wydania" /></td>
+                  <td>{item.location || '—'}</td>
+                </tr>
+              ))}</tbody>
+            </AppTable> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Użyj akcji Dodaj sprzęt w nagłówku tabeli, aby utworzyć dokument wydania." />}
+          </div>
+        </SectionPanel>
+
+        <SectionPanel className="rental-record-section rental-record-terms-section" title="Warunki i rozliczenie">
+          <div className="rental-terms-grid">
+            <FormField label="Cena łączna"><AppInput value={form.total_price} onChange={(event) => update('total_price', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 1200'} /></FormField>
+            <FormField label="Kaucja"><AppInput value={form.total_deposit} onChange={(event) => update('total_deposit', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 500'} /></FormField>
+            <FormField className="rental-notes-field" label="Notatki"><AppTextarea value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Warunki wydania, uwagi do klienta lub sprzętu." /></FormField>
+          </div>
+        </SectionPanel>
+      </div>
+      <div className="modal-actions"><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onSave({ rental: form, selectedEquipmentIds })}><Save size={17} />Zapisz dokument</ButtonPrimary></div>
+      <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
+    </div>
+  </div>;
+}
+
+function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm }) {
+  const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState('name');
+  const [highlightedClientId, setHighlightedClientId] = useState(selectedClientId ?? '');
+
+  const filteredClients = useMemo(() => {
+    const text = query.trim().toLocaleLowerCase('pl');
+    return clients
+      .filter((client) => {
+        const searchable = [client.name, client.type, client.client_kind, client.phone, client.email, client.city, client.nip].filter(Boolean).join(' ').toLocaleLowerCase('pl');
+        return !text || searchable.includes(text);
+      })
+      .sort((left, right) => String(left[sortKey] ?? '').localeCompare(String(right[sortKey] ?? ''), 'pl', { numeric: true, sensitivity: 'base' }));
+  }, [clients, query, sortKey]);
+
+  useEffect(() => {
+    if (filteredClients.some((client) => client.id === highlightedClientId)) return;
+    setHighlightedClientId(filteredClients[0]?.id ?? '');
+  }, [filteredClients, highlightedClientId]);
+
+  const highlightedClient = filteredClients.find((client) => client.id === highlightedClientId) ?? null;
+  const confirmHighlightedClient = () => {
+    if (highlightedClient) onConfirm(highlightedClient);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return <ModalFrame className="shared-picker-modal client-picker-modal" eyebrow="Klienci" title="Wybierz klienta" description="Kliknij wiersz, żeby go zaznaczyć. Dwuklik albo Enter zatwierdza wybór." onClose={onClose} footer={<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary>}>
+      <div className="shared-picker-toolbar">
+        <FormField label="Szukaj"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, telefon, email, miasto, NIP" autoFocus /></FormField>
+        <FormField label="Sortuj"><select value={sortKey} onChange={(event) => setSortKey(event.target.value)}><option value="name">Nazwa</option><option value="client_kind">Rodzaj</option><option value="city">Miasto</option></select></FormField>
+      </div>
+      <div className="shared-picker-table-shell" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') confirmHighlightedClient(); }}>
+        <table className="set-picker-table">
+          <thead><tr><th>Nazwa</th><th>Typ</th><th>Rodzaj</th><th>Telefon</th><th>Email</th><th>Miasto</th></tr></thead>
+          <tbody>{filteredClients.map((client) => {
+            const selected = client.id === highlightedClientId;
+            return <tr key={client.id} tabIndex={0} className={selected ? 'selected-row' : ''} onClick={() => setHighlightedClientId(client.id)} onFocus={() => setHighlightedClientId(client.id)} onKeyDown={(event) => { if (event.key === 'Enter') onConfirm(client); }} onDoubleClick={() => onConfirm(client)}><td><strong>{client.name}</strong></td><td>{client.type || '—'}</td><td>{client.client_kind || '—'}</td><td>{client.phone || '—'}</td><td>{client.email || '—'}</td><td>{client.city || '—'}</td></tr>;
+          })}</tbody>
+        </table>
+        {!filteredClients.length && <EmptyState title="Brak klientów spełniających kryteria wyszukiwania." />}
+      </div>
+    </ModalFrame>;
+}
+
+function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], onClose, onConfirm }) {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
-  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  const [sortKey, setSortKey] = useState('name');
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set(selectedIds.map(String)));
 
   const categories = useMemo(() => [...new Set(availableItems.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
   const statuses = useMemo(() => [...new Set(availableItems.map((item) => item.status).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
@@ -1715,14 +2268,16 @@ function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
 
   const filteredItems = useMemo(() => {
     const text = query.trim().toLocaleLowerCase('pl');
-    return availableItems.filter((item) => {
-      const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
-      const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
-      const matchesLocation = locationFilter === 'all' || item.location === locationFilter;
-      const searchable = [item.name, item.category, item.brand, item.model, item.serial, item.inventory_number, item.barcode, item.location, item.status].filter(Boolean).join(' ').toLocaleLowerCase('pl');
-      return matchesCategory && matchesStatus && matchesLocation && (!text || searchable.includes(text));
-    });
-  }, [availableItems, query, categoryFilter, statusFilter, locationFilter]);
+    return availableItems
+      .filter((item) => {
+        const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
+        const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+        const matchesLocation = locationFilter === 'all' || item.location === locationFilter;
+        const searchable = [item.name, item.category, item.brand, item.model, item.serial, item.inventory_number, item.barcode, item.location, item.status].filter(Boolean).join(' ').toLocaleLowerCase('pl');
+        return matchesCategory && matchesStatus && matchesLocation && (!text || searchable.includes(text));
+      })
+      .sort((left, right) => String(left[sortKey] ?? '').localeCompare(String(right[sortKey] ?? ''), 'pl', { numeric: true, sensitivity: 'base' }));
+  }, [availableItems, query, categoryFilter, statusFilter, locationFilter, sortKey]);
 
   const selectedItems = availableItems.filter((item) => selectedKeys.has(String(getEquipmentKey(item))));
   const visibleAllSelected = filteredItems.length > 0 && filteredItems.every((item) => selectedKeys.has(String(getEquipmentKey(item))));
@@ -1754,39 +2309,39 @@ function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
     setCategoryFilter('all');
     setStatusFilter('all');
     setLocationFilter('all');
+    setSortKey('name');
   };
 
-  return <div className="nested-modal-backdrop">
-    <div className="modal-card set-picker-modal">
-      <div className="modal-header">
-        <div><p className="eyebrow">Zestaw sprzętu</p><h2>Wybierz składniki z magazynu</h2><p className="muted">Możesz zaznaczyć wiele pozycji jednocześnie, użyć wyszukiwania i filtrów.</p></div>
-        <button className="icon-button" onClick={onClose}><X size={18} /></button>
-      </div>
-      <div className="set-picker-filters">
-        <label>Szukaj<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, marka, model, SN, kod" autoFocus /></label>
-        <label>Kategoria<select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">Wszystkie</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <label>Lokalizacja<select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="all">Wszystkie</option>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <button type="button" className="secondary-button compact-table-button" onClick={clearFilters}>Wyczyść</button>
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return <ModalFrame className="shared-picker-modal equipment-picker-modal" eyebrow="Sprzęt" title={title} description="Możesz zaznaczyć wiele pozycji jednocześnie, użyć wyszukiwania i filtrów." onClose={onClose} footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onConfirm(selectedItems)} disabled={!selectedItems.length}><Plus size={16} />Dodaj wybrane</ButtonPrimary></>}>
+      <div className="equipment-picker-toolbar">
+        <FormField label="Szukaj"><AppInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, marka, model, SN, kod" autoFocus /></FormField>
+        <FormField label="Kategoria"><AppSelect value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">Wszystkie</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
+        <FormField label="Status"><AppSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
+        <FormField label="Lokalizacja"><AppSelect value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="all">Wszystkie</option>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
+        <FormField label="Sortuj"><AppSelect value={sortKey} onChange={(event) => setSortKey(event.target.value)}><option value="name">Nazwa</option><option value="category">Kategoria</option><option value="status">Status</option><option value="location">Lokalizacja</option></AppSelect></FormField>
+        <ButtonGhost className="compact-table-button" onClick={clearFilters}>Wyczyść</ButtonGhost>
       </div>
       <div className="set-picker-summary"><strong>{selectedItems.length} zaznaczono</strong><span>{filteredItems.length} / {availableItems.length} dostępnych pozycji</span></div>
-      <div className="set-picker-table-shell">
-        <table className="set-picker-table">
+      <div className="shared-picker-table-shell" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' && selectedItems.length) onConfirm(selectedItems); }}>
+        <AppTable className="set-picker-table">
           <thead><tr><th className="selection-cell"><input type="checkbox" checked={visibleAllSelected} onChange={toggleVisible} /></th><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Status</th><th>Lokalizacja</th></tr></thead>
           <tbody>{filteredItems.map((item) => {
             const key = String(getEquipmentKey(item));
             const selected = selectedKeys.has(key);
-            return <tr key={key} className={selected ? 'selected-row' : ''} onDoubleClick={() => toggleItem(item)}><td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleItem(item)} /></td><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td><StatusPill value={item.status} /></td><td>{item.location || '—'}</td></tr>;
+            return <tr key={key} className={selected ? 'selected-row' : ''} onDoubleClick={() => toggleItem(item)}><td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleItem(item)} /></td><td><strong>{item.name}</strong></td><td>{isEquipmentSet(item) ? 'Zestaw' : item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td><DSStatusPill value={item.status} /></td><td>{item.location || '—'}</td></tr>;
           })}</tbody>
-        </table>
-        {!filteredItems.length && <div className="empty-set-box">Brak pozycji spełniających aktualne filtry.</div>}
+        </AppTable>
+        {!filteredItems.length && <EmptyState title="Brak pozycji spełniających aktualne filtry." />}
       </div>
-      <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={() => onConfirm(selectedItems)} disabled={!selectedItems.length}><Plus size={16} />Dodaj zaznaczone</button></div>
-    </div>
-  </div>;
-}
-function RentalsModule() {
-  return <ModulePage title="Wypożyczenia" description="Wypożyczenia, zwroty, rezerwacje, checklisty zestawów i automatyczna historia klienta." table={<DataTable storageKey="rentals-table" columns={[{ key: 'number', label: 'Numer' },{ key: 'client', label: 'Klient' },{ key: 'item', label: 'Sprzęt' },{ key: 'status', label: 'Status' },{ key: 'date', label: 'Termin' }]} rows={rentals} />} />;
+    </ModalFrame>;
 }
 function ServiceModule() {
   return <ModulePage title="Serwis" description="Zlecenia serwisowe, statusy, postępy, dokumenty przyjęcia i wydania." table={<DataTable storageKey="service-table" columns={[{ key: 'number', label: 'Numer' },{ key: 'client', label: 'Klient' },{ key: 'item', label: 'Sprzęt' },{ key: 'status', label: 'Status' }]} rows={serviceOrders} />} />;
@@ -1803,7 +2358,7 @@ function SettingsModule({ colorTheme, onChangeColorTheme }) {
   </div>;
 }
 function ModulePage({ title, description, table }) {
-  return <div className="module-page"><section className="panel hero-panel"><p className="eyebrow">Moduł</p><h2>{title}</h2><p className="muted">{description}</p><div className="module-actions"><button className="primary-button">Dodaj wpis</button><button className="secondary-button">Eksport PDF</button><button className="secondary-button">Ustawienia modułu</button></div></section><section className="panel">{table}</section></div>;
+  return <div className="module-page"><section className="panel hero-panel"><p className="eyebrow">Moduł</p><h2>{title}</h2><p className="muted">{description}</p><div className="module-actions"><AppButton variant="primary">Dodaj wpis</AppButton><AppButton variant="secondary">Eksport PDF</AppButton><AppButton variant="secondary">Ustawienia modułu</AppButton></div></section><section className="panel">{table}</section></div>;
 }
 function PanelHeader({ title, action, onClick }) {
   return <div className="panel-header"><h2>{title}</h2>{action && <button onClick={onClick}>{action}<ChevronRight size={16} /></button>}</div>;
@@ -2177,11 +2732,11 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       {loading && <div className="loading-line">Ładowanie danych...</div>}
       {selectedRows.length > 0 && <div className="bulk-actions-bar">
         <strong>{selectedRows.length} zaznaczono</strong>
-        <button type="button" className="secondary-button compact-table-button" onClick={clearSelection} disabled={bulkBusy}>Odznacz</button>
-        {onBulkDelete && <button type="button" className="secondary-button compact-table-button danger-bulk-button" onClick={runBulkDelete} disabled={bulkBusy}><Trash2 size={14} />Usuń zaznaczone</button>}
+        <AppButton variant="secondary" size="sm" className="compact-table-button" onClick={clearSelection} disabled={bulkBusy}>Odznacz</AppButton>
+        {onBulkDelete && <AppButton variant="danger" size="sm" className="compact-table-button danger-bulk-button" onClick={runBulkDelete} disabled={bulkBusy}><Trash2 size={14} />Usuń zaznaczone</AppButton>}
       </div>}
       <div className="table-scroll">
-        <table>
+        <AppTable>
           <colgroup>{hasSelectionActions && <col className="selection-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
           <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
           <tbody>{sortedRows.map((row, index) => {
@@ -2195,7 +2750,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
               {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>
-        </table>
+        </AppTable>
       </div>
 
       {rowContextMenu && <div className="row-context-menu" style={{ left: rowContextMenu.x, top: rowContextMenu.y }} onClick={(event) => event.stopPropagation()}>
@@ -2437,10 +2992,10 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
           <h3>{title}</h3>
           <p className="muted">{description}</p>
         </div>
-        <button type="button" className="secondary-button dictionary-reset-button" onClick={() => resetEquipmentDictionary(type)}>Domyślne</button>
+        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={() => resetEquipmentDictionary(type)}>Domyślne</AppButton>
       </div>
       <div className="dictionary-add-compact">
-        <input value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addEquipmentDictionaryItem(type); }} placeholder={type === 'category' ? 'np. Reżyserka, Statyw, Recorder' : 'np. Do sprawdzenia, Zarezerwowany'} />
+        <AppInput value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addEquipmentDictionaryItem(type); }} placeholder={type === 'category' ? 'np. Reżyserka, Statyw, Recorder' : 'np. Do sprawdzenia, Zarezerwowany'} />
         <button type="button" className="dictionary-icon-button add" onClick={() => addEquipmentDictionaryItem(type)} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
       </div>
       <div className="dictionary-list dictionary-list-compact">
@@ -2529,8 +3084,8 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
           <div className="settings-card-header compact-card-header">
             <h3>Dane firmy</h3>
             <div className="settings-action-row">
-              <button type="button" className="secondary-button" onClick={resetCompanySettings}>Wyczyść</button>
-              <button type="button" className="primary-button" onClick={saveCompanySettings}><Save size={17} />Zapisz</button>
+              <AppButton variant="secondary" onClick={resetCompanySettings}>Wyczyść</AppButton>
+              <AppButton variant="primary" onClick={saveCompanySettings}><Save size={17} />Zapisz</AppButton>
             </div>
           </div>
           {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
@@ -2561,8 +3116,8 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
                   {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Brak logo</span>}
                 </div>
                 <div className="settings-action-row logo-actions-row">
-                  <label className="secondary-button file-button"><FolderOpen size={17} />Wczytaj<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
-                  <button type="button" className="secondary-button" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń</button>
+                  <label className="app-button app-button-secondary file-button"><FolderOpen size={17} />Wczytaj<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
+                  <AppButton variant="secondary" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń</AppButton>
                 </div>
               </div>
 
@@ -2603,7 +3158,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
           <h3>Układ danych</h3>
           <label className="settings-check"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} />Zapamiętuj układ kolumn</label>
           <label className="settings-check"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} />Zapamiętuj filtry tabel</label>
-          <label className="settings-field">Domyślna liczba wierszy<select value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></select></label>
+          <label className="settings-field">Domyślna liczba wierszy<AppSelect value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></AppSelect></label>
         </div>
         <div className="settings-card">
           <p className="eyebrow">Bezpieczeństwo pracy</p>
@@ -2614,9 +3169,9 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
 
       {activeSection === 'clients' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
         <div className="settings-card wide-settings-card settings-editor-card compact-admin-card">
-          <div className="settings-card-header compact-card-header"><h3>Rodzaje klientów</h3><button className="secondary-button" onClick={resetTypes}>Przywróć domyślne</button></div>
+          <div className="settings-card-header compact-card-header"><h3>Rodzaje klientów</h3><AppButton variant="secondary" onClick={resetTypes}>Przywróć domyślne</AppButton></div>
           {notice && <div className="notice">{notice}</div>}
-          <div className="inline-form compact-settings-form"><input value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><button className="primary-button" onClick={addType}>Dodaj</button></div>
+          <div className="inline-form compact-settings-form"><AppInput value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><AppButton variant="primary" onClick={addType}>Dodaj</AppButton></div>
           <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type.id}>{type.name}<button onClick={() => removeType(type)}>×</button></span>)}</div>
         </div>
         <div className="settings-card compact-admin-card">
@@ -2644,7 +3199,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
           <p className="eyebrow">{activeSectionData.label}</p>
           <h3>{item}</h3>
           <p className="muted">Sekcja przygotowana pod konfigurację. Nie zmienia jeszcze działania istniejących modułów.</p>
-          <button className="secondary-button" type="button" disabled>W przygotowaniu</button>
+          <AppButton variant="secondary" disabled>W przygotowaniu</AppButton>
         </div>)}
       </div>}
     </section>

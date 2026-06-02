@@ -1,0 +1,370 @@
+.app-button,
+.ds-button,
+.ds-icon-button {
+  border: 1px solid var(--fw-color-border-strong);
+  border-radius: var(--fw-radius-md);
+  min-height: var(--fw-control-height-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fw-space-3);
+  padding: 0 var(--fw-space-6);
+  color: var(--fw-color-text-soft);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.app-button:disabled,
+.ds-button:disabled,
+.ds-icon-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.app-button-primary,
+.ds-button-primary {
+  border: 0;
+  color: #fff;
+  background: linear-gradient(135deg, var(--fw-color-primary), var(--fw-color-primary-2));
+}
+
+.app-button-secondary,
+.ds-button-secondary {
+  color: var(--fw-color-text-strong);
+  border-color: rgba(96, 165, 250, .30);
+  background: rgba(30, 41, 59, .72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.app-button-danger,
+.ds-button-danger {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, .58);
+  background: rgba(127, 29, 29, .22);
+}
+
+.app-button-ghost,
+.ds-button-ghost {
+  min-height: var(--fw-control-height-md);
+  padding: 0 var(--fw-space-4);
+  background: transparent;
+}
+
+.app-button-sm{
+  min-height: var(--fw-control-height-sm);
+  border-radius: var(--fw-radius-sm);
+  padding: 0 var(--fw-space-4);
+  font-size: 12px;
+}
+
+.app-button-md{
+  min-height: var(--fw-control-height-md);
+}
+
+.app-button-lg{
+  min-height: var(--fw-control-height-lg);
+}
+
+.app-button-secondary:hover,
+.app-button-ghost:hover,
+.ds-button-secondary:hover,
+.ds-button-ghost:hover,
+.ds-icon-button:hover {
+  border-color: var(--fw-color-primary-border);
+  background: rgba(37, 99, 235, .20);
+}
+
+.app-button-danger:hover,
+.ds-button-danger:hover {
+  color: #fff1f2;
+  border-color: rgba(248, 113, 113, .82);
+  background: rgba(185, 28, 28, .34);
+}
+
+.ds-icon-button {
+  width: var(--fw-icon-button-size);
+  height: var(--fw-icon-button-size);
+  padding: 0;
+  background: rgba(15, 23, 42, .95);
+}
+
+.app-section,
+.ds-section-panel {
+  border: 1px solid var(--fw-color-border);
+  background: var(--fw-color-section);
+  border-radius: var(--fw-radius-xl);
+  padding: var(--fw-space-5);
+  min-width: 0;
+}
+
+.app-section-header,
+.ds-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fw-space-5);
+  margin-bottom: var(--fw-space-4);
+}
+
+.app-section-title,
+.ds-section-title {
+  font-size: var(--fw-font-size-section);
+  line-height: 1;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--fw-color-text-muted);
+  font-weight: 900;
+}
+
+.app-section-actions,
+.ds-section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fw-space-3);
+}
+
+.app-toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--fw-space-5);
+  min-height:var(--fw-control-height-lg);
+}
+
+.app-modal,
+.ds-modal-frame {
+  width: min(940px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--fw-color-surface-strong);
+  border: 1px solid var(--fw-color-border-strong);
+  border-radius: var(--fw-radius-modal);
+  box-shadow: var(--fw-shadow-modal);
+  padding: var(--fw-space-7);
+}
+
+.app-modal-header,
+.app-modal-footer,
+.ds-modal-header,
+.ds-modal-footer {
+  flex: 0 0 auto;
+}
+
+.app-modal-header,
+.ds-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fw-space-7);
+  margin-bottom: var(--fw-space-5);
+  padding-bottom: var(--fw-space-5);
+  border-bottom: 1px solid var(--fw-color-border);
+}
+
+.app-modal-header h2,
+.ds-modal-header h2 {
+  margin: 0;
+  color: var(--fw-color-text-strong);
+  font-size: var(--fw-font-size-modal-title);
+  line-height: 1.1;
+}
+
+.app-modal-content,
+.ds-modal-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.app-modal-footer,
+.ds-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fw-space-4);
+  margin-top: var(--fw-space-5);
+  padding-top: var(--fw-space-5);
+  border-top: 1px solid var(--fw-color-border);
+}
+
+.app-eyebrow,
+.ds-eyebrow {
+  margin: 0 0 var(--fw-space-1);
+  color: var(--fw-color-text-muted);
+  font-size: var(--fw-font-size-eyebrow);
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.app-muted,
+.ds-muted {
+  margin: var(--fw-space-1) 0 0;
+  color: var(--fw-color-text-muted);
+  font-size: 13px;
+}
+
+.app-form-field,
+.ds-form-field {
+  display: grid;
+  gap: var(--fw-space-1);
+  min-width: 0;
+  color: var(--fw-color-text-soft);
+  font-size: var(--fw-font-size-label);
+  font-weight: 800;
+}
+
+.app-input,
+.ds-form-field input,
+.ds-form-field select,
+.ds-form-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--fw-control-height-md);
+  height: var(--fw-control-height-md);
+  border-radius: var(--fw-radius-sm);
+  border: 1px solid var(--fw-color-border-strong);
+  background: rgba(8, 13, 21, .72);
+  color: var(--fw-color-text-strong);
+  padding: 0 var(--fw-space-4);
+  font-size: var(--fw-font-size-control);
+}
+
+.app-textarea,
+.ds-form-field textarea {
+  min-height: 64px;
+  height:auto;
+  padding: var(--fw-space-3) var(--fw-space-4);
+  resize: vertical;
+}
+
+.app-input:focus,
+.ds-form-field input:focus,
+.ds-form-field select:focus,
+.ds-form-field textarea:focus {
+  outline: 0;
+  border-color: var(--fw-color-primary-border);
+  box-shadow: 0 0 0 3px var(--fw-color-primary-soft);
+}
+
+.ds-form-field.has-error input,
+.ds-form-field.has-error select,
+.ds-form-field.has-error textarea {
+  border-color: rgba(248, 113, 113, .75);
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, .14);
+}
+
+.ds-error-message,
+.ds-field-hint {
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.ds-error-message {
+  color: var(--fw-color-danger-text);
+}
+
+.ds-field-hint {
+  color: var(--fw-color-text-muted);
+}
+
+.app-badge,
+.ds-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--fw-color-primary-soft);
+  color: #bfdbfe;
+}
+
+.app-badge-success,
+.ds-status-pill.tone-success {
+  background: var(--fw-color-success-bg);
+  color: var(--fw-color-success-text);
+}
+
+.app-badge-warning,
+.ds-status-pill.tone-warning {
+  background: var(--fw-color-warning-bg);
+  color: var(--fw-color-warning-text);
+}
+
+.app-badge-danger,
+.ds-status-pill.tone-danger {
+  background: var(--fw-color-danger-bg);
+  color: var(--fw-color-danger-text);
+}
+
+.app-badge-neutral{
+  background: var(--fw-color-primary-soft);
+  color: #bfdbfe;
+}
+
+.app-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  font-size:var(--fw-font-size-table);
+}
+
+.app-table th,
+.app-table td{
+  padding:8px 10px;
+  border-bottom:1px solid var(--fw-color-border);
+  vertical-align:middle;
+  white-space:nowrap;
+}
+
+.app-table th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  color:var(--fw-color-text-muted);
+  background:rgba(15,23,42,.96);
+  font-size:var(--fw-font-size-table-head);
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+
+.ds-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--fw-space-4);
+  min-height: 120px;
+  padding: var(--fw-space-10);
+  border: 1px dashed rgba(148, 163, 184, .25);
+  border-radius: var(--fw-radius-lg);
+  background: rgba(148, 163, 184, .05);
+  color: var(--fw-color-text-muted);
+  text-align: center;
+}
+
+.ds-empty-state strong {
+  color: var(--fw-color-text-soft);
+  font-size: 15px;
+}
+
+.ds-empty-state p {
+  margin: 0;
+}
+
+.app-shell.theme-light .app-button-secondary,
+.app-shell.theme-light .ds-button-secondary,
+.app-shell.theme-light .ds-icon-button {
+  background: rgba(255, 255, 255, .92);
+  color: var(--fw-color-text-soft);
+}
+
+.app-shell.theme-light .ds-form-field input,
+.app-shell.theme-light .ds-form-field select,
+.app-shell.theme-light .ds-form-field textarea {
+  background: rgba(255, 255, 255, .96);
+  color: var(--fw-color-text-strong);
+}

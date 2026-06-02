@@ -901,11 +901,14 @@ function normalizeSetItemFromEquipment(item) {
     localId: item?.localId ?? null,
     key: getEquipmentKey(item),
     name: item?.name ?? '',
+    category: item?.category ?? '',
     brand: item?.brand ?? '',
     model: item?.model ?? '',
     serial: item?.serial ?? '',
     inventory_number: item?.inventory_number ?? '',
     barcode: item?.barcode ?? '',
+    status: item?.status ?? '',
+    location: item?.location ?? '',
     required: true
   };
 }
@@ -1317,7 +1320,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   const [newGalleryItem, setNewGalleryItem] = useState('');
   const [newAttachmentName, setNewAttachmentName] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
-  const [selectedSetItemKey, setSelectedSetItemKey] = useState('');
+  const [setPickerOpen, setSetPickerOpen] = useState(false);
   const [form, setForm] = useState(() => ({
     id: equipment?.id ?? null,
     localId: equipment?.localId ?? null,
@@ -1387,11 +1390,13 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
     update('attachments', form.attachments.filter((_, itemIndex) => itemIndex !== index));
   };
 
-  const addSetItem = () => {
-    const selected = availableSetComponents.find((item) => String(getEquipmentKey(item)) === String(selectedSetItemKey));
-    if (!selected) return;
-    update('set_items', [...form.set_items, normalizeSetItemFromEquipment(selected)]);
-    setSelectedSetItemKey('');
+  const addSetItems = (items) => {
+    const existingKeys = new Set((form.set_items ?? []).map(getSetItemKey).filter(Boolean).map(String));
+    const nextItems = items
+      .filter((item) => !existingKeys.has(String(getEquipmentKey(item))))
+      .map(normalizeSetItemFromEquipment);
+    if (!nextItems.length) return;
+    update('set_items', [...form.set_items, ...nextItems]);
   };
 
   const removeSetItem = (index) => {
@@ -1581,14 +1586,22 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
             <textarea className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
           </div>}
 
-          {activeTab === 'relations' && <div className="equipment-section-panel">
-            <div className="section-title">Składniki zestawu</div>
+          {activeTab === 'relations' && <div className="equipment-section-panel set-builder-panel">
+            <div className="set-builder-header">
+              <div>
+                <div className="section-title">Składniki zestawu</div>
+                <p className="muted">Składniki wybierasz z magazynu w osobnym oknie. Po zapisaniu zestawu zostaną zablokowane jako „Składnik zestawu”.</p>
+              </div>
+              {isSetCard && <button type="button" className="secondary-button compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</button>}
+            </div>
             {isSetCard ? <>
               <div className="set-builder-note">Dodany składnik zostanie zablokowany w magazynie i otrzyma status „Składnik zestawu”.</div>
-              <div className="inline-add-row set-component-add-row"><select value={selectedSetItemKey} onChange={(event) => setSelectedSetItemKey(event.target.value)}><option value="">Wybierz sprzęt z magazynu</option>{availableSetComponents.map((item) => <option key={getEquipmentKey(item)} value={getEquipmentKey(item)}>{getEquipmentDisplayName(item)}</option>)}</select><button type="button" className="secondary-button compact-table-button" onClick={addSetItem} disabled={!selectedSetItemKey}>Dodaj</button></div>
-              <div className="equipment-list-box">
-                {form.set_items.length ? form.set_items.map((item, index) => <div key={`${getSetItemKey(item)}-${index}`} className="equipment-list-row set-component-row"><span><strong>{item.name}</strong>{[item.brand, item.model, item.serial ? `SN: ${item.serial}` : '', item.inventory_number ? `Nr inw.: ${item.inventory_number}` : ''].filter(Boolean).join(' · ') ? ` — ${[item.brand, item.model, item.serial ? `SN: ${item.serial}` : '', item.inventory_number ? `Nr inw.: ${item.inventory_number}` : ''].filter(Boolean).join(' · ')}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń z zestawu</button></div>) : <p className="muted">Brak składników zestawu.</p>}
-              </div>
+              {form.set_items.length ? <div className="set-components-table-shell">
+                <table className="set-components-table">
+                  <thead><tr><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Nr inw.</th><th></th></tr></thead>
+                  <tbody>{form.set_items.map((item, index) => <tr key={`${getSetItemKey(item)}-${index}`}><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.inventory_number || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></td></tr>)}</tbody>
+                </table>
+              </div> : <div className="empty-set-box">Brak składników zestawu. Użyj przycisku „Dodaj składniki”, żeby wybrać pozycje z magazynu.</div>}
             </> : <div className="notice">Składniki można dodawać tylko w kartotece sprzętu z kategorią „Zestaw”.</div>}
           </div>}
         </div>
@@ -1596,8 +1609,93 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
         <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</button></div>
         <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
       </div>
+      {setPickerOpen && <EquipmentSetPicker availableItems={availableSetComponents} onClose={() => setSetPickerOpen(false)} onConfirm={(items) => { addSetItems(items); setSetPickerOpen(false); }} />}
     </div>
   );
+}
+
+function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
+  const [query, setQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+
+  const categories = useMemo(() => [...new Set(availableItems.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
+  const statuses = useMemo(() => [...new Set(availableItems.map((item) => item.status).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
+  const locations = useMemo(() => [...new Set(availableItems.map((item) => item.location).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
+
+  const filteredItems = useMemo(() => {
+    const text = query.trim().toLocaleLowerCase('pl');
+    return availableItems.filter((item) => {
+      const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
+      const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+      const matchesLocation = locationFilter === 'all' || item.location === locationFilter;
+      const searchable = [item.name, item.category, item.brand, item.model, item.serial, item.inventory_number, item.barcode, item.location, item.status].filter(Boolean).join(' ').toLocaleLowerCase('pl');
+      return matchesCategory && matchesStatus && matchesLocation && (!text || searchable.includes(text));
+    });
+  }, [availableItems, query, categoryFilter, statusFilter, locationFilter]);
+
+  const selectedItems = availableItems.filter((item) => selectedKeys.has(String(getEquipmentKey(item))));
+  const visibleAllSelected = filteredItems.length > 0 && filteredItems.every((item) => selectedKeys.has(String(getEquipmentKey(item))));
+
+  const toggleItem = (item) => {
+    const key = String(getEquipmentKey(item));
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleVisible = () => {
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      filteredItems.forEach((item) => {
+        const key = String(getEquipmentKey(item));
+        if (visibleAllSelected) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setQuery('');
+    setCategoryFilter('all');
+    setStatusFilter('all');
+    setLocationFilter('all');
+  };
+
+  return <div className="nested-modal-backdrop">
+    <div className="modal-card set-picker-modal">
+      <div className="modal-header">
+        <div><p className="eyebrow">Zestaw sprzętu</p><h2>Wybierz składniki z magazynu</h2><p className="muted">Możesz zaznaczyć wiele pozycji jednocześnie, użyć wyszukiwania i filtrów.</p></div>
+        <button className="icon-button" onClick={onClose}><X size={18} /></button>
+      </div>
+      <div className="set-picker-filters">
+        <label>Szukaj<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, marka, model, SN, kod" autoFocus /></label>
+        <label>Kategoria<select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">Wszystkie</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label>Lokalizacja<select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="all">Wszystkie</option>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <button type="button" className="secondary-button compact-table-button" onClick={clearFilters}>Wyczyść</button>
+      </div>
+      <div className="set-picker-summary"><strong>{selectedItems.length} zaznaczono</strong><span>{filteredItems.length} / {availableItems.length} dostępnych pozycji</span></div>
+      <div className="set-picker-table-shell">
+        <table className="set-picker-table">
+          <thead><tr><th className="selection-cell"><input type="checkbox" checked={visibleAllSelected} onChange={toggleVisible} /></th><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Status</th><th>Lokalizacja</th></tr></thead>
+          <tbody>{filteredItems.map((item) => {
+            const key = String(getEquipmentKey(item));
+            const selected = selectedKeys.has(key);
+            return <tr key={key} className={selected ? 'selected-row' : ''} onDoubleClick={() => toggleItem(item)}><td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleItem(item)} /></td><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td><StatusPill value={item.status} /></td><td>{item.location || '—'}</td></tr>;
+          })}</tbody>
+        </table>
+        {!filteredItems.length && <div className="empty-set-box">Brak pozycji spełniających aktualne filtry.</div>}
+      </div>
+      <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Anuluj</button><button className="primary-button" onClick={() => onConfirm(selectedItems)} disabled={!selectedItems.length}><Plus size={16} />Dodaj zaznaczone</button></div>
+    </div>
+  </div>;
 }
 function RentalsModule() {
   return <ModulePage title="Wypożyczenia" description="Wypożyczenia, zwroty, rezerwacje, checklisty zestawów i automatyczna historia klienta." table={<DataTable storageKey="rentals-table" columns={[{ key: 'number', label: 'Numer' },{ key: 'client', label: 'Klient' },{ key: 'item', label: 'Sprzęt' },{ key: 'status', label: 'Status' },{ key: 'date', label: 'Termin' }]} rows={rentals} />} />;

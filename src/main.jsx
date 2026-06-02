@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
@@ -567,6 +567,25 @@ function ClientsModule() {
       }
     }
     await loadClients();
+  };
+
+
+  const displayRows = useMemo(() => rows.filter((item) => !isEquipmentSetComponent(item)), [rows]);
+
+  const renderSetContents = (setRow) => {
+    const components = Array.isArray(setRow.set_items) ? setRow.set_items : [];
+    if (!components.length) return <div className="expanded-set-empty">Ten zestaw nie ma jeszcze przypisanych składników.</div>;
+    const resolveComponent = (setItem) => rows.find((row) => sameEquipmentKey(row, setItem)) ?? setItem;
+    return <div className="expanded-set-panel">
+      <div className="expanded-set-header"><strong>Zawartość zestawu</strong><span>{components.length} pozycji</span></div>
+      <table className="expanded-set-table">
+        <thead><tr><th>Kategoria</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th></tr></thead>
+        <tbody>{components.map((setItem, index) => {
+          const item = resolveComponent(setItem);
+          return <tr key={`${getSetItemKey(setItem)}-${index}`}><td>{item.category || '—'}</td><td><strong>{item.name || '—'}</strong></td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td></tr>;
+        })}</tbody>
+      </table>
+    </div>;
   };
 
   return (
@@ -1185,6 +1204,7 @@ function EquipmentModule() {
       </section>
       <section className="panel">
         <DataTable storageKey="equipment-table" loading={loading} columns={[
+          { key: 'item_type', label: 'Typ' },
           { key: 'name', label: 'Nazwa' },
           { key: 'category', label: 'Kategoria' },
           { key: 'brand', label: 'Marka' },
@@ -1194,7 +1214,7 @@ function EquipmentModule() {
           { key: 'status', label: 'Status' },
           { key: 'location', label: 'Lokalizacja' },
           { key: 'set_items_count', label: 'Składniki' }
-        ]} rows={rows.map((item) => ({ ...item, set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} />
+        ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -1835,7 +1855,7 @@ function formatCompanyContact(profile) {
   return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, isRowLocked = null }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, isRowLocked = null, isRowExpandable = null, renderExpandedRow = null }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -1855,6 +1875,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const [columnWidths, setColumnWidths] = useState(initialPreference.columnWidths);
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [expandedRowKeys, setExpandedRowKeys] = useState(() => new Set());
 
   const persistTablePreference = (nextPreference) => {
     saveTablePreference(storageKey, {
@@ -1934,6 +1955,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const selectedRows = sortedRows.filter((row, index) => selectedRowKeys.has(getRowKey(row, index)));
   const allVisibleSelected = sortedRows.length > 0 && sortedRows.every((row, index) => selectedRowKeys.has(getRowKey(row, index)));
   const hasSelectionActions = true;
+  const hasExpandableRows = Boolean(isRowExpandable && renderExpandedRow);
 
   useEffect(() => {
     setSelectedRowKeys((current) => {
@@ -1943,6 +1965,17 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       return next.size === current.size ? current : next;
     });
   }, [sortedRows]);
+
+  useEffect(() => {
+    if (!hasExpandableRows) return undefined;
+    setExpandedRowKeys((current) => {
+      if (!current.size) return current;
+      const available = new Set(sortedRows.map((row, index) => getRowKey(row, index)));
+      const next = new Set([...current].filter((key) => available.has(key)));
+      return next.size === current.size ? current : next;
+    });
+    return undefined;
+  }, [sortedRows, hasExpandableRows]);
 
   const orderedColumns = useMemo(() => {
     const columnMap = new Map(columns.map((column) => [column.key, column]));
@@ -1999,6 +2032,17 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   };
 
   const clearSelection = () => setSelectedRowKeys(new Set());
+
+  const toggleExpandedRow = (row, index) => {
+    if (!hasExpandableRows || !isRowExpandable?.(row)) return;
+    const key = getRowKey(row, index);
+    setExpandedRowKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const runBulkDelete = async () => {
     if (!selectedRows.length || !onBulkDelete) return;
@@ -2126,12 +2170,18 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       </div>}
       <div className="table-scroll">
         <table>
-          <colgroup>{hasSelectionActions && <col className="selection-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
+          <colgroup>{hasSelectionActions && <col className="selection-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
+          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
           <tbody>{sortedRows.map((row, index) => {
             const rowKey = getRowKey(row, index);
             const selected = selectedRowKeys.has(rowKey);
-            return <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={`${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''}`.trim()} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>;
+            const expandable = hasExpandableRows && isRowExpandable?.(row);
+            const expanded = expandable && expandedRowKeys.has(rowKey);
+            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''}`.trim();
+            return <Fragment key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>
+              <tr className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; if (expandable) toggleExpandedRow(row, index); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={expandable ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.' : hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
+            </Fragment>;
           })}</tbody>
         </table>
       </div>

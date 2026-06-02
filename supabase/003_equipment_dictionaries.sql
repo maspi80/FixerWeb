@@ -42,7 +42,7 @@ values
     ('status', 'Serwis', 4),
     ('status', 'Uszkodzony', 5),
     ('status', 'Wycofany', 6),
-    ('status', 'Zestaw', 7)
+    ('status', 'Składnik zestawu', 7)
 on conflict (dictionary_type, name) do nothing;
 
 alter table public.equipment_dictionaries enable row level security;

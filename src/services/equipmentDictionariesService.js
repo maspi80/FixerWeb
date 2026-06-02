@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const DEFAULT_EQUIPMENT_CATEGORIES = ['Kamera', 'Obiektyw', 'Audio', 'Mikser Video', 'Streaming', 'Oświetlenie', 'Komputer', 'Akcesoria', 'Zestaw'];
-export const DEFAULT_EQUIPMENT_STATUSES = ['Dostępny', 'Wypożyczony', 'Rezerwacja', 'Serwis', 'Uszkodzony', 'Wycofany', 'Zestaw'];
+export const DEFAULT_EQUIPMENT_STATUSES = ['Dostępny', 'Wypożyczony', 'Rezerwacja', 'Serwis', 'Uszkodzony', 'Wycofany', 'Składnik zestawu'];
 
 const storageKey = 'fixer-equipment-dictionaries';
 const columns = 'id, dictionary_type, name, sort_order, created_at, updated_at';

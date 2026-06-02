@@ -699,6 +699,20 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
     regon: client?.regon ?? '',
     notes: client?.notes ?? ''
   }));
+
+  const setItemKeys = useMemo(() => new Set((form.set_items ?? []).map(getSetItemKey).filter(Boolean).map(String)), [form.set_items]);
+  const availableSetComponents = useMemo(() => equipmentRows.filter((item) => {
+    if (sameEquipmentKey(item, form)) return false;
+    if (isEquipmentSet(item)) return false;
+    if (isEquipmentSetComponent(item) && !setItemKeys.has(String(getEquipmentKey(item)))) return false;
+    if (setItemKeys.has(String(getEquipmentKey(item)))) return false;
+    if (isItemUsedInOtherSet(item, equipmentRows, form)) return false;
+    return true;
+  }), [equipmentRows, form, setItemKeys]);
+
+  const isSetCard = form.category === EQUIPMENT_SET_CATEGORY;
+  const safeStatuses = statuses.includes(EQUIPMENT_SET_COMPONENT_STATUS) ? statuses : [...statuses, EQUIPMENT_SET_COMPONENT_STATUS];
+
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
@@ -858,6 +872,64 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   );
 }
 
+
+const EQUIPMENT_SET_CATEGORY = 'Zestaw';
+const EQUIPMENT_SET_COMPONENT_STATUS = 'Składnik zestawu';
+const EQUIPMENT_AVAILABLE_STATUS = 'Dostępny';
+
+function getEquipmentKey(item) {
+  return item?.id ?? item?.localId ?? item?.inventory_number ?? item?.serial ?? item?.barcode ?? item?.name ?? '';
+}
+
+function getEquipmentDisplayName(item) {
+  return [item?.name, item?.brand, item?.model, item?.serial ? `SN: ${item.serial}` : '', item?.inventory_number ? `Nr inw.: ${item.inventory_number}` : '']
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function isEquipmentSet(item) {
+  return item?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(item?.set_items) && item.set_items.length > 0 && item?.status !== EQUIPMENT_SET_COMPONENT_STATUS;
+}
+
+function isEquipmentSetComponent(item) {
+  return item?.status === EQUIPMENT_SET_COMPONENT_STATUS;
+}
+
+function normalizeSetItemFromEquipment(item) {
+  return {
+    id: item?.id ?? null,
+    localId: item?.localId ?? null,
+    key: getEquipmentKey(item),
+    name: item?.name ?? '',
+    brand: item?.brand ?? '',
+    model: item?.model ?? '',
+    serial: item?.serial ?? '',
+    inventory_number: item?.inventory_number ?? '',
+    barcode: item?.barcode ?? '',
+    required: true
+  };
+}
+
+function getSetItemKey(item) {
+  return item?.id ?? item?.localId ?? item?.key ?? item?.inventory_number ?? item?.serial ?? item?.barcode ?? item?.name ?? '';
+}
+
+function sameEquipmentKey(left, right) {
+  const leftKey = typeof left === 'string' ? left : getEquipmentKey(left) || getSetItemKey(left);
+  const rightKey = typeof right === 'string' ? right : getEquipmentKey(right) || getSetItemKey(right);
+  return Boolean(leftKey && rightKey && String(leftKey) === String(rightKey));
+}
+
+function isItemUsedInOtherSet(item, equipmentRows, currentSet) {
+  const itemKey = getEquipmentKey(item);
+  if (!itemKey) return false;
+  return equipmentRows.some((row) => {
+    if (!isEquipmentSet(row)) return false;
+    if (currentSet && sameEquipmentKey(row, currentSet)) return false;
+    return (row.set_items ?? []).some((setItem) => sameEquipmentKey(setItem, itemKey));
+  });
+}
+
 function EquipmentModule() {
   const [rows, setRows] = useState(demoEquipment);
   const [loading, setLoading] = useState(false);
@@ -892,12 +964,32 @@ function EquipmentModule() {
 
   useEffect(() => { loadEquipment(); loadEquipmentDictionaries(); }, []);
 
-  const openEquipmentEditor = (item = null) => {
+  const openEquipmentEditor = (item = null, options = {}) => {
+    if (item && isEquipmentSetComponent(item) && !options.force) {
+      alert('Ten sprzęt jest składnikiem zestawu. Najpierw usuń go z zestawu, żeby można było go edytować.');
+      return;
+    }
     setEditingEquipment(item);
     setEditorOpen(true);
   };
 
+  const openSetEditor = () => {
+    openEquipmentEditor({
+      name: '',
+      category: EQUIPMENT_SET_CATEGORY,
+      status: EQUIPMENT_AVAILABLE_STATUS,
+      location: 'Magazyn',
+      condition: 'Bardzo dobry',
+      set_items: [],
+      description: ''
+    }, { force: true });
+  };
+
   const duplicateEquipment = (item) => {
+    if (isEquipmentSetComponent(item)) {
+      alert('Nie można duplikować składnika zestawu.');
+      return;
+    }
     const copy = {
       ...item,
       id: null,
@@ -935,27 +1027,95 @@ function EquipmentModule() {
     history_notes: item.history_notes ?? ''
   });
 
+  const updateSetComponentStatuses = async (previousItems = [], nextItems = [], parentItem = null) => {
+    const previousKeys = new Set(previousItems.map(getSetItemKey).filter(Boolean).map(String));
+    const nextKeys = new Set(nextItems.map(getSetItemKey).filter(Boolean).map(String));
+    const toAttach = [...nextKeys].filter((key) => !previousKeys.has(key));
+    const toRelease = [...previousKeys].filter((key) => !nextKeys.has(key));
+
+    const findRowByKey = (key) => rows.find((row) => sameEquipmentKey(row, key));
+
+    if (isSupabaseConfigured) {
+      for (const key of toAttach) {
+        const row = findRowByKey(key);
+        if (!row?.id) continue;
+        const { error } = await updateEquipmentRecord(row.id, { status: EQUIPMENT_SET_COMPONENT_STATUS });
+        if (error) throw error;
+      }
+      for (const key of toRelease) {
+        const row = findRowByKey(key);
+        if (!row?.id) continue;
+        const stillUsed = rows.some((candidate) => {
+          if (!isEquipmentSet(candidate)) return false;
+          if (parentItem && sameEquipmentKey(candidate, parentItem)) return false;
+          return (candidate.set_items ?? []).some((setItem) => sameEquipmentKey(setItem, key));
+        });
+        if (stillUsed) continue;
+        const { error } = await updateEquipmentRecord(row.id, { status: EQUIPMENT_AVAILABLE_STATUS });
+        if (error) throw error;
+      }
+      return;
+    }
+
+    setRows((current) => current.map((row) => {
+      const key = getEquipmentKey(row);
+      if (toAttach.includes(String(key))) return { ...row, status: EQUIPMENT_SET_COMPONENT_STATUS };
+      if (toRelease.includes(String(key))) return { ...row, status: EQUIPMENT_AVAILABLE_STATUS };
+      return row;
+    }));
+  };
+
   const handleSave = async (item) => {
     if (!item.name.trim()) {
       alert('Nazwa sprzętu jest wymagana.');
       return;
     }
 
-    const payload = normalizePayload(item);
-    if (isSupabaseConfigured) {
-      const result = item.id ? await updateEquipmentRecord(item.id, payload) : await createEquipmentRecord(payload);
-      if (result.error) alert(result.error.message);
-      await loadEquipment();
-    } else {
-      setRows((current) => item.localId
-        ? current.map((row) => row.localId === item.localId ? item : row)
-        : [{ ...item, localId: crypto.randomUUID() }, ...current]);
+    if (isEquipmentSetComponent(item)) {
+      alert('Ten sprzęt jest składnikiem zestawu i nie może być edytowany bez usunięcia go z zestawu.');
+      return;
     }
-    setEditorOpen(false);
+
+    const previousSetItems = editingEquipment?.set_items ?? [];
+    const nextSetItems = item.category === EQUIPMENT_SET_CATEGORY ? item.set_items ?? [] : [];
+    const payload = normalizePayload({ ...item, set_items: nextSetItems });
+
+    try {
+      if (isSupabaseConfigured) {
+        const result = item.id ? await updateEquipmentRecord(item.id, payload) : await createEquipmentRecord(payload);
+        if (result.error) {
+          alert(result.error.message);
+          return;
+        }
+        await updateSetComponentStatuses(previousSetItems, nextSetItems, result.data ?? item);
+        await loadEquipment();
+      } else {
+        const savedItem = item.localId
+          ? item
+          : { ...item, localId: crypto.randomUUID() };
+        setRows((current) => item.localId
+          ? current.map((row) => row.localId === item.localId ? savedItem : row)
+          : [savedItem, ...current]);
+        await updateSetComponentStatuses(previousSetItems, nextSetItems, savedItem);
+      }
+      setEditorOpen(false);
+    } catch (error) {
+      alert(error.message ?? 'Nie udało się zapisać zestawu sprzętu.');
+    }
   };
 
   const handleDelete = async (item) => {
+    if (isEquipmentSetComponent(item)) {
+      alert('Nie można usunąć składnika zestawu. Najpierw usuń go z zestawu.');
+      return;
+    }
     if (!confirm(`Usunąć sprzęt: ${item.name}?`)) return;
+    try {
+      if (isEquipmentSet(item)) await updateSetComponentStatuses(item.set_items ?? [], [], item);
+    } catch (error) {
+      alert(error.message ?? 'Nie udało się zwolnić składników zestawu.');
+      return;
+    }
     if (item.id && isSupabaseConfigured) {
       const { error } = await deleteEquipmentRecord(item.id);
       if (error) alert(error.message);
@@ -966,11 +1126,20 @@ function EquipmentModule() {
   };
 
   const handleBulkDelete = async (items) => {
-    const selected = items.filter((item) => item?.id || item?.localId || item?.name || item?.serial);
+    const locked = items.filter(isEquipmentSetComponent);
+    if (locked.length) {
+      alert(`Pominięto składniki zestawu, których nie można usunąć: ${locked.length}.`);
+    }
+    const selected = items.filter((item) => !isEquipmentSetComponent(item) && (item?.id || item?.localId || item?.name || item?.serial));
     if (!selected.length) return;
     if (!confirm(`Usunąć zaznaczone pozycje sprzętu: ${selected.length}?`)) return;
 
     if (isSupabaseConfigured) {
+      for (const item of selected) {
+        if (isEquipmentSet(item)) {
+          try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch (error) { alert(error.message); return; }
+        }
+      }
       for (const item of selected) {
         if (!item.id) continue;
         const { error } = await deleteEquipmentRecord(item.id);
@@ -980,6 +1149,11 @@ function EquipmentModule() {
       return;
     }
 
+    for (const item of selected) {
+      if (isEquipmentSet(item)) {
+        try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch (error) { alert(error.message); return; }
+      }
+    }
     setRows((current) => current.filter((row) => !selected.includes(row)));
   };
 
@@ -990,6 +1164,7 @@ function EquipmentModule() {
         <p className="muted">Kartoteka urządzeń, numery seryjne, kody, lokalizacje, statusy i przygotowanie pod zestawy oraz wypożyczenia.</p>
         <div className="module-actions">
           <button className="primary-button" onClick={() => openEquipmentEditor(null)}><Plus size={18} />Dodaj sprzęt</button>
+          <button className="secondary-button" onClick={openSetEditor}><Package size={18} />Dodaj zestaw</button>
           <button className="secondary-button" onClick={loadEquipment}>Odśwież</button>
           <button className="secondary-button">Eksport PDF</button>
           <button className="secondary-button">Ustawienia modułu</button>
@@ -1005,10 +1180,11 @@ function EquipmentModule() {
           { key: 'serial', label: 'Numer seryjny' },
           { key: 'inventory_number', label: 'Nr inw.' },
           { key: 'status', label: 'Status' },
-          { key: 'location', label: 'Lokalizacja' }
-        ]} rows={rows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
+          { key: 'location', label: 'Lokalizacja' },
+          { key: 'set_items_count', label: 'Składniki' }
+        ]} rows={rows.map((item) => ({ ...item, set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} />
       </section>
-      {editorOpen && <EquipmentEditor equipment={editingEquipment} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
   );
 }
@@ -1128,7 +1304,7 @@ function getSavedEquipmentModalPosition(size) {
   return clampEquipmentModalPosition(getCenteredEquipmentModalPosition(size), size);
 }
 
-function EquipmentEditor({ equipment, categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), onClose, onSave }) {
+function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const [activeTab, setActiveTab] = useState('basic');
   const [errors, setErrors] = useState({});
@@ -1141,7 +1317,7 @@ function EquipmentEditor({ equipment, categories = getLocalEquipmentDictionaryNa
   const [newGalleryItem, setNewGalleryItem] = useState('');
   const [newAttachmentName, setNewAttachmentName] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
-  const [newSetItem, setNewSetItem] = useState('');
+  const [selectedSetItemKey, setSelectedSetItemKey] = useState('');
   const [form, setForm] = useState(() => ({
     id: equipment?.id ?? null,
     localId: equipment?.localId ?? null,
@@ -1167,6 +1343,20 @@ function EquipmentEditor({ equipment, categories = getLocalEquipmentDictionaryNa
     service_notes: equipment?.service_notes ?? cardData.service_notes,
     history_notes: equipment?.history_notes ?? cardData.history_notes
   }));
+
+
+  const setItemKeys = useMemo(() => new Set((form.set_items ?? []).map(getSetItemKey).filter(Boolean).map(String)), [form.set_items]);
+  const availableSetComponents = useMemo(() => equipmentRows.filter((item) => {
+    if (sameEquipmentKey(item, form)) return false;
+    if (isEquipmentSet(item)) return false;
+    if (isEquipmentSetComponent(item) && !setItemKeys.has(String(getEquipmentKey(item)))) return false;
+    if (setItemKeys.has(String(getEquipmentKey(item)))) return false;
+    if (isItemUsedInOtherSet(item, equipmentRows, form)) return false;
+    return true;
+  }), [equipmentRows, form, setItemKeys]);
+
+  const isSetCard = form.category === EQUIPMENT_SET_CATEGORY;
+  const safeStatuses = statuses.includes(EQUIPMENT_SET_COMPONENT_STATUS) ? statuses : [...statuses, EQUIPMENT_SET_COMPONENT_STATUS];
 
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -1198,10 +1388,10 @@ function EquipmentEditor({ equipment, categories = getLocalEquipmentDictionaryNa
   };
 
   const addSetItem = () => {
-    const value = newSetItem.trim();
-    if (!value) return;
-    update('set_items', [...form.set_items, { name: value, required: true }]);
-    setNewSetItem('');
+    const selected = availableSetComponents.find((item) => String(getEquipmentKey(item)) === String(selectedSetItemKey));
+    if (!selected) return;
+    update('set_items', [...form.set_items, normalizeSetItemFromEquipment(selected)]);
+    setSelectedSetItemKey('');
   };
 
   const removeSetItem = (index) => {
@@ -1354,8 +1544,8 @@ function EquipmentEditor({ equipment, categories = getLocalEquipmentDictionaryNa
             <label>Model<input value={form.model} onChange={(event) => update('model', event.target.value)} placeholder="np. ATEM Mini Pro" /></label>
             <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} /></label>
             <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
-            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}>{categories.map((option) => <option key={option}>{option}</option>)}</select></label>
-            <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}>{statuses.map((option) => <option key={option}>{option}</option>)}</select></label>
+            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}>{(categories.includes(EQUIPMENT_SET_CATEGORY) ? categories : [...categories, EQUIPMENT_SET_CATEGORY]).map((option) => <option key={option}>{option}</option>)}</select></label>
+            <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}>{safeStatuses.map((option) => <option key={option}>{option}</option>)}</select></label>
             <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
             <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Szafka Magazyn" /></label>
             <label>Wartość zakupu<input value={form.purchase_value} onChange={(event) => update('purchase_value', event.target.value)} placeholder="np. 2500" /></label>
@@ -1392,11 +1582,14 @@ function EquipmentEditor({ equipment, categories = getLocalEquipmentDictionaryNa
           </div>}
 
           {activeTab === 'relations' && <div className="equipment-section-panel">
-            <div className="section-title">Powiązania / Zestawy</div>
-            <div className="inline-add-row"><input value={newSetItem} onChange={(event) => setNewSetItem(event.target.value)} placeholder="Nazwa składnika zestawu lub powiązanego sprzętu" /><button type="button" className="secondary-button compact-table-button" onClick={addSetItem}>Dodaj</button></div>
-            <div className="equipment-list-box">
-              {form.set_items.length ? form.set_items.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span>{item.name}</span><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></div>) : <p className="muted">Brak składników zestawu lub powiązań.</p>}
-            </div>
+            <div className="section-title">Składniki zestawu</div>
+            {isSetCard ? <>
+              <div className="set-builder-note">Dodany składnik zostanie zablokowany w magazynie i otrzyma status „Składnik zestawu”.</div>
+              <div className="inline-add-row set-component-add-row"><select value={selectedSetItemKey} onChange={(event) => setSelectedSetItemKey(event.target.value)}><option value="">Wybierz sprzęt z magazynu</option>{availableSetComponents.map((item) => <option key={getEquipmentKey(item)} value={getEquipmentKey(item)}>{getEquipmentDisplayName(item)}</option>)}</select><button type="button" className="secondary-button compact-table-button" onClick={addSetItem} disabled={!selectedSetItemKey}>Dodaj</button></div>
+              <div className="equipment-list-box">
+                {form.set_items.length ? form.set_items.map((item, index) => <div key={`${getSetItemKey(item)}-${index}`} className="equipment-list-row set-component-row"><span><strong>{item.name}</strong>{[item.brand, item.model, item.serial ? `SN: ${item.serial}` : '', item.inventory_number ? `Nr inw.: ${item.inventory_number}` : ''].filter(Boolean).join(' · ') ? ` — ${[item.brand, item.model, item.serial ? `SN: ${item.serial}` : '', item.inventory_number ? `Nr inw.: ${item.inventory_number}` : ''].filter(Boolean).join(' · ')}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń z zestawu</button></div>) : <p className="muted">Brak składników zestawu.</p>}
+              </div>
+            </> : <div className="notice">Składniki można dodawać tylko w kartotece sprzętu z kategorią „Zestaw”.</div>}
           </div>}
         </div>
 
@@ -1483,7 +1676,7 @@ function formatCompanyContact(profile) {
   return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, isRowLocked = null }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -1750,6 +1943,11 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     const row = rowContextMenu?.row;
     setRowContextMenu(null);
     if (!row) return;
+    const locked = typeof isRowLocked === 'function' ? isRowLocked(row) : false;
+    if (locked && ['open', 'edit', 'duplicate', 'delete'].includes(action)) {
+      alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.');
+      return;
+    }
     if (action === 'open') (onOpen ?? onEdit)?.(row);
     if (action === 'edit') onEdit?.(row);
     if (action === 'duplicate') onDuplicate?.(row);
@@ -1774,7 +1972,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
           <tbody>{sortedRows.map((row, index) => {
             const rowKey = getRowKey(row, index);
             const selected = selectedRowKeys.has(rowKey);
-            return <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={`${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''}`.trim()} onDoubleClick={() => (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>;
+            return <tr key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`} className={`${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''}`.trim()} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>;
           })}</tbody>
         </table>
       </div>

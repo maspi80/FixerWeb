@@ -951,14 +951,13 @@ function EquipmentModule() {
   const [notice, setNotice] = useState('');
   const [equipmentCategories, setEquipmentCategories] = useState(() => getLocalEquipmentDictionaryNames('category'));
   const [equipmentStatuses, setEquipmentStatuses] = useState(() => getLocalEquipmentDictionaryNames('status'));
+  const [equipmentLocations, setEquipmentLocations] = useState(() => getLocalEquipmentDictionaryNames('location'));
 
   const loadEquipmentDictionaries = async () => {
-    const [categoriesResult, statusesResult] = await Promise.all([
-      fetchEquipmentDictionary('category'),
-      fetchEquipmentDictionary('status')
-    ]);
+    const [categoriesResult, statusesResult, locationsResult] = await Promise.all([fetchEquipmentDictionary('category'),fetchEquipmentDictionary('status'),fetchEquipmentDictionary('location')]);
     setEquipmentCategories(categoriesResult.data.map((item) => item.name));
     setEquipmentStatuses(statusesResult.data.map((item) => item.name));
+    setEquipmentLocations((locationsResult.data||[]).map((item)=>item.name));
   };
 
   const loadEquipment = async () => {
@@ -1595,7 +1594,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
                 <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Status<input value={calculatedSetStatus} readOnly className="readonly-input" /></label>
-                <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Magazyn" /></label>
+                <label>Lokalizacja<select value={form.location} onChange={(event)=>update('location', event.target.value)}>{(equipmentLocations?.length?equipmentLocations:['Magazyn']).map(location=><option key={location} value={location}>{location}</option>)}</select></label>
                 <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
                 <label className="set-description-field">Opis zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></label>
               </div>

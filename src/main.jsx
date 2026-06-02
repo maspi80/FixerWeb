@@ -1218,7 +1218,7 @@ function EquipmentModule() {
           { key: 'set_items_count', label: 'Składniki' }
         ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
-      {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
   );
 }
@@ -1338,7 +1338,7 @@ function getSavedEquipmentModalPosition(size) {
   return clampEquipmentModalPosition(getCenteredEquipmentModalPosition(size), size);
 }
 
-function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), onClose, onSave }) {
+function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), locations = getLocalEquipmentDictionaryNames('location'), onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const isInitialSetCard = equipment?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(equipment?.set_items) && equipment.set_items.length > 0;
   const [activeTab, setActiveTab] = useState('basic');
@@ -1594,7 +1594,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
                 <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Status<input value={calculatedSetStatus} readOnly className="readonly-input" /></label>
-                <label>Lokalizacja<select value={form.location} onChange={(event)=>update('location', event.target.value)}>{(equipmentLocations?.length?equipmentLocations:['Magazyn']).map(location=><option key={location} value={location}>{location}</option>)}</select></label>
+                <label>Lokalizacja<select value={form.location} onChange={(event)=>update('location', event.target.value)}>{(locations?.length?locations:['Magazyn']).map(location=><option key={location} value={location}>{location}</option>)}</select></label>
                 <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
                 <label className="set-description-field">Opis zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></label>
               </div>

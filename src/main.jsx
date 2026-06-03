@@ -2690,8 +2690,10 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     total_price: rental?.total_price ?? ''
   }));
   const [selectedEquipmentIds, setSelectedEquipmentIds] = useState(() => selectedBaseItems.map(getRentalItemEquipmentId).filter(Boolean));
+  const [localClients, setLocalClients] = useState(clients);
   const [selectedClient, setSelectedClient] = useState(initialClient);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [equipmentPickerOpen, setEquipmentPickerOpen] = useState(false);
   const [selectedRentalItemIds, setSelectedRentalItemIds] = useState(new Set());
   const [rentalItemContextMenu, setRentalItemContextMenu] = useState(null);
@@ -2725,6 +2727,45 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     setSelectedClient(client);
     update('client_id', client.id);
     setClientPickerOpen(false);
+  };
+  const openNewClientEditor = () => {
+    setClientPickerOpen(false);
+    setClientEditorOpen(true);
+  };
+  const saveNewClientFromRental = async (client) => {
+    const payload = {
+      name: client.name,
+      type: client.type,
+      client_kind: client.client_kind,
+      phone: client.phone,
+      email: client.email,
+      street: client.street,
+      building_number: client.building_number,
+      apartment_number: client.apartment_number,
+      postal_code: client.postal_code,
+      city: client.city,
+      country: client.country,
+      nip: client.type === 'Firma' ? client.nip : '',
+      regon: client.type === 'Firma' ? client.regon : '',
+      notes: client.notes
+    };
+    if (!client.name.trim()) {
+      alert('Nazwa klienta jest wymagana.');
+      return;
+    }
+    if (!isSupabaseConfigured) {
+      alert('Brak konfiguracji bazy danych Supabase. Dane klientów nie mogą zostać zapisane.');
+      return;
+    }
+    const result = await createClientRecord(payload);
+    if (result.error) {
+      alert(result.error.message);
+      return;
+    }
+    setClientEditorOpen(false);
+    setLocalClients((current) => [result.data, ...current.filter((item) => item.id !== result.data.id)]);
+    setSelectedClient(result.data);
+    update('client_id', result.data.id);
   };
   const addEquipment = (items) => {
     const ids = items.map((item) => item.id).filter(Boolean);
@@ -2769,6 +2810,8 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   useEffect(() => {
     setSelectedRentalItemIds((current) => new Set([...current].filter((id) => selectedEquipmentIds.includes(id))));
   }, [selectedEquipmentIds]);
+
+  useEffect(() => { setLocalClients(clients); }, [clients]);
 
   useEffect(() => {
     if (!rentalItemContextMenu) return undefined;
@@ -2860,7 +2903,11 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   };
 
   if (clientPickerOpen) {
-    return <ClientPickerModal clients={clients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={chooseClient} />;
+    return <ClientPickerModal clients={localClients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={chooseClient} onCreateClient={openNewClientEditor} />;
+  }
+
+  if (clientEditorOpen) {
+    return <ClientEditor client={null} initialTab="data" onClose={() => { setClientEditorOpen(false); setClientPickerOpen(true); }} onSave={saveNewClientFromRental} />;
   }
 
   if (equipmentPickerOpen) {
@@ -2968,7 +3015,7 @@ function RentalEquipmentPreviewModal({ equipment, onClose }) {
   </ModalFrame>;
 }
 
-function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm }) {
+function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm, onCreateClient = null }) {
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState('name');
   const [highlightedClientId, setHighlightedClientId] = useState(selectedClientId ?? '');
@@ -3005,6 +3052,7 @@ function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm }) {
       <div className="shared-picker-toolbar">
         <FormField label="Szukaj"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, telefon, email, miasto, NIP" autoFocus /></FormField>
         <FormField label="Sortuj"><select value={sortKey} onChange={(event) => setSortKey(event.target.value)}><option value="name">Nazwa</option><option value="client_kind">Rodzaj</option><option value="city">Miasto</option></select></FormField>
+        {onCreateClient && <AppButton variant="primary" size="sm" className="compact-button picker-create-button" onClick={onCreateClient}><Plus size={15} />Nowy klient</AppButton>}
       </div>
       <div className="shared-picker-table-shell" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') confirmHighlightedClient(); }}>
         <table className="set-picker-table">
@@ -3398,7 +3446,9 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
     id: order?.id,
     localId: order?.localId
   }));
+  const [localClients, setLocalClients] = useState(clients);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [equipmentPickerOpen, setEquipmentPickerOpen] = useState(false);
   const [progressRows, setProgressRows] = useState([]);
   const [progressNotice, setProgressNotice] = useState('');
@@ -3410,7 +3460,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
   const [newAttachmentType, setNewAttachmentType] = useState('Zdjęcie');
 
   const orderId = form.id ?? form.localId;
-  const selectedClient = clients.find((client) => client.id === form.client_id) ?? order?.clients ?? null;
+  const selectedClient = localClients.find((client) => client.id === form.client_id) ?? order?.clients ?? null;
   const selectedEquipment = equipmentRows.find((item) => item.id === form.equipment_id) ?? order?.equipment ?? null;
   const categories = [...new Set(['Kamera', 'Obiektyw', 'Audio', 'Oświetlenie', 'Komputer', 'Akcesoria', ...equipmentRows.map((item) => item.category).filter(Boolean), form.customer_device_category].filter(Boolean))];
   const conditions = [...new Set([...(DEFAULT_CONFIG_DICTIONARIES.equipmentConditions ?? []), form.intake_condition].filter(Boolean))];
@@ -3445,10 +3495,51 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
   };
 
   useEffect(() => { loadProgress(); }, [orderId]);
+  useEffect(() => { setLocalClients(clients); }, [clients]);
 
   const chooseClient = (client) => {
     update('client_id', client.id);
     setClientPickerOpen(false);
+  };
+
+  const openNewClientEditor = () => {
+    setClientPickerOpen(false);
+    setClientEditorOpen(true);
+  };
+
+  const saveNewClientFromService = async (client) => {
+    const payload = {
+      name: client.name,
+      type: client.type,
+      client_kind: client.client_kind,
+      phone: client.phone,
+      email: client.email,
+      street: client.street,
+      building_number: client.building_number,
+      apartment_number: client.apartment_number,
+      postal_code: client.postal_code,
+      city: client.city,
+      country: client.country,
+      nip: client.type === 'Firma' ? client.nip : '',
+      regon: client.type === 'Firma' ? client.regon : '',
+      notes: client.notes
+    };
+    if (!client.name.trim()) {
+      alert('Nazwa klienta jest wymagana.');
+      return;
+    }
+    if (!isSupabaseConfigured) {
+      alert('Brak konfiguracji bazy danych Supabase. Dane klientów nie mogą zostać zapisane.');
+      return;
+    }
+    const result = await createClientRecord(payload);
+    if (result.error) {
+      alert(result.error.message);
+      return;
+    }
+    setClientEditorOpen(false);
+    setLocalClients((current) => [result.data, ...current.filter((item) => item.id !== result.data.id)]);
+    setForm((current) => ({ ...current, client_id: result.data.id }));
   };
 
   const chooseEquipment = (items) => {
@@ -3532,7 +3623,11 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
   ];
 
   if (clientPickerOpen) {
-    return <ClientPickerModal clients={clients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={chooseClient} />;
+    return <ClientPickerModal clients={localClients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={chooseClient} onCreateClient={openNewClientEditor} />;
+  }
+
+  if (clientEditorOpen) {
+    return <ClientEditor client={null} initialTab="data" onClose={() => { setClientEditorOpen(false); setClientPickerOpen(true); }} onSave={saveNewClientFromService} />;
   }
 
   if (equipmentPickerOpen) {
@@ -3568,25 +3663,32 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
 
         <SectionPanel className="service-record-section" title="Klient i sprzęt klienta">
           <div className="service-customer-device-grid">
-            <button type="button" className={`service-link-card ${selectedClient ? 'selected' : ''}`} onClick={() => setClientPickerOpen(true)}>
-              <span>Klient</span>
-              <strong>{selectedClient?.name || 'Wybierz klienta'}</strong>
-              {selectedClient?.phone && <small>{selectedClient.phone}</small>}
-            </button>
-            <div className="service-linked-equipment-box">
-              <span>Powiązanie z magazynem opcjonalne</span>
-              <strong>{selectedEquipment?.name || 'Brak powiązania'}</strong>
-              <div className="service-inline-actions"><AppButton variant="secondary" size="sm" onClick={() => setEquipmentPickerOpen(true)}>Wybierz z bazy</AppButton>{form.equipment_id && <AppButton variant="secondary" size="sm" onClick={clearEquipmentLink}>Odłącz</AppButton>}</div>
+            <div className="service-link-row">
+              <button type="button" className={`service-link-card service-client-chip ${selectedClient ? 'selected' : ''}`} onClick={() => setClientPickerOpen(true)}>
+                <span>Klient</span>
+                <strong>{selectedClient?.name || 'Wybierz klienta'}</strong>
+                <small>{selectedClient?.phone || selectedClient?.email || 'Kliknij, aby wybrać'}</small>
+                <em>Zmień</em>
+              </button>
+              <div className="service-linked-equipment-box">
+                <span>Powiązanie z magazynem</span>
+                <strong>{selectedEquipment?.name || 'Brak powiązania'}</strong>
+                <div className="service-inline-actions"><AppButton variant="secondary" size="sm" onClick={() => setEquipmentPickerOpen(true)}>Wybierz</AppButton>{form.equipment_id && <AppButton variant="secondary" size="sm" onClick={clearEquipmentLink}>Odłącz</AppButton>}</div>
+              </div>
             </div>
-            <FormField label="Nazwa urządzenia"><AppInput value={form.customer_device_name} onChange={(event) => update('customer_device_name', event.target.value)} placeholder="np. Sony PXW-Z190 klienta" /></FormField>
-            <FormField label="Marka"><AppInput value={form.customer_device_brand} onChange={(event) => update('customer_device_brand', event.target.value)} /></FormField>
-            <FormField label="Model"><AppInput value={form.customer_device_model} onChange={(event) => update('customer_device_model', event.target.value)} /></FormField>
-            <FormField label="Numer seryjny"><AppInput value={form.customer_device_serial} onChange={(event) => update('customer_device_serial', event.target.value)} /></FormField>
-            <FormField label="Kod / numer wewnętrzny"><AppInput value={form.customer_device_code} onChange={(event) => update('customer_device_code', event.target.value)} /></FormField>
-            <FormField label="Kategoria"><AppSelect value={form.customer_device_category} onChange={(event) => update('customer_device_category', event.target.value)}><option value="">Wybierz</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</AppSelect></FormField>
-            <FormField label="Stan przyjęcia"><AppSelect value={form.intake_condition} onChange={(event) => update('intake_condition', event.target.value)}>{conditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
-            <FormField className="service-wide-field" label="Akcesoria przyjęte ze sprzętem"><AppTextarea value={form.intake_accessories} onChange={(event) => update('intake_accessories', event.target.value)} placeholder="np. zasilacz, futerał, karta pamięci" /></FormField>
-            <FormField className="service-wide-field" label="Opis wizualny / uwagi przy przyjęciu"><AppTextarea value={form.intake_visual_notes} onChange={(event) => update('intake_visual_notes', event.target.value)} placeholder="np. rysy na obudowie, brak zaślepki, ślady zalania" /></FormField>
+            <div className="service-device-fields-grid">
+              <FormField label="Nazwa urządzenia"><AppInput value={form.customer_device_name} onChange={(event) => update('customer_device_name', event.target.value)} placeholder="np. Sony PXW-Z190 klienta" /></FormField>
+              <FormField label="Marka"><AppInput value={form.customer_device_brand} onChange={(event) => update('customer_device_brand', event.target.value)} /></FormField>
+              <FormField label="Model"><AppInput value={form.customer_device_model} onChange={(event) => update('customer_device_model', event.target.value)} /></FormField>
+              <FormField label="Numer seryjny"><AppInput value={form.customer_device_serial} onChange={(event) => update('customer_device_serial', event.target.value)} /></FormField>
+              <FormField label="Kod / numer"><AppInput value={form.customer_device_code} onChange={(event) => update('customer_device_code', event.target.value)} /></FormField>
+              <FormField label="Kategoria"><AppSelect value={form.customer_device_category} onChange={(event) => update('customer_device_category', event.target.value)}><option value="">Wybierz</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</AppSelect></FormField>
+            </div>
+            <div className="service-intake-fields-grid">
+              <FormField label="Stan przyjęcia"><AppSelect value={form.intake_condition} onChange={(event) => update('intake_condition', event.target.value)}>{conditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
+              <FormField label="Akcesoria"><AppTextarea value={form.intake_accessories} onChange={(event) => update('intake_accessories', event.target.value)} placeholder="np. zasilacz, futerał, karta pamięci" /></FormField>
+              <FormField label="Opis wizualny / uwagi"><AppTextarea value={form.intake_visual_notes} onChange={(event) => update('intake_visual_notes', event.target.value)} placeholder="np. rysy na obudowie, brak zaślepki, ślady zalania" /></FormField>
+            </div>
           </div>
         </SectionPanel>
 

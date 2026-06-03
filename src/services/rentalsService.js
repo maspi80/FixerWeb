@@ -51,6 +51,32 @@ function uniqueIds(ids) {
   return [...new Set(ids.filter(Boolean))];
 }
 
+function normalizeMoneyValue(value, fieldName) {
+  if (value === '' || value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) return value;
+    throw new Error(`Nieprawidłowa kwota w polu ${fieldName}.`);
+  }
+
+  const normalized = String(value).trim().replace(/\s/g, '').replace(',', '.');
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) {
+    throw new Error(`Nieprawidłowa kwota w polu ${fieldName}: "${value}". Wpisz samą liczbę, np. 120,50.`);
+  }
+
+  const number = Number(normalized);
+  if (!Number.isFinite(number)) throw new Error(`Nieprawidłowa kwota w polu ${fieldName}.`);
+  return number;
+}
+
+function getRentalRpcError(error) {
+  const message = String(error?.message ?? '');
+  const code = String(error?.code ?? '');
+  if (code === '42883' || code === 'PGRST202' || message.toLocaleLowerCase('pl').includes('update_rental_with_items')) {
+    return new Error('Nie znaleziono funkcji RPC update_rental_with_items w Supabase. Uruchom migrację supabase/006_atomic_rental_update.sql i spróbuj ponownie.');
+  }
+  return error;
+}
+
 function normalizeRentalPayload(rental) {
   return {
     rental_number: String(rental.rental_number ?? '').trim() || generateRentalNumber(),
@@ -60,8 +86,8 @@ function normalizeRentalPayload(rental) {
     planned_return_date: rental.planned_return_date || null,
     actual_return_date: rental.actual_return_date || null,
     notes: rental.notes ?? '',
-    total_deposit: rental.total_deposit === '' || rental.total_deposit === undefined ? null : rental.total_deposit,
-    total_price: rental.total_price === '' || rental.total_price === undefined ? null : rental.total_price
+    total_deposit: normalizeMoneyValue(rental.total_deposit, 'total_deposit'),
+    total_price: normalizeMoneyValue(rental.total_price, 'total_price')
   };
 }
 
@@ -78,9 +104,9 @@ function normalizeRentalItemPayload(item, rentalId) {
     status: RENTAL_ITEM_STATUSES.includes(item.status) ? item.status : 'issued',
     planned_return_date: item.planned_return_date || null,
     returned_at: item.returned_at || null,
-    price_day: item.price_day === '' || item.price_day === undefined ? null : item.price_day,
-    price_week: item.price_week === '' || item.price_week === undefined ? null : item.price_week,
-    deposit: item.deposit === '' || item.deposit === undefined ? null : item.deposit,
+    price_day: normalizeMoneyValue(item.price_day, 'price_day'),
+    price_week: normalizeMoneyValue(item.price_week, 'price_week'),
+    deposit: normalizeMoneyValue(item.deposit, 'deposit'),
     condition_out: item.condition_out ?? '',
     condition_in: item.condition_in ?? '',
     damage_notes: item.damage_notes ?? '',
@@ -138,14 +164,23 @@ export async function createRentalRecord(rental, items = []) {
     return { data: null, error: new Error('Supabase nie jest skonfigurowany') };
   }
 
+  let rentalPayload;
+  let itemRows;
+  try {
+    rentalPayload = normalizeRentalPayload(rental);
+    itemRows = items.map((item) => normalizeRentalItemPayload(item, null));
+  } catch (error) {
+    return { data: null, error };
+  }
+
   const { data: createdRental, error: rentalError } = await supabase
     .from('rentals')
-    .insert(normalizeRentalPayload(rental))
+    .insert(rentalPayload)
     .select(rentalSelectColumns)
     .single();
   if (rentalError) return { data: null, error: rentalError };
 
-  const itemRows = items.map((item) => normalizeRentalItemPayload(item, createdRental.id));
+  itemRows = itemRows.map((item) => ({ ...item, rental_id: createdRental.id }));
   if (itemRows.length) {
     const { error: itemsError } = await supabase.from('rental_items').insert(itemRows);
     if (itemsError) return { data: createdRental, error: itemsError };
@@ -176,38 +211,21 @@ export async function updateRentalRecord(id, rental, items = []) {
     return { data: null, error: new Error('Supabase nie jest skonfigurowany') };
   }
 
-  const { data: previousItems, error: previousError } = await supabase
-    .from('rental_items')
-    .select('equipment_id')
-    .eq('rental_id', id);
-  if (previousError) return { data: null, error: previousError };
-  const previousEquipmentIds = (previousItems ?? []).map((item) => item.equipment_id);
-
-  const { error: rentalError } = await supabase
-    .from('rentals')
-    .update({ ...normalizeRentalPayload(rental), updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (rentalError) return { data: null, error: rentalError };
-
-  const { error: deleteItemsError } = await supabase
-    .from('rental_items')
-    .delete()
-    .eq('rental_id', id);
-  if (deleteItemsError) return { data: null, error: deleteItemsError };
-
-  const itemRows = items.map((item) => normalizeRentalItemPayload(item, id));
-  if (itemRows.length) {
-    const { error: insertItemsError } = await supabase.from('rental_items').insert(itemRows);
-    if (insertItemsError) return { data: null, error: insertItemsError };
+  let rentalPayload;
+  let itemRows;
+  try {
+    rentalPayload = normalizeRentalPayload(rental);
+    itemRows = items.map((item) => normalizeRentalItemPayload(item, id));
+  } catch (error) {
+    return { data: null, error };
   }
 
-  const nextEquipmentIds = itemRows.map((item) => item.equipment_id);
-  const { error: issueError } = await markEquipmentIssued(nextEquipmentIds);
-  if (issueError) return { data: null, error: issueError };
-
-  const removedEquipmentIds = uniqueIds(previousEquipmentIds).filter((idToCheck) => !uniqueIds(nextEquipmentIds).includes(idToCheck));
-  const { error: releaseError } = await releaseEquipmentIfUnused(removedEquipmentIds);
-  if (releaseError) return { data: null, error: releaseError };
+  const { error: rpcError } = await supabase.rpc('update_rental_with_items', {
+    p_rental_id: id,
+    p_rental: rentalPayload,
+    p_items: itemRows
+  });
+  if (rpcError) return { data: null, error: getRentalRpcError(rpcError) };
 
   return fetchRentalRecord(id);
 }

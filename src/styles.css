@@ -2006,6 +2006,14 @@ th.expand-cell{cursor:default}
 .shared-picker-toolbar{
   grid-template-columns:minmax(260px,1fr) minmax(160px,220px);
 }
+.client-picker-modal .shared-picker-toolbar{
+  grid-template-columns:minmax(260px,1fr) minmax(150px,200px) auto;
+}
+.picker-create-button{
+  min-height:32px;
+  align-self:end;
+  white-space:nowrap;
+}
 .equipment-picker-toolbar{
   grid-template-columns:minmax(220px,1.2fr) repeat(4,minmax(130px,.75fr)) auto;
 }
@@ -4311,30 +4319,41 @@ th.expand-cell{cursor:default}
   grid-template-columns:repeat(2,minmax(0,1fr));
 }
 .service-customer-device-grid{
-  grid-template-columns:minmax(220px,.8fr) minmax(260px,1fr) repeat(3,minmax(140px,1fr));
+  grid-template-columns:1fr;
 }
-.service-customer-device-grid .service-link-card,
-.service-linked-equipment-box{
-  grid-row:span 2;
+.service-link-row{
+  display:grid;
+  grid-template-columns:minmax(220px,.72fr) minmax(260px,1fr);
+  gap:10px;
+  align-items:stretch;
 }
 .service-linked-equipment-box{
-  min-height:70px;
+  min-height:58px;
   border:1px solid rgba(148,163,184,.16);
   border-radius:12px;
   background:rgba(148,163,184,.06);
   color:#dbe7f8;
-  display:grid;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
   gap:5px;
-  padding:10px 12px;
+  padding:8px 10px;
+  min-width:0;
 }
 .service-linked-equipment-box span{
   color:#94a3b8;
   font-size:12px;
   font-weight:800;
+  display:block;
 }
 .service-linked-equipment-box strong{
   color:#eef4ff;
-  font-size:15px;
+  font-size:14px;
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:34ch;
 }
 .service-wide-field{
   grid-column:span 2;
@@ -4346,15 +4365,17 @@ th.expand-cell{cursor:default}
   flex-wrap:wrap;
 }
 .service-link-card{
-  min-height:70px;
+  min-height:58px;
   border:1px solid rgba(148,163,184,.16);
   border-radius:12px;
   background:rgba(148,163,184,.06);
   color:#dbe7f8;
   text-align:left;
   display:grid;
-  gap:4px;
-  padding:10px 12px;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:2px 10px;
+  padding:8px 10px;
+  align-items:center;
 }
 .service-link-card:hover{
   border-color:rgba(96,165,250,.42);
@@ -4370,9 +4391,49 @@ th.expand-cell{cursor:default}
   font-size:12px;
   font-weight:800;
 }
+.service-link-card span,
+.service-link-card small,
+.service-link-card strong{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 .service-link-card strong{
   color:#eef4ff;
-  font-size:15px;
+  font-size:14px;
+  grid-column:1;
+}
+.service-link-card small{
+  grid-column:1;
+}
+.service-link-card em{
+  grid-row:1 / span 3;
+  grid-column:2;
+  align-self:center;
+  border:1px solid rgba(148,163,184,.16);
+  border-radius:9px;
+  color:#cbd5e1;
+  font-style:normal;
+  font-size:12px;
+  font-weight:900;
+  padding:5px 8px;
+}
+.service-device-fields-grid{
+  display:grid;
+  grid-template-columns:minmax(220px,1.35fr) repeat(5,minmax(120px,1fr));
+  gap:10px;
+  min-width:0;
+}
+.service-intake-fields-grid{
+  display:grid;
+  grid-template-columns:minmax(130px,.55fr) minmax(220px,1fr) minmax(260px,1.25fr);
+  gap:10px;
+  min-width:0;
+}
+.service-intake-fields-grid textarea{
+  min-height:46px;
+  resize:vertical;
 }
 .service-text-grid{
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -4501,6 +4562,10 @@ th.expand-cell{cursor:default}
 .app-shell.theme-light .service-link-card strong{
   color:#0f172a;
 }
+.app-shell.theme-light .service-link-card em{
+  border-color:#d8e1ee;
+  color:#475569;
+}
 @media(max-width:1400px){
   .dashboard-attention-grid .dashboard-size-small,
   .dashboard-attention-grid .dashboard-size-medium,
@@ -4526,17 +4591,19 @@ th.expand-cell{cursor:default}
   .service-form-grid-main{
     grid-template-columns:repeat(3,minmax(0,1fr));
   }
-  .service-customer-device-grid,
   .service-text-grid,
   .service-estimate-grid{
     grid-template-columns:repeat(2,minmax(0,1fr));
   }
+  .service-link-row,
+  .service-device-fields-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .service-intake-fields-grid{
+    grid-template-columns:minmax(130px,.65fr) minmax(0,1fr) minmax(0,1fr);
+  }
   .service-cost-grid{
     grid-template-columns:repeat(3,minmax(0,1fr));
-  }
-  .service-customer-device-grid .service-link-card,
-  .service-linked-equipment-box{
-    grid-row:auto;
   }
   .service-notes-field{
     grid-column:1/-1;
@@ -4566,6 +4633,9 @@ th.expand-cell{cursor:default}
   .service-text-grid,
   .service-cost-grid,
   .service-customer-device-grid,
+  .service-link-row,
+  .service-device-fields-grid,
+  .service-intake-fields-grid,
   .service-estimate-grid,
   .service-progress-add,
   .service-attachment-add-grid{

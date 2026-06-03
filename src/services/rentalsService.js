@@ -212,6 +212,86 @@ export async function updateRentalRecord(id, rental, items = []) {
   return fetchRentalRecord(id);
 }
 
+export async function registerRentalReturn(id, returnedItemIds = [], closeRental = false) {
+  if (!isSupabaseConfigured) {
+    return { data: null, error: new Error('Supabase nie jest skonfigurowany') };
+  }
+
+  const selectedIds = uniqueIds(returnedItemIds);
+  const { data: items, error: itemsError } = await supabase
+    .from('rental_items')
+    .select('id, equipment_id, parent_set_equipment_id, item_type, status')
+    .eq('rental_id', id);
+  if (itemsError) return { data: null, error: itemsError };
+
+  const selectedBaseEquipmentIds = new Set((items ?? [])
+    .filter((item) => selectedIds.includes(item.id))
+    .map((item) => item.equipment_id)
+    .filter(Boolean));
+
+  const targetItems = (items ?? []).filter((item) => {
+    if (item.status !== 'issued') return false;
+    if (selectedIds.includes(item.id)) return true;
+    return item.parent_set_equipment_id && selectedBaseEquipmentIds.has(item.parent_set_equipment_id);
+  });
+
+  const targetItemIds = targetItems.map((item) => item.id);
+  const remainingIssued = (items ?? []).filter((item) => item.status === 'issued' && !targetItemIds.includes(item.id));
+  const fullyReturned = remainingIssued.length === 0;
+
+  if (!targetItems.length && (!closeRental || !fullyReturned)) {
+    return { data: null, error: new Error('Wybrane pozycje są już oznaczone jako zwrócone.') };
+  }
+
+  const now = new Date().toISOString();
+  if (targetItemIds.length) {
+    const { error: returnItemsError } = await supabase
+      .from('rental_items')
+      .update({ status: 'returned', returned_at: now, updated_at: now })
+      .in('id', targetItemIds);
+    if (returnItemsError) return { data: null, error: returnItemsError };
+  }
+
+  const closed = closeRental && fullyReturned;
+  const rentalStatus = closed ? 'returned' : 'partially_returned';
+  const rentalUpdate = {
+    status: rentalStatus,
+    updated_at: now,
+    ...(closed ? { actual_return_date: now.slice(0, 10) } : {})
+  };
+
+  const { error: rentalError } = await supabase
+    .from('rentals')
+    .update(rentalUpdate)
+    .eq('id', id);
+  if (rentalError) return { data: null, error: rentalError };
+
+  if (targetItems.length) {
+    const { error: releaseError } = await releaseEquipmentIfUnused(targetItems.map((item) => item.equipment_id));
+    if (releaseError) return { data: null, error: releaseError };
+  }
+
+  const record = await fetchRentalRecord(id);
+  return {
+    data: record.data ? { ...record.data, _return_closed: closed, _return_fully_returned: fullyReturned } : null,
+    error: record.error
+  };
+}
+
+export async function restoreRentalAsActive(id) {
+  if (!isSupabaseConfigured) {
+    return { data: null, error: new Error('Supabase nie jest skonfigurowany') };
+  }
+
+  const { error } = await supabase
+    .from('rentals')
+    .update({ status: 'active', actual_return_date: null, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return { data: null, error };
+
+  return fetchRentalRecord(id);
+}
+
 export async function deleteRentalRecord(id) {
   if (!isSupabaseConfigured) {
     return { error: new Error('Supabase nie jest skonfigurowany') };

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, Save, Trash2, X, Sun, Moon
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, RotateCcw, Save, Trash2, X, Sun, Moon
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -15,7 +15,6 @@ import {
   AppTextarea,
   ButtonPrimary,
   ButtonSecondary,
-  ButtonDanger,
   ButtonGhost,
   ModalFrame,
   FormField,
@@ -27,10 +26,23 @@ import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients, equipment as demoEquipment } from './data/mockData';
 import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecord } from './services/clientsService';
-import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetClientTypesRecords } from './services/clientTypesService';
+import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetClientTypesRecords, updateClientTypeRecord } from './services/clientTypesService';
 import { fetchTablePreference, getLocalTablePreference, saveTablePreference } from './services/tablePreferencesService';
 import { createEquipmentRecord, deleteEquipmentRecord, fetchEquipment, updateEquipmentRecord } from './services/equipmentService';
-import { createRentalRecord, deleteRentalRecord, fetchRentals, updateRentalRecord } from './services/rentalsService';
+import { createRentalRecord, deleteRentalRecord, fetchRentals, registerRentalReturn, restoreRentalAsActive, updateRentalRecord } from './services/rentalsService';
+import {
+  createServiceOrderProgress,
+  createServiceOrderRecord,
+  deleteServiceOrderProgress,
+  deleteServiceOrderRecord,
+  fetchServiceOrderProgress,
+  fetchServiceOrders,
+  SERVICE_ESTIMATE_STATUSES,
+  SERVICE_PRIORITIES,
+  SERVICE_STATUSES,
+  updateServiceOrderProgress,
+  updateServiceOrderRecord
+} from './services/serviceOrdersService';
 import {
   addEquipmentDictionaryRecord,
   deleteEquipmentDictionaryRecord,
@@ -136,6 +148,164 @@ function getSafeMenuPosition(event, width = 240, height = 320) {
   const preferredY = openUp ? event.clientY - height - 8 : event.clientY;
   const y = Math.min(Math.max(minY, preferredY), maxY);
   return { x, y };
+}
+
+function clampFloatingModalSize(size, minSize) {
+  if (typeof window === 'undefined') return size;
+  const maxWidth = Math.max(minSize.width, window.innerWidth - 32);
+  const maxHeight = Math.max(minSize.height, window.innerHeight - 32);
+  return {
+    width: Math.min(Math.max(size.width, minSize.width), maxWidth),
+    height: Math.min(Math.max(size.height, minSize.height), maxHeight)
+  };
+}
+
+function getCenteredFloatingModalPosition(size, screenMargin = 16) {
+  if (typeof window === 'undefined') return { left: screenMargin, top: screenMargin };
+  return {
+    left: Math.max(screenMargin, Math.round((window.innerWidth - size.width) / 2)),
+    top: Math.max(screenMargin, Math.round((window.innerHeight - size.height) / 2))
+  };
+}
+
+function clampFloatingModalPosition(position, size, screenMargin = 16) {
+  if (typeof window === 'undefined') return position;
+  const maxLeft = Math.max(screenMargin, window.innerWidth - size.width - screenMargin);
+  const maxTop = Math.max(screenMargin, window.innerHeight - size.height - screenMargin);
+  return {
+    left: Math.min(Math.max(position.left, screenMargin), maxLeft),
+    top: Math.min(Math.max(position.top, screenMargin), maxTop)
+  };
+}
+
+function getSavedFloatingModalSize(storageKey, defaultSize, minSize) {
+  if (typeof window === 'undefined') return defaultSize;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`${storageKey}:size`) || 'null');
+    if (parsed && Number.isFinite(parsed.width) && Number.isFinite(parsed.height)) {
+      return clampFloatingModalSize(parsed, minSize);
+    }
+  } catch {}
+  return clampFloatingModalSize(defaultSize, minSize);
+}
+
+function getSavedFloatingModalPosition(storageKey, size) {
+  if (typeof window === 'undefined') return getCenteredFloatingModalPosition(size);
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`${storageKey}:position`) || 'null');
+    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+      return clampFloatingModalPosition(parsed, size);
+    }
+  } catch {}
+  return clampFloatingModalPosition(getCenteredFloatingModalPosition(size), size);
+}
+
+function useFloatingModalGeometry(storageKey, defaultSize, minSize) {
+  const [modalSize, setModalSize] = useState(() => getSavedFloatingModalSize(storageKey, defaultSize, minSize));
+  const [modalPosition, setModalPosition] = useState(() => {
+    const size = getSavedFloatingModalSize(storageKey, defaultSize, minSize);
+    return getSavedFloatingModalPosition(storageKey, size);
+  });
+  const modalSizeRef = useRef(modalSize);
+  const modalPositionRef = useRef(modalPosition);
+  const resizeStateRef = useRef(null);
+  const dragStateRef = useRef(null);
+  const visibleModalPosition = clampFloatingModalPosition(modalPosition, modalSize);
+
+  useEffect(() => {
+    modalSizeRef.current = modalSize;
+    localStorage.setItem(`${storageKey}:size`, JSON.stringify(modalSize));
+    setModalPosition((current) => clampFloatingModalPosition(current, modalSize));
+  }, [modalSize, storageKey]);
+
+  useEffect(() => {
+    modalPositionRef.current = modalPosition;
+    localStorage.setItem(`${storageKey}:position`, JSON.stringify(modalPosition));
+  }, [modalPosition, storageKey]);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const nextSize = clampFloatingModalSize(modalSizeRef.current, minSize);
+      setModalSize(nextSize);
+      setModalPosition((position) => clampFloatingModalPosition(position, nextSize));
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, [minSize]);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const resizeState = resizeStateRef.current;
+      if (resizeState) {
+        event.preventDefault();
+        setModalSize(clampFloatingModalSize({
+          width: resizeState.startWidth + event.clientX - resizeState.startX,
+          height: resizeState.startHeight + event.clientY - resizeState.startY
+        }, minSize));
+        return;
+      }
+      const dragState = dragStateRef.current;
+      if (!dragState) return;
+      event.preventDefault();
+      setModalPosition(clampFloatingModalPosition({
+        left: dragState.startLeft + event.clientX - dragState.startX,
+        top: dragState.startTop + event.clientY - dragState.startY
+      }, modalSizeRef.current));
+    };
+    const handlePointerUp = () => {
+      resizeStateRef.current = null;
+      dragStateRef.current = null;
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [minSize]);
+
+  const startResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: modalSizeRef.current.width,
+      startHeight: modalSizeRef.current.height
+    };
+  };
+
+  const startDrag = (event) => {
+    if (event.target.closest('button, input, select, textarea, a')) return;
+    event.preventDefault();
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: modalPositionRef.current.left,
+      startTop: modalPositionRef.current.top
+    };
+  };
+
+  return { modalSize, visibleModalPosition, startDrag, startResize };
+}
+
+function ResizableModalFrame({ className = '', storageKey, defaultSize, minSize, eyebrow, title, description, onClose, footer, children }) {
+  const { modalSize, visibleModalPosition, startDrag, startResize } = useFloatingModalGeometry(storageKey, defaultSize, minSize);
+  return <div className="modal-backdrop draggable-modal-backdrop">
+    <div className={`modal-card ds-modal-frame resizable-picker-modal ${className}`.trim()} style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
+      <div className="modal-header ds-modal-header draggable-modal-header" onPointerDown={startDrag}>
+        <div>
+          {eyebrow && <p className="ds-eyebrow eyebrow">{eyebrow}</p>}
+          {title && <h2>{title}</h2>}
+          {description && <p className="ds-muted muted">{description}</p>}
+        </div>
+        {onClose && <button type="button" className="icon-button" onClick={onClose} aria-label="Zamknij"><X size={18} /></button>}
+      </div>
+      <div className="ds-modal-content">{children}</div>
+      {footer && <div className="modal-actions ds-modal-footer">{footer}</div>}
+      <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
+    </div>
+  </div>;
 }
 
 
@@ -287,6 +457,7 @@ function App() {
   const [globalSearch, setGlobalSearch] = useState('');
   const [themeCompact, setThemeCompact] = useState(() => localStorage.getItem('fixer-density') === 'compact');
   const [colorTheme, setColorTheme] = useState(() => localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark');
+  const [moduleIntent, setModuleIntent] = useState(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -345,10 +516,10 @@ function App() {
           }}
         />
         <section className="page-content">
-          {activeModule === 'dashboard' && <Dashboard setActiveModule={setActiveModule} />}
+          {activeModule === 'dashboard' && <Dashboard onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
           {activeModule === 'clients' && <ClientsModule />}
-          {activeModule === 'equipment' && <EquipmentModule />}
-          {activeModule === 'rentals' && <RentalsModule />}
+          {activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'service' && <ServiceModule />}
           {activeModule === 'calendar' && <CalendarModule />}
           {activeModule === 'organizer' && <OrganizerModule />}
@@ -428,18 +599,325 @@ function Topbar({ module, globalSearch, setGlobalSearch, onToggleDensity, themeC
   );
 }
 
-function Dashboard({ setActiveModule }) {
-  return (
-    <div className="dashboard-grid">
-      <div className="stats-grid">
-        {dashboardCards.map((card) => <button key={card.label} className="stat-card" onClick={() => setActiveModule(card.target)}><div><p>{card.label}</p><strong>{card.value}</strong><span className={card.warning ? 'warning-text' : ''}>{card.caption}</span></div><card.icon size={26} /></button>)}
+function normalizeStatusText(value) {
+  return String(value ?? '').trim().toLocaleLowerCase('pl');
+}
+
+function equipmentStatusMatches(item, patterns) {
+  const status = normalizeStatusText(item?.status);
+  return patterns.some((pattern) => status.includes(pattern));
+}
+
+function formatDashboardDate(value) {
+  if (!value) return '—';
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function daysUntilDate(value) {
+  if (!value) return null;
+  const date = String(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const today = Date.parse(`${getLocalIsoDate()}T00:00:00`);
+  const target = Date.parse(`${date}T00:00:00`);
+  return Math.round((target - today) / dayMs);
+}
+
+function getUpcomingReturnTone(rental) {
+  const days = daysUntilDate(rental?.planned_return_date);
+  if (days === null) return 'neutral';
+  if (days < 0) return 'danger';
+  if (days <= 3) return 'warning';
+  return 'success';
+}
+
+function buildDashboardActivity(rentalsRows, equipmentRows, clientRows) {
+  const events = [];
+  rentalsRows.forEach((rental) => {
+    if (rental.created_at) events.push({ date: rental.created_at, operation: 'Utworzono wypożyczenie', object: rental.rental_number || 'Wypożyczenie' });
+    if (rental.actual_return_date || rental.status === 'returned') events.push({ date: rental.actual_return_date || rental.updated_at || rental.created_at, operation: 'Zarejestrowano zwrot', object: rental.rental_number || 'Wypożyczenie' });
+    if (rental.updated_at && rental.created_at && rental.updated_at !== rental.created_at && rental.status !== 'returned') events.push({ date: rental.updated_at, operation: 'Zmieniono wypożyczenie', object: rental.rental_number || 'Wypożyczenie' });
+  });
+  equipmentRows.forEach((item) => {
+    if (item.created_at) events.push({ date: item.created_at, operation: 'Dodano sprzęt', object: item.name || item.serial || 'Sprzęt' });
+    if (item.updated_at && item.created_at && item.updated_at !== item.created_at) events.push({ date: item.updated_at, operation: 'Edytowano sprzęt', object: item.name || item.serial || 'Sprzęt' });
+  });
+  clientRows.forEach((client) => {
+    if (client.created_at) events.push({ date: client.created_at, operation: 'Dodano klienta', object: client.name || 'Klient' });
+    if (client.updated_at && client.created_at && client.updated_at !== client.created_at) events.push({ date: client.updated_at, operation: 'Zmieniono dane klienta', object: client.name || 'Klient' });
+  });
+  return events
+    .filter((event) => event.date)
+    .sort((left, right) => Date.parse(right.date) - Date.parse(left.date))
+    .slice(0, 10);
+}
+
+function getDashboardActivityKind(operation) {
+  const text = normalizeStatusText(operation);
+  if (text.includes('zwrot')) return { label: 'Zwrot', className: 'return' };
+  if (text.includes('wypożyczenie') || text.includes('wypozyczenie')) return { label: text.includes('utworzono') ? 'Wypożyczono' : 'Wypożyczenie', className: 'rental' };
+  if (text.includes('edytowano') || text.includes('zmieniono')) return { label: 'Edycja', className: 'edit' };
+  if (text.includes('serwis')) return { label: 'Serwis', className: 'service' };
+  if (text.includes('dodano')) return { label: 'Dodano', className: 'add' };
+  return { label: 'Operacja', className: 'neutral' };
+}
+
+const DASHBOARD_SETTINGS_STORAGE_KEY = 'fixer-dashboard-layout-v1';
+const DASHBOARD_SIZE_ORDER = ['small', 'medium', 'large'];
+const DASHBOARD_ITEMS = [
+  { id: 'activeRentals', label: 'Aktywne wypożyczenia', area: 'attention', defaultSize: 'medium' },
+  { id: 'overdueRentals', label: 'Po terminie', area: 'attention', defaultSize: 'medium' },
+  { id: 'todayReturns', label: 'Zwroty dzisiaj', area: 'attention', defaultSize: 'medium' },
+  { id: 'readyToIssue', label: 'Gotowe do wydania', area: 'attention', defaultSize: 'medium' },
+  { id: 'serviceEquipment', label: 'Sprzęt w serwisie', area: 'attention', defaultSize: 'medium' },
+  { id: 'damagedEquipment', label: 'Sprzęt uszkodzony', area: 'attention', defaultSize: 'medium' },
+  { id: 'allEquipment', label: 'Wszystkie urządzenia', area: 'stock', defaultSize: 'medium' },
+  { id: 'availableEquipment', label: 'Dostępne', area: 'stock', defaultSize: 'medium' },
+  { id: 'rentedEquipment', label: 'Wypożyczone', area: 'stock', defaultSize: 'medium' },
+  { id: 'serviceStock', label: 'W serwisie', area: 'stock', defaultSize: 'medium' },
+  { id: 'withdrawnEquipment', label: 'Wycofane', area: 'stock', defaultSize: 'medium' },
+  { id: 'upcomingReturns', label: 'Nadchodzące zwroty', area: 'panel', defaultSize: 'large' },
+  { id: 'recentActivity', label: 'Ostatnia aktywność', area: 'panel', defaultSize: 'large' },
+  { id: 'clientsPanel', label: 'Klienci', area: 'panel', defaultSize: 'medium' }
+];
+
+function getDefaultDashboardSettings() {
+  return {
+    visible: Object.fromEntries(DASHBOARD_ITEMS.map((item) => [item.id, true])),
+    sizes: Object.fromEntries(DASHBOARD_ITEMS.map((item) => [item.id, item.defaultSize]))
+  };
+}
+
+function normalizeDashboardSettings(settings) {
+  const defaults = getDefaultDashboardSettings();
+  const visible = { ...defaults.visible, ...(settings?.visible ?? {}) };
+  const sizes = { ...defaults.sizes, ...(settings?.sizes ?? {}) };
+  DASHBOARD_ITEMS.forEach((item) => {
+    if (!DASHBOARD_SIZE_ORDER.includes(sizes[item.id])) sizes[item.id] = item.defaultSize;
+    visible[item.id] = visible[item.id] !== false;
+  });
+  return { visible, sizes };
+}
+
+function getDashboardSettings() {
+  try {
+    return normalizeDashboardSettings(JSON.parse(localStorage.getItem(DASHBOARD_SETTINGS_STORAGE_KEY) || 'null'));
+  } catch {
+    return getDefaultDashboardSettings();
+  }
+}
+
+function saveDashboardSettings(settings) {
+  const normalized = normalizeDashboardSettings(settings);
+  localStorage.setItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function resetDashboardSettings() {
+  const defaults = getDefaultDashboardSettings();
+  localStorage.setItem(DASHBOARD_SETTINGS_STORAGE_KEY, JSON.stringify(defaults));
+  return defaults;
+}
+
+function getNextDashboardSize(size, direction) {
+  const index = DASHBOARD_SIZE_ORDER.indexOf(size);
+  const safeIndex = index === -1 ? 1 : index;
+  return DASHBOARD_SIZE_ORDER[Math.min(DASHBOARD_SIZE_ORDER.length - 1, Math.max(0, safeIndex + direction))];
+}
+
+function Dashboard({ onNavigate }) {
+  const [rentalsRows, setRentalsRows] = useState([]);
+  const [equipmentRows, setEquipmentRows] = useState([]);
+  const [clientRows, setClientRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
+  const [editMode, setEditMode] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const loadDashboard = async () => {
+      setLoading(true);
+      const [rentalsResult, equipmentResult, clientsResult] = await Promise.all([fetchRentals(), fetchEquipment(), fetchClients()]);
+      if (!active) return;
+      setRentalsRows(rentalsResult.data ?? []);
+      setEquipmentRows(equipmentResult.error ? demoEquipment : (equipmentResult.data ?? []));
+      setClientRows(clientsResult.data ?? []);
+      const errors = [
+        rentalsResult.error ? 'wypożyczenia' : '',
+        equipmentResult.error ? 'sprzęt' : '',
+        clientsResult.error ? 'klienci' : ''
+      ].filter(Boolean);
+      setNotice(errors.length ? `Nie udało się pobrać danych: ${errors.join(', ')}. Część sekcji może być niepełna.` : '');
+      setLoading(false);
+    };
+    loadDashboard();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.key === DASHBOARD_SETTINGS_STORAGE_KEY) setDashboardSettings(getDashboardSettings());
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const updateDashboardSettings = (updater) => {
+    setDashboardSettings((current) => saveDashboardSettings(typeof updater === 'function' ? updater(current) : updater));
+  };
+
+  const isDashboardItemVisible = (id) => dashboardSettings.visible[id] !== false;
+  const getDashboardItemSize = (id) => dashboardSettings.sizes[id] ?? DASHBOARD_ITEMS.find((item) => item.id === id)?.defaultSize ?? 'medium';
+
+  const setDashboardItemSize = (id, size) => {
+    updateDashboardSettings((current) => ({ ...current, sizes: { ...current.sizes, [id]: size } }));
+  };
+
+  const startDashboardResize = (event, id) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startSize = getDashboardItemSize(id);
+    const startIndex = Math.max(0, DASHBOARD_SIZE_ORDER.indexOf(startSize));
+
+    const handlePointerMove = (moveEvent) => {
+      const steps = Math.round((moveEvent.clientX - startX) / 90);
+      const nextIndex = Math.min(DASHBOARD_SIZE_ORDER.length - 1, Math.max(0, startIndex + steps));
+      setDashboardItemSize(id, DASHBOARD_SIZE_ORDER[nextIndex]);
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const renderResizeHandle = (id) => editMode
+    ? <span className="dashboard-resize-handle" role="presentation" onPointerDown={(event) => startDashboardResize(event, id)} title="Przeciągnij, żeby zmienić szerokość"><GripVertical size={14} /></span>
+    : null;
+
+  const resetDashboardLayout = () => {
+    setDashboardSettings(resetDashboardSettings());
+  };
+
+  const activeRentals = rentalsRows.filter((rental) => rental.status !== 'returned');
+  const overdueRentals = activeRentals.filter((rental) => getRentalOverdueDays(rental) > 0);
+  const todayReturns = activeRentals.filter((rental) => String(rental.planned_return_date ?? '').slice(0, 10) === getLocalIsoDate());
+  const serviceEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['serwis']));
+  const damagedEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['uszk']));
+  const availableEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['dostęp', 'dostep']));
+  const rentedEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['wypo']));
+  const withdrawnEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['wycof']));
+  const upcomingReturns = [...activeRentals]
+    .filter((rental) => rental.planned_return_date)
+    .sort((left, right) => Date.parse(String(left.planned_return_date).slice(0, 10)) - Date.parse(String(right.planned_return_date).slice(0, 10)))
+    .slice(0, 10);
+  const activityRows = buildDashboardActivity(rentalsRows, equipmentRows, clientRows);
+  const currentMonth = getLocalIsoDate().slice(0, 7);
+  const clientStats = {
+    all: clientRows.length,
+    companies: clientRows.filter((client) => client.type === 'Firma').length,
+    privatePeople: clientRows.filter((client) => client.type === 'Osoba prywatna').length,
+    newThisMonth: clientRows.filter((client) => String(client.created_at ?? '').slice(0, 7) === currentMonth).length
+  };
+
+  const attentionCards = [
+    { id: 'activeRentals', label: 'Aktywne wypożyczenia', value: activeRentals.length, target: ['rentals', { type: 'rentals', filter: 'active' }] },
+    { id: 'overdueRentals', label: 'Po terminie', value: overdueRentals.length, tone: 'warning', target: ['rentals', { type: 'rentals', filter: 'overdue' }] },
+    { id: 'todayReturns', label: 'Zwroty dzisiaj', value: todayReturns.length, target: ['rentals', { type: 'rentals', filter: 'today' }] },
+    { id: 'readyToIssue', label: 'Gotowe do wydania', value: availableEquipment.length, tone: 'success', target: ['equipment', { type: 'equipment', status: 'Dostępny' }] },
+    { id: 'serviceEquipment', label: 'Sprzęt w serwisie', value: serviceEquipment.length, target: ['equipment', { type: 'equipment', status: 'Serwis' }] },
+    { id: 'damagedEquipment', label: 'Sprzęt uszkodzony', value: damagedEquipment.length, tone: 'danger', target: ['equipment', { type: 'equipment', status: 'Uszkodzony' }] }
+  ];
+  const stockCards = [
+    { id: 'allEquipment', label: 'Wszystkie urządzenia', value: equipmentRows.length, target: ['equipment', { type: 'equipment', status: 'all' }] },
+    { id: 'availableEquipment', label: 'Dostępne', value: availableEquipment.length, target: ['equipment', { type: 'equipment', status: 'Dostępny' }] },
+    { id: 'rentedEquipment', label: 'Wypożyczone', value: rentedEquipment.length, target: ['equipment', { type: 'equipment', status: 'Wypożyczony' }] },
+    { id: 'serviceStock', label: 'W serwisie', value: serviceEquipment.length, target: ['equipment', { type: 'equipment', status: 'Serwis' }] },
+    { id: 'withdrawnEquipment', label: 'Wycofane', value: withdrawnEquipment.length, target: ['equipment', { type: 'equipment', status: 'Wycofany' }] }
+  ];
+  const visibleAttentionCards = attentionCards.filter((card) => isDashboardItemVisible(card.id));
+  const visibleStockCards = stockCards.filter((card) => isDashboardItemVisible(card.id));
+
+  return <div className={`dashboard-operational ${editMode ? 'editing' : ''}`}>
+    {notice && <div className="notice dashboard-notice">{notice}</div>}
+    <section className="dashboard-section">
+      <div className="dashboard-section-header"><div><p className="eyebrow">Priorytet</p><h2>Co wymaga uwagi</h2></div><div className="dashboard-edit-actions">{loading && <span className="dashboard-loading">Odświeżanie...</span>}<AppButton variant="secondary" size="sm" onClick={() => setEditMode((current) => !current)}>{editMode ? 'Gotowe' : 'Dostosuj'}</AppButton><AppButton variant="secondary" size="sm" onClick={resetDashboardLayout}><RotateCcw size={14} />Resetuj układ</AppButton></div></div>
+      <div className="dashboard-attention-grid">
+        {visibleAttentionCards.map((card) => <button key={card.id} type="button" className={`dashboard-metric-card dashboard-size-${getDashboardItemSize(card.id)} ${card.tone ?? ''} ${editMode ? 'editing' : ''}`} onClick={() => { if (!editMode) onNavigate(...card.target); }}>
+          <span>{card.label}</span>
+          <strong>{card.value}</strong>
+          {renderResizeHandle(card.id)}
+        </button>)}
+        {!visibleAttentionCards.length && <div className="dashboard-empty-layout">Wszystkie kafle tej sekcji są ukryte.</div>}
       </div>
-      <section className="panel wide"><PanelHeader title="Alerty i zadania na dziś" action="Otwórz" onClick={() => setActiveModule('organizer')} /><div className="alert-list">{alerts.map((alert) => <button key={alert.title} className={`alert-row ${alert.tone}`} onClick={() => setActiveModule(alert.target)}><div><strong>{alert.title}</strong><span>{alert.description}</span></div><em>{alert.time}</em></button>)}</div></section>
-      <section className="panel"><PanelHeader title="Szybkie akcje" /><div className="quick-actions"><button><Barcode size={18} />Skanuj kod</button><button><ClipboardList size={18} />Nowa umowa</button><button><Wrench size={18} />Przyjęcie serwisu</button><button><Users size={18} />Dodaj klienta</button></div></section>
-      <section className="panel"><PanelHeader title="Wypożyczenia i rezerwacje" action="Otwórz" onClick={() => setActiveModule('rentals')} /><DataTable storageKey="dashboard-rentals" columns={[{ key: 'number', label: 'Numer' },{ key: 'client', label: 'Klient' },{ key: 'item', label: 'Sprzęt' },{ key: 'status', label: 'Status' },{ key: 'date', label: 'Termin' }]} rows={rentals} /></section>
-      <section className="panel"><PanelHeader title="Serwis" action="Otwórz" onClick={() => setActiveModule('service')} /><DataTable storageKey="dashboard-service" columns={[{ key: 'number', label: 'Numer' },{ key: 'client', label: 'Klient' },{ key: 'item', label: 'Sprzęt' },{ key: 'status', label: 'Status' }]} rows={serviceOrders} /></section>
+    </section>
+
+    <section className="dashboard-section">
+      <div className="dashboard-section-header"><div><p className="eyebrow">Magazyn</p><h2>Stan magazynu</h2></div></div>
+      <div className="dashboard-stock-grid">
+        {visibleStockCards.map((card) => <button key={card.id} type="button" className={`dashboard-stock-card dashboard-size-${getDashboardItemSize(card.id)} ${editMode ? 'editing' : ''}`} onClick={() => { if (!editMode) onNavigate(...card.target); }}><span>{card.label}</span><strong>{card.value}</strong>{renderResizeHandle(card.id)}</button>)}
+        {!visibleStockCards.length && <div className="dashboard-empty-layout">Wszystkie kafle tej sekcji są ukryte.</div>}
+      </div>
+    </section>
+
+    <div className="dashboard-main-grid">
+      {isDashboardItemVisible('upcomingReturns') && <section className={`panel dashboard-table-panel dashboard-size-${getDashboardItemSize('upcomingReturns')} ${editMode ? 'editing' : ''}`}>
+        <PanelHeader title="Nadchodzące zwroty" />
+        {renderResizeHandle('upcomingReturns')}
+        <div className="dashboard-table-scroll">
+          <table className="dashboard-mini-table">
+            <thead><tr><th>Termin</th><th>Klient</th><th>Pozycje</th><th>Status</th></tr></thead>
+            <tbody>{upcomingReturns.map((rental) => {
+              const tone = getUpcomingReturnTone(rental);
+              const itemsCount = getRentalBaseItems(rental).length;
+              return <tr key={rental.id ?? rental.rental_number} className={`return-${tone}`} onClick={() => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: rental.id })}>
+                <td>{formatDashboardDate(rental.planned_return_date)}</td>
+                <td>{rental.clients?.name ?? '—'}</td>
+                <td>{itemsCount}</td>
+                <td><StatusPill value={getRentalOverdueDays(rental) ? 'Po terminie' : formatRentalStatus(rental.status)} /></td>
+              </tr>;
+            })}
+            {!upcomingReturns.length && <tr><td colSpan="4">Brak zaplanowanych zwrotów.</td></tr>}</tbody>
+          </table>
+        </div>
+      </section>}
+
+      {isDashboardItemVisible('recentActivity') && <section className={`panel dashboard-table-panel dashboard-size-${getDashboardItemSize('recentActivity')} ${editMode ? 'editing' : ''}`}>
+        <PanelHeader title="Ostatnia aktywność" />
+        {renderResizeHandle('recentActivity')}
+        <div className="dashboard-table-scroll">
+          <table className="dashboard-mini-table">
+            <thead><tr><th>Data</th><th>Operacja</th><th>Obiekt</th></tr></thead>
+            <tbody>{activityRows.map((event, index) => {
+              const kind = getDashboardActivityKind(event.operation);
+              return <tr key={`${event.date}-${event.operation}-${index}`}>
+                <td>{formatDashboardDate(event.date)}</td><td><span className={`dashboard-activity-badge ${kind.className}`}>{kind.label}</span><span className="dashboard-activity-operation">{event.operation}</span></td><td>{event.object}</td>
+              </tr>;
+            })}
+            {!activityRows.length && <tr><td colSpan="3">Brak danych aktywności w dostępnych tabelach.</td></tr>}</tbody>
+          </table>
+        </div>
+      </section>}
+
+      {isDashboardItemVisible('clientsPanel') && <section className={`panel dashboard-clients-panel dashboard-size-${getDashboardItemSize('clientsPanel')} ${editMode ? 'editing' : ''}`}>
+        <PanelHeader title="Klienci" />
+        {renderResizeHandle('clientsPanel')}
+        <div className="dashboard-client-summary">
+          <div><span>Klienci</span><strong>{clientStats.all}</strong></div>
+          <div><span>Firmy</span><strong>{clientStats.companies}</strong></div>
+          <div><span>Osoby prywatne</span><strong>{clientStats.privatePeople}</strong></div>
+          <div><span>Nowi</span><strong>{clientStats.newThisMonth}</strong></div>
+        </div>
+      </section>}
     </div>
-  );
+  </div>;
 }
 
 const CLIENTS_TABLE_KEY = 'clients-table';
@@ -949,7 +1427,7 @@ function getEquipmentSetStatus(setItems = []) {
   return EQUIPMENT_AVAILABLE_STATUS;
 }
 
-function EquipmentModule() {
+function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState(demoEquipment);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -958,6 +1436,8 @@ function EquipmentModule() {
   const [equipmentCategories, setEquipmentCategories] = useState(() => getLocalEquipmentDictionaryNames('category'));
   const [equipmentStatuses, setEquipmentStatuses] = useState(() => getLocalEquipmentDictionaryNames('status'));
   const [equipmentLocations, setEquipmentLocations] = useState(() => getLocalEquipmentDictionaryNames('location'));
+  const [equipmentConditions, setEquipmentConditions] = useState(() => getActiveConfigDictionaryNames('equipmentConditions'));
+  const [dashboardStatusFilter, setDashboardStatusFilter] = useState('all');
 
   const loadEquipmentDictionaries = async () => {
     const [categoriesResult, statusesResult, locationsResult] = await Promise.all([fetchEquipmentDictionary('category'),fetchEquipmentDictionary('status'),fetchEquipmentDictionary('location')]);
@@ -980,7 +1460,13 @@ function EquipmentModule() {
     setLoading(false);
   };
 
-  useEffect(() => { loadEquipment(); loadEquipmentDictionaries(); }, []);
+  useEffect(() => { loadEquipment(); loadEquipmentDictionaries(); setEquipmentConditions(getActiveConfigDictionaryNames('equipmentConditions')); }, []);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'equipment') return;
+    setDashboardStatusFilter(dashboardIntent.status ?? 'all');
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent]);
 
   const openEquipmentEditor = (item = null, options = {}) => {
     if (item && isEquipmentSetComponent(item) && !options.force) {
@@ -1178,7 +1664,14 @@ function EquipmentModule() {
   };
 
 
-  const displayRows = useMemo(() => rows.filter((item) => !isEquipmentSetComponent(item)), [rows]);
+  const displayRows = useMemo(() => rows
+    .filter((item) => !isEquipmentSetComponent(item))
+    .filter((item) => {
+      if (dashboardStatusFilter === 'all') return true;
+      const status = normalizeStatusText(item.status);
+      const filter = normalizeStatusText(dashboardStatusFilter);
+      return status === filter || status.includes(filter);
+    }), [rows, dashboardStatusFilter]);
 
   const renderSetContents = (setRow) => {
     const components = Array.isArray(setRow.set_items) ? setRow.set_items : [];
@@ -1209,6 +1702,7 @@ function EquipmentModule() {
           <AppButton variant="secondary">Ustawienia modułu</AppButton>
         </div>
         {notice && <div className="notice">{notice}</div>}
+        {dashboardStatusFilter !== 'all' && <div className="notice">Filtr z Dashboardu: status {dashboardStatusFilter}. <button type="button" className="inline-notice-button" onClick={() => setDashboardStatusFilter('all')}>Pokaż wszystko</button></div>}
       </section>
       <section className="panel">
         <DataTable storageKey="equipment-table" loading={loading} columns={[
@@ -1224,7 +1718,7 @@ function EquipmentModule() {
           { key: 'set_items_count', label: 'Składniki' }
         ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
-      {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} conditions={equipmentConditions} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
   );
 }
@@ -1344,7 +1838,7 @@ function getSavedEquipmentModalPosition(size) {
   return clampEquipmentModalPosition(getCenteredEquipmentModalPosition(size), size);
 }
 
-function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), locations = getLocalEquipmentDictionaryNames('location'), onClose, onSave }) {
+function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), locations = getLocalEquipmentDictionaryNames('location'), conditions = getActiveConfigDictionaryNames('equipmentConditions'), onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const isInitialSetCard = equipment?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(equipment?.set_items) && equipment.set_items.length > 0;
   const [activeTab, setActiveTab] = useState('basic');
@@ -1398,6 +1892,8 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   }), [equipmentRows, form, setItemKeys]);
 
   const safeStatuses = statuses.includes(EQUIPMENT_SET_COMPONENT_STATUS) ? statuses : [...statuses, EQUIPMENT_SET_COMPONENT_STATUS];
+  const safeConditions = [...new Set([...(conditions?.length ? conditions : DEFAULT_CONFIG_DICTIONARIES.equipmentConditions), form.condition].filter(Boolean))];
+  const safeLocations = [...new Set([...(locations?.length ? locations : ['Magazyn']), form.location].filter(Boolean))];
 
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -1602,8 +2098,8 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
                 <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} placeholder="opcjonalnie" /></label>
                 <label>Status<input value={calculatedSetStatus} readOnly className="readonly-input" /></label>
-                <label>Lokalizacja<select value={form.location} onChange={(event)=>update('location', event.target.value)}>{(locations?.length?locations:['Magazyn']).map(location=><option key={location} value={location}>{location}</option>)}</select></label>
-                <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
+                <label>Lokalizacja<select value={form.location} onChange={(event)=>update('location', event.target.value)}>{safeLocations.map(location=><option key={location} value={location}>{location}</option>)}</select></label>
+                <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</select></label>
                 <label className="set-description-field">Opis zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></label>
               </div>
             </div>
@@ -1662,8 +2158,8 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
             <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
             <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}>{categories.filter((option) => option !== EQUIPMENT_SET_CATEGORY).map((option) => <option key={option}>{option}</option>)}</select></label>
             <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}>{safeStatuses.map((option) => <option key={option}>{option}</option>)}</select></label>
-            <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}><option>Nowy</option><option>Bardzo dobry</option><option>Dobry</option><option>Do kontroli</option><option>Uszkodzony</option><option>Wycofany</option></select></label>
-            <label>Lokalizacja<input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="np. Szafka Magazyn" /></label>
+            <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</select></label>
+            <label>Lokalizacja<select value={form.location} onChange={(event) => update('location', event.target.value)}>{safeLocations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
             <label>Wartość zakupu<input value={form.purchase_value} onChange={(event) => update('purchase_value', event.target.value)} placeholder="np. 2500" /></label>
             <label>Kaucja<input value={form.deposit} onChange={(event) => update('deposit', event.target.value)} placeholder="np. 500" /></label>
             <label>Cena / dzień<input value={form.price_day} onChange={(event) => update('price_day', event.target.value)} placeholder="np. 120" /></label>
@@ -1716,8 +2212,8 @@ function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
 const RENTALS_TABLE_KEY = 'rentals-table';
 const RENTAL_MODAL_SIZE_KEY = 'fixer-rental-modal-size';
 const RENTAL_MODAL_POSITION_KEY = 'fixer-rental-modal-position';
-const DEFAULT_RENTAL_MODAL_SIZE = { width: 1120, height: 720 };
-const MIN_RENTAL_MODAL_SIZE = { width: 900, height: 600 };
+const DEFAULT_RENTAL_MODAL_SIZE = { width: 1160, height: 760 };
+const MIN_RENTAL_MODAL_SIZE = { width: 960, height: 640 };
 const RENTAL_MODAL_SCREEN_MARGIN = 16;
 const RENTALS_TABLE_COLUMNS = [
   { key: 'rental_number', label: 'Numer' },
@@ -1733,6 +2229,21 @@ function formatRentalStatus(status) {
   if (status === 'partially_returned') return 'Częściowo zwrócone';
   if (status === 'returned') return 'Zwrócone';
   return 'Aktywne';
+}
+
+function getLocalIsoDate() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function getRentalOverdueDays(rental) {
+  if (!rental?.planned_return_date || rental.status === 'returned') return 0;
+  const planned = String(rental.planned_return_date).slice(0, 10);
+  const today = getLocalIsoDate();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(planned) || planned >= today) return 0;
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.floor((Date.parse(`${today}T00:00:00`) - Date.parse(`${planned}T00:00:00`)) / dayMs));
 }
 
 function clampRentalModalSize(size) {
@@ -1836,13 +2347,24 @@ function buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows
   return rows;
 }
 
-function RentalsModule() {
+function getRentalEquipmentCode(item) {
+  return item?.serial || item?.barcode || item?.inventory_number || '—';
+}
+
+function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [clients, setClients] = useState([]);
   const [equipmentRows, setEquipmentRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRental, setEditingRental] = useState(null);
+  const [returningRental, setReturningRental] = useState(null);
+  const [returnedCollapsed, setReturnedCollapsed] = useState(true);
+  const [rentalSettings, setRentalSettings] = useState(getRentalNumberingSettings);
+  const [rentalTypes, setRentalTypes] = useState(() => getActiveConfigDictionaryNames('rentalTypes'));
+  const [returnConditions, setReturnConditions] = useState(() => getActiveConfigDictionaryNames('returnConditions'));
+  const [dashboardRentalFilter, setDashboardRentalFilter] = useState('all');
+  const [pendingOpenRentalId, setPendingOpenRentalId] = useState(null);
   const [notice, setNotice] = useState('');
 
   const loadRentals = async () => {
@@ -1870,7 +2392,25 @@ function RentalsModule() {
   useEffect(() => {
     loadRentals();
     loadRentalDictionaries();
+    setRentalSettings(getRentalNumberingSettings());
+    setRentalTypes(getActiveConfigDictionaryNames('rentalTypes'));
+    setReturnConditions(getActiveConfigDictionaryNames('returnConditions'));
   }, []);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'rentals') return;
+    setDashboardRentalFilter(dashboardIntent.filter ?? 'all');
+    if (dashboardIntent.rentalId) setPendingOpenRentalId(dashboardIntent.rentalId);
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent]);
+
+  useEffect(() => {
+    if (!pendingOpenRentalId || !rows.length) return;
+    const rental = rows.find((row) => row.id === pendingOpenRentalId);
+    if (!rental) return;
+    openRentalEditor(rental);
+    setPendingOpenRentalId(null);
+  }, [pendingOpenRentalId, rows]);
 
   const openRentalEditor = (rental = null) => {
     setEditingRental(rental);
@@ -1888,9 +2428,13 @@ function RentalsModule() {
       return;
     }
     const items = buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows);
+    const rentalToSave = {
+      ...rental,
+      rental_number: String(rental.rental_number ?? '').trim() || generateNextRentalNumber(rows)
+    };
     const result = rental.id
-      ? await updateRentalRecord(rental.id, rental, items)
-      : await createRentalRecord(rental, items);
+      ? await updateRentalRecord(rental.id, rentalToSave, items)
+      : await createRentalRecord(rentalToSave, items);
     if (result.error) {
       alert(result.error.message);
       return;
@@ -1927,19 +2471,76 @@ function RentalsModule() {
     await loadRentalDictionaries();
   };
 
+  const handleRegisterReturn = async (rental, returnedItemIds, returnedCount, totalCount) => {
+    if (!returnedItemIds.length && returnedCount < totalCount) {
+      alert('Zaznacz przynajmniej jedną pozycję do zwrotu.');
+      return;
+    }
+    const shouldClose = confirm('Czy zamknąć wypożyczenie?');
+    if (!returnedItemIds.length && !shouldClose) return;
+    if (shouldClose && returnedCount < totalCount) {
+      alert('Nie wszystkie pozycje są oznaczone jako zwrócone. Wypożyczenie pozostanie aktywne jako częściowo zwrócone.');
+    }
+    const result = await registerRentalReturn(rental.id, returnedItemIds, shouldClose);
+    if (result.error) {
+      alert(result.error.message);
+      return;
+    }
+    await loadRentals();
+    await loadRentalDictionaries();
+    setReturningRental(null);
+    if (result.data?._return_closed) setReturnedCollapsed(false);
+  };
+  const handleRestoreReturnedRental = async (row) => {
+    const rental = row._rental ?? row;
+    if (!confirm(`Przywrócić wypożyczenie ${rental.rental_number} jako aktywne?`)) return;
+    const result = await restoreRentalAsActive(rental.id);
+    if (result.error) {
+      alert(result.error.message);
+      return;
+    }
+    await loadRentals();
+    await loadRentalDictionaries();
+  };
+  const handleDeleteReturnedRental = async (row) => {
+    const rental = row._rental ?? row;
+    if (!confirm(`Usunąć wypożyczenie ${rental.rental_number} z historii?`)) return;
+    const { error } = await deleteRentalRecord(rental.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await loadRentals();
+    await loadRentalDictionaries();
+  };
+
   const displayRows = rows.map((rental) => {
     const baseItems = getRentalBaseItems(rental);
+    const overdueDays = getRentalOverdueDays(rental);
     return {
       ...rental,
       _rental: rental,
+      _rowTone: overdueDays ? 'overdue' : '',
       rental_number: rental.rental_number,
       client: rental.clients?.name ?? '—',
       items_count: baseItems.length,
       items_summary: baseItems.map((item) => item.name_snapshot).filter(Boolean).join(', ') || '—',
-      status: formatRentalStatus(rental.status),
-      planned_return_date: rental.planned_return_date ?? '—'
+      status: overdueDays ? 'Przeterminowane' : formatRentalStatus(rental.status),
+      planned_return_date: overdueDays ? `${rental.planned_return_date} · po terminie ${overdueDays} ${overdueDays === 1 ? 'dzień' : 'dni'}` : rental.planned_return_date ?? '—'
     };
   });
+  const activeRows = displayRows.filter((row) => {
+    const rental = row._rental;
+    if (rental?.status === 'returned') return false;
+    if (dashboardRentalFilter === 'overdue') return getRentalOverdueDays(rental) > 0;
+    if (dashboardRentalFilter === 'today') return String(rental?.planned_return_date ?? '').slice(0, 10) === getLocalIsoDate();
+    return true;
+  });
+  const returnedRows = displayRows.filter((row) => row._rental?.status === 'returned');
+  const canRegisterReturn = (row) => {
+    const rental = row._rental ?? row;
+    return rental?.status !== 'returned' && getRentalBaseItems(rental).length > 0;
+  };
 
   const renderRentalItems = (row) => {
     const rental = row._rental ?? row;
@@ -1961,32 +2562,128 @@ function RentalsModule() {
         <h2>Wypożyczenia</h2>
         <p className="muted">Dokumenty wydań, pozycje sprzętowe i statusy pracy magazynu.</p>
       </div>
-      <div className="rentals-command-actions">
+      <div className="module-actions">
         <ButtonPrimary onClick={() => openRentalEditor(null)}><Plus size={17} />Nowe wypożyczenie</ButtonPrimary>
         <ButtonSecondary onClick={() => { loadRentals(); loadRentalDictionaries(); }}>Odśwież</ButtonSecondary>
         <ButtonSecondary onClick={() => exportTableToCsv(RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><Download size={15} />CSV</ButtonSecondary>
         <ButtonSecondary onClick={() => exportTableToPdf('Wypożyczenia', RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><FileText size={15} />PDF</ButtonSecondary>
       </div>
       {notice && <div className="notice rentals-command-notice">{notice}</div>}
+      {dashboardRentalFilter !== 'all' && <div className="notice rentals-command-notice">Filtr z Dashboardu: {dashboardRentalFilter === 'overdue' ? 'po terminie' : dashboardRentalFilter === 'today' ? 'zwroty dzisiaj' : 'aktywne wypożyczenia'}. <button type="button" className="inline-notice-button" onClick={() => setDashboardRentalFilter('all')}>Pokaż wszystko</button></div>}
     </section>
-    <section className="panel rentals-table-panel">
-      <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={displayRows} onOpen={(row) => openRentalEditor(row._rental)} onEdit={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
+    <section className="panel rentals-table-panel rentals-records-section">
+      <div className="rentals-section-heading">
+        <div>
+          <p className="eyebrow">Aktywne</p>
+          <h3>Aktywne wypożyczenia</h3>
+        </div>
+        <span>{activeRows.length} pozycji</span>
+      </div>
+      <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={activeRows} onOpen={(row) => openRentalEditor(row._rental)} onEdit={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'return', label: 'Zarejestruj zwrot', icon: CheckCircle2, visible: canRegisterReturn, onClick: (row) => setReturningRental(row._rental ?? row) }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
     </section>
-    {editorOpen && <RentalEditor rental={editingRental} clients={clients} equipmentRows={equipmentRows} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+    <section className="panel rentals-table-panel rentals-records-section returned-rentals-section">
+      <div className="rentals-section-heading">
+        <div>
+          <p className="eyebrow">Historia</p>
+          <h3>Wypożyczenia zwrócone</h3>
+        </div>
+        <ButtonSecondary onClick={() => setReturnedCollapsed((value) => !value)}>{returnedCollapsed ? 'Rozwiń' : 'Zwiń'} · {returnedRows.length}</ButtonSecondary>
+      </div>
+      {!returnedCollapsed && <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />}
+    </section>
+    {editorOpen && <RentalEditor rental={editingRental} nextRentalNumber={generateNextRentalNumber(rows)} clients={clients} equipmentRows={equipmentRows} rentalTypes={rentalTypes} rentalSettings={rentalSettings} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+    {returningRental && <RentalReturnModal rental={returningRental} returnConditions={returnConditions} onClose={() => setReturningRental(null)} onConfirm={handleRegisterReturn} />}
   </div>;
 }
 
-function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
+function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionaryNames('returnConditions'), onClose, onConfirm }) {
+  const returnConditionOptions = returnConditions.length ? returnConditions : DEFAULT_CONFIG_DICTIONARIES.returnConditions;
+  const warningConditions = new Set(['Uszkodzony', 'Wymaga kontroli', 'Serwis']);
+  const baseItems = getRentalBaseItems(rental);
+  const initiallyReturnedIds = baseItems.filter((item) => item.status !== 'issued').map((item) => item.id).filter(Boolean);
+  const [returnedItemIds, setReturnedItemIds] = useState(() => new Set(initiallyReturnedIds));
+  const [returnDetails, setReturnDetails] = useState(() => Object.fromEntries(baseItems.map((item) => [item.id, { condition: 'Sprawny', notes: '' }])));
+  const returnedCount = returnedItemIds.size;
+  const totalCount = baseItems.length;
+  const hasIssuedSelection = baseItems.some((item) => item.status === 'issued' && returnedItemIds.has(item.id));
+  const allReturned = totalCount > 0 && returnedCount === totalCount;
+
+  const toggleReturnItem = (item) => {
+    if (!item.id || item.status !== 'issued') return;
+    setReturnedItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
+      return next;
+    });
+  };
+  const updateReturnDetail = (itemId, key, value) => {
+    setReturnDetails((current) => ({
+      ...current,
+      [itemId]: {
+        condition: current[itemId]?.condition ?? 'Sprawny',
+        notes: current[itemId]?.notes ?? '',
+        [key]: value
+      }
+    }));
+  };
+
+  const confirmReturn = () => {
+    const newlyReturnedIds = baseItems
+      .filter((item) => item.status === 'issued' && returnedItemIds.has(item.id))
+      .map((item) => item.id);
+    onConfirm(rental, newlyReturnedIds, returnedCount, totalCount);
+  };
+
+  return <ResizableModalFrame className="rental-return-modal" storageKey="fixer-rental-return-modal" defaultSize={{ width: 820, height: 620 }} minSize={{ width: 680, height: 460 }} eyebrow="Zwrot" title="Rejestracja zwrotu" onClose={onClose} footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={confirmReturn} disabled={!hasIssuedSelection && !allReturned}><CheckCircle2 size={16} />Zatwierdź zwrot</ButtonPrimary></>}>
+    <div className="rental-return-summary">
+      <strong>{rental.rental_number}</strong>
+      <span>{rental.clients?.name ?? '—'}</span>
+      <em>Zwrócono {returnedCount} z {totalCount}</em>
+    </div>
+    <div className="rental-return-list" role="list">
+      {baseItems.map((item) => {
+        const returned = returnedItemIds.has(item.id);
+        const locked = item.status !== 'issued';
+        const detail = returnDetails[item.id] ?? { condition: 'Sprawny', notes: '' };
+        const warning = warningConditions.has(detail.condition);
+        return <div key={item.id ?? item.equipment_id} role="listitem" className={`rental-return-row ${returned ? 'returned' : ''} ${locked ? 'locked' : ''} ${warning ? 'warning' : ''}`.trim()} onClick={() => toggleReturnItem(item)}>
+          <div className="rental-return-check">{returned ? <CheckCircle2 size={18} /> : null}</div>
+          <div className="rental-return-name">
+            <strong>{item.name_snapshot || 'Sprzęt'}</strong>
+            <small>SN: {item.serial_snapshot || '—'}</small>
+          </div>
+          <label className="rental-return-condition" onClick={(event) => event.stopPropagation()}>
+            <span>Stan zwrotu</span>
+            <AppSelect value={detail.condition} onChange={(event) => updateReturnDetail(item.id, 'condition', event.target.value)} disabled={locked}>
+              {returnConditionOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </AppSelect>
+          </label>
+          <label className="rental-return-notes" onClick={(event) => event.stopPropagation()}>
+            <span>Uwagi</span>
+            <AppTextarea value={detail.notes} onChange={(event) => updateReturnDetail(item.id, 'notes', event.target.value)} placeholder="np. zwrot kompletny" disabled={locked} />
+          </label>
+          <div className="rental-return-status"><DSStatusPill value={returned ? warning ? 'Zwrócono · uwaga' : 'Zwrócono' : 'Nie zwrócono'} /></div>
+        </div>;
+      })}
+      {!baseItems.length && <EmptyState title="Brak sprzętu w wypożyczeniu." />}
+    </div>
+  </ResizableModalFrame>;
+}
+
+function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, rentalTypes = getActiveConfigDictionaryNames('rentalTypes'), rentalSettings = getRentalNumberingSettings(), onClose, onSave }) {
   const selectedBaseItems = getRentalBaseItems(rental);
   const initialClient = clients.find((client) => client.id === rental?.client_id) ?? null;
+  const defaultStartDate = new Date().toISOString().slice(0, 10);
+  const safeRentalTypes = [...new Set([...(rentalTypes.length ? rentalTypes : DEFAULT_CONFIG_DICTIONARIES.rentalTypes), rental?.rental_type].filter(Boolean))];
   const [form, setForm] = useState(() => ({
     id: rental?.id ?? null,
-    rental_number: rental?.rental_number ?? '',
+    rental_number: rental?.rental_number ?? nextRentalNumber,
     client_id: rental?.client_id ?? '',
     status: rental?.status ?? 'active',
-    rental_type: rental?.rental_type ?? 'Płatne',
-    start_date: rental?.start_date ?? new Date().toISOString().slice(0, 10),
-    planned_return_date: rental?.planned_return_date ?? '',
+    rental_type: rental?.rental_type ?? safeRentalTypes[0] ?? 'Płatne',
+    start_date: rental?.start_date ?? defaultStartDate,
+    planned_return_date: rental?.planned_return_date ?? addDaysToIsoDate(defaultStartDate, rentalSettings.defaultReturnDays),
     actual_return_date: rental?.actual_return_date ?? '',
     notes: rental?.notes ?? '',
     total_deposit: rental?.total_deposit ?? '',
@@ -1997,6 +2694,8 @@ function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [equipmentPickerOpen, setEquipmentPickerOpen] = useState(false);
   const [selectedRentalItemIds, setSelectedRentalItemIds] = useState(new Set());
+  const [rentalItemContextMenu, setRentalItemContextMenu] = useState(null);
+  const [previewEquipment, setPreviewEquipment] = useState(null);
   const [modalSize, setModalSize] = useState(getSavedRentalModalSize);
   const [modalPosition, setModalPosition] = useState(() => getSavedRentalModalPosition(getSavedRentalModalSize()));
   const modalSizeRef = useRef(modalSize);
@@ -2044,10 +2743,45 @@ function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
     setSelectedEquipmentIds((current) => current.filter((id) => !selectedRentalItemIds.has(id)));
     setSelectedRentalItemIds(new Set());
   };
+  const removeRentalEquipment = (id) => {
+    setSelectedEquipmentIds((current) => current.filter((itemId) => itemId !== id));
+    setSelectedRentalItemIds((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  };
+  const openRentalItemMenu = (event, item) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setRentalItemContextMenu({ ...getSafeMenuPosition(event, 240, 260), item });
+  };
+  const runRentalItemAction = (action) => {
+    const item = rentalItemContextMenu?.item;
+    setRentalItemContextMenu(null);
+    if (!item) return;
+    if (action === 'preview') setPreviewEquipment(item);
+    if (action === 'toggle') toggleRentalItemSelection(item.id);
+    if (action === 'remove') removeRentalEquipment(item.id);
+    if (action === 'removeSelected') removeSelectedEquipment();
+  };
 
   useEffect(() => {
     setSelectedRentalItemIds((current) => new Set([...current].filter((id) => selectedEquipmentIds.includes(id))));
   }, [selectedEquipmentIds]);
+
+  useEffect(() => {
+    if (!rentalItemContextMenu) return undefined;
+    const closeMenu = () => setRentalItemContextMenu(null);
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('keydown', closeMenu);
+    window.addEventListener('resize', closeMenu);
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('keydown', closeMenu);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [rentalItemContextMenu]);
 
   const visibleModalPosition = clampRentalModalPosition(modalPosition, modalSize);
 
@@ -2133,6 +2867,10 @@ function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
     return <EquipmentPickerModal title="Wybierz sprzęt do wypożyczenia" availableItems={availableEquipment} selectedIds={selectedEquipmentIds} onClose={() => setEquipmentPickerOpen(false)} onConfirm={addEquipment} />;
   }
 
+  if (previewEquipment) {
+    return <RentalEquipmentPreviewModal equipment={previewEquipment} onClose={() => setPreviewEquipment(null)} />;
+  }
+
   return <div className="modal-backdrop draggable-modal-backdrop">
     <div className="modal-card equipment-card-modal rental-record-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
       <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
@@ -2157,32 +2895,31 @@ function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
             </div>
             <FormField label="Typ wypożyczenia">
               <AppSelect value={form.rental_type} onChange={(event) => update('rental_type', event.target.value)}>
-                <option value="Płatne">Płatne</option>
-                <option value="Bezpłatne">Bezpłatne</option>
-                <option value="Wewnętrzne">Wewnętrzne</option>
+                {safeRentalTypes.map((type) => <option key={type} value={type}>{type}</option>)}
               </AppSelect>
             </FormField>
-            <FormField label="Wydanie"><AppInput type="date" value={form.start_date} onChange={(event) => update('start_date', event.target.value)} /></FormField>
-            <FormField label="Termin zwrotu"><AppInput type="date" value={form.planned_return_date} onChange={(event) => update('planned_return_date', event.target.value)} /></FormField>
+            <FormField className="rental-date-field rental-issue-date-field" label="Wydanie"><AppInput type="date" value={form.start_date} onChange={(event) => update('start_date', event.target.value)} /></FormField>
+            <FormField className="rental-date-field rental-return-date-field" label="Termin zwrotu"><AppInput type="date" value={form.planned_return_date} onChange={(event) => update('planned_return_date', event.target.value)} /></FormField>
           </div>
         </SectionPanel>
 
-        <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<><ButtonPrimary className="rental-add-equipment-button" onClick={() => setEquipmentPickerOpen(true)}><Plus size={14} />Dodaj sprzęt</ButtonPrimary><ButtonDanger onClick={removeSelectedEquipment} disabled={!selectedRentalItemIds.size}><Trash2 size={14} />Usuń zaznaczone</ButtonDanger></>}>
+        <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<ButtonPrimary className="rental-add-equipment-button" onClick={() => setEquipmentPickerOpen(true)}><Plus size={14} />Dodaj sprzęt</ButtonPrimary>}>
           <div className="rental-items-meta">
-            <span>{selectedRentalItemIds.size ? `${selectedRentalItemIds.size} zaznaczono` : 'Zaznacz pozycje, aby wykonać operację'}</span>
+            <span>{selectedRentalItemIds.size ? `${selectedRentalItemIds.size} zaznaczono` : 'Brak zaznaczenia'}</span>
             <span className="rental-document-summary">{rentalSummary.items} pozycji · {rentalSummary.sets} zestawów · cena {rentalSummary.price} · kaucja {rentalSummary.deposit}</span>
           </div>
           <div className="rental-items-table-shell">
             {selectedEquipment.length ? <AppTable className="set-components-table rental-items-table">
-              <thead><tr><th className="selection-cell"></th><th>Nazwa</th><th>Typ</th><th>Kategoria</th><th>Status</th><th>Lokalizacja</th></tr></thead>
+              <thead><tr><th className="selection-cell"></th><th>Nazwa</th><th>Typ</th><th>Kod / SN</th><th>Kategoria</th><th>Lokalizacja</th><th>Status</th></tr></thead>
               <tbody>{selectedEquipment.map((item) => (
-                <tr key={item.id} className={selectedRentalItemIds.has(item.id) ? 'selected-row' : ''} onClick={() => toggleRentalItemSelection(item.id)}>
+                <tr key={item.id} className={selectedRentalItemIds.has(item.id) ? 'selected-row' : ''} onClick={() => toggleRentalItemSelection(item.id)} onContextMenu={(event) => openRentalItemMenu(event, item)} onDoubleClick={() => setPreviewEquipment(item)} title="Pozycja sprzętu">
                   <td className="selection-cell"><input type="checkbox" checked={selectedRentalItemIds.has(item.id)} onChange={() => toggleRentalItemSelection(item.id)} onClick={(event) => event.stopPropagation()} /></td>
-                  <td><strong>{item.name}</strong></td>
+                  <td className="rental-item-name-cell"><strong>{item.name || '—'}</strong><small>{[item.brand, item.model].filter(Boolean).join(' ') || '—'}</small></td>
                   <td>{isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt'}</td>
+                  <td className="rental-item-code-cell">{getRentalEquipmentCode(item)}</td>
                   <td>{item.category || '—'}</td>
-                  <td><DSStatusPill value="Do wydania" /></td>
                   <td>{item.location || '—'}</td>
+                  <td><DSStatusPill value="Do wydania" /></td>
                 </tr>
               ))}</tbody>
             </AppTable> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Użyj akcji Dodaj sprzęt w nagłówku tabeli, aby utworzyć dokument wydania." />}
@@ -2191,7 +2928,7 @@ function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
 
         <SectionPanel className="rental-record-section rental-record-terms-section" title="Warunki i rozliczenie">
           <div className="rental-terms-grid">
-            <FormField label="Cena łączna"><AppInput value={form.total_price} onChange={(event) => update('total_price', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 1200'} /></FormField>
+            <FormField className="rental-price-field" label="Cena łączna"><div className="money-input"><AppInput value={form.total_price} onChange={(event) => update('total_price', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 1200'} /><span>{rentalSettings.currency || 'zł'}</span></div></FormField>
             <FormField label="Kaucja"><AppInput value={form.total_deposit} onChange={(event) => update('total_deposit', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 500'} /></FormField>
             <FormField className="rental-notes-field" label="Notatki"><AppTextarea value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Warunki wydania, uwagi do klienta lub sprzętu." /></FormField>
           </div>
@@ -2200,7 +2937,35 @@ function RentalEditor({ rental, clients, equipmentRows, onClose, onSave }) {
       <div className="modal-actions"><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onSave({ rental: form, selectedEquipmentIds })}><Save size={17} />Zapisz dokument</ButtonPrimary></div>
       <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
     </div>
+    {rentalItemContextMenu && <div className="row-context-menu rental-item-context-menu" style={{ left: rentalItemContextMenu.x, top: rentalItemContextMenu.y }} onClick={(event) => event.stopPropagation()}>
+      <div className="context-menu-title">Sprzęt</div>
+      <button type="button" onClick={() => runRentalItemAction('preview')}><FolderOpen size={14} />Podgląd sprzętu</button>
+      <button type="button" onClick={() => runRentalItemAction('toggle')}>{selectedRentalItemIds.has(rentalItemContextMenu.item?.id) ? <X size={14} /> : <CheckCircle2 size={14} />}{selectedRentalItemIds.has(rentalItemContextMenu.item?.id) ? 'Odznacz pozycję' : 'Zaznacz pozycję'}</button>
+      <div className="context-menu-separator" />
+      {selectedRentalItemIds.size > 1 && <button type="button" className="danger-action" onClick={() => runRentalItemAction('removeSelected')}><Trash2 size={14} />Usuń zaznaczone</button>}
+      <button type="button" className="danger-action" onClick={() => runRentalItemAction('remove')}><Trash2 size={14} />Usuń pozycję</button>
+    </div>}
   </div>;
+}
+
+function RentalEquipmentPreviewModal({ equipment, onClose }) {
+  const rows = [
+    ['Typ', isEquipmentSet(equipment) ? 'Zestaw' : 'Sprzęt'],
+    ['Kategoria', equipment.category || '—'],
+    ['Marka / model', [equipment.brand, equipment.model].filter(Boolean).join(' ') || '—'],
+    ['Numer seryjny', equipment.serial || '—'],
+    ['Kod / nr inw.', equipment.barcode || equipment.inventory_number || '—'],
+    ['Lokalizacja', equipment.location || '—'],
+    ['Kaucja', equipment.deposit || '—'],
+    ['Cena / dzień', equipment.price_day || '—']
+  ];
+
+  return <ModalFrame className="rental-equipment-preview-modal" eyebrow="Sprzęt" title={equipment.name || 'Podgląd sprzętu'} onClose={onClose} footer={<ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary>}>
+    <div className="rental-equipment-preview-status"><DSStatusPill value={equipment.status || '—'} /></div>
+    <AppTable className="rental-equipment-preview-table">
+      <tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}</tbody>
+    </AppTable>
+  </ModalFrame>;
 }
 
 function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm }) {
@@ -2236,7 +3001,7 @@ function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  return <ModalFrame className="shared-picker-modal client-picker-modal" eyebrow="Klienci" title="Wybierz klienta" description="Kliknij wiersz, żeby go zaznaczyć. Dwuklik albo Enter zatwierdza wybór." onClose={onClose} footer={<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary>}>
+  return <ResizableModalFrame className="shared-picker-modal client-picker-modal" storageKey="fixer-client-picker-modal" defaultSize={{ width: 980, height: 640 }} minSize={{ width: 720, height: 480 }} eyebrow="Klienci" title="Wybierz klienta" onClose={onClose} footer={<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary>}>
       <div className="shared-picker-toolbar">
         <FormField label="Szukaj"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, telefon, email, miasto, NIP" autoFocus /></FormField>
         <FormField label="Sortuj"><select value={sortKey} onChange={(event) => setSortKey(event.target.value)}><option value="name">Nazwa</option><option value="client_kind">Rodzaj</option><option value="city">Miasto</option></select></FormField>
@@ -2251,7 +3016,7 @@ function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm }) {
         </table>
         {!filteredClients.length && <EmptyState title="Brak klientów spełniających kryteria wyszukiwania." />}
       </div>
-    </ModalFrame>;
+    </ResizableModalFrame>;
 }
 
 function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], onClose, onConfirm }) {
@@ -2320,7 +3085,7 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  return <ModalFrame className="shared-picker-modal equipment-picker-modal" eyebrow="Sprzęt" title={title} description="Możesz zaznaczyć wiele pozycji jednocześnie, użyć wyszukiwania i filtrów." onClose={onClose} footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onConfirm(selectedItems)} disabled={!selectedItems.length}><Plus size={16} />Dodaj wybrane</ButtonPrimary></>}>
+  return <ResizableModalFrame className="shared-picker-modal equipment-picker-modal" storageKey="fixer-equipment-picker-modal" defaultSize={{ width: 1080, height: 720 }} minSize={{ width: 760, height: 520 }} eyebrow="Sprzęt" title={title} onClose={onClose} footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onConfirm(selectedItems)} disabled={!selectedItems.length}><Plus size={16} />Dodaj wybrane</ButtonPrimary></>}>
       <div className="equipment-picker-toolbar">
         <FormField label="Szukaj"><AppInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, marka, model, SN, kod" autoFocus /></FormField>
         <FormField label="Kategoria"><AppSelect value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">Wszystkie</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
@@ -2341,10 +3106,554 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
         </AppTable>
         {!filteredItems.length && <EmptyState title="Brak pozycji spełniających aktualne filtry." />}
       </div>
-    </ModalFrame>;
+    </ResizableModalFrame>;
 }
+const SERVICE_TABLE_KEY = 'service-orders-table';
+const SERVICE_TABLE_COLUMNS = [
+  { key: 'service_number', label: 'Numer' },
+  { key: 'client_name', label: 'Klient' },
+  { key: 'equipment_name', label: 'Sprzęt' },
+  { key: 'status', label: 'Status' },
+  { key: 'priority', label: 'Priorytet' },
+  { key: 'accepted_date_display', label: 'Przyjęcie' },
+  { key: 'planned_date_display', label: 'Planowany termin' },
+  { key: 'total_cost_display', label: 'Suma' }
+];
+
+function formatServiceMoney(value) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? `${number.toFixed(2).replace('.', ',')} zł` : '0,00 zł';
+}
+
+function generateServiceNumber(existingRows = []) {
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, '0');
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const year = String(today.getFullYear());
+  const sequence = existingRows.reduce((max, row) => {
+    const match = String(row.service_number ?? '').match(/SER\/(\d+)/);
+    return Math.max(max, match ? Number(match[1]) : 0);
+  }, 0) + 1;
+  return `SER/${String(sequence).padStart(3, '0')}/${day}/${month}/${year}`;
+}
+
+function buildServiceDocumentData(order, type) {
+  return {
+    documentType: type === 'acceptance' ? 'Przyjęcie do serwisu' : 'Wydanie z serwisu',
+    serviceNumber: order.service_number,
+    status: order.status,
+    priority: order.priority,
+    client: order.client_name,
+    equipment: order.equipment_name,
+    customerDeviceName: order.customer_device_name,
+    customerDeviceBrand: order.customer_device_brand,
+    customerDeviceModel: order.customer_device_model,
+    customerDeviceSerial: order.customer_device_serial,
+    customerDeviceCode: order.customer_device_code,
+    intakeCondition: order.intake_condition,
+    intakeAccessories: order.intake_accessories,
+    intakeVisualNotes: order.intake_visual_notes,
+    acceptedDate: order.accepted_date,
+    plannedDate: order.planned_date,
+    completedDate: order.completed_date,
+    faultDescription: order.fault_description,
+    diagnosis: order.diagnosis,
+    workPerformed: order.work_performed,
+    partsMaterials: order.parts_materials,
+    laborCost: order.labor_cost,
+    partsCost: order.parts_cost,
+    otherCost: order.other_cost,
+    totalCost: order.total_cost
+  };
+}
+
 function ServiceModule() {
-  return <ModulePage title="Serwis" description="Zlecenia serwisowe, statusy, postępy, dokumenty przyjęcia i wydania." table={<DataTable storageKey="service-table" columns={[{ key: 'number', label: 'Numer' },{ key: 'client', label: 'Klient' },{ key: 'item', label: 'Sprzęt' },{ key: 'status', label: 'Status' }]} rows={serviceOrders} />} />;
+  const [rows, setRows] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [equipmentRows, setEquipmentRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+
+  const loadServiceData = async () => {
+    setLoading(true);
+    const [ordersResult, clientsResult, equipmentResult] = await Promise.all([fetchServiceOrders(), fetchClients(), fetchEquipment()]);
+    setRows(ordersResult.data ?? []);
+    setClients(clientsResult.data ?? []);
+    setEquipmentRows(equipmentResult.error ? demoEquipment : (equipmentResult.data ?? []));
+    if (ordersResult.error) setNotice(`Nie udało się pobrać zleceń serwisowych z Supabase: ${ordersResult.error.message}. Sprawdź migrację 005_service_orders_schema.sql.`);
+    else if (ordersResult.local) setNotice('Serwis działa w lokalnym trybie zapisu.');
+    else setNotice('');
+    setLoading(false);
+  };
+
+  useEffect(() => { loadServiceData(); }, []);
+
+  const resolveClient = (order) => order.clients ?? clients.find((client) => client.id === order.client_id) ?? null;
+  const resolveEquipment = (order) => order.equipment ?? equipmentRows.find((item) => item.id === order.equipment_id) ?? null;
+
+  const tableRows = useMemo(() => rows.map((order) => {
+    const client = resolveClient(order);
+    const equipment = resolveEquipment(order);
+    return {
+      ...order,
+      number: order.service_number,
+      client_name: client?.name ?? '—',
+      equipment_name: order.customer_device_name || equipment?.name || '—',
+      accepted_date_display: formatDashboardDate(order.accepted_date),
+      planned_date_display: formatDashboardDate(order.planned_date),
+      total_cost_display: formatServiceMoney(order.total_cost)
+    };
+  }), [rows, clients, equipmentRows]);
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('pl');
+    return tableRows.filter((order) => {
+      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+      const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
+      const searchable = [order.service_number, order.client_name, order.equipment_name, order.customer_device_brand, order.customer_device_model, order.customer_device_serial, order.status, order.priority, order.fault_description, order.diagnosis]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase('pl');
+      return matchesStatus && matchesPriority && (!query || searchable.includes(query));
+    });
+  }, [tableRows, search, statusFilter, priorityFilter]);
+
+  const openServiceEditor = (order = null) => {
+    setEditingOrder(order);
+    setEditorOpen(true);
+  };
+
+  const createNewOrder = () => {
+    openServiceEditor({
+      service_number: generateServiceNumber(rows),
+      status: 'Przyjęte',
+      priority: 'Normalny',
+      accepted_date: getLocalIsoDate(),
+      planned_date: '',
+      completed_date: '',
+      fault_description: '',
+      diagnosis: '',
+      work_performed: '',
+      parts_materials: '',
+      labor_cost: '',
+      parts_cost: '',
+      other_cost: '',
+      total_cost: '',
+      estimate_status: 'Roboczy',
+      internal_notes: '',
+      attachments: [],
+      notes: ''
+    });
+  };
+
+  const saveServiceOrder = async (order) => {
+    if (!String(order.service_number ?? '').trim()) {
+      alert('Numer zlecenia jest wymagany.');
+      return;
+    }
+    if (!String(order.customer_device_name ?? '').trim() && !order.equipment_id) {
+      alert('Podaj nazwę serwisowanego urządzenia albo wybierz powiązany sprzęt z bazy.');
+      return;
+    }
+    if (!String(order.fault_description ?? '').trim()) {
+      alert('Opis usterki jest wymagany.');
+      return;
+    }
+    const result = order.id || order.localId
+      ? await updateServiceOrderRecord(order.id ?? order.localId, order)
+      : await createServiceOrderRecord(order);
+    if (result.error) {
+      alert(result.error.message);
+      return;
+    }
+    if (result.local) setNotice('Zlecenie zapisano lokalnie, ponieważ Supabase nie jest skonfigurowany.');
+    setEditorOpen(false);
+    await loadServiceData();
+  };
+
+  const deleteServiceOrder = async (order) => {
+    if (order.status === 'Wydane') {
+      alert('Nie można usunąć zlecenia wydanego.');
+      return;
+    }
+    if (!confirm(`Usunąć zlecenie ${order.service_number}?`)) return;
+    const { error, local } = await deleteServiceOrderRecord(order.id ?? order.localId, order);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    if (local) setNotice('Zlecenie usunięto lokalnie.');
+    await loadServiceData();
+  };
+
+  const changeServiceStatus = async (order) => {
+    const nextStatus = prompt(`Nowy status:\n${SERVICE_STATUSES.join('\n')}`, order.status);
+    if (!nextStatus) return;
+    const normalized = SERVICE_STATUSES.find((status) => status.toLocaleLowerCase('pl') === nextStatus.trim().toLocaleLowerCase('pl'));
+    if (!normalized) {
+      alert('Wybierz jeden z domyślnych statusów serwisu.');
+      return;
+    }
+    await saveServiceOrder({ ...order, status: normalized, completed_date: normalized === 'Wydane' ? (order.completed_date || getLocalIsoDate()) : order.completed_date });
+  };
+
+  const createServiceDocument = (order, type) => {
+    const data = buildServiceDocumentData(order, type);
+    const suffix = type === 'acceptance' ? 'przyjecie' : 'wydanie';
+    downloadTextFile(`${normalizeFileNamePart(order.service_number)}-${suffix}.json`, JSON.stringify(data, null, 2), 'application/json;charset=utf-8');
+    setNotice(type === 'acceptance' ? 'Przygotowano dane dokumentu przyjęcia do serwisu.' : 'Przygotowano dane dokumentu wydania z serwisu.');
+  };
+
+  const clearFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+    setPriorityFilter('all');
+  };
+
+  return <div className="module-page service-module-page">
+    <section className="panel hero-panel service-hero-panel">
+      <p className="eyebrow">Moduł</p><h2>Serwis</h2>
+      <p className="muted">Zlecenia serwisowe, przyjęcia sprzętu, diagnoza, naprawa, koszty oraz dokumenty przyjęcia i wydania.</p>
+      <div className="module-actions">
+        <AppButton variant="primary" className="module-action-button" onClick={createNewOrder}><Plus size={18} />Nowe zlecenie</AppButton>
+        <AppButton variant="secondary" className="module-action-button" onClick={loadServiceData}>Odśwież</AppButton>
+      </div>
+      {notice && <div className="notice">{notice}</div>}
+    </section>
+    <section className="panel service-list-panel">
+      <div className="client-filter-bar service-filter-bar">
+        <label>Szukaj<AppInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Numer, klient, sprzęt, opis, diagnoza" /></label>
+        <label>Status<AppSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{SERVICE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
+        <label>Priorytet<AppSelect value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="all">Wszystkie</option>{SERVICE_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></label>
+        <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść filtry</AppButton>
+        <span className="filter-count">{filteredRows.length} / {rows.length}</span>
+      </div>
+      <DataTable
+        storageKey={SERVICE_TABLE_KEY}
+        loading={loading}
+        columns={SERVICE_TABLE_COLUMNS}
+        rows={filteredRows}
+        onOpen={openServiceEditor}
+        onEdit={openServiceEditor}
+        onDelete={deleteServiceOrder}
+        canDelete={(order) => order.status !== 'Wydane'}
+        openLabel="Otwórz"
+        editLabel="Otwórz kartotekę"
+        deleteLabel="Usuń zlecenie"
+        customRowActions={[
+          { key: 'status', label: 'Zmień status', icon: SlidersHorizontal, onClick: changeServiceStatus },
+          { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => createServiceDocument(order, 'acceptance') },
+          { key: 'release', label: 'Utwórz dokument wydania', icon: Download, onClick: (order) => createServiceDocument(order, 'release') }
+        ]}
+      />
+    </section>
+    {editorOpen && <ServiceOrderEditor order={editingOrder} clients={clients} equipmentRows={equipmentRows} existingRows={rows} onClose={() => setEditorOpen(false)} onSave={saveServiceOrder} />}
+  </div>;
+}
+
+function formatServiceDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClose, onSave }) {
+  const [activeTab, setActiveTab] = useState('basic');
+  const [form, setForm] = useState(() => ({
+    service_number: order?.service_number || generateServiceNumber(existingRows),
+    status: order?.status || 'Przyjęte',
+    priority: order?.priority || 'Normalny',
+    client_id: order?.client_id || order?.clients?.id || '',
+    equipment_id: order?.equipment_id || order?.equipment?.id || '',
+    accepted_date: order?.accepted_date || getLocalIsoDate(),
+    planned_date: order?.planned_date || '',
+    completed_date: order?.completed_date || '',
+    customer_device_name: order?.customer_device_name || order?.equipment?.name || '',
+    customer_device_brand: order?.customer_device_brand || '',
+    customer_device_model: order?.customer_device_model || '',
+    customer_device_serial: order?.customer_device_serial || order?.equipment?.serial || '',
+    customer_device_code: order?.customer_device_code || order?.equipment?.barcode || order?.equipment?.inventory_number || '',
+    customer_device_category: order?.customer_device_category || '',
+    intake_condition: order?.intake_condition || 'Dobry',
+    intake_accessories: order?.intake_accessories || '',
+    intake_visual_notes: order?.intake_visual_notes || '',
+    fault_description: order?.fault_description || '',
+    diagnosis: order?.diagnosis || '',
+    work_performed: order?.work_performed || '',
+    parts_materials: order?.parts_materials || '',
+    labor_cost: order?.labor_cost ?? '',
+    parts_cost: order?.parts_cost ?? '',
+    other_cost: order?.other_cost ?? '',
+    total_cost: order?.total_cost ?? '',
+    estimate_status: order?.estimate_status || 'Roboczy',
+    internal_notes: order?.internal_notes || order?.notes || '',
+    attachments: Array.isArray(order?.attachments) ? order.attachments : [],
+    notes: order?.notes || '',
+    id: order?.id,
+    localId: order?.localId
+  }));
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [equipmentPickerOpen, setEquipmentPickerOpen] = useState(false);
+  const [progressRows, setProgressRows] = useState([]);
+  const [progressNotice, setProgressNotice] = useState('');
+  const [newProgressText, setNewProgressText] = useState('');
+  const [editingProgressId, setEditingProgressId] = useState(null);
+  const [editingProgressText, setEditingProgressText] = useState('');
+  const [newAttachmentName, setNewAttachmentName] = useState('');
+  const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
+  const [newAttachmentType, setNewAttachmentType] = useState('Zdjęcie');
+
+  const orderId = form.id ?? form.localId;
+  const selectedClient = clients.find((client) => client.id === form.client_id) ?? order?.clients ?? null;
+  const selectedEquipment = equipmentRows.find((item) => item.id === form.equipment_id) ?? order?.equipment ?? null;
+  const categories = [...new Set(['Kamera', 'Obiektyw', 'Audio', 'Oświetlenie', 'Komputer', 'Akcesoria', ...equipmentRows.map((item) => item.category).filter(Boolean), form.customer_device_category].filter(Boolean))];
+  const conditions = [...new Set([...(DEFAULT_CONFIG_DICTIONARIES.equipmentConditions ?? []), form.intake_condition].filter(Boolean))];
+  const laborCost = Number(String(form.labor_cost || 0).replace(',', '.')) || 0;
+  const partsCost = Number(String(form.parts_cost || 0).replace(',', '.')) || 0;
+  const otherCost = Number(String(form.other_cost || 0).replace(',', '.')) || 0;
+  const calculatedTotal = laborCost + partsCost + otherCost;
+
+  const update = (key, value) => {
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      if (['labor_cost', 'parts_cost', 'other_cost'].includes(key)) {
+        const nextLabor = Number(String((key === 'labor_cost' ? value : current.labor_cost) || 0).replace(',', '.')) || 0;
+        const nextParts = Number(String((key === 'parts_cost' ? value : current.parts_cost) || 0).replace(',', '.')) || 0;
+        const nextOther = Number(String((key === 'other_cost' ? value : current.other_cost) || 0).replace(',', '.')) || 0;
+        next.total_cost = (nextLabor + nextParts + nextOther).toFixed(2);
+      }
+      if (key === 'status' && value === 'Wydane' && !next.completed_date) next.completed_date = getLocalIsoDate();
+      return next;
+    });
+  };
+
+  const loadProgress = async () => {
+    if (!orderId) return;
+    const { data, error, local } = await fetchServiceOrderProgress(orderId);
+    if (error) {
+      setProgressNotice(`Nie udało się pobrać postępów z Supabase: ${error.message}`);
+      return;
+    }
+    setProgressRows(data ?? []);
+    setProgressNotice(local ? 'Postępy działają lokalnie, ponieważ Supabase nie jest skonfigurowany.' : '');
+  };
+
+  useEffect(() => { loadProgress(); }, [orderId]);
+
+  const chooseClient = (client) => {
+    update('client_id', client.id);
+    setClientPickerOpen(false);
+  };
+
+  const chooseEquipment = (items) => {
+    const item = Array.isArray(items) ? items[0] : items;
+    if (!item) return;
+    setForm((current) => ({
+      ...current,
+      equipment_id: item.id,
+      customer_device_name: current.customer_device_name || item.name || '',
+      customer_device_brand: current.customer_device_brand || item.brand || '',
+      customer_device_model: current.customer_device_model || item.model || '',
+      customer_device_serial: current.customer_device_serial || item.serial || '',
+      customer_device_code: current.customer_device_code || item.barcode || item.inventory_number || '',
+      customer_device_category: current.customer_device_category || item.category || ''
+    }));
+    setEquipmentPickerOpen(false);
+  };
+
+  const clearEquipmentLink = () => update('equipment_id', '');
+
+  const submit = () => {
+    onSave({ ...order, ...form, total_cost: form.total_cost || calculatedTotal.toFixed(2) });
+  };
+
+  const addProgress = async () => {
+    if (!orderId) {
+      setProgressNotice('Najpierw zapisz zlecenie, potem dodaj wpis postępu.');
+      return;
+    }
+    const { error, local } = await createServiceOrderProgress(orderId, newProgressText, demoUser.name);
+    if (error) {
+      setProgressNotice(`Nie udało się zapisać postępu w Supabase: ${error.message}`);
+      return;
+    }
+    setNewProgressText('');
+    setProgressNotice(local ? 'Wpis postępu zapisano lokalnie.' : '');
+    await loadProgress();
+  };
+
+  const saveProgressEdit = async (entry) => {
+    const { error, local } = await updateServiceOrderProgress(entry.id ?? entry.localId, editingProgressText, entry);
+    if (error) {
+      setProgressNotice(`Nie udało się zaktualizować wpisu w Supabase: ${error.message}`);
+      return;
+    }
+    setEditingProgressId(null);
+    setEditingProgressText('');
+    setProgressNotice(local ? 'Wpis postępu zapisano lokalnie.' : '');
+    await loadProgress();
+  };
+
+  const removeProgress = async (entry) => {
+    if (!confirm('Usunąć wpis postępu?')) return;
+    const { error, local } = await deleteServiceOrderProgress(entry.id ?? entry.localId, entry);
+    if (error) {
+      setProgressNotice(`Nie udało się usunąć wpisu w Supabase: ${error.message}`);
+      return;
+    }
+    setProgressNotice(local ? 'Wpis postępu usunięto lokalnie.' : '');
+    await loadProgress();
+  };
+
+  const addAttachment = () => {
+    const name = newAttachmentName.trim();
+    const url = newAttachmentUrl.trim();
+    if (!name && !url) return;
+    update('attachments', [...form.attachments, { name: name || url, url, type: newAttachmentType }]);
+    setNewAttachmentName('');
+    setNewAttachmentUrl('');
+    setNewAttachmentType('Zdjęcie');
+  };
+
+  const removeAttachment = (index) => update('attachments', form.attachments.filter((_, itemIndex) => itemIndex !== index));
+
+  const tabs = [
+    { id: 'basic', label: 'Dane podstawowe' },
+    { id: 'progress', label: 'Postępy' },
+    { id: 'photos', label: 'Zdjęcia' },
+    { id: 'estimate', label: 'Kosztorys' },
+    { id: 'notes', label: 'Notatki' }
+  ];
+
+  if (clientPickerOpen) {
+    return <ClientPickerModal clients={clients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={chooseClient} />;
+  }
+
+  if (equipmentPickerOpen) {
+    return <EquipmentPickerModal title="Opcjonalnie powiąż ze sprzętem z magazynu" availableItems={equipmentRows.filter((item) => !isEquipmentSetComponent(item))} selectedIds={form.equipment_id ? [form.equipment_id] : []} onClose={() => setEquipmentPickerOpen(false)} onConfirm={chooseEquipment} />;
+  }
+
+  return <ResizableModalFrame
+    className="service-order-modal"
+    storageKey="fixer-service-order-modal"
+    defaultSize={{ width: 1160, height: 740 }}
+    minSize={{ width: 820, height: 580 }}
+    eyebrow="Serwis"
+    title={form.service_number || 'Nowe zlecenie'}
+    description="Kartoteka zlecenia serwisowego"
+    onClose={onClose}
+    footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
+  >
+    <div className="service-order-tabs" role="tablist" aria-label="Sekcje zlecenia serwisowego">
+      {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+    </div>
+    <div className="service-order-tab-panel">
+      {activeTab === 'basic' && <div className="service-tab-content">
+        <SectionPanel className="service-record-section service-record-main" title="Dane zlecenia">
+          <div className="service-form-grid service-form-grid-main">
+            <FormField label="Numer zlecenia"><AppInput value={form.service_number} onChange={(event) => update('service_number', event.target.value)} /></FormField>
+            <FormField label="Status"><AppSelect value={form.status} onChange={(event) => update('status', event.target.value)}>{SERVICE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
+            <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(event) => update('priority', event.target.value)}>{SERVICE_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></FormField>
+            <FormField label="Data przyjęcia"><AppInput type="date" value={form.accepted_date} onChange={(event) => update('accepted_date', event.target.value)} /></FormField>
+            <FormField label="Planowany termin"><AppInput type="date" value={form.planned_date || ''} onChange={(event) => update('planned_date', event.target.value)} /></FormField>
+            <FormField label="Data zakończenia"><AppInput type="date" value={form.completed_date || ''} onChange={(event) => update('completed_date', event.target.value)} /></FormField>
+          </div>
+        </SectionPanel>
+
+        <SectionPanel className="service-record-section" title="Klient i sprzęt klienta">
+          <div className="service-customer-device-grid">
+            <button type="button" className={`service-link-card ${selectedClient ? 'selected' : ''}`} onClick={() => setClientPickerOpen(true)}>
+              <span>Klient</span>
+              <strong>{selectedClient?.name || 'Wybierz klienta'}</strong>
+              {selectedClient?.phone && <small>{selectedClient.phone}</small>}
+            </button>
+            <div className="service-linked-equipment-box">
+              <span>Powiązanie z magazynem opcjonalne</span>
+              <strong>{selectedEquipment?.name || 'Brak powiązania'}</strong>
+              <div className="service-inline-actions"><AppButton variant="secondary" size="sm" onClick={() => setEquipmentPickerOpen(true)}>Wybierz z bazy</AppButton>{form.equipment_id && <AppButton variant="secondary" size="sm" onClick={clearEquipmentLink}>Odłącz</AppButton>}</div>
+            </div>
+            <FormField label="Nazwa urządzenia"><AppInput value={form.customer_device_name} onChange={(event) => update('customer_device_name', event.target.value)} placeholder="np. Sony PXW-Z190 klienta" /></FormField>
+            <FormField label="Marka"><AppInput value={form.customer_device_brand} onChange={(event) => update('customer_device_brand', event.target.value)} /></FormField>
+            <FormField label="Model"><AppInput value={form.customer_device_model} onChange={(event) => update('customer_device_model', event.target.value)} /></FormField>
+            <FormField label="Numer seryjny"><AppInput value={form.customer_device_serial} onChange={(event) => update('customer_device_serial', event.target.value)} /></FormField>
+            <FormField label="Kod / numer wewnętrzny"><AppInput value={form.customer_device_code} onChange={(event) => update('customer_device_code', event.target.value)} /></FormField>
+            <FormField label="Kategoria"><AppSelect value={form.customer_device_category} onChange={(event) => update('customer_device_category', event.target.value)}><option value="">Wybierz</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</AppSelect></FormField>
+            <FormField label="Stan przyjęcia"><AppSelect value={form.intake_condition} onChange={(event) => update('intake_condition', event.target.value)}>{conditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
+            <FormField className="service-wide-field" label="Akcesoria przyjęte ze sprzętem"><AppTextarea value={form.intake_accessories} onChange={(event) => update('intake_accessories', event.target.value)} placeholder="np. zasilacz, futerał, karta pamięci" /></FormField>
+            <FormField className="service-wide-field" label="Opis wizualny / uwagi przy przyjęciu"><AppTextarea value={form.intake_visual_notes} onChange={(event) => update('intake_visual_notes', event.target.value)} placeholder="np. rysy na obudowie, brak zaślepki, ślady zalania" /></FormField>
+          </div>
+        </SectionPanel>
+
+        <SectionPanel className="service-record-section service-text-section" title="Opis i przebieg">
+          <div className="service-text-grid">
+            <FormField label="Opis usterki"><AppTextarea value={form.fault_description} onChange={(event) => update('fault_description', event.target.value)} placeholder="Co zgłasza klient / operator?" /></FormField>
+            <FormField label="Diagnoza"><AppTextarea value={form.diagnosis} onChange={(event) => update('diagnosis', event.target.value)} /></FormField>
+            <FormField label="Wykonane czynności"><AppTextarea value={form.work_performed} onChange={(event) => update('work_performed', event.target.value)} /></FormField>
+          </div>
+        </SectionPanel>
+      </div>}
+
+      {activeTab === 'progress' && <div className="service-tab-content">
+        <SectionPanel className="service-record-section" title="Postępy serwisowania">
+          {progressNotice && <div className="notice">{progressNotice}</div>}
+          <div className="service-progress-add">
+            <FormField label="Nowy wpis"><AppTextarea value={newProgressText} onChange={(event) => setNewProgressText(event.target.value)} placeholder="Krótki opis wykonanej czynności lub statusu prac" /></FormField>
+            <AppButton variant="primary" size="sm" onClick={addProgress}>Dodaj wpis</AppButton>
+          </div>
+          <div className="service-progress-list">
+            {progressRows.map((entry) => {
+              const isEditing = editingProgressId === (entry.id ?? entry.localId);
+              return <div className="service-progress-row" key={entry.id ?? entry.localId}>
+                <div className="service-progress-meta"><strong>{entry.operator_name || 'Operator'}</strong><span>{formatServiceDateTime(entry.created_at)}{entry.updated_at && entry.updated_at !== entry.created_at ? ` · ed. ${formatServiceDateTime(entry.updated_at)}` : ''}</span></div>
+                {isEditing ? <AppTextarea value={editingProgressText} onChange={(event) => setEditingProgressText(event.target.value)} /> : <p>{entry.entry_text}</p>}
+                <div className="service-inline-actions">{isEditing ? <><AppButton variant="secondary" size="sm" onClick={() => saveProgressEdit(entry)}>Zapisz</AppButton><AppButton variant="secondary" size="sm" onClick={() => { setEditingProgressId(null); setEditingProgressText(''); }}>Anuluj</AppButton></> : <><AppButton variant="secondary" size="sm" onClick={() => { setEditingProgressId(entry.id ?? entry.localId); setEditingProgressText(entry.entry_text); }}>Edytuj</AppButton><AppButton variant="secondary" size="sm" onClick={() => removeProgress(entry)}>Usuń</AppButton></>}</div>
+              </div>;
+            })}
+            {!progressRows.length && <EmptyState title={orderId ? 'Brak wpisów postępu.' : 'Zapisz zlecenie, aby dodać postępy.'} />}
+          </div>
+        </SectionPanel>
+      </div>}
+
+      {activeTab === 'photos' && <div className="service-tab-content">
+        <SectionPanel className="service-record-section" title="Zdjęcia i załączniki">
+          <div className="attachment-add-grid service-attachment-add-grid">
+            <AppInput value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa zdjęcia / załącznika" />
+            <AppInput value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link, opis lub identyfikator pliku" />
+            <AppSelect value={newAttachmentType} onChange={(event) => setNewAttachmentType(event.target.value)}><option>Zdjęcie</option><option>Protokół</option><option>Inny</option></AppSelect>
+            <AppButton variant="secondary" size="sm" onClick={addAttachment}>Dodaj</AppButton>
+          </div>
+          <div className="equipment-list-box">
+            {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.type || 'Załącznik'}:</strong> {item.name || item.url}{item.url && item.name ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Upload plików nie jest jeszcze podłączony. Możesz zapisać opis/link załącznika w strukturze zlecenia.</p>}
+          </div>
+        </SectionPanel>
+      </div>}
+
+      {activeTab === 'estimate' && <div className="service-tab-content">
+        <SectionPanel className="service-record-section" title="Kosztorys">
+          <div className="service-estimate-grid">
+            <FormField className="service-wide-field" label="Części / materiały"><AppTextarea value={form.parts_materials} onChange={(event) => update('parts_materials', event.target.value)} /></FormField>
+            <FormField label="Koszt części"><div className="money-input"><AppInput value={form.parts_cost} onChange={(event) => update('parts_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
+            <FormField label="Koszt robocizny"><div className="money-input"><AppInput value={form.labor_cost} onChange={(event) => update('labor_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
+            <FormField label="Inne koszty"><div className="money-input"><AppInput value={form.other_cost} onChange={(event) => update('other_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
+            <FormField label="Status kosztorysu"><AppSelect value={form.estimate_status} onChange={(event) => update('estimate_status', event.target.value)}>{SERVICE_ESTIMATE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
+            <div className="service-total-box"><span>Suma</span><strong>{formatServiceMoney(form.total_cost || calculatedTotal)}</strong></div>
+          </div>
+        </SectionPanel>
+      </div>}
+
+      {activeTab === 'notes' && <div className="service-tab-content">
+        <SectionPanel className="service-record-section" title="Notatki wewnętrzne">
+          <FormField label="Notatki operatora"><AppTextarea className="large-notes" value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} placeholder="Wewnętrzne informacje dla obsługi. Nie mieszać z postępami serwisowymi." /></FormField>
+        </SectionPanel>
+      </div>}
+    </div>
+  </ResizableModalFrame>;
 }
 function CalendarModule() {
   return <ModulePage title="Kalendarz" description="Widok rezerwacji, wypożyczeń, terminów serwisowych i zadań na osi czasu." table={<Timeline />} />;
@@ -2403,6 +3712,110 @@ function saveCompanyProfile(profile) {
   return nextProfile;
 }
 
+const RENTAL_NUMBERING_STORAGE_KEY = 'fixer-rental-numbering';
+const DEFAULT_RENTAL_NUMBERING = {
+  prefix: 'WYP',
+  format: 'PREFIX/NR/DD/MM/YYYY',
+  padding: 3,
+  defaultReturnDays: 7,
+  currency: 'zł'
+};
+const RENTAL_NUMBER_FORMATS = [
+  { value: 'PREFIX/NR/DD/MM/YYYY', label: 'WYP/nr/DD/MM/RRRR' },
+  { value: 'PREFIX/YYYY/MM/NR', label: 'WYP/RRRR/MM/nr' },
+  { value: 'PREFIX/YYYY/NR', label: 'WYP/RRRR/nr' }
+];
+const CONFIG_DICTIONARY_STORAGE_KEY = 'fixer-config-dictionaries';
+const DEFAULT_CONFIG_DICTIONARIES = {
+  equipmentConditions: ['Nowy', 'Bardzo dobry', 'Dobry', 'Do kontroli', 'Uszkodzony', 'Wycofany'],
+  rentalTypes: ['Płatne', 'Bezpłatne', 'Wewnętrzne'],
+  returnConditions: ['Sprawny', 'Uszkodzony', 'Brak akcesoriów', 'Wymaga kontroli', 'Serwis']
+};
+
+function getRentalNumberingSettings() {
+  const saved = getStoredJson(RENTAL_NUMBERING_STORAGE_KEY, DEFAULT_RENTAL_NUMBERING);
+  return {
+    ...DEFAULT_RENTAL_NUMBERING,
+    ...saved,
+    prefix: String(saved.prefix ?? DEFAULT_RENTAL_NUMBERING.prefix).trim() || DEFAULT_RENTAL_NUMBERING.prefix
+  };
+}
+
+function saveRentalNumberingSettings(settings) {
+  const next = {
+    ...DEFAULT_RENTAL_NUMBERING,
+    ...settings,
+    prefix: String(settings.prefix ?? '').trim().toUpperCase() || DEFAULT_RENTAL_NUMBERING.prefix
+  };
+  localStorage.setItem(RENTAL_NUMBERING_STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
+function formatRentalNumber(settings, sequence, date = new Date()) {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear());
+  const nr = String(sequence).padStart(Number(settings.padding) || 3, '0');
+  const parts = {
+    PREFIX: settings.prefix || DEFAULT_RENTAL_NUMBERING.prefix,
+    NR: nr,
+    DD: day,
+    MM: month,
+    YYYY: year
+  };
+  return (settings.format || DEFAULT_RENTAL_NUMBERING.format)
+    .split('/')
+    .map((part) => parts[part] ?? part)
+    .join('/');
+}
+
+function getNextRentalSequence(rentalsList, settings) {
+  const formatParts = (settings.format || DEFAULT_RENTAL_NUMBERING.format).split('/');
+  const nrIndex = formatParts.indexOf('NR');
+  const prefixIndex = formatParts.indexOf('PREFIX');
+  const expectedPrefix = settings.prefix || DEFAULT_RENTAL_NUMBERING.prefix;
+  return (rentalsList ?? []).reduce((max, rental) => {
+    const parts = String(rental?.rental_number ?? '').split('/');
+    if (nrIndex < 0 || prefixIndex < 0 || parts[prefixIndex] !== expectedPrefix) return max;
+    return Math.max(max, Number(parts[nrIndex]) || 0);
+  }, 0) + 1;
+}
+
+function generateNextRentalNumber(rentalsList, settings = getRentalNumberingSettings()) {
+  return formatRentalNumber(settings, getNextRentalSequence(rentalsList, settings));
+}
+
+function normalizeConfigDictionary(key, value) {
+  const fallback = DEFAULT_CONFIG_DICTIONARIES[key] ?? [];
+  const rows = Array.isArray(value) ? value : fallback.map((name) => ({ name, active: true }));
+  const normalized = rows
+    .map((item) => typeof item === 'string' ? { name: item, active: true } : { name: String(item?.name ?? '').trim(), active: item?.active !== false })
+    .filter((item) => item.name);
+  return normalized.length ? normalized : fallback.map((name) => ({ name, active: true }));
+}
+
+function getConfigDictionaries() {
+  const saved = getStoredJson(CONFIG_DICTIONARY_STORAGE_KEY, {});
+  return Object.fromEntries(Object.keys(DEFAULT_CONFIG_DICTIONARIES).map((key) => [key, normalizeConfigDictionary(key, saved[key])]));
+}
+
+function saveConfigDictionaries(next) {
+  const normalized = Object.fromEntries(Object.keys(DEFAULT_CONFIG_DICTIONARIES).map((key) => [key, normalizeConfigDictionary(key, next[key])]));
+  localStorage.setItem(CONFIG_DICTIONARY_STORAGE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function getActiveConfigDictionaryNames(key) {
+  return normalizeConfigDictionary(key, getConfigDictionaries()[key]).filter((item) => item.active).map((item) => item.name);
+}
+
+function addDaysToIsoDate(isoDate, days) {
+  if (!isoDate || !Number(days)) return '';
+  const date = new Date(`${isoDate}T00:00:00`);
+  date.setDate(date.getDate() + Number(days));
+  return date.toISOString().slice(0, 10);
+}
+
 function formatCompanyAddress(profile) {
   const line1 = [profile.street, profile.buildingNumber, profile.apartmentNumber ? `/${profile.apartmentNumber}` : ''].filter(Boolean).join(' ');
   const line2 = [profile.postalCode, profile.city].filter(Boolean).join(' ');
@@ -2417,7 +3830,7 @@ function formatCompanyContact(profile) {
   return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń' }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -2744,9 +4157,10 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
             const selected = selectedRowKeys.has(rowKey);
             const expandable = hasExpandableRows && isRowExpandable?.(row);
             const expanded = expandable && expandedRowKeys.has(rowKey);
-            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''}`.trim();
+            const rowToneClass = row._rowTone ? `row-tone-${row._rowTone}` : '';
+            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${rowToneClass}`.trim();
             return <Fragment key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>
-              <tr className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; if (expandable) toggleExpandedRow(row, index); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={expandable ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.' : hasActions ? 'Dwuklik otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={expandable ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.' : hasActions ? 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
               {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>
@@ -2755,8 +4169,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
 
       {rowContextMenu && <div className="row-context-menu" style={{ left: rowContextMenu.x, top: rowContextMenu.y }} onClick={(event) => event.stopPropagation()}>
         <div className="context-menu-title">Operacje</div>
-        {(onOpen || onEdit) && <button type="button" onClick={() => runRowAction('open')}><FolderOpen size={14} />Otwórz</button>}
-        {onEdit && <button type="button" onClick={() => runRowAction('edit')}><Save size={14} />Edytuj</button>}
+        {(onOpen || onEdit) && <button type="button" onClick={() => runRowAction('open')}><FolderOpen size={14} />{openLabel}</button>}
+        {onEdit && <button type="button" onClick={() => runRowAction('edit')}><Save size={14} />{editLabel}</button>}
         {onDuplicate && <button type="button" onClick={() => runRowAction('duplicate')}><FilePlus2 size={14} />Duplikuj</button>}
         {onHistory && <button type="button" onClick={() => runRowAction('history')}><History size={14} />Historia</button>}
         {customRowActions.filter((action) => !action.visible || action.visible(rowContextMenu.row)).map((action) => {
@@ -2766,7 +4180,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
         <div className="context-menu-separator" />
         <button type="button" onClick={() => runRowAction('copyName')}><Copy size={14} />Kopiuj nazwę</button>
         {(rowContextMenu.row?.id || rowContextMenu.row?.localId || rowContextMenu.row?.number) && <button type="button" onClick={() => runRowAction('copyId')}><Copy size={14} />Kopiuj ID / numer</button>}
-        {onDelete && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />Usuń</button></>}
+        {onDelete && canDelete(rowContextMenu.row) && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />{deleteLabel}</button></>}
       </div>}
       {contextMenu && <div className="column-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()}>
         <div className="context-menu-title">Widoczne kolumny</div>
@@ -2784,9 +4198,10 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
 function StatusPill({ value }) {
   const text = String(value ?? '');
   const lower = text.toLowerCase();
-  const tone = lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') ? 'danger'
-    : lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') ? 'success'
-    : lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') ? 'warning'
+  const tone = lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('uszk') ? 'danger'
+    : lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly') ? 'success'
+    : lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') ? 'warning'
+    : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') ? 'info'
     : 'neutral';
   return <span className={`status-pill ${tone}`}>{text}</span>;
 }
@@ -2815,12 +4230,20 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   const [activeSection, setActiveSection] = useState('company');
   const [clientTypes, setClientTypes] = useState([]);
   const [newType, setNewType] = useState('');
+  const [editingClientType, setEditingClientType] = useState(null);
+  const [editingClientTypeValue, setEditingClientTypeValue] = useState('');
   const [equipmentCategories, setEquipmentCategories] = useState([]);
   const [equipmentStatuses, setEquipmentStatuses] = useState([]);
+  const [equipmentLocations, setEquipmentLocations] = useState([]);
   const [newEquipmentCategory, setNewEquipmentCategory] = useState('');
   const [newEquipmentStatus, setNewEquipmentStatus] = useState('');
+  const [newEquipmentLocation, setNewEquipmentLocation] = useState('');
   const [editingDictionaryItem, setEditingDictionaryItem] = useState(null);
   const [editingDictionaryValue, setEditingDictionaryValue] = useState('');
+  const [configDictionaries, setConfigDictionaries] = useState(getConfigDictionaries);
+  const [newConfigValues, setNewConfigValues] = useState({});
+  const [editingConfigItem, setEditingConfigItem] = useState(null);
+  const [editingConfigValue, setEditingConfigValue] = useState('');
   const [notice, setNotice] = useState('');
   const [preferences, setPreferences] = useState(() => getStoredJson('fixer-ui-preferences', {
     rememberWindowSize: true,
@@ -2832,6 +4255,9 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   }));
   const [companyProfile, setCompanyProfile] = useState(getCompanyProfile);
   const [companySaveNotice, setCompanySaveNotice] = useState('');
+  const [rentalNumbering, setRentalNumbering] = useState(getRentalNumberingSettings);
+  const [rentalNumberingNotice, setRentalNumberingNotice] = useState('');
+  const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
 
   useEffect(() => {
     if (!companySaveNotice) return undefined;
@@ -2853,6 +4279,23 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     });
   };
 
+  const saveDashboardPreferenceState = (next) => {
+    setDashboardSettings(saveDashboardSettings(next));
+  };
+
+  const toggleDashboardItem = (id) => {
+    const currentVisible = dashboardSettings.visible[id] !== false;
+    saveDashboardPreferenceState({ ...dashboardSettings, visible: { ...dashboardSettings.visible, [id]: !currentVisible } });
+  };
+
+  const updateDashboardItemSize = (id, size) => {
+    saveDashboardPreferenceState({ ...dashboardSettings, sizes: { ...dashboardSettings.sizes, [id]: size } });
+  };
+
+  const resetDashboardPreferences = () => {
+    setDashboardSettings(resetDashboardSettings());
+  };
+
   const updateCompanyProfile = (key, value) => {
     setCompanyProfile((current) => ({ ...current, [key]: value }));
     setCompanySaveNotice('');
@@ -2862,6 +4305,84 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     const saved = saveCompanyProfile(companyProfile);
     setCompanyProfile(saved);
     setCompanySaveNotice('Dane firmy zapisane. Będą używane na wydrukach PDF.');
+  };
+
+  const updateRentalNumbering = (key, value) => {
+    setRentalNumbering((current) => ({ ...current, [key]: value }));
+    setRentalNumberingNotice('');
+  };
+
+  const saveRentalNumbering = () => {
+    const saved = saveRentalNumberingSettings(rentalNumbering);
+    setRentalNumbering(saved);
+    setRentalNumberingNotice('Numeracja wypożyczeń zapisana.');
+  };
+
+  const resetRentalNumbering = () => {
+    const saved = saveRentalNumberingSettings(DEFAULT_RENTAL_NUMBERING);
+    setRentalNumbering(saved);
+    setRentalNumberingNotice('Przywrócono domyślną numerację wypożyczeń.');
+  };
+
+  const saveConfigDictionaryState = (next) => {
+    const saved = saveConfigDictionaries(next);
+    setConfigDictionaries(saved);
+  };
+
+  const addConfigDictionaryItem = (key) => {
+    const value = String(newConfigValues[key] ?? '').trim();
+    if (!value) return;
+    const list = normalizeConfigDictionary(key, configDictionaries[key]);
+    if (list.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
+      setNewConfigValues((current) => ({ ...current, [key]: '' }));
+      return;
+    }
+    saveConfigDictionaryState({ ...configDictionaries, [key]: [...list, { name: value, active: true }] });
+    setNewConfigValues((current) => ({ ...current, [key]: '' }));
+  };
+
+  const startEditConfigItem = (key, index, item) => {
+    setEditingConfigItem({ key, index });
+    setEditingConfigValue(item.name);
+  };
+
+  const saveConfigDictionaryItem = () => {
+    if (!editingConfigItem) return;
+    const value = editingConfigValue.trim();
+    if (!value) return;
+    const list = normalizeConfigDictionary(editingConfigItem.key, configDictionaries[editingConfigItem.key]);
+    const next = list.map((item, index) => index === editingConfigItem.index ? { ...item, name: value } : item);
+    saveConfigDictionaryState({ ...configDictionaries, [editingConfigItem.key]: next });
+    setEditingConfigItem(null);
+    setEditingConfigValue('');
+  };
+
+  const toggleConfigDictionaryItem = (key, index) => {
+    const list = normalizeConfigDictionary(key, configDictionaries[key]);
+    const activeCount = list.filter((item) => item.active).length;
+    const item = list[index];
+    if (item.active && activeCount <= 1) {
+      alert('Musi zostać przynajmniej jedna aktywna pozycja.');
+      return;
+    }
+    const next = list.map((row, rowIndex) => rowIndex === index ? { ...row, active: !row.active } : row);
+    saveConfigDictionaryState({ ...configDictionaries, [key]: next });
+  };
+
+  const removeConfigDictionaryItem = (key, index) => {
+    const list = normalizeConfigDictionary(key, configDictionaries[key]);
+    if (list.length <= 1) {
+      alert('Musi zostać przynajmniej jedna pozycja.');
+      return;
+    }
+    if (!confirm(`Usunąć pozycję: ${list[index].name}? Jeśli była używana w starych rekordach, lepiej ją dezaktywować.`)) return;
+    const next = list.filter((_, rowIndex) => rowIndex !== index);
+    saveConfigDictionaryState({ ...configDictionaries, [key]: next });
+  };
+
+  const resetConfigDictionary = (key) => {
+    if (!confirm('Przywrócić domyślną listę?')) return;
+    saveConfigDictionaryState({ ...configDictionaries, [key]: DEFAULT_CONFIG_DICTIONARIES[key].map((name) => ({ name, active: true })) });
   };
 
   const resetCompanySettings = () => {
@@ -2893,7 +4414,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   const removeCompanyLogo = () => updateCompanyProfile('logoDataUrl', '');
 
   const loadTypes = async () => {
-    const { data, error } = await fetchClientTypes();
+    const { data, error, local } = await fetchClientTypes();
     if (error) {
       setNotice('Nie udało się pobrać rodzajów klientów. Program używa lokalnej listy zapasowej.');
       console.error('Client types load error:', error.message);
@@ -2902,20 +4423,24 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     }
     setClientTypes(data);
     saveClientTypes(data.map((item) => item.name));
-    setNotice('');
+    setNotice(local ? 'Ustawienia działają w trybie lokalnym.' : '');
   };
 
   useEffect(() => { loadTypes(); }, []);
 
   const loadEquipmentSettings = async () => {
-    const [categoriesResult, statusesResult] = await Promise.all([
+    const [categoriesResult, statusesResult, locationsResult] = await Promise.all([
       fetchEquipmentDictionary('category'),
-      fetchEquipmentDictionary('status')
+      fetchEquipmentDictionary('status'),
+      fetchEquipmentDictionary('location')
     ]);
     setEquipmentCategories(categoriesResult.data);
     setEquipmentStatuses(statusesResult.data);
-    if (categoriesResult.error || statusesResult.error) {
+    setEquipmentLocations(locationsResult.data);
+    if (categoriesResult.error || statusesResult.error || locationsResult.error) {
       setNotice('Nie udało się pobrać ustawień sprzętu z bazy. Program używa lokalnej listy zapasowej.');
+    } else if (categoriesResult.local || statusesResult.local || locationsResult.local) {
+      setNotice('Ustawienia działają w trybie lokalnym.');
     }
   };
 
@@ -2932,57 +4457,61 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   };
 
   const addEquipmentDictionaryItem = async (type) => {
-    const value = (type === 'category' ? newEquipmentCategory : newEquipmentStatus).trim();
+    const value = (type === 'category' ? newEquipmentCategory : type === 'location' ? newEquipmentLocation : newEquipmentStatus).trim();
     if (!value) return;
-    const list = type === 'category' ? equipmentCategories : equipmentStatuses;
+    const list = type === 'category' ? equipmentCategories : type === 'location' ? equipmentLocations : equipmentStatuses;
     if (list.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
-      type === 'category' ? setNewEquipmentCategory('') : setNewEquipmentStatus('');
+      type === 'category' ? setNewEquipmentCategory('') : type === 'location' ? setNewEquipmentLocation('') : setNewEquipmentStatus('');
       return;
     }
-    const { error } = await addEquipmentDictionaryRecord(type, value, list.length + 1);
+    const { error, local } = await addEquipmentDictionaryRecord(type, value, list.length + 1);
     if (error) {
-      alert(error.message);
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
       return;
     }
-    type === 'category' ? setNewEquipmentCategory('') : setNewEquipmentStatus('');
+    type === 'category' ? setNewEquipmentCategory('') : type === 'location' ? setNewEquipmentLocation('') : setNewEquipmentStatus('');
     await loadEquipmentSettings();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const saveEquipmentDictionaryItem = async () => {
     const value = editingDictionaryValue.trim();
     if (!editingDictionaryItem || !value) return;
-    const { error } = await updateEquipmentDictionaryRecord(editingDictionaryItem.id, editingDictionaryItem.type, value);
+    const { error, local } = await updateEquipmentDictionaryRecord(editingDictionaryItem.id, editingDictionaryItem.type, value);
     if (error) {
-      alert(error.message);
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
       return;
     }
     cancelEditDictionaryItem();
     await loadEquipmentSettings();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const removeEquipmentDictionaryItem = async (type, item) => {
-    const list = type === 'category' ? equipmentCategories : equipmentStatuses;
+    const list = type === 'category' ? equipmentCategories : type === 'location' ? equipmentLocations : equipmentStatuses;
     if (list.length <= 1) {
       alert('Musi zostać przynajmniej jedna pozycja.');
       return;
     }
-    if (!confirm(`Usunąć pozycję: ${item.name}?`)) return;
-    const { error } = await deleteEquipmentDictionaryRecord(item.id, type);
+    if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`)) return;
+    const { error, local } = await deleteEquipmentDictionaryRecord(item.id, type);
     if (error) {
-      alert(error.message);
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
       return;
     }
     await loadEquipmentSettings();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const resetEquipmentDictionary = async (type) => {
     if (!confirm('Przywrócić domyślną listę?')) return;
-    const { error } = await resetEquipmentDictionaryRecords(type);
+    const { error, local } = await resetEquipmentDictionaryRecords(type);
     if (error) {
-      alert(error.message);
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
       return;
     }
     await loadEquipmentSettings();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const renderEquipmentDictionaryCard = (type, title, description, items, value, setValue) => (
@@ -3016,6 +4545,38 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     </div>
   );
 
+  const renderConfigDictionaryCard = (key, title, description) => {
+    const items = normalizeConfigDictionary(key, configDictionaries[key]);
+    return <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+      <div className="settings-card-header compact-card-header dictionary-card-header">
+        <div>
+          <h3>{title}</h3>
+          <p className="muted">{description}</p>
+        </div>
+        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={() => resetConfigDictionary(key)}>Domyślne</AppButton>
+      </div>
+      <div className="dictionary-add-compact">
+        <AppInput value={newConfigValues[key] ?? ''} onChange={(event) => setNewConfigValues((current) => ({ ...current, [key]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addConfigDictionaryItem(key); }} placeholder="Nowa pozycja" />
+        <button type="button" className="dictionary-icon-button add" onClick={() => addConfigDictionaryItem(key)} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
+      </div>
+      <div className="dictionary-list dictionary-list-compact">
+        {items.map((item, index) => {
+          const isEditing = editingConfigItem?.key === key && editingConfigItem?.index === index;
+          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''} ${item.active ? '' : 'inactive'}`} key={`${key}-${item.name}-${index}`}>
+            {isEditing
+              ? <input value={editingConfigValue} onChange={(event) => setEditingConfigValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveConfigDictionaryItem(); if (event.key === 'Escape') { setEditingConfigItem(null); setEditingConfigValue(''); } }} autoFocus />
+              : <button type="button" className="dictionary-name-button" onClick={() => startEditConfigItem(key, index, item)} title="Edytuj">{item.name}</button>}
+            <div className="dictionary-row-actions dictionary-icon-actions">
+              {isEditing
+                ? <><button type="button" className="dictionary-icon-button save" onClick={saveConfigDictionaryItem} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={() => { setEditingConfigItem(null); setEditingConfigValue(''); }} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
+                : <><button type="button" className={`dictionary-icon-button ${item.active ? 'save' : 'cancel'}`} onClick={() => toggleConfigDictionaryItem(key, index)} aria-label={item.active ? 'Aktywna' : 'Nieaktywna'} title={item.active ? 'Aktywna' : 'Nieaktywna'}>{item.active ? '✓' : '○'}</button><button type="button" className="dictionary-icon-button edit" onClick={() => startEditConfigItem(key, index, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeConfigDictionaryItem(key, index)} aria-label="Usuń" title="Usuń">−</button></>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>;
+  };
+
 
   const addType = async () => {
     const value = newType.trim();
@@ -3024,13 +4585,37 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       setNewType('');
       return;
     }
-    const { error } = await addClientTypeRecord(value, clientTypes.length + 1);
+    const { error, local } = await addClientTypeRecord(value, clientTypes.length + 1);
     if (error) {
-      alert(error.message);
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
       return;
     }
     setNewType('');
     await loadTypes();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
+  };
+
+  const startEditClientType = (type) => {
+    setEditingClientType(type.id);
+    setEditingClientTypeValue(type.name);
+  };
+
+  const cancelEditClientType = () => {
+    setEditingClientType(null);
+    setEditingClientTypeValue('');
+  };
+
+  const saveClientType = async () => {
+    const value = editingClientTypeValue.trim();
+    if (!editingClientType || !value) return;
+    const { error, local } = await updateClientTypeRecord(editingClientType, value);
+    if (error) {
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
+      return;
+    }
+    cancelEditClientType();
+    await loadTypes();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const removeType = async (type) => {
@@ -3038,26 +4623,61 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       alert('Musi zostać przynajmniej jeden rodzaj klienta.');
       return;
     }
-    const { error } = await deleteClientTypeRecord(type.id);
+    if (!confirm(`Usunąć pozycję: ${type.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`)) return;
+    const { error, local } = await deleteClientTypeRecord(type.id);
     if (error) {
-      alert(error.message);
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
       return;
     }
     await loadTypes();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const resetTypes = async () => {
-    const { error } = await resetClientTypesRecords(DEFAULT_CLIENT_TYPES);
+    if (!confirm('Przywrócić domyślną listę?')) return;
+    const { error, local } = await resetClientTypesRecords(DEFAULT_CLIENT_TYPES);
     if (error) {
-      alert(error.message);
+      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
       return;
     }
     await loadTypes();
+    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
+
+  const renderClientTypesDictionaryCard = () => (
+    <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+      <div className="settings-card-header compact-card-header dictionary-card-header">
+        <div>
+          <h3>Statusy klientów</h3>
+          <p className="muted">Lista wartości widoczna w kartotece klienta.</p>
+        </div>
+        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={resetTypes}>Domyślne</AppButton>
+      </div>
+      {notice && <div className="notice">{notice}</div>}
+      <div className="dictionary-add-compact">
+        <AppInput value={newType} onChange={(event) => setNewType(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addType(); }} placeholder="np. Partner, VIP, Problemowy" />
+        <button type="button" className="dictionary-icon-button add" onClick={addType} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
+      </div>
+      <div className="dictionary-list dictionary-list-compact">
+        {clientTypes.map((type) => {
+          const isEditing = editingClientType === type.id;
+          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={type.id}>
+            {isEditing
+              ? <input value={editingClientTypeValue} onChange={(event) => setEditingClientTypeValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveClientType(); if (event.key === 'Escape') cancelEditClientType(); }} autoFocus />
+              : <button type="button" className="dictionary-name-button" onClick={() => startEditClientType(type)} title="Edytuj">{type.name}</button>}
+            <div className="dictionary-row-actions dictionary-icon-actions">
+              {isEditing
+                ? <><button type="button" className="dictionary-icon-button save" onClick={saveClientType} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditClientType} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
+                : <><button type="button" className="dictionary-icon-button edit" onClick={() => startEditClientType(type)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeType(type)} aria-label="Usuń" title="Usuń">−</button></>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>
+  );
 
   const placeholderGroups = {
     service: ['Statusy serwisu', 'Priorytety', 'Typy zgłoszeń', 'Numeracja zleceń'],
-    rentals: ['Statusy wypożyczeń', 'Statusy zwrotów', 'Domyślne okresy', 'Numeracja wypożyczeń'],
     documents: ['Szablony PDF', 'Numeracja dokumentów', 'Nagłówki dokumentów', 'Stopki dokumentów']
   };
 
@@ -3079,56 +4699,90 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>
 
-      {activeSection === 'company' && <div className="settings-company-pane company-one-page">
-        <div className="settings-card company-settings-card company-settings-card-full compact-admin-card company-unified-card">
-          <div className="settings-card-header compact-card-header">
+      {activeSection === 'company' && <div className="firm-settings-pane">
+        <div className="firm-settings-header">
+          <div>
             <h3>Dane firmy</h3>
-            <div className="settings-action-row">
-              <AppButton variant="secondary" onClick={resetCompanySettings}>Wyczyść</AppButton>
-              <AppButton variant="primary" onClick={saveCompanySettings}><Save size={17} />Zapisz</AppButton>
-            </div>
+            <p className="muted">Dane używane na dokumentach, wydrukach i w systemie.</p>
           </div>
-          {companySaveNotice && <div className="notice">{companySaveNotice}</div>}
+          <div className="settings-action-row">
+            <AppButton variant="secondary" size="sm" onClick={resetCompanySettings}>Wyczyść</AppButton>
+            <AppButton variant="primary" size="sm" onClick={saveCompanySettings}><Save size={15} />Zapisz</AppButton>
+          </div>
+        </div>
+        {companySaveNotice && <div className="notice firm-save-notice">{companySaveNotice}</div>}
 
-          <div className="company-unified-layout">
-            <div className="company-settings-form company-settings-form-wide company-settings-form-compact">
-              <label className="company-field company-name">Nazwa firmy<input value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
-              <label className="company-field company-legal-name">Nazwa do dokumentów<input value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
-              <label className="company-field">NIP<input value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
-              <label className="company-field">REGON<input value={companyProfile.regon} onChange={(event) => updateCompanyProfile('regon', event.target.value)} /></label>
-              <label className="company-field company-street">Ulica<input value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
-              <label className="company-field">Nr budynku<input value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
-              <label className="company-field">Nr lokalu<input value={companyProfile.apartmentNumber} onChange={(event) => updateCompanyProfile('apartmentNumber', event.target.value)} /></label>
-              <label className="company-field">Kod pocztowy<input value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} placeholder="00-000" /></label>
-              <label className="company-field company-city">Miasto<input value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
-              <label className="company-field">Kraj<input value={companyProfile.country} onChange={(event) => updateCompanyProfile('country', event.target.value)} /></label>
-              <label className="company-field">Telefon<input value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
-              <label className="company-field">Email<input value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} /></label>
-              <label className="company-field">Strona WWW<input value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} placeholder="https://..." /></label>
-              <label className="company-field company-bank">Numer konta<input value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
-              <label className="company-field company-footer">Stopka dokumentów<textarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę." /></label>
-            </div>
+        <div className="firm-settings-grid">
+          <div className="firm-settings-main">
+            <section className="settings-card compact-admin-card firm-card">
+              <h3>Podstawowe</h3>
+              <div className="firm-form-grid firm-basic-grid">
+                <label className="firm-field firm-field-wide">Nazwa firmy<AppInput value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
+                <label className="firm-field firm-field-wide">Nazwa na dokumentach<AppInput value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
+                <label className="firm-field firm-field-nip">NIP<AppInput value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
+                <label className="firm-field firm-field-regon">REGON<AppInput value={companyProfile.regon} onChange={(event) => updateCompanyProfile('regon', event.target.value)} /></label>
+              </div>
+            </section>
 
-            <aside className="company-side-panel">
-              <div className="company-logo-box">
-                <h3>Logo</h3>
-                <div className="company-logo-preview company-logo-preview-compact">
-                  {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Brak logo</span>}
+            <section className="settings-card compact-admin-card firm-card">
+              <h3>Adres</h3>
+              <div className="firm-form-grid firm-address-grid">
+                <label className="firm-field firm-field-street">Ulica<AppInput value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
+                <label className="firm-field firm-field-building">Nr budynku<AppInput value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
+                <label className="firm-field firm-field-apartment">Nr lokalu<AppInput value={companyProfile.apartmentNumber} onChange={(event) => updateCompanyProfile('apartmentNumber', event.target.value)} /></label>
+                <label className="firm-field firm-field-postal">Kod pocztowy<AppInput value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} placeholder="00-000" /></label>
+                <label className="firm-field firm-field-city">Miasto<AppInput value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
+                <label className="firm-field firm-field-country">Kraj<AppInput value={companyProfile.country} onChange={(event) => updateCompanyProfile('country', event.target.value)} /></label>
+              </div>
+            </section>
+
+            <section className="settings-card compact-admin-card firm-card">
+              <h3>Kontakt</h3>
+              <div className="firm-form-grid firm-contact-grid">
+                <label className="firm-field firm-field-phone">Telefon<AppInput value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
+                <label className="firm-field firm-field-email">Email<AppInput value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} /></label>
+                <label className="firm-field firm-field-www">Strona WWW<AppInput value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} placeholder="https://..." /></label>
+              </div>
+            </section>
+          </div>
+
+          <div className="firm-settings-side">
+            <section className="settings-card compact-admin-card firm-card firm-logo-card">
+              <h3>Logo</h3>
+              <div className="firm-logo-layout">
+                <div className="firm-logo-preview">
+                  {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Logo</span>}
                 </div>
-                <div className="settings-action-row logo-actions-row">
-                  <label className="app-button app-button-secondary file-button"><FolderOpen size={17} />Wczytaj<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
-                  <AppButton variant="secondary" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń</AppButton>
+                <div className="firm-logo-actions">
+                  <label className="app-button app-button-secondary app-button-sm file-button"><FolderOpen size={14} />Wczytaj logo<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
+                  <AppButton variant="secondary" size="sm" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń logo</AppButton>
                 </div>
               </div>
+            </section>
 
-              <div className="company-preview-box company-preview-box-compact">
-                <strong>{companyProfile.name || companyProfile.legalName || 'Nazwa firmy'}</strong>
+            <section className="settings-card compact-admin-card firm-card">
+              <h3>Rozliczenia</h3>
+              <div className="firm-form-grid firm-billing-grid">
+                <label className="firm-field firm-field-account">Numer konta<AppInput value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
+                <label className="firm-field firm-field-currency">Waluta<AppInput value={rentalNumbering.currency || 'zł'} disabled /></label>
+              </div>
+            </section>
+
+            <section className="settings-card compact-admin-card firm-card">
+              <h3>Dokumenty</h3>
+              <label className="firm-field firm-field-footer">Stopka dokumentów<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę." /></label>
+            </section>
+
+            <section className="settings-card compact-admin-card firm-card firm-preview-card">
+              <h3>Podgląd</h3>
+              <div className="firm-preview">
+                <strong>{companyProfile.legalName || companyProfile.name || 'Nazwa na dokumentach'}</strong>
                 <span>{formatCompanyAddress(companyProfile) || 'Adres firmy'}</span>
                 <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON'}</span>
                 <span>{formatCompanyContact(companyProfile) || 'Telefon / email / WWW'}</span>
-                {companyProfile.bankAccount && <span>Konto: {companyProfile.bankAccount}</span>}
+                <span>{companyProfile.bankAccount ? `Konto: ${companyProfile.bankAccount}` : 'Numer konta'}</span>
               </div>
-            </aside>
+            </section>
           </div>
         </div>
       </div>}
@@ -3145,6 +4799,29 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
               const Icon = option.icon;
               return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={18} /><span>{option.label}</span></button>;
             })}
+          </div>
+        </div>
+        <div className="settings-card wide-settings-card dashboard-settings-card">
+          <div className="settings-card-header compact-card-header">
+            <div>
+              <p className="eyebrow">Dashboard</p>
+              <h3>Widoczność i szerokość kafli</h3>
+              <p className="muted">Ustawienia są zapisywane lokalnie w przeglądarce i odtwarzane po odświeżeniu strony.</p>
+            </div>
+            <AppButton variant="secondary" size="sm" onClick={resetDashboardPreferences}><RotateCcw size={14} />Resetuj</AppButton>
+          </div>
+          <div className="dashboard-settings-list">
+            {DASHBOARD_ITEMS.map((item) => <div className="dashboard-settings-row" key={item.id}>
+              <label className="settings-check dashboard-settings-toggle">
+                <input type="checkbox" checked={dashboardSettings.visible[item.id] !== false} onChange={() => toggleDashboardItem(item.id)} />
+                {item.label}
+              </label>
+              <AppSelect value={dashboardSettings.sizes[item.id] ?? item.defaultSize} onChange={(event) => updateDashboardItemSize(item.id, event.target.value)}>
+                <option value="small">Mały</option>
+                <option value="medium">Średni</option>
+                <option value="large">Duży</option>
+              </AppSelect>
+            </div>)}
           </div>
         </div>
         <div className="settings-card">
@@ -3168,15 +4845,20 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       </div>}
 
       {activeSection === 'clients' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
-        <div className="settings-card wide-settings-card settings-editor-card compact-admin-card">
-          <div className="settings-card-header compact-card-header"><h3>Rodzaje klientów</h3><AppButton variant="secondary" onClick={resetTypes}>Przywróć domyślne</AppButton></div>
-          {notice && <div className="notice">{notice}</div>}
-          <div className="inline-form compact-settings-form"><AppInput value={newType} onChange={(event) => setNewType(event.target.value)} placeholder="np. Partner, VIP, Problemowy" /><AppButton variant="primary" onClick={addType}>Dodaj</AppButton></div>
-          <div className="tag-list">{clientTypes.map((type) => <span className="config-tag" key={type.id}>{type.name}<button onClick={() => removeType(type)}>×</button></span>)}</div>
-        </div>
-        <div className="settings-card compact-admin-card">
-          <h3>Typy klientów</h3>
-          <div className="tag-list"><span className="config-tag">Firma</span><span className="config-tag">Osoba prywatna</span></div>
+        {renderClientTypesDictionaryCard()}
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div>
+              <h3>Typy klientów</h3>
+              <p className="muted">Wartości systemowe używane w kartotece klienta.</p>
+            </div>
+          </div>
+          <div className="dictionary-list dictionary-list-compact readonly-dictionary-list">
+            {['Firma', 'Osoba prywatna'].map((type) => <div className="dictionary-row dictionary-row-compact readonly" key={type}>
+              <span className="dictionary-name-button readonly">{type}</span>
+              <span className="dictionary-readonly-badge">Systemowe</span>
+            </div>)}
+          </div>
         </div>
         <div className="settings-card compact-admin-card">
           <h3>Widok klientów</h3>
@@ -3187,6 +4869,8 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       {activeSection === 'equipment' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid equipment-settings-grid">
         {renderEquipmentDictionaryCard('category', 'Kategorie sprzętu', 'Lista kategorii widoczna w karcie sprzętu.', equipmentCategories, newEquipmentCategory, setNewEquipmentCategory)}
         {renderEquipmentDictionaryCard('status', 'Statusy sprzętu', 'Lista statusów widoczna w karcie sprzętu i tabelach.', equipmentStatuses, newEquipmentStatus, setNewEquipmentStatus)}
+        {renderEquipmentDictionaryCard('location', 'Lokalizacje sprzętu', 'Lista lokalizacji widoczna w karcie sprzętu i wyborze sprzętu.', equipmentLocations, newEquipmentLocation, setNewEquipmentLocation)}
+        {renderConfigDictionaryCard('equipmentConditions', 'Stany techniczne sprzętu', 'Lista stanów technicznych widoczna w karcie sprzętu.')}
         <div className="settings-card compact-admin-card settings-dictionary-card">
           <h3>Widok sprzętu</h3>
           <p className="muted">Układ tabeli, ukrywanie kolumn i menu kontekstowe działają globalnie tak jak w module Klienci.</p>
@@ -3194,8 +4878,42 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>}
 
+      {activeSection === 'rentals' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid rental-settings-grid">
+        <div className="settings-card wide-settings-card rental-numbering-card compact-admin-card">
+          <div>
+            <p className="eyebrow">Numeracja</p>
+            <h3>Numeracja wypożyczeń</h3>
+            <p className="muted">Nowe dokumenty użyją wybranego prefiksu i formatu. Istniejące wypożyczenia pozostają bez zmian.</p>
+          </div>
+          <div className="rental-numbering-form">
+            <label className="settings-field">Prefiks<AppInput value={rentalNumbering.prefix} onChange={(event) => updateRentalNumbering('prefix', event.target.value)} placeholder="WYP" /></label>
+            <label className="settings-field">Format<AppSelect value={rentalNumbering.format} onChange={(event) => updateRentalNumbering('format', event.target.value)}>{RENTAL_NUMBER_FORMATS.map((format) => <option key={format.value} value={format.value}>{format.label}</option>)}</AppSelect></label>
+            <label className="settings-field">Termin zwrotu<AppInput type="number" min="0" value={rentalNumbering.defaultReturnDays} onChange={(event) => updateRentalNumbering('defaultReturnDays', event.target.value)} /></label>
+            <label className="settings-field">Waluta<AppInput value={rentalNumbering.currency} onChange={(event) => updateRentalNumbering('currency', event.target.value)} /></label>
+            <div className="rental-number-preview"><span>Przykład</span><strong>{formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00'))}</strong></div>
+            <div className="settings-action-row rental-numbering-actions">
+              <AppButton variant="secondary" onClick={resetRentalNumbering}>Domyślne</AppButton>
+              <AppButton variant="primary" onClick={saveRentalNumbering}><Save size={16} />Zapisz</AppButton>
+            </div>
+          </div>
+          {rentalNumberingNotice && <div className="notice">{rentalNumberingNotice}</div>}
+        </div>
+        {renderConfigDictionaryCard('rentalTypes', 'Typy wypożyczeń', 'Lista typów widoczna w kartotece wypożyczenia.')}
+        {renderConfigDictionaryCard('returnConditions', 'Stany zwrotu', 'Lista stanów widoczna w oknie rejestracji zwrotu.')}
+        <div className="settings-card compact-admin-card">
+          <h3>Statusy i zwroty</h3>
+          <p className="muted">Statusy wypożyczeń i zwrotów korzystają z istniejących wartości systemowych.</p>
+          <div className="tag-list"><span className="config-tag">Aktywne</span><span className="config-tag">Częściowo zwrócone</span><span className="config-tag">Zwrócone</span></div>
+        </div>
+        <div className="settings-card compact-admin-card">
+          <h3>Domyślne okresy</h3>
+          <p className="muted">Konfiguracja domyślnych okresów będzie dostępna bez wpływu na obecną obsługę zwrotów.</p>
+          <AppButton variant="secondary" disabled>W przygotowaniu</AppButton>
+        </div>
+      </div>}
+
       {placeholderGroups[activeSection] && <div className="settings-pane-grid settings-pane-grid-wide">
-        {placeholderGroups[activeSection].map((item) => <div className="settings-card" key={item}>
+        {placeholderGroups[activeSection].map((item) => <div className="settings-card compact-admin-card settings-dictionary-card" key={item}>
           <p className="eyebrow">{activeSectionData.label}</p>
           <h3>{item}</h3>
           <p className="muted">Sekcja przygotowana pod konfigurację. Nie zmienia jeszcze działania istniejących modułów.</p>

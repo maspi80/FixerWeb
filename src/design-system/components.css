@@ -249,6 +249,14 @@
   box-shadow: 0 0 0 3px var(--fw-color-primary-soft);
 }
 
+.app-input:disabled,
+.ds-form-field input:disabled,
+.ds-form-field select:disabled,
+.ds-form-field textarea:disabled {
+  opacity: .62;
+  cursor: not-allowed;
+}
+
 .ds-form-field.has-error input,
 .ds-form-field.has-error select,
 .ds-form-field.has-error textarea {
@@ -279,6 +287,12 @@
   padding: 5px 9px;
   font-size: 12px;
   font-weight: 800;
+  background: var(--fw-color-section-soft);
+  color: var(--fw-color-text-soft);
+}
+
+.app-badge-info,
+.ds-status-pill.tone-info {
   background: var(--fw-color-primary-soft);
   color: #bfdbfe;
 }
@@ -302,8 +316,13 @@
 }
 
 .app-badge-neutral{
-  background: var(--fw-color-primary-soft);
-  color: #bfdbfe;
+  background: var(--fw-color-section-soft);
+  color: var(--fw-color-text-soft);
+}
+
+.app-shell.theme-light .app-badge-info,
+.app-shell.theme-light .ds-status-pill.tone-info {
+  color: #1e40af;
 }
 
 .app-table{
@@ -362,6 +381,7 @@
   color: var(--fw-color-text-soft);
 }
 
+.app-shell.theme-light .app-input,
 .app-shell.theme-light .ds-form-field input,
 .app-shell.theme-light .ds-form-field select,
 .app-shell.theme-light .ds-form-field textarea {

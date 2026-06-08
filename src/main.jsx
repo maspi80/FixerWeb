@@ -1,9 +1,10 @@
 import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import {
-  Bell, CalendarDays, CheckCircle2, ChevronRight, LayoutDashboard, LockKeyhole,
+  ArrowDown, ArrowUp, Bell, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, LockKeyhole,
   LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, RotateCcw, Save, Trash2, X, Sun, Moon
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -51,10 +52,73 @@ import {
   resetEquipmentDictionaryRecords,
   updateEquipmentDictionaryRecord
 } from './services/equipmentDictionariesService';
+import {
+  addServiceDictionaryRecord,
+  DEFAULT_SERVICE_DEVICE_CATEGORIES,
+  DEFAULT_SERVICE_EXTERNAL_SERVICES,
+  DEFAULT_SERVICE_INTAKE_CONDITIONS,
+  DEFAULT_SERVICE_PROGRESS_TEMPLATES,
+  deleteServiceDictionaryRecord,
+  fetchServiceDictionary,
+  reorderServiceDictionaryRecords,
+  resetServiceDictionaryRecords,
+  SERVICE_DICTIONARY_TYPES,
+  updateServiceDictionaryRecord
+} from './services/serviceDictionariesService';
+import {
+  addOrganizerCategory,
+  DEFAULT_ORGANIZER_CATEGORIES,
+  deleteOrganizerCategory,
+  deleteOrganizerTask,
+  fetchOrganizerCategories,
+  fetchOrganizerTasks,
+  createOrganizerTask,
+  ORGANIZER_TASK_PRIORITIES,
+  ORGANIZER_TASK_STATUSES,
+  ORGANIZER_TERMINAL_STATUSES,
+  resetOrganizerCategories,
+  updateOrganizerCategory,
+  updateOrganizerTask
+} from './services/organizerService';
+import { createCalendarManualEvent, deleteCalendarManualEvent, fetchCalendarManualEvents, updateCalendarManualEvent } from './services/calendarService';
+import { searchGlobalRecords } from './services/globalSearchService';
+import { BACKUP_FULL_ERROR_MESSAGE, BACKUP_INCLUDED_TABLES, createBackupArchive, createCsvExport, parseBackupText, restoreBackupArchive } from './services/backupService';
 
+const ORGANIZER_TABLE_KEY = 'organizer-tasks-table';
+const ORGANIZER_HISTORY_TABLE_KEY = 'organizer-history-table';
+const NOTIFICATIONS_READ_STORAGE_KEY = 'fixer-notifications-read';
+const NOTIFICATIONS_BACKUP_FAILURE_KEY = 'fixer-last-backup-failure';
+const NOTIFICATIONS_RETENTION_DAYS = 30;
 
 function onlyDigits(value) {
   return String(value ?? '').replace(/\D/g, '');
+}
+
+function humanizeError(error, context) {
+  if (!error) return 'Wystąpił nieznany błąd.';
+  const msg = String(error.message ?? '');
+  const code = String(error.code ?? '');
+  const isFk = code === '23503' || msg.includes('foreign key') || msg.includes('violates foreign key');
+  const isUnique = code === '23505' || msg.includes('duplicate key') || msg.includes('unique constraint');
+  const isNotNull = code === '23502' || msg.includes('null value in column') || msg.includes('not-null');
+  const isSqlTech = msg.includes('relation ') || msg.includes('column ') || msg.includes('PGRST') || msg.includes('syntax error') || msg.includes('operator') || msg.includes('constraint') || msg.includes('violates') || msg.includes('table "');
+
+  if (isFk) {
+    if (context === 'equipment') return 'Nie można usunąć sprzętu, ponieważ posiada on historię wypożyczeń, serwisów lub innych dokumentów.';
+    if (context === 'client') return 'Nie można usunąć klienta, ponieważ posiada on wypożyczenia, zlecenia serwisowe lub inne powiązane dokumenty.';
+    return 'Nie można usunąć tego elementu, ponieważ jest on powiązany z innymi dokumentami w systemie.';
+  }
+  if (isUnique) return 'Element o podanej nazwie lub numerze już istnieje w systemie.';
+  if (isNotNull) return 'Brakuje wymaganych danych. Sprawdź czy wszystkie pola są wypełnione.';
+  if (isSqlTech) return 'Wystąpił błąd bazy danych. Sprawdź konfigurację systemu lub skontaktuj się z administratorem.';
+  return msg || 'Nie udało się wykonać operacji.';
+}
+
+function isForeignKeyError(error) {
+  if (!error) return false;
+  const msg = String(error.message ?? '');
+  const code = String(error.code ?? '');
+  return code === '23503' || msg.includes('foreign key') || msg.includes('violates foreign key');
 }
 
 function isValidEmail(value) {
@@ -416,6 +480,7 @@ function escapeHtml(value) {
 function exportTableToPdf(title, storageKey, columns, rows) {
   const exportData = getExportTableData(storageKey, columns, rows);
   const company = getCompanyProfile();
+  const documentSettings = getDocumentSettings();
   const date = new Date().toLocaleDateString('pl-PL');
   const header = exportData.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
   const body = exportData.rows.map((row) => `<tr>${exportData.columns.map((column) => `<td>${escapeHtml(formatExportCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
@@ -424,15 +489,20 @@ function exportTableToPdf(title, storageKey, columns, rows) {
   const companyTax = formatCompanyTaxData(company);
   const companyContact = formatCompanyContact(company);
   const companyFooter = company.documentFooter?.trim();
-  const logo = company.logoDataUrl ? `<img src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>` : `<div class="print-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`;
+  const showLogo = company.showLogoOnDocuments !== false;
+  const logo = showLogo
+    ? company.logoDataUrl ? `<img src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>` : `<div class="print-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`
+    : '';
+  const headerText = String(company.documentHeader ?? '').trim();
+  const templateName = documentSettings.templates?.tableExport ?? 'Standardowy';
   const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
   if (!printWindow) {
     alert('Przeglądarka zablokowała okno eksportu PDF. Zezwól na wyskakujące okna dla FIXER WEB.');
     return;
   }
   printWindow.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}@media print{button{display:none}}
-  </style></head><body><div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddress ? `<p class="company-line">${escapeHtml(companyAddress)}</p>` : ''}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}<script>window.onload=function(){window.focus();window.print();};</script></body></html>`);
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-kicker{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}.document-custom-header{border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;color:#334155;font-size:11px}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo:empty{display:none}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}@media print{button{display:none}}
+  </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddress ? `<p class="company-line">${escapeHtml(companyAddress)}</p>` : ''}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}<script>window.onload=function(){window.focus();window.print();};</script></body></html>`);
   printWindow.document.close();
 }
 
@@ -449,6 +519,110 @@ const modules = [
 
 const demoUser = { name: 'Mariusz', role: 'Administrator', email: 'admin@fixer.local' };
 
+function NotificationsBell({ onNavigate }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [readMap, setReadMap] = useState(readNotificationReadMap);
+  const [loadError, setLoadError] = useState('');
+  const panelRef = useRef(null);
+
+  const loadNotifications = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const rows = await buildOperatorNotifications();
+      setNotifications(rows);
+      setReadMap(readNotificationReadMap());
+    } catch (error) {
+      console.warn('Notifications failed', error);
+      setLoadError('Nie udało się odświeżyć powiadomień.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+    const onFocus = () => loadNotifications();
+    const onStorage = (event) => {
+      if ([NOTIFICATIONS_READ_STORAGE_KEY, NOTIFICATIONS_BACKUP_FAILURE_KEY, COMPANY_PROFILE_STORAGE_KEY].includes(event.key)) loadNotifications();
+    };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event) => {
+      if (!panelRef.current?.contains(event.target)) setOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  const unreadCount = notifications.filter((item) => !readMap[item.id]).length;
+  const visibleNotifications = notifications.slice(0, 18);
+  const markRead = (id) => {
+    const next = saveNotificationReadMap({ ...readNotificationReadMap(), [id]: new Date().toISOString() });
+    setReadMap(next);
+  };
+  const markAllRead = () => {
+    const timestamp = new Date().toISOString();
+    const next = { ...readNotificationReadMap() };
+    notifications.forEach((item) => { next[item.id] = timestamp; });
+    setReadMap(saveNotificationReadMap(next));
+  };
+  const openNotification = (notification) => {
+    markRead(notification.id);
+    setOpen(false);
+    if (notification.targetModule) onNavigate(notification.targetModule, notification.intent ?? null);
+  };
+
+  return <div className="notifications-shell" ref={panelRef}>
+    <button className={`icon-button notifications-trigger ${open ? 'active' : ''}`} type="button" onClick={() => { setOpen((value) => !value); loadNotifications(); }} aria-label={`Powiadomienia${unreadCount ? `: ${unreadCount} nieprzeczytane` : ''}`} aria-expanded={open}>
+      <Bell size={18} />
+      {unreadCount > 0 && <span className="notifications-count">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+    </button>
+    {open && <div className="notifications-dropdown">
+      <div className="notifications-header">
+        <div>
+          <strong>Powiadomienia</strong>
+          <span>{unreadCount ? `${unreadCount} nieprzeczytane` : 'Brak nowych powiadomień'}</span>
+        </div>
+        <button type="button" onClick={markAllRead} disabled={!unreadCount}>Oznacz wszystkie jako przeczytane</button>
+      </div>
+      {loading && <div className="notifications-state">Odświeżam...</div>}
+      {loadError && <div className="notifications-state error">{loadError}</div>}
+      {!loading && !loadError && !visibleNotifications.length && <div className="notifications-empty">Brak nowych powiadomień</div>}
+      {!loading && !loadError && Boolean(visibleNotifications.length) && <div className="notifications-list">
+        {visibleNotifications.map((notification) => {
+          const unread = !readMap[notification.id];
+          return <button key={notification.id} type="button" className={`notification-item ${unread ? 'unread' : 'read'} tone-${notification.tone}`} onClick={() => openNotification(notification)}>
+            <span className="notification-marker">!</span>
+            <span className="notification-copy">
+              <strong>{notification.title}</strong>
+              <em>{notification.primary}</em>
+              <small>{[notification.secondary, notification.detail].filter(Boolean).join(' · ')}</small>
+            </span>
+          </button>;
+        })}
+      </div>}
+    </div>}
+  </div>;
+}
+
 function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
   const [session, setSession] = useState(null);
@@ -458,6 +632,17 @@ function App() {
   const [themeCompact, setThemeCompact] = useState(() => localStorage.getItem('fixer-density') === 'compact');
   const [colorTheme, setColorTheme] = useState(() => localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark');
   const [moduleIntent, setModuleIntent] = useState(null);
+  const [statusColors, setStatusColors] = useState(getStatusColors);
+
+  useEffect(() => { injectStatusColorStyles(statusColors); }, [statusColors]);
+
+  const handleStatusColorChange = (statusName, hex) => {
+    const key = statusName.toLowerCase().trim();
+    const next = { ...statusColors };
+    if (hex) { next[key] = hex; } else { delete next[key]; }
+    saveStatusColors(next);
+    setStatusColors(next);
+  };
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -478,6 +663,13 @@ function App() {
     localStorage.removeItem('fixer-demo-auth');
     setDemoAuth(false);
     setSession(null);
+  };
+
+  const openGlobalSearchResult = (result) => {
+    if (!result?.module) return;
+    setModuleIntent(result.intent ?? null);
+    setActiveModule(result.module);
+    setGlobalSearch('');
   };
 
   if (!isAuthenticated) {
@@ -503,6 +695,7 @@ function App() {
           module={currentModule}
           globalSearch={globalSearch}
           setGlobalSearch={setGlobalSearch}
+          onOpenGlobalResult={openGlobalSearchResult}
           onToggleDensity={() => {
             const next = !themeCompact;
             setThemeCompact(next);
@@ -514,16 +707,20 @@ function App() {
             setColorTheme(nextTheme);
             localStorage.setItem('fixer-color-theme', nextTheme);
           }}
+          onNavigate={(moduleId, intent = null) => {
+            setModuleIntent(intent);
+            setActiveModule(moduleId);
+          }}
         />
         <section className="page-content">
           {activeModule === 'dashboard' && <Dashboard onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
-          {activeModule === 'clients' && <ClientsModule />}
+          {activeModule === 'clients' && <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'service' && <ServiceModule />}
-          {activeModule === 'calendar' && <CalendarModule />}
-          {activeModule === 'organizer' && <OrganizerModule />}
-          {activeModule === 'settings' && <SettingsModule colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} />}
+          {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
+          {activeModule === 'organizer' && <OrganizerModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} />}
         </section>
       </main>
     </div>
@@ -585,15 +782,131 @@ function Sidebar({ activeModule, setActiveModule, collapsed, onToggle, onLogout,
   );
 }
 
-function Topbar({ module, globalSearch, setGlobalSearch, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme }) {
+function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme, onNavigate }) {
+  const [searchGroups, setSearchGroups] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const searchRef = useRef(null);
+  const trimmedSearch = globalSearch.trim();
+  const flatResults = searchGroups.flatMap((group) => group.results.map((result) => ({ ...result, groupLabel: group.label })));
+
+  useEffect(() => {
+    if (trimmedSearch.length < 2) {
+      setSearchGroups([]);
+      setSearchLoading(false);
+      setActiveIndex(0);
+      return undefined;
+    }
+
+    let active = true;
+    setSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      searchGlobalRecords(trimmedSearch).then((groups) => {
+        if (!active) return;
+        setSearchGroups(groups.filter((group) => group.results.length));
+        setActiveIndex(0);
+      }).catch((error) => {
+        if (!active) return;
+        console.warn('Global search failed', error);
+        setSearchGroups([]);
+      }).finally(() => {
+        if (active) setSearchLoading(false);
+      });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [trimmedSearch]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (searchRef.current?.contains(event.target)) return;
+      setSearchOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  const openResult = (result = flatResults[activeIndex]) => {
+    if (!result) return;
+    onOpenGlobalResult?.(result);
+    setSearchOpen(false);
+    setSearchGroups([]);
+    setActiveIndex(0);
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setSearchOpen(false);
+      setActiveIndex(0);
+      return;
+    }
+    if (trimmedSearch.length < 2) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSearchOpen(true);
+      if (!flatResults.length) return;
+      setActiveIndex((current) => Math.min(flatResults.length - 1, current + 1));
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSearchOpen(true);
+      if (!flatResults.length) return;
+      setActiveIndex((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (event.key === 'Enter') {
+      if (flatResults.length) {
+        event.preventDefault();
+        openResult();
+      }
+    }
+  };
+
+  let renderedIndex = 0;
+
   return (
     <header className="topbar">
       <div><p className="eyebrow">Panel systemu</p><h1>{module.label}</h1></div>
       <div className="topbar-actions">
-        <div className="global-search"><Search size={18} /><input value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} placeholder="Szukaj globalnie: klient, sprzęt, serwis, wypożyczenie..." /></div>
+        <div className="global-search-wrapper" ref={searchRef}>
+          <div className={`global-search ${searchOpen && trimmedSearch.length >= 2 ? 'active' : ''}`}>
+            <Search size={18} />
+            <input
+              value={globalSearch}
+              onChange={(event) => { setGlobalSearch(event.target.value); setSearchOpen(true); }}
+              onFocus={() => setSearchOpen(true)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Szukaj globalnie: klient, sprzęt, serwis, wypożyczenie..."
+              aria-label="Szukaj globalnie"
+              aria-expanded={searchOpen && trimmedSearch.length >= 2}
+            />
+          </div>
+          {searchOpen && trimmedSearch.length >= 2 && <div className="global-search-dropdown">
+            {searchLoading && <div className="global-search-state">Szukam...</div>}
+            {!searchLoading && !flatResults.length && <div className="global-search-state">Brak wyników</div>}
+            {!searchLoading && searchGroups.map((group) => <div className="global-search-group" key={group.module}>
+              <div className="global-search-group-title">{group.label}</div>
+              {group.results.map((result) => {
+                const currentIndex = renderedIndex++;
+                const active = currentIndex === activeIndex;
+                return <button key={result.id} type="button" className={`global-search-result ${active ? 'active' : ''}`} onMouseEnter={() => setActiveIndex(currentIndex)} onMouseDown={(event) => { event.preventDefault(); openResult(result); }}>
+                  <span className="global-search-type">{result.recordType}</span>
+                  <span className="global-search-title">{result.title}</span>
+                  {result.status && <StatusPill value={result.status} />}
+                  <small>{result.description || '—'}</small>
+                </button>;
+              })}
+            </div>)}
+          </div>}
+        </div>
         <button className="icon-button" onClick={onToggleDensity}><SlidersHorizontal size={18} /><span>{themeCompact ? 'Kompakt' : 'Wygodny'}</span></button>
         <button className="icon-button" onClick={() => onChangeColorTheme(colorTheme === 'light' ? 'dark' : 'light')} title="Zmień motyw">{colorTheme === 'light' ? <Moon size={18} /> : <Sun size={18} />}<span>{colorTheme === 'light' ? 'Ciemny' : 'Jasny'}</span></button>
-        <button className="icon-button"><Bell size={18} /></button>
+        <NotificationsBell onNavigate={onNavigate} />
       </div>
     </header>
   );
@@ -664,41 +977,41 @@ function getDashboardActivityKind(operation) {
   return { label: 'Operacja', className: 'neutral' };
 }
 
-const DASHBOARD_SETTINGS_STORAGE_KEY = 'fixer-dashboard-layout-v1';
-const DASHBOARD_SIZE_ORDER = ['small', 'medium', 'large'];
+const DASHBOARD_SETTINGS_STORAGE_KEY = 'fixer-dashboard-layout-v2';
 const DASHBOARD_ITEMS = [
-  { id: 'activeRentals', label: 'Aktywne wypożyczenia', area: 'attention', defaultSize: 'medium' },
-  { id: 'overdueRentals', label: 'Po terminie', area: 'attention', defaultSize: 'medium' },
-  { id: 'todayReturns', label: 'Zwroty dzisiaj', area: 'attention', defaultSize: 'medium' },
-  { id: 'readyToIssue', label: 'Gotowe do wydania', area: 'attention', defaultSize: 'medium' },
-  { id: 'serviceEquipment', label: 'Sprzęt w serwisie', area: 'attention', defaultSize: 'medium' },
-  { id: 'damagedEquipment', label: 'Sprzęt uszkodzony', area: 'attention', defaultSize: 'medium' },
-  { id: 'allEquipment', label: 'Wszystkie urządzenia', area: 'stock', defaultSize: 'medium' },
-  { id: 'availableEquipment', label: 'Dostępne', area: 'stock', defaultSize: 'medium' },
-  { id: 'rentedEquipment', label: 'Wypożyczone', area: 'stock', defaultSize: 'medium' },
-  { id: 'serviceStock', label: 'W serwisie', area: 'stock', defaultSize: 'medium' },
-  { id: 'withdrawnEquipment', label: 'Wycofane', area: 'stock', defaultSize: 'medium' },
-  { id: 'upcomingReturns', label: 'Nadchodzące zwroty', area: 'panel', defaultSize: 'large' },
-  { id: 'recentActivity', label: 'Ostatnia aktywność', area: 'panel', defaultSize: 'large' },
-  { id: 'clientsPanel', label: 'Klienci', area: 'panel', defaultSize: 'medium' }
+  { id: 'overdueRentals', label: 'Zwroty po terminie', area: 'card', tone: 'rental-danger' },
+  { id: 'todayReturns', label: 'Zwroty dzisiaj', area: 'card', tone: 'rental-today' },
+  { id: 'overdueServices', label: 'Zaległe serwisy', area: 'card', tone: 'service-danger' },
+  { id: 'todayServices', label: 'Serwisy na dziś', area: 'card', tone: 'service-today' },
+  { id: 'overdueTasksCard', label: 'Zaległe zadania', area: 'card', tone: 'task-danger' },
+  { id: 'todayTasksCard', label: 'Zadania na dziś', area: 'card', tone: 'task-today' },
+  { id: 'attentionPanel', label: 'Wymaga uwagi dziś', area: 'panel', tone: 'attention' },
+  { id: 'todayTasks', label: 'Zadania do zrobienia', area: 'panel', tone: 'tasks' },
+  { id: 'activeServices', label: 'Aktywne serwisy', area: 'panel', tone: 'service' },
+  { id: 'activeRentalsPanel', label: 'Aktywne wypożyczenia', area: 'panel', tone: 'rental' }
 ];
 
 function getDefaultDashboardSettings() {
   return {
     visible: Object.fromEntries(DASHBOARD_ITEMS.map((item) => [item.id, true])),
-    sizes: Object.fromEntries(DASHBOARD_ITEMS.map((item) => [item.id, item.defaultSize]))
+    cardOrder: DASHBOARD_ITEMS.filter((item) => item.area === 'card').map((item) => item.id),
+    panelOrder: DASHBOARD_ITEMS.filter((item) => item.area === 'panel').map((item) => item.id)
   };
 }
 
 function normalizeDashboardSettings(settings) {
   const defaults = getDefaultDashboardSettings();
   const visible = { ...defaults.visible, ...(settings?.visible ?? {}) };
-  const sizes = { ...defaults.sizes, ...(settings?.sizes ?? {}) };
-  DASHBOARD_ITEMS.forEach((item) => {
-    if (!DASHBOARD_SIZE_ORDER.includes(sizes[item.id])) sizes[item.id] = item.defaultSize;
-    visible[item.id] = visible[item.id] !== false;
-  });
-  return { visible, sizes };
+  DASHBOARD_ITEMS.forEach((item) => { visible[item.id] = visible[item.id] !== false; });
+  const normalizeOrder = (saved, def) => {
+    const safe = Array.isArray(saved) ? saved : [];
+    return [...safe.filter((id) => def.includes(id)), ...def.filter((id) => !safe.includes(id))];
+  };
+  return {
+    visible,
+    cardOrder: normalizeOrder(settings?.cardOrder, defaults.cardOrder),
+    panelOrder: normalizeOrder(settings?.panelOrder, defaults.panelOrder)
+  };
 }
 
 function getDashboardSettings() {
@@ -721,16 +1034,10 @@ function resetDashboardSettings() {
   return defaults;
 }
 
-function getNextDashboardSize(size, direction) {
-  const index = DASHBOARD_SIZE_ORDER.indexOf(size);
-  const safeIndex = index === -1 ? 1 : index;
-  return DASHBOARD_SIZE_ORDER[Math.min(DASHBOARD_SIZE_ORDER.length - 1, Math.max(0, safeIndex + direction))];
-}
-
 function Dashboard({ onNavigate }) {
   const [rentalsRows, setRentalsRows] = useState([]);
-  const [equipmentRows, setEquipmentRows] = useState([]);
-  const [clientRows, setClientRows] = useState([]);
+  const [serviceRows, setServiceRows] = useState([]);
+  const [organizerRows, setOrganizerRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
@@ -740,16 +1047,12 @@ function Dashboard({ onNavigate }) {
     let active = true;
     const loadDashboard = async () => {
       setLoading(true);
-      const [rentalsResult, equipmentResult, clientsResult] = await Promise.all([fetchRentals(), fetchEquipment(), fetchClients()]);
+      const [rentalsResult, serviceResult, organizerResult] = await Promise.all([fetchRentals(), fetchServiceOrders(), fetchOrganizerTasks()]);
       if (!active) return;
       setRentalsRows(rentalsResult.data ?? []);
-      setEquipmentRows(equipmentResult.error ? demoEquipment : (equipmentResult.data ?? []));
-      setClientRows(clientsResult.data ?? []);
-      const errors = [
-        rentalsResult.error ? 'wypożyczenia' : '',
-        equipmentResult.error ? 'sprzęt' : '',
-        clientsResult.error ? 'klienci' : ''
-      ].filter(Boolean);
+      setServiceRows(serviceResult.data ?? []);
+      setOrganizerRows(organizerResult.data ?? []);
+      const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : ''].filter(Boolean);
       setNotice(errors.length ? `Nie udało się pobrać danych: ${errors.join(', ')}. Część sekcji może być niepełna.` : '');
       setLoading(false);
     };
@@ -770,152 +1073,174 @@ function Dashboard({ onNavigate }) {
   };
 
   const isDashboardItemVisible = (id) => dashboardSettings.visible[id] !== false;
-  const getDashboardItemSize = (id) => dashboardSettings.sizes[id] ?? DASHBOARD_ITEMS.find((item) => item.id === id)?.defaultSize ?? 'medium';
 
-  const setDashboardItemSize = (id, size) => {
-    updateDashboardSettings((current) => ({ ...current, sizes: { ...current.sizes, [id]: size } }));
+  const toggleItemVisible = (id) => {
+    updateDashboardSettings((current) => ({ ...current, visible: { ...current.visible, [id]: !(current.visible[id] !== false) } }));
   };
 
-  const startDashboardResize = (event, id) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const startX = event.clientX;
-    const startSize = getDashboardItemSize(id);
-    const startIndex = Math.max(0, DASHBOARD_SIZE_ORDER.indexOf(startSize));
-
-    const handlePointerMove = (moveEvent) => {
-      const steps = Math.round((moveEvent.clientX - startX) / 90);
-      const nextIndex = Math.min(DASHBOARD_SIZE_ORDER.length - 1, Math.max(0, startIndex + steps));
-      setDashboardItemSize(id, DASHBOARD_SIZE_ORDER[nextIndex]);
-    };
-
-    const handlePointerUp = () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
+  const moveCard = (index, direction) => {
+    const order = [...dashboardSettings.cardOrder];
+    const next = index + direction;
+    if (next < 0 || next >= order.length) return;
+    [order[index], order[next]] = [order[next], order[index]];
+    updateDashboardSettings((current) => ({ ...current, cardOrder: order }));
   };
 
-  const renderResizeHandle = (id) => editMode
-    ? <span className="dashboard-resize-handle" role="presentation" onPointerDown={(event) => startDashboardResize(event, id)} title="Przeciągnij, żeby zmienić szerokość"><GripVertical size={14} /></span>
-    : null;
-
-  const resetDashboardLayout = () => {
-    setDashboardSettings(resetDashboardSettings());
+  const movePanel = (index, direction) => {
+    const order = [...dashboardSettings.panelOrder];
+    const next = index + direction;
+    if (next < 0 || next >= order.length) return;
+    [order[index], order[next]] = [order[next], order[index]];
+    updateDashboardSettings((current) => ({ ...current, panelOrder: order }));
   };
 
+  const resetDashboardLayout = () => setDashboardSettings(resetDashboardSettings());
+
+  const today = getLocalIsoDate();
   const activeRentals = rentalsRows.filter((rental) => rental.status !== 'returned');
   const overdueRentals = activeRentals.filter((rental) => getRentalOverdueDays(rental) > 0);
-  const todayReturns = activeRentals.filter((rental) => String(rental.planned_return_date ?? '').slice(0, 10) === getLocalIsoDate());
-  const serviceEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['serwis']));
-  const damagedEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['uszk']));
-  const availableEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['dostęp', 'dostep']));
-  const rentedEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['wypo']));
-  const withdrawnEquipment = equipmentRows.filter((item) => equipmentStatusMatches(item, ['wycof']));
-  const upcomingReturns = [...activeRentals]
-    .filter((rental) => rental.planned_return_date)
-    .sort((left, right) => Date.parse(String(left.planned_return_date).slice(0, 10)) - Date.parse(String(right.planned_return_date).slice(0, 10)))
-    .slice(0, 10);
-  const activityRows = buildDashboardActivity(rentalsRows, equipmentRows, clientRows);
-  const currentMonth = getLocalIsoDate().slice(0, 7);
-  const clientStats = {
-    all: clientRows.length,
-    companies: clientRows.filter((client) => client.type === 'Firma').length,
-    privatePeople: clientRows.filter((client) => client.type === 'Osoba prywatna').length,
-    newThisMonth: clientRows.filter((client) => String(client.created_at ?? '').slice(0, 7) === currentMonth).length
+  const todayReturns = activeRentals.filter((rental) => String(rental.planned_return_date ?? '').slice(0, 10) === today);
+  const activeServices = serviceRows.filter((order) => order.status !== 'Wydane');
+  const overdueServices = activeServices.filter((order) => order.planned_date && String(order.planned_date).slice(0, 10) < today);
+  const todayServices = activeServices.filter((order) => String(order.planned_date ?? '').slice(0, 10) === today);
+  const activeTasks = organizerRows.filter((task) => !task.archived);
+  const overdueTasks = activeTasks.filter((task) => task.due_date && String(task.due_date).slice(0, 10) < today);
+  const todayOrReminderTasks = activeTasks.filter((task) => {
+    const dueToday = String(task.due_date ?? '').slice(0, 10) === today;
+    const reminderToday = task.reminder_at && String(task.reminder_at).slice(0, 10) === today;
+    return dueToday || reminderToday;
+  });
+
+  const cardDataMap = {
+    overdueRentals: { value: overdueRentals.length, isActive: overdueRentals.length > 0, target: ['rentals', { type: 'rentals', filter: 'overdue' }] },
+    todayReturns: { value: todayReturns.length, isActive: todayReturns.length > 0, target: ['rentals', { type: 'rentals', filter: 'today' }] },
+    overdueServices: { value: overdueServices.length, isActive: overdueServices.length > 0, target: ['service', null] },
+    todayServices: { value: todayServices.length, isActive: todayServices.length > 0, target: ['service', null] },
+    overdueTasksCard: { value: overdueTasks.length, isActive: overdueTasks.length > 0, target: ['organizer', null] },
+    todayTasksCard: { value: todayOrReminderTasks.length, isActive: todayOrReminderTasks.length > 0, target: ['organizer', null] }
   };
 
-  const attentionCards = [
-    { id: 'activeRentals', label: 'Aktywne wypożyczenia', value: activeRentals.length, target: ['rentals', { type: 'rentals', filter: 'active' }] },
-    { id: 'overdueRentals', label: 'Po terminie', value: overdueRentals.length, tone: 'warning', target: ['rentals', { type: 'rentals', filter: 'overdue' }] },
-    { id: 'todayReturns', label: 'Zwroty dzisiaj', value: todayReturns.length, target: ['rentals', { type: 'rentals', filter: 'today' }] },
-    { id: 'readyToIssue', label: 'Gotowe do wydania', value: availableEquipment.length, tone: 'success', target: ['equipment', { type: 'equipment', status: 'Dostępny' }] },
-    { id: 'serviceEquipment', label: 'Sprzęt w serwisie', value: serviceEquipment.length, target: ['equipment', { type: 'equipment', status: 'Serwis' }] },
-    { id: 'damagedEquipment', label: 'Sprzęt uszkodzony', value: damagedEquipment.length, tone: 'danger', target: ['equipment', { type: 'equipment', status: 'Uszkodzony' }] }
-  ];
-  const stockCards = [
-    { id: 'allEquipment', label: 'Wszystkie urządzenia', value: equipmentRows.length, target: ['equipment', { type: 'equipment', status: 'all' }] },
-    { id: 'availableEquipment', label: 'Dostępne', value: availableEquipment.length, target: ['equipment', { type: 'equipment', status: 'Dostępny' }] },
-    { id: 'rentedEquipment', label: 'Wypożyczone', value: rentedEquipment.length, target: ['equipment', { type: 'equipment', status: 'Wypożyczony' }] },
-    { id: 'serviceStock', label: 'W serwisie', value: serviceEquipment.length, target: ['equipment', { type: 'equipment', status: 'Serwis' }] },
-    { id: 'withdrawnEquipment', label: 'Wycofane', value: withdrawnEquipment.length, target: ['equipment', { type: 'equipment', status: 'Wycofany' }] }
-  ];
-  const visibleAttentionCards = attentionCards.filter((card) => isDashboardItemVisible(card.id));
-  const visibleStockCards = stockCards.filter((card) => isDashboardItemVisible(card.id));
+  const orderedCards = (dashboardSettings.cardOrder ?? []).map((id) => {
+    const meta = DASHBOARD_ITEMS.find((item) => item.id === id);
+    const data = cardDataMap[id];
+    return meta && data ? { ...meta, ...data } : null;
+  }).filter(Boolean);
+
+  const orderedPanels = (dashboardSettings.panelOrder ?? []).map((id) => DASHBOARD_ITEMS.find((item) => item.id === id)).filter(Boolean);
+
+  const attentionItems = [
+    ...overdueRentals.slice(0, 4).map((r) => ({ tone: 'rental-danger', text: `${r.rental_number} — ${r.clients?.name ?? '—'}`, sub: `Po terminie ${getRentalOverdueDays(r)} ${getRentalOverdueDays(r) === 1 ? 'dzień' : 'dni'}`, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
+    ...todayReturns.slice(0, 3).map((r) => ({ tone: 'rental-today', text: `${r.rental_number} — ${r.clients?.name ?? '—'}`, sub: 'Zwrot planowany na dziś', onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
+    ...overdueServices.slice(0, 3).map((s) => ({ tone: 'service-danger', text: `${s.service_number} — ${s.customer_device_name || '—'}`, sub: 'Serwis po terminie', onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
+    ...todayServices.slice(0, 2).map((s) => ({ tone: 'service-today', text: `${s.service_number} — ${s.customer_device_name || '—'}`, sub: 'Termin serwisu dziś', onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
+    ...overdueTasks.slice(0, 2).map((t) => ({ tone: 'task-danger', text: t.title, sub: 'Zadanie zaległe', onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
+    ...todayOrReminderTasks.slice(0, 2).map((t) => ({ tone: 'task-today', text: t.title, sub: 'Przypomnienie na dziś', onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) }))
+  ].slice(0, 14);
+
+  const panelTitles = { attentionPanel: 'Wymaga uwagi dziś', activeServices: 'Aktywne serwisy', activeRentalsPanel: 'Aktywne wypożyczenia', todayTasks: 'Zadania do zrobienia' };
+  const panelActions = { activeServices: () => onNavigate('service', null), activeRentalsPanel: () => onNavigate('rentals', { type: 'rentals', filter: 'active' }), todayTasks: () => onNavigate('organizer', null) };
+
+  const renderPanelContent = (id) => {
+    if (id === 'attentionPanel') return <div className="dashboard-table-scroll dashboard-attention-list">
+      {attentionItems.map((item, i) => <button key={i} type="button" className={`dashboard-attention-item dashboard-attention-item--${item.tone}`} onClick={item.onClick}>
+        <span className="dashboard-attention-item-text">{item.text}</span>
+        <span className="dashboard-attention-item-sub">{item.sub}</span>
+      </button>)}
+      {!attentionItems.length && <p className="muted dashboard-attention-empty">Brak pilnych spraw na dziś.</p>}
+    </div>;
+
+    if (id === 'activeServices') return <div className="dashboard-table-scroll"><table className="dashboard-mini-table">
+      <thead><tr><th>Numer</th><th>Sprzęt</th><th>Status</th><th>Termin</th></tr></thead>
+      <tbody>
+        {activeServices.slice(0, 10).map((order) => <tr key={order.id ?? order.service_number} onClick={() => onNavigate('service', { type: 'service', serviceOrderId: order.id })}>
+          <td>{order.service_number ?? '—'}</td><td>{order.customer_device_name || '—'}</td>
+          <td><StatusPill value={order.status} /></td>
+          <td className={order.planned_date && String(order.planned_date).slice(0, 10) < today ? 'dashboard-overdue-date' : ''}>{formatDashboardDate(order.planned_date)}</td>
+        </tr>)}
+        {!activeServices.length && <tr><td colSpan="4" className="dashboard-empty-cell">Brak aktywnych zleceń serwisowych.</td></tr>}
+      </tbody>
+    </table></div>;
+
+    if (id === 'activeRentalsPanel') return <div className="dashboard-table-scroll"><table className="dashboard-mini-table">
+      <thead><tr><th>Numer</th><th>Klient</th><th>Termin zwrotu</th><th>Status</th></tr></thead>
+      <tbody>
+        {activeRentals.slice(0, 10).map((rental) => {
+          const tone = getUpcomingReturnTone(rental);
+          return <tr key={rental.id ?? rental.rental_number} className={`return-${tone}`} onClick={() => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: rental.id })}>
+            <td>{rental.rental_number}</td><td>{rental.clients?.name ?? '—'}</td>
+            <td>{formatDashboardDate(rental.planned_return_date)}</td>
+            <td><StatusPill value={getRentalOverdueDays(rental) ? 'Po terminie' : formatRentalStatus(rental.status)} /></td>
+          </tr>;
+        })}
+        {!activeRentals.length && <tr><td colSpan="4" className="dashboard-empty-cell">Brak aktywnych wypożyczeń.</td></tr>}
+      </tbody>
+    </table></div>;
+
+    if (id === 'todayTasks') return <div className="dashboard-table-scroll"><table className="dashboard-mini-table">
+      <thead><tr><th>Tytuł</th><th>Priorytet</th><th>Termin</th></tr></thead>
+      <tbody>
+        {activeTasks.slice(0, 10).map((task) => <tr key={task.id ?? task.localId} onClick={() => onNavigate('organizer', { type: 'organizer', taskId: task.id ?? task.localId })}>
+          <td>{task.title}</td><td>{task.priority}</td>
+          <td className={task.due_date && String(task.due_date).slice(0, 10) < today ? 'dashboard-overdue-date' : ''}>{formatDashboardDate(task.due_date)}</td>
+        </tr>)}
+        {!activeTasks.length && <tr><td colSpan="3" className="dashboard-empty-cell">Brak aktywnych zadań.</td></tr>}
+      </tbody>
+    </table></div>;
+
+    return null;
+  };
 
   return <div className={`dashboard-operational ${editMode ? 'editing' : ''}`}>
     {notice && <div className="notice dashboard-notice">{notice}</div>}
-    <section className="dashboard-section">
-      <div className="dashboard-section-header"><div><p className="eyebrow">Priorytet</p><h2>Co wymaga uwagi</h2></div><div className="dashboard-edit-actions">{loading && <span className="dashboard-loading">Odświeżanie...</span>}<AppButton variant="secondary" size="sm" onClick={() => setEditMode((current) => !current)}>{editMode ? 'Gotowe' : 'Dostosuj'}</AppButton><AppButton variant="secondary" size="sm" onClick={resetDashboardLayout}><RotateCcw size={14} />Resetuj układ</AppButton></div></div>
-      <div className="dashboard-attention-grid">
-        {visibleAttentionCards.map((card) => <button key={card.id} type="button" className={`dashboard-metric-card dashboard-size-${getDashboardItemSize(card.id)} ${card.tone ?? ''} ${editMode ? 'editing' : ''}`} onClick={() => { if (!editMode) onNavigate(...card.target); }}>
-          <span>{card.label}</span>
-          <strong>{card.value}</strong>
-          {renderResizeHandle(card.id)}
-        </button>)}
-        {!visibleAttentionCards.length && <div className="dashboard-empty-layout">Wszystkie kafle tej sekcji są ukryte.</div>}
+
+    <div className="dashboard-metrics-bar">
+      <div className="dashboard-metrics-header">
+        <span className="dashboard-metrics-label">{editMode ? 'Tryb edycji — kliknij kafel aby ukryć/pokazać, strzałki aby przestawić' : 'Wskaźniki'}</span>
+        <div className="dashboard-edit-actions">
+          {loading && <span className="dashboard-loading">Odświeżanie...</span>}
+          <AppButton variant="secondary" size="sm" onClick={() => setEditMode((current) => !current)}>{editMode ? 'Gotowe' : 'Dostosuj'}</AppButton>
+          <AppButton variant="secondary" size="sm" onClick={resetDashboardLayout}><RotateCcw size={14} />Resetuj układ</AppButton>
+        </div>
       </div>
-    </section>
-
-    <section className="dashboard-section">
-      <div className="dashboard-section-header"><div><p className="eyebrow">Magazyn</p><h2>Stan magazynu</h2></div></div>
-      <div className="dashboard-stock-grid">
-        {visibleStockCards.map((card) => <button key={card.id} type="button" className={`dashboard-stock-card dashboard-size-${getDashboardItemSize(card.id)} ${editMode ? 'editing' : ''}`} onClick={() => { if (!editMode) onNavigate(...card.target); }}><span>{card.label}</span><strong>{card.value}</strong>{renderResizeHandle(card.id)}</button>)}
-        {!visibleStockCards.length && <div className="dashboard-empty-layout">Wszystkie kafle tej sekcji są ukryte.</div>}
+      <div className="dashboard-metrics-grid">
+        {orderedCards.map((card, index) => {
+          const isVisible = isDashboardItemVisible(card.id);
+          if (!isVisible && !editMode) return null;
+          return <button key={card.id} type="button"
+            className={`dashboard-metric-card dashboard-metric-card--${card.tone} ${card.isActive ? 'card-active' : ''} ${!isVisible ? 'card-hidden' : ''} ${editMode ? 'in-edit' : ''}`}
+            onClick={() => { if (editMode) { toggleItemVisible(card.id); return; } onNavigate(...card.target); }}
+          >
+            {editMode && <div className="dashboard-card-reorder">
+              <button type="button" className="dashboard-reorder-btn" onClick={(e) => { e.stopPropagation(); moveCard(index, -1); }} disabled={index === 0}>‹</button>
+              <button type="button" className="dashboard-reorder-btn" onClick={(e) => { e.stopPropagation(); moveCard(index, 1); }} disabled={index === orderedCards.length - 1}>›</button>
+            </div>}
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </button>;
+        })}
+        {orderedCards.every((c) => !isDashboardItemVisible(c.id)) && !editMode && <div className="dashboard-empty-layout dashboard-metrics-empty">Wszystkie wskaźniki są ukryte — użyj „Dostosuj".</div>}
       </div>
-    </section>
+    </div>
 
-    <div className="dashboard-main-grid">
-      {isDashboardItemVisible('upcomingReturns') && <section className={`panel dashboard-table-panel dashboard-size-${getDashboardItemSize('upcomingReturns')} ${editMode ? 'editing' : ''}`}>
-        <PanelHeader title="Nadchodzące zwroty" />
-        {renderResizeHandle('upcomingReturns')}
-        <div className="dashboard-table-scroll">
-          <table className="dashboard-mini-table">
-            <thead><tr><th>Termin</th><th>Klient</th><th>Pozycje</th><th>Status</th></tr></thead>
-            <tbody>{upcomingReturns.map((rental) => {
-              const tone = getUpcomingReturnTone(rental);
-              const itemsCount = getRentalBaseItems(rental).length;
-              return <tr key={rental.id ?? rental.rental_number} className={`return-${tone}`} onClick={() => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: rental.id })}>
-                <td>{formatDashboardDate(rental.planned_return_date)}</td>
-                <td>{rental.clients?.name ?? '—'}</td>
-                <td>{itemsCount}</td>
-                <td><StatusPill value={getRentalOverdueDays(rental) ? 'Po terminie' : formatRentalStatus(rental.status)} /></td>
-              </tr>;
-            })}
-            {!upcomingReturns.length && <tr><td colSpan="4">Brak zaplanowanych zwrotów.</td></tr>}</tbody>
-          </table>
-        </div>
-      </section>}
-
-      {isDashboardItemVisible('recentActivity') && <section className={`panel dashboard-table-panel dashboard-size-${getDashboardItemSize('recentActivity')} ${editMode ? 'editing' : ''}`}>
-        <PanelHeader title="Ostatnia aktywność" />
-        {renderResizeHandle('recentActivity')}
-        <div className="dashboard-table-scroll">
-          <table className="dashboard-mini-table">
-            <thead><tr><th>Data</th><th>Operacja</th><th>Obiekt</th></tr></thead>
-            <tbody>{activityRows.map((event, index) => {
-              const kind = getDashboardActivityKind(event.operation);
-              return <tr key={`${event.date}-${event.operation}-${index}`}>
-                <td>{formatDashboardDate(event.date)}</td><td><span className={`dashboard-activity-badge ${kind.className}`}>{kind.label}</span><span className="dashboard-activity-operation">{event.operation}</span></td><td>{event.object}</td>
-              </tr>;
-            })}
-            {!activityRows.length && <tr><td colSpan="3">Brak danych aktywności w dostępnych tabelach.</td></tr>}</tbody>
-          </table>
-        </div>
-      </section>}
-
-      {isDashboardItemVisible('clientsPanel') && <section className={`panel dashboard-clients-panel dashboard-size-${getDashboardItemSize('clientsPanel')} ${editMode ? 'editing' : ''}`}>
-        <PanelHeader title="Klienci" />
-        {renderResizeHandle('clientsPanel')}
-        <div className="dashboard-client-summary">
-          <div><span>Klienci</span><strong>{clientStats.all}</strong></div>
-          <div><span>Firmy</span><strong>{clientStats.companies}</strong></div>
-          <div><span>Osoby prywatne</span><strong>{clientStats.privatePeople}</strong></div>
-          <div><span>Nowi</span><strong>{clientStats.newThisMonth}</strong></div>
-        </div>
-      </section>}
+    <div className="dashboard-panels-grid">
+      {orderedPanels.map((panel, index) => {
+        const isVisible = isDashboardItemVisible(panel.id);
+        if (!isVisible && !editMode) return null;
+        const navigate = panelActions[panel.id];
+        return <section key={panel.id} className={`panel dashboard-table-panel dashboard-panel--${panel.tone} ${!isVisible ? 'panel-hidden' : ''}`}>
+          <div className="dashboard-panel-header-row">
+            <h2 className="dashboard-panel-title">{panelTitles[panel.id] ?? panel.label}</h2>
+            {editMode
+              ? <div className="dashboard-panel-controls">
+                  <button type="button" className="dashboard-panel-ctrl-btn" onClick={() => movePanel(index, -1)} disabled={index === 0}><ArrowUp size={11} /></button>
+                  <button type="button" className="dashboard-panel-ctrl-btn" onClick={() => toggleItemVisible(panel.id)}>{isVisible ? <X size={11} /> : <Plus size={11} />}</button>
+                  <button type="button" className="dashboard-panel-ctrl-btn" onClick={() => movePanel(index, 1)} disabled={index === orderedPanels.length - 1}><ArrowDown size={11} /></button>
+                </div>
+              : navigate && <button type="button" className="dashboard-panel-goto" onClick={navigate}>Przejdź<ChevronRight size={13} /></button>}
+          </div>
+          {isVisible && renderPanelContent(panel.id)}
+        </section>;
+      })}
     </div>
   </div>;
 }
@@ -931,7 +1256,7 @@ const CLIENTS_TABLE_COLUMNS = [
   { key: 'nip', label: 'NIP' }
 ];
 
-function ClientsModule() {
+function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -941,6 +1266,7 @@ function ClientsModule() {
   const [clientTypeFilter, setClientTypeFilter] = useState('all');
   const [clientKindFilter, setClientKindFilter] = useState('all');
   const [clientSearch, setClientSearch] = useState('');
+  const [pendingOpenClientId, setPendingOpenClientId] = useState(null);
 
   const clientKinds = useMemo(() => {
     const values = [...DEFAULT_CLIENT_TYPES, ...rows.map((client) => client.client_kind).filter(Boolean)];
@@ -980,6 +1306,19 @@ function ClientsModule() {
   };
 
   useEffect(() => { loadClients(); }, []);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'clients') return;
+    if (dashboardIntent.clientId) setPendingOpenClientId(dashboardIntent.clientId);
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent]);
+
+  useEffect(() => {
+    if (!pendingOpenClientId || !rows.length) return;
+    const client = rows.find((row) => String(row.id ?? row.localId) === String(pendingOpenClientId));
+    if (client) openClientEditor(client, 'data');
+    setPendingOpenClientId(null);
+  }, [pendingOpenClientId, rows]);
 
   const openClientEditor = (client = null, tab = 'data') => {
     setEditingClient(client);
@@ -1024,7 +1363,7 @@ function ClientsModule() {
     }
     const result = client.id ? await updateClientRecord(client.id, payload) : await createClientRecord(payload);
     if (result.error) {
-      alert(result.error.message);
+      alert(humanizeError(result.error, 'client'));
       return;
     }
     await loadClients();
@@ -1039,7 +1378,7 @@ function ClientsModule() {
     }
     const { error } = await deleteClientRecord(client.id);
     if (error) {
-      alert(error.message);
+      alert(humanizeError(error, 'client'));
       return;
     }
     await loadClients();
@@ -1059,7 +1398,7 @@ function ClientsModule() {
     for (const client of selected) {
       const { error } = await deleteClientRecord(client.id);
       if (error) {
-        alert(`Nie udało się usunąć klienta ${client.name}: ${error.message}`);
+        alert(`Nie udało się usunąć klienta ${client.name}: ${humanizeError(error, 'client')}`);
         return;
       }
     }
@@ -1070,8 +1409,6 @@ function ClientsModule() {
   return (
     <div className="module-page">
       <section className="panel hero-panel">
-        <p className="eyebrow">Moduł</p><h2>Baza klientów</h2>
-        <p className="muted">Kartoteka klientów, dane adresowe, dane firmowe, rodzaje klientów i historia współpracy.</p>
         <div className="module-actions">
           <AppButton variant="primary" className="module-action-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</AppButton>
           <AppButton variant="secondary" className="module-action-button" onClick={loadClients}>Odśwież</AppButton>
@@ -1113,72 +1450,10 @@ function ClientsModule() {
 }
 
 
-const CLIENT_MODAL_SIZE_KEY = 'fixer-client-modal-size';
-const CLIENT_MODAL_POSITION_KEY = 'fixer-client-modal-position';
-const DEFAULT_CLIENT_MODAL_SIZE = { width: 940, height: 560 };
-const MIN_CLIENT_MODAL_SIZE = { width: 720, height: 420 };
-const CLIENT_MODAL_SCREEN_MARGIN = 16;
-
-function clampClientModalSize(size) {
-  if (typeof window === 'undefined') return size;
-  const maxWidth = Math.max(MIN_CLIENT_MODAL_SIZE.width, window.innerWidth - 32);
-  const maxHeight = Math.max(MIN_CLIENT_MODAL_SIZE.height, window.innerHeight - 32);
-  return {
-    width: Math.min(Math.max(size.width, MIN_CLIENT_MODAL_SIZE.width), maxWidth),
-    height: Math.min(Math.max(size.height, MIN_CLIENT_MODAL_SIZE.height), maxHeight)
-  };
-}
-
-function getSavedClientModalSize() {
-  if (typeof window === 'undefined') return DEFAULT_CLIENT_MODAL_SIZE;
-  try {
-    const parsed = JSON.parse(localStorage.getItem(CLIENT_MODAL_SIZE_KEY) || 'null');
-    if (parsed && Number.isFinite(parsed.width) && Number.isFinite(parsed.height)) {
-      return clampClientModalSize(parsed);
-    }
-  } catch {}
-  return clampClientModalSize(DEFAULT_CLIENT_MODAL_SIZE);
-}
-
-function getCenteredClientModalPosition(size) {
-  if (typeof window === 'undefined') return { left: CLIENT_MODAL_SCREEN_MARGIN, top: CLIENT_MODAL_SCREEN_MARGIN };
-  return {
-    left: Math.max(CLIENT_MODAL_SCREEN_MARGIN, Math.round((window.innerWidth - size.width) / 2)),
-    top: Math.max(CLIENT_MODAL_SCREEN_MARGIN, Math.round((window.innerHeight - size.height) / 2))
-  };
-}
-
-function clampClientModalPosition(position, size) {
-  if (typeof window === 'undefined') return position;
-  const maxLeft = Math.max(CLIENT_MODAL_SCREEN_MARGIN, window.innerWidth - size.width - CLIENT_MODAL_SCREEN_MARGIN);
-  const maxTop = Math.max(CLIENT_MODAL_SCREEN_MARGIN, window.innerHeight - size.height - CLIENT_MODAL_SCREEN_MARGIN);
-  return {
-    left: Math.min(Math.max(position.left, CLIENT_MODAL_SCREEN_MARGIN), maxLeft),
-    top: Math.min(Math.max(position.top, CLIENT_MODAL_SCREEN_MARGIN), maxTop)
-  };
-}
-
-function getSavedClientModalPosition(size) {
-  if (typeof window === 'undefined') return getCenteredClientModalPosition(size);
-  try {
-    const parsed = JSON.parse(localStorage.getItem(CLIENT_MODAL_POSITION_KEY) || 'null');
-    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
-      return clampClientModalPosition(parsed, size);
-    }
-  } catch {}
-  return clampClientModalPosition(getCenteredClientModalPosition(size), size);
-}
-
 function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
   const [errors, setErrors] = useState({});
-  const [modalSize, setModalSize] = useState(getSavedClientModalSize);
-  const [modalPosition, setModalPosition] = useState(() => getSavedClientModalPosition(getSavedClientModalSize()));
-  const modalSizeRef = useRef(modalSize);
-  const modalPositionRef = useRef(modalPosition);
-  const resizeStateRef = useRef(null);
-  const dragStateRef = useRef(null);
   const [form, setForm] = useState(() => ({
     id: client?.id ?? null,
     localId: client?.localId ?? null,
@@ -1213,79 +1488,6 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
 
   useEffect(() => {
-    modalSizeRef.current = modalSize;
-    localStorage.setItem(CLIENT_MODAL_SIZE_KEY, JSON.stringify(modalSize));
-    setModalPosition((current) => clampClientModalPosition(current, modalSize));
-  }, [modalSize]);
-
-  useEffect(() => {
-    modalPositionRef.current = modalPosition;
-    localStorage.setItem(CLIENT_MODAL_POSITION_KEY, JSON.stringify(modalPosition));
-  }, [modalPosition]);
-
-  useEffect(() => {
-    const handleWindowResize = () => {
-      setModalSize((current) => clampClientModalSize(current));
-      setModalPosition((current) => clampClientModalPosition(current, modalSizeRef.current));
-    };
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, []);
-
-  useEffect(() => {
-    const handlePointerMove = (event) => {
-      const resizeState = resizeStateRef.current;
-      if (resizeState) {
-        event.preventDefault();
-        setModalSize(clampClientModalSize({
-          width: resizeState.startWidth + event.clientX - resizeState.startX,
-          height: resizeState.startHeight + event.clientY - resizeState.startY
-        }));
-        return;
-      }
-      const dragState = dragStateRef.current;
-      if (!dragState) return;
-      event.preventDefault();
-      setModalPosition(clampClientModalPosition({
-        left: dragState.startLeft + event.clientX - dragState.startX,
-        top: dragState.startTop + event.clientY - dragState.startY
-      }, modalSizeRef.current));
-    };
-    const handlePointerUp = () => {
-      resizeStateRef.current = null;
-      dragStateRef.current = null;
-    };
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, []);
-
-  const startResize = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    resizeStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startWidth: modalSizeRef.current.width,
-      startHeight: modalSizeRef.current.height
-    };
-  };
-
-  const startDrag = (event) => {
-    if (event.target.closest('button, input, select, textarea, a')) return;
-    event.preventDefault();
-    dragStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startLeft: modalPositionRef.current.left,
-      startTop: modalPositionRef.current.top
-    };
-  };
-
-  useEffect(() => {
     let active = true;
     fetchClientTypes().then(({ data }) => {
       if (!active) return;
@@ -1301,59 +1503,64 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   ];
 
   return (
-    <div className="modal-backdrop draggable-modal-backdrop">
-      <div className="modal-card client-modal resizable-client-modal draggable-client-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${modalPosition.left}px`, top: `${modalPosition.top}px` }}>
-        <div className="modal-header draggable-modal-header" onPointerDown={startDrag}><div><p className="eyebrow">Klient</p><h2>{client ? 'Kartoteka klienta' : 'Nowy klient'}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div>
-        <div className="tabs">
-          <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
-          <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
-          <button className={activeTab === 'notes' ? 'active' : ''} onClick={() => setActiveTab('notes')}>Notatki</button>
-        </div>
+    <ResizableModalFrame
+      className="client-modal"
+      storageKey="fixer-client-modal"
+      defaultSize={{ width: 940, height: 560 }}
+      minSize={{ width: 720, height: 420 }}
+      eyebrow="Klient"
+      title={client ? 'Kartoteka klienta' : 'Nowy klient'}
+      onClose={onClose}
+      footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveClient}><Save size={18} />Zapisz</AppButton></>}
+    >
+      <div className="record-tabs" role="tablist">
+        <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
+        <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
+        <button className={activeTab === 'notes' ? 'active' : ''} onClick={() => setActiveTab('notes')}>Notatki</button>
+      </div>
+      <div className="client-tab-panel">
         {activeTab === 'data' && <div className="client-form-compact">
           <div className="form-section flat-form-section">
             <div className="section-title">Dane podstawowe</div>
             <div className="form-grid client-basic-grid">
-              <label className="client-name-field">Nazwa klienta<input className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} />{errors.name && <small>{errors.name}</small>}</label>
-              <label className="client-type-field">Typ<select value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></select></label>
-              <label className="client-kind-field">Rodzaj klienta<select value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-              <label className="phone-field">Telefon<input className={fieldClass('phone')} value={form.phone} onChange={(event) => update('phone', event.target.value)} />{errors.phone && <small>{errors.phone}</small>}</label>
-              <label className="email-field">Email<input className={fieldClass('email')} value={form.email} onChange={(event) => update('email', event.target.value)} />{errors.email && <small>{errors.email}</small>}</label>
+              <FormField className="client-name-field" label="Nazwa klienta" error={errors.name}><AppInput className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} /></FormField>
+              <FormField className="client-type-field" label="Typ"><AppSelect value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></AppSelect></FormField>
+              <FormField className="client-kind-field" label="Rodzaj klienta"><AppSelect value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</AppSelect></FormField>
+              <FormField className="phone-field" label="Telefon" error={errors.phone}><AppInput className={fieldClass('phone')} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+              <FormField className="email-field" label="Email" error={errors.email}><AppInput className={fieldClass('email')} value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
             </div>
           </div>
           <div className="form-section flat-form-section">
             <div className="section-title">Adres</div>
             <div className="form-grid compact-address-grid">
-              <label className="street-field">Ulica<input value={form.street} onChange={(event) => update('street', event.target.value)} /></label>
-              <label className="building-field">Nr budynku<input value={form.building_number} onChange={(event) => update('building_number', event.target.value)} /></label>
-              <label className="apartment-field">Nr lokalu<input value={form.apartment_number} onChange={(event) => update('apartment_number', event.target.value)} /></label>
-              <label className="postal-field">Kod pocztowy<input className={fieldClass('postal_code')} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} />{errors.postal_code && <small>{errors.postal_code}</small>}</label>
-              <label className="city-field">Miasto<input value={form.city} onChange={(event) => update('city', event.target.value)} /></label>
-              <label className="country-field">Kraj<input value={form.country} onChange={(event) => update('country', event.target.value)} /></label>
+              <FormField className="street-field" label="Ulica"><AppInput value={form.street} onChange={(event) => update('street', event.target.value)} /></FormField>
+              <FormField className="building-field" label="Nr budynku"><AppInput value={form.building_number} onChange={(event) => update('building_number', event.target.value)} /></FormField>
+              <FormField className="apartment-field" label="Nr lokalu"><AppInput value={form.apartment_number} onChange={(event) => update('apartment_number', event.target.value)} /></FormField>
+              <FormField className="postal-field" label="Kod pocztowy" error={errors.postal_code}><AppInput className={fieldClass('postal_code')} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} /></FormField>
+              <FormField className="city-field" label="Miasto"><AppInput value={form.city} onChange={(event) => update('city', event.target.value)} /></FormField>
+              <FormField className="country-field" label="Kraj"><AppInput value={form.country} onChange={(event) => update('country', event.target.value)} /></FormField>
             </div>
           </div>
           {form.type === 'Firma' && <div className="form-section flat-form-section">
             <div className="section-title">Dane firmowe</div>
             <div className="form-grid company-data-grid">
-              <label>NIP<input className={fieldClass('nip')} value={form.nip} onChange={(event) => update('nip', event.target.value)} />{errors.nip && <small>{errors.nip}</small>}</label>
-              <label>REGON<input className={fieldClass('regon')} value={form.regon} onChange={(event) => update('regon', event.target.value)} />{errors.regon && <small>{errors.regon}</small>}</label>
+              <FormField label="NIP" error={errors.nip}><AppInput className={fieldClass('nip')} value={form.nip} onChange={(event) => update('nip', event.target.value)} /></FormField>
+              <FormField label="REGON" error={errors.regon}><AppInput className={fieldClass('regon')} value={form.regon} onChange={(event) => update('regon', event.target.value)} /></FormField>
             </div>
           </div>}
         </div>}
         {activeTab === 'notes' && <div className="notes-panel">
           <div className="form-section notes-section">
             <div className="section-title">Notatki</div>
-            <label className="notes-label" htmlFor="client-notes">Informacje wewnętrzne o kliencie</label>
-            <textarea id="client-notes" className="notes-textarea" value={form.notes} onChange={(event) => update('notes', event.target.value)} />
+            <FormField label="Informacje wewnętrzne o kliencie"><AppTextarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField>
           </div>
         </div>}
         {activeTab === 'history' && <div className="history-panel">
           <div className="summary-box"><strong>Informacje o kliencie</strong><span>{form.notes || 'Brak notatek.'}</span></div>
           {clientHistoryRows.length ? <DataTable storageKey={`client-history-${form.id ?? form.localId ?? 'new'}`} columns={[{ key: 'date', label: 'Data' },{ key: 'type', label: 'Typ' },{ key: 'description', label: 'Opis' },{ key: 'status', label: 'Status' }]} rows={clientHistoryRows} /> : <div className="notice">Brak powiązanych wypożyczeń lub zleceń serwisowych dla tego klienta.</div>}
         </div>}
-        <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveClient}><Save size={18} />Zapisz</AppButton></div>
-        <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
       </div>
-    </div>
+    </ResizableModalFrame>
   );
 }
 
@@ -1438,6 +1645,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [equipmentLocations, setEquipmentLocations] = useState(() => getLocalEquipmentDictionaryNames('location'));
   const [equipmentConditions, setEquipmentConditions] = useState(() => getActiveConfigDictionaryNames('equipmentConditions'));
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('all');
+  const [pendingOpenEquipmentId, setPendingOpenEquipmentId] = useState(null);
 
   const loadEquipmentDictionaries = async () => {
     const [categoriesResult, statusesResult, locationsResult] = await Promise.all([fetchEquipmentDictionary('category'),fetchEquipmentDictionary('status'),fetchEquipmentDictionary('location')]);
@@ -1455,7 +1663,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
       setNotice('Nie udało się pobrać sprzętu z bazy danych. Sprawdź konfigurację Supabase i schema.sql.');
     } else {
       setRows(data.length ? data : demoEquipment);
-      setNotice('Dane sprzętu pobrane z Supabase.');
+      setNotice('');
     }
     setLoading(false);
   };
@@ -1465,8 +1673,16 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
   useEffect(() => {
     if (dashboardIntent?.type !== 'equipment') return;
     setDashboardStatusFilter(dashboardIntent.status ?? 'all');
+    if (dashboardIntent.equipmentId) setPendingOpenEquipmentId(dashboardIntent.equipmentId);
     onConsumeDashboardIntent?.();
   }, [dashboardIntent, onConsumeDashboardIntent]);
+
+  useEffect(() => {
+    if (!pendingOpenEquipmentId || !rows.length) return;
+    const item = rows.find((row) => String(row.id ?? row.localId) === String(pendingOpenEquipmentId));
+    if (item) openEquipmentEditor(item, { force: true });
+    setPendingOpenEquipmentId(null);
+  }, [pendingOpenEquipmentId, rows]);
 
   const openEquipmentEditor = (item = null, options = {}) => {
     if (item && isEquipmentSetComponent(item) && !options.force) {
@@ -1590,7 +1806,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
       if (isSupabaseConfigured) {
         const result = item.id ? await updateEquipmentRecord(item.id, payload) : await createEquipmentRecord(payload);
         if (result.error) {
-          alert(result.error.message);
+          alert(humanizeError(result.error, 'equipment'));
           return;
         }
         await updateSetComponentStatuses(previousSetItems, nextSetItems, result.data ?? item);
@@ -1606,7 +1822,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
       }
       setEditorOpen(false);
     } catch (error) {
-      alert(error.message ?? 'Nie udało się zapisać zestawu sprzętu.');
+      alert(humanizeError(error, 'equipment'));
     }
   };
 
@@ -1619,12 +1835,22 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
     try {
       if (isEquipmentSet(item)) await updateSetComponentStatuses(item.set_items ?? [], [], item);
     } catch (error) {
-      alert(error.message ?? 'Nie udało się zwolnić składników zestawu.');
+      alert('Nie udało się zwolnić składników zestawu.');
       return;
     }
     if (item.id && isSupabaseConfigured) {
       const { error } = await deleteEquipmentRecord(item.id);
-      if (error) alert(error.message);
+      if (error) {
+        if (isForeignKeyError(error)) {
+          if (confirm('Nie można usunąć sprzętu, ponieważ posiada on historię wypożyczeń, serwisów lub innych dokumentów.\n\nCzy zmienić status na „Wycofany"?')) {
+            await updateEquipmentRecord(item.id, { ...item, status: 'Wycofany' });
+            await loadEquipment();
+          }
+        } else {
+          alert(humanizeError(error, 'equipment'));
+        }
+        return;
+      }
       await loadEquipment();
     } else {
       setRows((current) => current.filter((row) => row !== item));
@@ -1643,13 +1869,19 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
     if (isSupabaseConfigured) {
       for (const item of selected) {
         if (isEquipmentSet(item)) {
-          try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch (error) { alert(error.message); return; }
+          try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch { alert('Nie udało się zwolnić składników zestawu.'); return; }
         }
       }
       for (const item of selected) {
         if (!item.id) continue;
         const { error } = await deleteEquipmentRecord(item.id);
-        if (error) alert(error.message);
+        if (error) {
+          if (isForeignKeyError(error)) {
+            alert(`Nie można usunąć „${item.name}", ponieważ posiada historię w systemie. Pomijam tę pozycję.`);
+          } else {
+            alert(humanizeError(error, 'equipment'));
+          }
+        }
       }
       await loadEquipment();
       return;
@@ -1657,7 +1889,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
     for (const item of selected) {
       if (isEquipmentSet(item)) {
-        try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch (error) { alert(error.message); return; }
+        try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch { alert('Nie udało się zwolnić składników zestawu.'); return; }
       }
     }
     setRows((current) => current.filter((row) => !selected.includes(row)));
@@ -1692,8 +1924,6 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
   return (
     <div className="module-page">
       <section className="panel hero-panel">
-        <p className="eyebrow">Moduł</p><h2>Magazyn sprzętu</h2>
-        <p className="muted">Kartoteka urządzeń, numery seryjne, kody, lokalizacje, statusy i przygotowanie pod zestawy oraz wypożyczenia.</p>
         <div className="module-actions">
           <AppButton variant="primary" onClick={() => openEquipmentEditor(null)}><Plus size={18} />Dodaj sprzęt</AppButton>
           <AppButton variant="secondary" onClick={openSetEditor}><Package size={18} />Dodaj zestaw</AppButton>
@@ -1782,73 +2012,11 @@ function buildEquipmentCardNotes(form) {
 }
 
 
-const EQUIPMENT_MODAL_SIZE_KEY = 'fixer-equipment-modal-size';
-const EQUIPMENT_MODAL_POSITION_KEY = 'fixer-equipment-modal-position';
-const DEFAULT_EQUIPMENT_MODAL_SIZE = { width: 1120, height: 720 };
-const MIN_EQUIPMENT_MODAL_SIZE = { width: 860, height: 560 };
-const EQUIPMENT_MODAL_SCREEN_MARGIN = 16;
-
-function clampEquipmentModalSize(size) {
-  if (typeof window === 'undefined') return size;
-  const maxWidth = Math.max(MIN_EQUIPMENT_MODAL_SIZE.width, window.innerWidth - 32);
-  const maxHeight = Math.max(MIN_EQUIPMENT_MODAL_SIZE.height, window.innerHeight - 32);
-  return {
-    width: Math.min(Math.max(size.width, MIN_EQUIPMENT_MODAL_SIZE.width), maxWidth),
-    height: Math.min(Math.max(size.height, MIN_EQUIPMENT_MODAL_SIZE.height), maxHeight)
-  };
-}
-
-function getSavedEquipmentModalSize() {
-  if (typeof window === 'undefined') return DEFAULT_EQUIPMENT_MODAL_SIZE;
-  try {
-    const parsed = JSON.parse(localStorage.getItem(EQUIPMENT_MODAL_SIZE_KEY) || 'null');
-    if (parsed && Number.isFinite(parsed.width) && Number.isFinite(parsed.height)) {
-      return clampEquipmentModalSize(parsed);
-    }
-  } catch {}
-  return clampEquipmentModalSize(DEFAULT_EQUIPMENT_MODAL_SIZE);
-}
-
-function getCenteredEquipmentModalPosition(size) {
-  if (typeof window === 'undefined') return { left: EQUIPMENT_MODAL_SCREEN_MARGIN, top: EQUIPMENT_MODAL_SCREEN_MARGIN };
-  return {
-    left: Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, Math.round((window.innerWidth - size.width) / 2)),
-    top: Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, Math.round((window.innerHeight - size.height) / 2))
-  };
-}
-
-function clampEquipmentModalPosition(position, size) {
-  if (typeof window === 'undefined') return position;
-  const maxLeft = Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, window.innerWidth - size.width - EQUIPMENT_MODAL_SCREEN_MARGIN);
-  const maxTop = Math.max(EQUIPMENT_MODAL_SCREEN_MARGIN, window.innerHeight - size.height - EQUIPMENT_MODAL_SCREEN_MARGIN);
-  return {
-    left: Math.min(Math.max(position.left, EQUIPMENT_MODAL_SCREEN_MARGIN), maxLeft),
-    top: Math.min(Math.max(position.top, EQUIPMENT_MODAL_SCREEN_MARGIN), maxTop)
-  };
-}
-
-function getSavedEquipmentModalPosition(size) {
-  if (typeof window === 'undefined') return getCenteredEquipmentModalPosition(size);
-  try {
-    const parsed = JSON.parse(localStorage.getItem(EQUIPMENT_MODAL_POSITION_KEY) || 'null');
-    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
-      return clampEquipmentModalPosition(parsed, size);
-    }
-  } catch {}
-  return clampEquipmentModalPosition(getCenteredEquipmentModalPosition(size), size);
-}
-
 function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), locations = getLocalEquipmentDictionaryNames('location'), conditions = getActiveConfigDictionaryNames('equipmentConditions'), onClose, onSave }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const isInitialSetCard = equipment?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(equipment?.set_items) && equipment.set_items.length > 0;
   const [activeTab, setActiveTab] = useState('basic');
   const [errors, setErrors] = useState({});
-  const [modalSize, setModalSize] = useState(getSavedEquipmentModalSize);
-  const [modalPosition, setModalPosition] = useState(() => getSavedEquipmentModalPosition(getSavedEquipmentModalSize()));
-  const modalSizeRef = useRef(modalSize);
-  const modalPositionRef = useRef(modalPosition);
-  const resizeStateRef = useRef(null);
-  const dragStateRef = useRef(null);
   const [newGalleryItem, setNewGalleryItem] = useState('');
   const [newAttachmentName, setNewAttachmentName] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
@@ -1936,7 +2104,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   const removeSetItem = (index) => {
     const item = form.set_items[index];
     const itemName = item?.name || 'wybrany składnik';
-    if (!confirm(`Usunąć składnik „${itemName}” z zestawu? Po zapisaniu sprzęt wróci do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}”.`)) return;
+    if (!confirm(`Usunąć składnik „${itemName}" z zestawu? Po zapisaniu sprzęt wróci do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}".`)) return;
     update('set_items', form.set_items.filter((_, itemIndex) => itemIndex !== index));
   };
 
@@ -1992,81 +2160,6 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   };
 
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
-  const visibleModalPosition = clampEquipmentModalPosition(modalPosition, modalSize);
-
-  useEffect(() => {
-    modalSizeRef.current = modalSize;
-    localStorage.setItem(EQUIPMENT_MODAL_SIZE_KEY, JSON.stringify(modalSize));
-    setModalPosition((current) => clampEquipmentModalPosition(current, modalSize));
-  }, [modalSize]);
-
-  useEffect(() => {
-    modalPositionRef.current = modalPosition;
-    localStorage.setItem(EQUIPMENT_MODAL_POSITION_KEY, JSON.stringify(modalPosition));
-  }, [modalPosition]);
-
-  useEffect(() => {
-    const handleWindowResize = () => {
-      const nextSize = clampEquipmentModalSize(modalSizeRef.current);
-      setModalSize(nextSize);
-      setModalPosition((position) => clampEquipmentModalPosition(position, nextSize));
-    };
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, []);
-
-  useEffect(() => {
-    const handlePointerMove = (event) => {
-      const resizeState = resizeStateRef.current;
-      if (resizeState) {
-        event.preventDefault();
-        setModalSize(clampEquipmentModalSize({
-          width: resizeState.startWidth + event.clientX - resizeState.startX,
-          height: resizeState.startHeight + event.clientY - resizeState.startY
-        }));
-        return;
-      }
-      const dragState = dragStateRef.current;
-      if (!dragState) return;
-      event.preventDefault();
-      setModalPosition(clampEquipmentModalPosition({
-        left: dragState.startLeft + event.clientX - dragState.startX,
-        top: dragState.startTop + event.clientY - dragState.startY
-      }, modalSizeRef.current));
-    };
-    const handlePointerUp = () => {
-      resizeStateRef.current = null;
-      dragStateRef.current = null;
-    };
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, []);
-
-  const startResize = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    resizeStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startWidth: modalSizeRef.current.width,
-      startHeight: modalSizeRef.current.height
-    };
-  };
-
-  const startDrag = (event) => {
-    if (event.target.closest('button, input, select, textarea, a')) return;
-    event.preventDefault();
-    dragStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startLeft: modalPositionRef.current.left,
-      startTop: modalPositionRef.current.top
-    };
-  };
 
   const tabs = [
     { id: 'basic', label: 'Dane podstawowe' },
@@ -2079,130 +2172,113 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 
   if (isSetCard) {
     return (
-      <div className="modal-backdrop draggable-modal-backdrop">
-        <div className="modal-card equipment-card-modal set-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
-          <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
-            <div>
-              <p className="eyebrow">Zestaw sprzętu</p>
-              <h2>Karta zestawu</h2>
-              <p className="muted">Definicja zestawu składającego się z wielu urządzeń magazynowych.</p>
-            </div>
-            <button className="icon-button" onClick={onClose}><X size={18} /></button>
-          </div>
-
-          <div className="set-card-content">
-            <div className="equipment-section-panel set-details-panel">
-              <div className="section-title">Dane zestawu</div>
-              <div className="set-basic-grid">
-                <label className="set-name-field">Nazwa zestawu *<input className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Walizka streamingowa" />{errors.name && <span className="field-hint">{errors.name}</span>}</label>
-                <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} placeholder="opcjonalnie" /></label>
-                <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} placeholder="opcjonalnie" /></label>
-                <label>Status<input value={calculatedSetStatus} readOnly className="readonly-input" /></label>
-                <label>Lokalizacja<select value={form.location} onChange={(event)=>update('location', event.target.value)}>{safeLocations.map(location=><option key={location} value={location}>{location}</option>)}</select></label>
-                <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</select></label>
-                <label className="set-description-field">Opis zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></label>
-              </div>
-            </div>
-
-            <div className="equipment-section-panel set-builder-panel set-card-components-panel">
-              <div className="set-builder-header">
-                <div>
-                  <div className="section-title">Składniki zestawu</div>
-                  <p className="muted">Składniki wybierasz z magazynu. Po zapisaniu zostaną zablokowane jako „Składnik zestawu”.</p>
-                </div>
-                <div className="set-card-action-row">
-                  <AppButton variant="secondary" size="sm" className="compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</AppButton>
-                </div>
-              </div>
-              {form.set_items.length ? <div className="set-components-table-shell">
-                <table className="set-components-table">
-                  <thead><tr><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th><th></th></tr></thead>
-                  <tbody>{form.set_items.map((item, index) => <tr key={`${getSetItemKey(item)}-${index}`}><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></td></tr>)}</tbody>
-                </table>
-              </div> : <div className="empty-set-box">Brak składników zestawu. Użyj przycisku „Dodaj składniki”, żeby wybrać pozycje z magazynu.</div>}
+      <ResizableModalFrame
+        className="equipment-card-modal set-card-modal"
+        storageKey="fixer-equipment-modal"
+        defaultSize={{ width: 1120, height: 720 }}
+        minSize={{ width: 860, height: 560 }}
+        eyebrow="Zestaw sprzętu"
+        title="Karta zestawu"
+        onClose={onClose}
+        footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz zestaw</AppButton></>}
+      >
+        <div className="set-card-content">
+          <div className="equipment-section-panel set-details-panel">
+            <div className="section-title">Dane zestawu</div>
+            <div className="set-basic-grid">
+              <FormField className="set-name-field" label="Nazwa zestawu *" error={errors.name}><AppInput className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Walizka streamingowa" /></FormField>
+              <FormField label="Numer seryjny"><AppInput value={form.serial} onChange={(event) => update('serial', event.target.value)} placeholder="opcjonalnie" /></FormField>
+              <FormField label="Kod kreskowy / QR"><AppInput value={form.barcode} onChange={(event) => update('barcode', event.target.value)} placeholder="opcjonalnie" /></FormField>
+              <FormField label="Status"><AppInput value={calculatedSetStatus} readOnly className="readonly-input" /></FormField>
+              <FormField label="Lokalizacja"><AppSelect value={form.location} onChange={(event) => update('location', event.target.value)}>{safeLocations.map((location) => <option key={location} value={location}>{location}</option>)}</AppSelect></FormField>
+              <FormField label="Stan techniczny"><AppSelect value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
+              <FormField className="set-description-field" label="Opis zestawu"><AppTextarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></FormField>
             </div>
           </div>
-
-          <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz zestaw</AppButton></div>
-          <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
+          <div className="equipment-section-panel set-builder-panel set-card-components-panel">
+            <div className="set-builder-header">
+              <div>
+                <div className="section-title">Składniki zestawu</div>
+                <p className="muted">Składniki wybierasz z magazynu. Po zapisaniu zostaną zablokowane jako „Składnik zestawu".</p>
+              </div>
+              <div className="set-card-action-row">
+                <AppButton variant="secondary" size="sm" className="compact-table-button" onClick={() => setSetPickerOpen(true)}><Plus size={15} />Dodaj składniki</AppButton>
+              </div>
+            </div>
+            {form.set_items.length ? <div className="set-components-table-shell">
+              <table className="set-components-table">
+                <thead><tr><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th><th>Lokalizacja</th><th></th></tr></thead>
+                <tbody>{form.set_items.map((item, index) => <tr key={`${getSetItemKey(item)}-${index}`}><td><strong>{item.name}</strong></td><td>{item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td>{item.barcode || item.inventory_number || '—'}</td><td><StatusPill value={item.status || EQUIPMENT_SET_COMPONENT_STATUS} /></td><td>{item.location || '—'}</td><td><button type="button" className="ghost-mini-button" onClick={() => removeSetItem(index)}>Usuń</button></td></tr>)}</tbody>
+              </table>
+            </div> : <div className="empty-set-box">Brak składników zestawu. Użyj przycisku „Dodaj składniki", żeby wybrać pozycje z magazynu.</div>}
+          </div>
         </div>
         {setPickerOpen && <EquipmentSetPicker availableItems={availableSetComponents} onClose={() => setSetPickerOpen(false)} onConfirm={(items) => { addSetItems(items); setSetPickerOpen(false); }} />}
-      </div>
+      </ResizableModalFrame>
     );
   }
 
   return (
-    <div className="modal-backdrop draggable-modal-backdrop">
-      <div className="modal-card equipment-card-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
-        <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
-          <div>
-            <p className="eyebrow">Sprzęt</p>
-            <h2>Karta sprzętu</h2>
-            <p className="muted">Dodawanie i edycja urządzenia w module Sprzęt.</p>
-          </div>
-          <button className="icon-button" onClick={onClose}><X size={18} /></button>
-        </div>
-
-        <div className="equipment-tabs" role="tablist" aria-label="Sekcje karty sprzętu">
-          {tabs.map((tab) => (
-            <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
-          ))}
-        </div>
-
-        <div className="equipment-tab-panel">
-          {activeTab === 'basic' && <div className="equipment-basic-grid">
-            <label className="equipment-name-field">Nazwa sprzętu *<input className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Mikser Video" />{errors.name && <span className="field-hint">{errors.name}</span>}</label>
-            <label>Marka<input value={form.brand} onChange={(event) => update('brand', event.target.value)} placeholder="np. Blackmagic" /></label>
-            <label>Model<input value={form.model} onChange={(event) => update('model', event.target.value)} placeholder="np. ATEM Mini Pro" /></label>
-            <label>Numer seryjny<input value={form.serial} onChange={(event) => update('serial', event.target.value)} /></label>
-            <label>Kod kreskowy / QR<input value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></label>
-            <label>Kategoria<select value={form.category} onChange={(event) => update('category', event.target.value)}>{categories.filter((option) => option !== EQUIPMENT_SET_CATEGORY).map((option) => <option key={option}>{option}</option>)}</select></label>
-            <label>Status<select value={form.status} onChange={(event) => update('status', event.target.value)}>{safeStatuses.map((option) => <option key={option}>{option}</option>)}</select></label>
-            <label>Stan techniczny<select value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</select></label>
-            <label>Lokalizacja<select value={form.location} onChange={(event) => update('location', event.target.value)}>{safeLocations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
-            <label>Wartość zakupu<input value={form.purchase_value} onChange={(event) => update('purchase_value', event.target.value)} placeholder="np. 2500" /></label>
-            <label>Kaucja<input value={form.deposit} onChange={(event) => update('deposit', event.target.value)} placeholder="np. 500" /></label>
-            <label>Cena / dzień<input value={form.price_day} onChange={(event) => update('price_day', event.target.value)} placeholder="np. 120" /></label>
-            <label>Cena / tydzień<input value={form.price_week} onChange={(event) => update('price_week', event.target.value)} placeholder="np. 600" /></label>
-            <label className="equipment-description-field">Opis / zawartość zestawu<textarea value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
-          </div>}
-
-          {activeTab === 'gallery' && <div className="equipment-section-panel">
-            <div className="section-title">Galeria sprzętu</div>
-            <div className="inline-add-row"><AppInput value={newGalleryItem} onChange={(event) => setNewGalleryItem(event.target.value)} placeholder="Adres zdjęcia lub opis zdjęcia" /><AppButton variant="secondary" size="sm" className="compact-table-button" onClick={addGalleryItem}>Dodaj</AppButton></div>
-            <div className="equipment-list-box">
-              {form.gallery.length ? form.gallery.map((item, index) => <div key={`${item}-${index}`} className="equipment-list-row"><span>{item}</span><button type="button" className="ghost-mini-button" onClick={() => removeGalleryItem(index)}>Usuń</button></div>) : <p className="muted">Brak zdjęć w galerii.</p>}
-            </div>
-          </div>}
-
-          {activeTab === 'attachments' && <div className="equipment-section-panel">
-            <div className="section-title">Załączniki</div>
-            <div className="attachment-add-grid"><AppInput value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa załącznika" /><AppInput value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link lub numer dokumentu" /><AppButton variant="secondary" size="sm" className="compact-table-button" onClick={addAttachment}>Dodaj</AppButton></div>
-            <div className="equipment-list-box">
-              {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.name}</strong>{item.url ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Brak załączników.</p>}
-            </div>
-          </div>}
-
-          {activeTab === 'history' && <div className="equipment-section-panel">
-            <div className="section-title">Historia sprzętu</div>
-            <textarea className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
-          </div>}
-
-          {activeTab === 'service' && <div className="equipment-section-panel">
-            <div className="section-title">Serwis</div>
-            <textarea className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
-          </div>}
-
-          {activeTab === 'relations' && <div className="equipment-section-panel">
-            <div className="section-title">Powiązania / zestawy</div>
-            <div className="notice">Ten ekran służy do sprzętu pojedynczego. Zestawy tworzy się przez przycisk „Dodaj zestaw” w module Sprzęt.</div>
-          </div>}
-        </div>
-
-        <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</AppButton></div>
-        <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
+    <ResizableModalFrame
+      className="equipment-card-modal"
+      storageKey="fixer-equipment-modal"
+      defaultSize={{ width: 1120, height: 720 }}
+      minSize={{ width: 860, height: 560 }}
+      eyebrow="Sprzęt"
+      title="Karta sprzętu"
+      onClose={onClose}
+      footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</AppButton></>}
+    >
+      <div className="record-tabs" role="tablist" aria-label="Sekcje karty sprzętu">
+        {tabs.map((tab) => (
+          <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
+        ))}
       </div>
-    </div>
+      <div className="equipment-tab-panel">
+        {activeTab === 'basic' && <div className="equipment-basic-grid">
+          <FormField className="equipment-name-field" label="Nazwa sprzętu *" error={errors.name}><AppInput className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Mikser Video" /></FormField>
+          <FormField label="Marka"><AppInput value={form.brand} onChange={(event) => update('brand', event.target.value)} placeholder="np. Blackmagic" /></FormField>
+          <FormField label="Model"><AppInput value={form.model} onChange={(event) => update('model', event.target.value)} placeholder="np. ATEM Mini Pro" /></FormField>
+          <FormField label="Numer seryjny"><AppInput value={form.serial} onChange={(event) => update('serial', event.target.value)} /></FormField>
+          <FormField label="Kod kreskowy / QR"><AppInput value={form.barcode} onChange={(event) => update('barcode', event.target.value)} /></FormField>
+          <FormField label="Kategoria"><AppSelect value={form.category} onChange={(event) => update('category', event.target.value)}>{categories.filter((option) => option !== EQUIPMENT_SET_CATEGORY).map((option) => <option key={option}>{option}</option>)}</AppSelect></FormField>
+          <FormField label="Status"><AppSelect value={form.status} onChange={(event) => update('status', event.target.value)}>{safeStatuses.map((option) => <option key={option}>{option}</option>)}</AppSelect></FormField>
+          <FormField label="Stan techniczny"><AppSelect value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
+          <FormField label="Lokalizacja"><AppSelect value={form.location} onChange={(event) => update('location', event.target.value)}>{safeLocations.map((location) => <option key={location} value={location}>{location}</option>)}</AppSelect></FormField>
+          <FormField label="Wartość zakupu"><AppInput value={form.purchase_value} onChange={(event) => update('purchase_value', event.target.value)} placeholder="np. 2500" /></FormField>
+          <FormField label="Kaucja"><AppInput value={form.deposit} onChange={(event) => update('deposit', event.target.value)} placeholder="np. 500" /></FormField>
+          <FormField label="Cena / dzień"><AppInput value={form.price_day} onChange={(event) => update('price_day', event.target.value)} placeholder="np. 120" /></FormField>
+          <FormField label="Cena / tydzień"><AppInput value={form.price_week} onChange={(event) => update('price_week', event.target.value)} placeholder="np. 600" /></FormField>
+          <FormField className="equipment-description-field" label="Opis / zawartość"><AppTextarea value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
+        </div>}
+        {activeTab === 'gallery' && <div className="equipment-section-panel">
+          <div className="section-title">Galeria sprzętu</div>
+          <div className="inline-add-row"><AppInput value={newGalleryItem} onChange={(event) => setNewGalleryItem(event.target.value)} placeholder="Adres zdjęcia lub opis zdjęcia" /><AppButton variant="secondary" size="sm" className="compact-table-button" onClick={addGalleryItem}>Dodaj</AppButton></div>
+          <div className="equipment-list-box">
+            {form.gallery.length ? form.gallery.map((item, index) => <div key={`${item}-${index}`} className="equipment-list-row"><span>{item}</span><button type="button" className="ghost-mini-button" onClick={() => removeGalleryItem(index)}>Usuń</button></div>) : <p className="muted">Brak zdjęć w galerii.</p>}
+          </div>
+        </div>}
+        {activeTab === 'attachments' && <div className="equipment-section-panel">
+          <div className="section-title">Załączniki</div>
+          <div className="attachment-add-grid"><AppInput value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa załącznika" /><AppInput value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link lub numer dokumentu" /><AppButton variant="secondary" size="sm" className="compact-table-button" onClick={addAttachment}>Dodaj</AppButton></div>
+          <div className="equipment-list-box">
+            {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.name}</strong>{item.url ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Brak załączników.</p>}
+          </div>
+        </div>}
+        {activeTab === 'history' && <div className="equipment-section-panel">
+          <div className="section-title">Historia sprzętu</div>
+          <AppTextarea className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
+        </div>}
+        {activeTab === 'service' && <div className="equipment-section-panel">
+          <div className="section-title">Serwis</div>
+          <AppTextarea className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
+        </div>}
+        {activeTab === 'relations' && <div className="equipment-section-panel">
+          <div className="section-title">Powiązania / zestawy</div>
+          <div className="notice">Ten ekran służy do sprzętu pojedynczego. Zestawy tworzy się przez przycisk „Dodaj zestaw" w module Sprzęt.</div>
+        </div>}
+      </div>
+    </ResizableModalFrame>
   );
 }
 
@@ -2210,11 +2286,6 @@ function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
   return <EquipmentPickerModal title="Wybierz składniki z magazynu" availableItems={availableItems} selectedIds={[]} onClose={onClose} onConfirm={onConfirm} />;
 }
 const RENTALS_TABLE_KEY = 'rentals-table';
-const RENTAL_MODAL_SIZE_KEY = 'fixer-rental-modal-size';
-const RENTAL_MODAL_POSITION_KEY = 'fixer-rental-modal-position';
-const DEFAULT_RENTAL_MODAL_SIZE = { width: 1160, height: 760 };
-const MIN_RENTAL_MODAL_SIZE = { width: 960, height: 640 };
-const RENTAL_MODAL_SCREEN_MARGIN = 16;
 const RENTALS_TABLE_COLUMNS = [
   { key: 'rental_number', label: 'Numer' },
   { key: 'client', label: 'Klient' },
@@ -2246,54 +2317,197 @@ function getRentalOverdueDays(rental) {
   return Math.max(0, Math.floor((Date.parse(`${today}T00:00:00`) - Date.parse(`${planned}T00:00:00`)) / dayMs));
 }
 
-function clampRentalModalSize(size) {
-  if (typeof window === 'undefined') return size;
-  const maxWidth = Math.max(MIN_RENTAL_MODAL_SIZE.width, window.innerWidth - 32);
-  const maxHeight = Math.max(MIN_RENTAL_MODAL_SIZE.height, window.innerHeight - 32);
-  return {
-    width: Math.min(Math.max(size.width, MIN_RENTAL_MODAL_SIZE.width), maxWidth),
-    height: Math.min(Math.max(size.height, MIN_RENTAL_MODAL_SIZE.height), maxHeight)
-  };
+function addDaysIso(dateIso, days) {
+  const date = new Date(`${dateIso}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
-function getSavedRentalModalSize() {
-  if (typeof window === 'undefined') return DEFAULT_RENTAL_MODAL_SIZE;
-  try {
-    const parsed = JSON.parse(localStorage.getItem(RENTAL_MODAL_SIZE_KEY) || 'null');
-    if (parsed && Number.isFinite(parsed.width) && Number.isFinite(parsed.height)) {
-      return clampRentalModalSize(parsed);
+function readNotificationReadMap() {
+  const threshold = Date.now() - NOTIFICATIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const stored = getStoredJson(NOTIFICATIONS_READ_STORAGE_KEY, {});
+  const next = {};
+  Object.entries(stored && typeof stored === 'object' ? stored : {}).forEach(([id, value]) => {
+    const timestamp = Date.parse(value);
+    if (!Number.isNaN(timestamp) && timestamp >= threshold) next[id] = value;
+  });
+  if (Object.keys(next).length !== Object.keys(stored ?? {}).length) localStorage.setItem(NOTIFICATIONS_READ_STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
+function saveNotificationReadMap(map) {
+  localStorage.setItem(NOTIFICATIONS_READ_STORAGE_KEY, JSON.stringify(map));
+  return map;
+}
+
+function notificationDateTime(value) {
+  if (!value) return null;
+  const text = String(value);
+  const date = text.includes('T') ? new Date(text) : new Date(`${text.slice(0, 10)}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function pushNotification(list, notification) {
+  if (!notification?.id || !notification.title) return;
+  list.push({
+    priority: 3,
+    source: 'system',
+    tone: 'info',
+    createdAt: new Date().toISOString(),
+    ...notification
+  });
+}
+
+async function buildOperatorNotifications() {
+  const [rentalsResult, serviceResult, organizerResult, calendarResult] = await Promise.all([
+    fetchRentals(),
+    fetchServiceOrders(),
+    fetchOrganizerTasks(),
+    fetchCalendarManualEvents()
+  ]);
+  const today = getLocalIsoDate();
+  const tomorrow = addDaysIso(today, 1);
+  const now = new Date();
+  const retentionStart = Date.now() - NOTIFICATIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const notifications = [];
+
+  (rentalsResult.data ?? []).filter((rental) => rental.status !== 'returned').forEach((rental) => {
+    const date = String(rental.planned_return_date ?? '').slice(0, 10);
+    if (!date) return;
+    const base = {
+      source: 'rentals',
+      targetModule: 'rentals',
+      intent: { type: 'rentals', filter: 'open', rentalId: rental.id },
+      primary: rental.rental_number || 'Wypożyczenie',
+      secondary: rental.clients?.name || '',
+      createdAt: `${date}T09:00:00`
+    };
+    const overdueDays = getRentalOverdueDays(rental);
+    if (overdueDays > 0) pushNotification(notifications, { ...base, id: `rentals:overdue:${rental.id}:${date}`, title: 'Zwrot po terminie', detail: `${overdueDays} ${overdueDays === 1 ? 'dzień' : 'dni'} po terminie`, tone: 'danger', priority: 0 });
+    else if (date === today) pushNotification(notifications, { ...base, id: `rentals:today:${rental.id}:${date}`, title: 'Zwrot dzisiaj', detail: 'Planowany zwrot przypada dziś', tone: 'warning', priority: 1 });
+    else if (date === tomorrow) pushNotification(notifications, { ...base, id: `rentals:tomorrow:${rental.id}:${date}`, title: 'Zwrot jutro', detail: 'Planowany zwrot jutro', tone: 'info', priority: 3 });
+  });
+
+  const activeServiceRows = (serviceResult.data ?? []).filter((order) => !['Wydane', 'Anulowane'].includes(String(order.status ?? '').trim()));
+  activeServiceRows.forEach((order) => {
+    const date = String(order.planned_date ?? '').slice(0, 10);
+    const base = {
+      source: 'service',
+      targetModule: 'service',
+      intent: { type: 'service', serviceOrderId: order.id },
+      primary: order.service_number || 'Zlecenie serwisowe',
+      secondary: order.customer_device_name || order.equipment?.name || '',
+      createdAt: date ? `${date}T09:00:00` : new Date().toISOString()
+    };
+    if (date && date < today) pushNotification(notifications, { ...base, id: `service:overdue:${order.id}:${date}`, title: 'Serwis po terminie', detail: 'Planowany termin minął', tone: 'danger', priority: 0 });
+    else if (date === today) pushNotification(notifications, { ...base, id: `service:today:${order.id}:${date}`, title: 'Serwis na dziś', detail: 'Planowany termin przypada dziś', tone: 'warning', priority: 1 });
+    if (['gotowe', 'do odbioru', 'oczekuje na odbior'].some((part) => normalizeScannerCode(order.status).includes(normalizeScannerCode(part)))) {
+      pushNotification(notifications, { ...base, id: `service:pickup:${order.id}:${order.status}`, title: 'Serwis oczekuje na odbiór', detail: order.status, tone: 'success', priority: 2 });
     }
-  } catch {}
-  return clampRentalModalSize(DEFAULT_RENTAL_MODAL_SIZE);
-}
+  });
 
-function getCenteredRentalModalPosition(size) {
-  if (typeof window === 'undefined') return { left: RENTAL_MODAL_SCREEN_MARGIN, top: RENTAL_MODAL_SCREEN_MARGIN };
-  return {
-    left: Math.max(RENTAL_MODAL_SCREEN_MARGIN, Math.round((window.innerWidth - size.width) / 2)),
-    top: Math.max(RENTAL_MODAL_SCREEN_MARGIN, Math.round((window.innerHeight - size.height) / 2))
-  };
-}
-
-function clampRentalModalPosition(position, size) {
-  if (typeof window === 'undefined') return position;
-  const maxLeft = Math.max(RENTAL_MODAL_SCREEN_MARGIN, window.innerWidth - size.width - RENTAL_MODAL_SCREEN_MARGIN);
-  const maxTop = Math.max(RENTAL_MODAL_SCREEN_MARGIN, window.innerHeight - size.height - RENTAL_MODAL_SCREEN_MARGIN);
-  return {
-    left: Math.min(Math.max(position.left, RENTAL_MODAL_SCREEN_MARGIN), maxLeft),
-    top: Math.min(Math.max(position.top, RENTAL_MODAL_SCREEN_MARGIN), maxTop)
-  };
-}
-
-function getSavedRentalModalPosition(size) {
-  if (typeof window === 'undefined') return getCenteredRentalModalPosition(size);
-  try {
-    const parsed = JSON.parse(localStorage.getItem(RENTAL_MODAL_POSITION_KEY) || 'null');
-    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
-      return clampRentalModalPosition(parsed, size);
+  const recentServiceRows = activeServiceRows.slice(0, 20);
+  const progressResults = await Promise.all(recentServiceRows.map(async (order) => {
+    try {
+      const result = await fetchServiceOrderProgress(order.id);
+      return { order, rows: result.data ?? [], error: result.error };
+    } catch (error) {
+      console.warn('Notifications progress fetch failed', error);
+      return { order, rows: [] };
     }
-  } catch {}
-  return clampRentalModalPosition(getCenteredRentalModalPosition(size), size);
+  }));
+  progressResults.forEach(({ order, rows }) => {
+    rows
+      .filter((entry) => Date.parse(entry.created_at ?? '') >= retentionStart)
+      .slice(0, 2)
+      .forEach((entry) => pushNotification(notifications, {
+        id: `service:progress:${entry.id ?? entry.localId}`,
+        source: 'service',
+        targetModule: 'service',
+        intent: { type: 'service', serviceOrderId: order.id },
+        title: 'Nowy wpis w postępach',
+        primary: order.service_number || 'Zlecenie serwisowe',
+        secondary: entry.entry_text || order.customer_device_name || '',
+        detail: entry.operator_name ? `Operator: ${entry.operator_name}` : 'Postęp serwisu',
+        tone: 'info',
+        priority: 4,
+        createdAt: entry.created_at || order.updated_at || new Date().toISOString()
+      }));
+  });
+
+  (organizerResult.data ?? []).filter((task) => !task.archived && !ORGANIZER_TERMINAL_STATUSES.includes(task.status)).forEach((task) => {
+    const taskId = task.id ?? task.localId;
+    const due = String(task.due_date ?? '').slice(0, 10);
+    const reminder = String(task.reminder_at ?? '').slice(0, 10);
+    const base = {
+      source: 'organizer',
+      targetModule: 'organizer',
+      intent: { type: 'organizer', taskId },
+      primary: task.title,
+      secondary: task.category || task.priority || '',
+      createdAt: `${due || reminder || today}T09:00:00`
+    };
+    if (due && due < today) pushNotification(notifications, { ...base, id: `organizer:overdue:${taskId}:${due}`, title: 'Zadanie po terminie', detail: task.priority || 'Zaległe zadanie', tone: 'danger', priority: 0 });
+    else if (due === today) pushNotification(notifications, { ...base, id: `organizer:today:${taskId}:${due}`, title: 'Zadanie na dziś', detail: task.priority || 'Termin dziś', tone: 'warning', priority: 1 });
+    else if (due === tomorrow) pushNotification(notifications, { ...base, id: `organizer:tomorrow:${taskId}:${due}`, title: 'Zadanie jutro', detail: task.priority || 'Termin jutro', tone: 'info', priority: 3 });
+    if (reminder === today) pushNotification(notifications, { ...base, id: `organizer:reminder:${taskId}:${task.reminder_at}`, title: 'Przypomnienie', detail: task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'Dzisiaj', tone: 'info', priority: 2, createdAt: task.reminder_at });
+  });
+
+  (calendarResult.data ?? []).forEach((event) => {
+    const start = notificationDateTime(event.start_at);
+    if (!start) return;
+    const eventId = event.id ?? event.localId;
+    const date = String(event.start_at ?? '').slice(0, 10);
+    const minutesToStart = Math.round((start.getTime() - now.getTime()) / 60000);
+    const base = {
+      source: 'calendar',
+      targetModule: 'calendar',
+      intent: { type: 'calendar', eventId },
+      primary: event.title,
+      secondary: event.location || event.description || '',
+      createdAt: start.toISOString()
+    };
+    if (minutesToStart >= 0 && minutesToStart <= 60) pushNotification(notifications, { ...base, id: `calendar:hour:${eventId}:${event.start_at}`, title: 'Wydarzenie za godzinę', detail: minutesToStart <= 5 ? 'Za chwilę' : `Za ${minutesToStart} min`, tone: 'warning', priority: 1 });
+    else if (date === today) pushNotification(notifications, { ...base, id: `calendar:today:${eventId}:${date}`, title: 'Wydarzenie na dziś', detail: event.all_day ? 'Cały dzień' : formatServiceDateTime(event.start_at), tone: 'info', priority: 3 });
+    else if (start.getTime() < now.getTime() && start.getTime() >= retentionStart) pushNotification(notifications, { ...base, id: `calendar:overdue:${eventId}:${event.start_at}`, title: 'Wydarzenie po terminie', detail: formatServiceDateTime(event.start_at), tone: 'danger', priority: 5 });
+  });
+
+  const company = getCompanyProfile();
+  if (!company.name?.trim() && !company.legalName?.trim()) pushNotification(notifications, {
+    id: 'system:company-profile-missing',
+    source: 'system',
+    targetModule: 'settings',
+    intent: { type: 'settings', section: 'company' },
+    title: 'Brak konfiguracji firmy',
+    primary: 'Uzupełnij dane firmy',
+    secondary: 'Potrzebne do dokumentów PDF',
+    detail: 'Ustawienia → Firma',
+    tone: 'warning',
+    priority: 2
+  });
+  const backupFailure = getStoredJson(NOTIFICATIONS_BACKUP_FAILURE_KEY, null);
+  if (backupFailure?.message && Date.parse(backupFailure.at ?? '') >= retentionStart) pushNotification(notifications, {
+    id: `system:backup-failed:${backupFailure.at}`,
+    source: 'system',
+    targetModule: 'settings',
+    intent: { type: 'settings', section: 'backups' },
+    title: 'Nieudany backup',
+    primary: 'Kopia bezpieczeństwa nie została utworzona',
+    secondary: backupFailure.message,
+    detail: formatServiceDateTime(backupFailure.at),
+    tone: 'danger',
+    priority: 0,
+    createdAt: backupFailure.at
+  });
+
+  const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : '', calendarResult.error ? 'kalendarz' : ''].filter(Boolean);
+  if (errors.length) console.warn(`Notifications incomplete: ${errors.join(', ')}`);
+
+  return notifications
+    .filter((item) => Date.parse(item.createdAt ?? new Date().toISOString()) >= retentionStart || item.source !== 'calendar')
+    .sort((left, right) => (left.priority - right.priority) || (Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? '')))
+    .slice(0, 60);
 }
 
 function getRentalItemEquipmentId(item) {
@@ -2349,6 +2563,31 @@ function buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows
 
 function getRentalEquipmentCode(item) {
   return item?.serial || item?.barcode || item?.inventory_number || '—';
+}
+
+function normalizeScannerCode(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ł/g, 'l')
+    .replace(/\s+/g, '')
+    .toLocaleLowerCase('pl');
+}
+
+function getEquipmentScannerFields(item) {
+  return [item?.barcode, item?.serial, item?.inventory_number].filter(Boolean);
+}
+
+function equipmentMatchesScannerCode(item, code) {
+  const normalized = normalizeScannerCode(code);
+  if (!normalized) return false;
+  return getEquipmentScannerFields(item).some((value) => normalizeScannerCode(value) === normalized);
+}
+
+function getScannerUnavailableReason(item) {
+  const status = String(item?.status ?? '').trim().toLocaleLowerCase('pl');
+  if (['wypożyczony', 'w serwisie', 'uszkodzony', 'wycofany'].includes(status)) return 'unavailable';
+  return '';
 }
 
 function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
@@ -2436,7 +2675,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       ? await updateRentalRecord(rental.id, rentalToSave, items)
       : await createRentalRecord(rentalToSave, items);
     if (result.error) {
-      alert(result.error.message);
+      alert(humanizeError(result.error, 'rental'));
       return;
     }
     await loadRentals();
@@ -2446,10 +2685,10 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   const handleDelete = async (row) => {
     const rental = row._rental ?? row;
-    if (!confirm(`Usunąć wypożyczenie: ${rental.rental_number}? Sprzęt wróci do statusu „Dostępny”.`)) return;
+    if (!confirm(`Usunąć wypożyczenie: ${rental.rental_number}? Sprzęt wróci do statusu „Dostępny".`)) return;
     const { error } = await deleteRentalRecord(rental.id);
     if (error) {
-      alert(error.message);
+      alert(humanizeError(error, 'rental'));
       return;
     }
     await loadRentals();
@@ -2458,12 +2697,12 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   const handleBulkDelete = async (items) => {
     if (!items.length) return;
-    if (!confirm(`Usunąć zaznaczone wypożyczenia: ${items.length}? Sprzęt wróci do statusu „Dostępny”.`)) return;
+    if (!confirm(`Usunąć zaznaczone wypożyczenia: ${items.length}? Sprzęt wróci do statusu „Dostępny".`)) return;
     for (const row of items) {
       const rental = row._rental ?? row;
       const { error } = await deleteRentalRecord(rental.id);
       if (error) {
-        alert(`Nie udało się usunąć wypożyczenia ${rental.rental_number}: ${error.message}`);
+        alert(`Nie udało się usunąć wypożyczenia ${rental.rental_number}: ${humanizeError(error, 'rental')}`);
         return;
       }
     }
@@ -2483,7 +2722,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     }
     const result = await registerRentalReturn(rental.id, returnedItemIds, shouldClose);
     if (result.error) {
-      alert(result.error.message);
+      alert(humanizeError(result.error, 'rental'));
       return;
     }
     await loadRentals();
@@ -2496,7 +2735,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     if (!confirm(`Przywrócić wypożyczenie ${rental.rental_number} jako aktywne?`)) return;
     const result = await restoreRentalAsActive(rental.id);
     if (result.error) {
-      alert(result.error.message);
+      alert(humanizeError(result.error, 'rental'));
       return;
     }
     await loadRentals();
@@ -2507,7 +2746,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     if (!confirm(`Usunąć wypożyczenie ${rental.rental_number} z historii?`)) return;
     const { error } = await deleteRentalRecord(rental.id);
     if (error) {
-      alert(error.message);
+      alert(humanizeError(error, 'rental'));
       return;
     }
     await loadRentals();
@@ -2557,11 +2796,6 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   return <div className="module-page rentals-module-page">
     <section className="panel rentals-command-panel">
-      <div className="rentals-command-copy">
-        <p className="eyebrow">Operacje</p>
-        <h2>Wypożyczenia</h2>
-        <p className="muted">Dokumenty wydań, pozycje sprzętowe i statusy pracy magazynu.</p>
-      </div>
       <div className="module-actions">
         <ButtonPrimary onClick={() => openRentalEditor(null)}><Plus size={17} />Nowe wypożyczenie</ButtonPrimary>
         <ButtonSecondary onClick={() => { loadRentals(); loadRentalDictionaries(); }}>Odśwież</ButtonSecondary>
@@ -2603,6 +2837,11 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
   const initiallyReturnedIds = baseItems.filter((item) => item.status !== 'issued').map((item) => item.id).filter(Boolean);
   const [returnedItemIds, setReturnedItemIds] = useState(() => new Set(initiallyReturnedIds));
   const [returnDetails, setReturnDetails] = useState(() => Object.fromEntries(baseItems.map((item) => [item.id, { condition: 'Sprawny', notes: '' }])));
+  const [returnScanValue, setReturnScanValue] = useState('');
+  const [returnScanNotice, setReturnScanNotice] = useState(null);
+  const [scanHighlightedItemId, setScanHighlightedItemId] = useState('');
+  const returnScannerRef = useRef(null);
+  const returnRowRefs = useRef({});
   const returnedCount = returnedItemIds.size;
   const totalCount = baseItems.length;
   const hasIssuedSelection = baseItems.some((item) => item.status === 'issued' && returnedItemIds.has(item.id));
@@ -2627,6 +2866,51 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
       }
     }));
   };
+  const focusReturnScanner = () => window.setTimeout(() => returnScannerRef.current?.focus(), 0);
+  const showReturnScanNotice = (message, tone = 'info') => {
+    setReturnScanNotice({ message, tone });
+    window.setTimeout(() => setReturnScanNotice((current) => current?.message === message ? null : current), 2600);
+  };
+  const handleReturnScan = (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const code = returnScanValue.trim();
+    if (!code) {
+      focusReturnScanner();
+      return;
+    }
+    const matches = baseItems.filter((item) => equipmentMatchesScannerCode({
+      barcode: item.barcode_snapshot,
+      serial: item.serial_snapshot,
+      inventory_number: item.inventory_number_snapshot
+    }, code));
+    const item = matches[0];
+    setReturnScanValue('');
+    if (!item) {
+      showReturnScanNotice('Sprzęt nie znajduje się w aktywnych wypożyczeniach.', 'error');
+      focusReturnScanner();
+      return;
+    }
+    if (item.status !== 'issued' || initiallyReturnedIds.includes(item.id)) {
+      setScanHighlightedItemId(item.id);
+      returnRowRefs.current[item.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      showReturnScanNotice('Zwrot tego sprzętu został już zarejestrowany.', 'warning');
+      focusReturnScanner();
+      return;
+    }
+    if (returnedItemIds.has(item.id)) {
+      setScanHighlightedItemId(item.id);
+      returnRowRefs.current[item.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      showReturnScanNotice('Zwrot tego sprzętu został już zarejestrowany.', 'warning');
+      focusReturnScanner();
+      return;
+    }
+    setReturnedItemIds((current) => new Set([...current, item.id]));
+    setScanHighlightedItemId(item.id);
+    returnRowRefs.current[item.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    showReturnScanNotice('Zarejestrowano zwrot sprzętu.', 'success');
+    focusReturnScanner();
+  };
 
   const confirmReturn = () => {
     const newlyReturnedIds = baseItems
@@ -2635,11 +2919,23 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
     onConfirm(rental, newlyReturnedIds, returnedCount, totalCount);
   };
 
+  useEffect(() => {
+    focusReturnScanner();
+  }, []);
+
   return <ResizableModalFrame className="rental-return-modal" storageKey="fixer-rental-return-modal" defaultSize={{ width: 820, height: 620 }} minSize={{ width: 680, height: 460 }} eyebrow="Zwrot" title="Rejestracja zwrotu" onClose={onClose} footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={confirmReturn} disabled={!hasIssuedSelection && !allReturned}><CheckCircle2 size={16} />Zatwierdź zwrot</ButtonPrimary></>}>
     <div className="rental-return-summary">
       <strong>{rental.rental_number}</strong>
       <span>{rental.clients?.name ?? '—'}</span>
       <em>Zwrócono {returnedCount} z {totalCount}</em>
+    </div>
+    <div className="rental-scanner-strip rental-return-scanner-strip">
+      <label className="rental-scanner-field">
+        <Barcode size={16} />
+        <span>Skanuj zwracany sprzęt</span>
+        <AppInput ref={returnScannerRef} value={returnScanValue} onChange={(event) => setReturnScanValue(event.target.value)} onKeyDown={handleReturnScan} placeholder="Kod / SN / nr inw. + Enter" autoComplete="off" />
+      </label>
+      {returnScanNotice && <div className={`rental-scanner-notice ${returnScanNotice.tone}`}>{returnScanNotice.message}</div>}
     </div>
     <div className="rental-return-list" role="list">
       {baseItems.map((item) => {
@@ -2647,11 +2943,11 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
         const locked = item.status !== 'issued';
         const detail = returnDetails[item.id] ?? { condition: 'Sprawny', notes: '' };
         const warning = warningConditions.has(detail.condition);
-        return <div key={item.id ?? item.equipment_id} role="listitem" className={`rental-return-row ${returned ? 'returned' : ''} ${locked ? 'locked' : ''} ${warning ? 'warning' : ''}`.trim()} onClick={() => toggleReturnItem(item)}>
+        return <div key={item.id ?? item.equipment_id} ref={(node) => { if (item.id) returnRowRefs.current[item.id] = node; }} role="listitem" className={`rental-return-row ${returned ? 'returned' : ''} ${locked ? 'locked' : ''} ${warning ? 'warning' : ''} ${scanHighlightedItemId === item.id ? 'scan-highlight' : ''}`.trim()} onClick={() => toggleReturnItem(item)}>
           <div className="rental-return-check">{returned ? <CheckCircle2 size={18} /> : null}</div>
           <div className="rental-return-name">
             <strong>{item.name_snapshot || 'Sprzęt'}</strong>
-            <small>SN: {item.serial_snapshot || '—'}</small>
+            <small>SN: {item.serial_snapshot || '—'} · Kod: {item.barcode_snapshot || item.inventory_number_snapshot || '—'}</small>
           </div>
           <label className="rental-return-condition" onClick={(event) => event.stopPropagation()}>
             <span>Stan zwrotu</span>
@@ -2695,15 +2991,13 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [equipmentPickerOpen, setEquipmentPickerOpen] = useState(false);
+  const [equipmentPickerInitialQuery, setEquipmentPickerInitialQuery] = useState('');
+  const [issueScanValue, setIssueScanValue] = useState('');
+  const [issueScanNotice, setIssueScanNotice] = useState(null);
   const [selectedRentalItemIds, setSelectedRentalItemIds] = useState(new Set());
   const [rentalItemContextMenu, setRentalItemContextMenu] = useState(null);
   const [previewEquipment, setPreviewEquipment] = useState(null);
-  const [modalSize, setModalSize] = useState(getSavedRentalModalSize);
-  const [modalPosition, setModalPosition] = useState(() => getSavedRentalModalPosition(getSavedRentalModalSize()));
-  const modalSizeRef = useRef(modalSize);
-  const modalPositionRef = useRef(modalPosition);
-  const resizeStateRef = useRef(null);
-  const dragStateRef = useRef(null);
+  const issueScannerRef = useRef(null);
 
   const availableEquipment = equipmentRows.filter((item) => {
     if (!item.id) return false;
@@ -2759,7 +3053,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     }
     const result = await createClientRecord(payload);
     if (result.error) {
-      alert(result.error.message);
+      alert(humanizeError(result.error, 'client'));
       return;
     }
     setClientEditorOpen(false);
@@ -2771,6 +3065,53 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     const ids = items.map((item) => item.id).filter(Boolean);
     setSelectedEquipmentIds((current) => [...new Set([...current, ...ids])]);
     setEquipmentPickerOpen(false);
+    setEquipmentPickerInitialQuery('');
+  };
+  const openEquipmentPicker = (initialQuery = '') => {
+    setEquipmentPickerInitialQuery(initialQuery);
+    setEquipmentPickerOpen(true);
+  };
+  const focusIssueScanner = () => window.setTimeout(() => issueScannerRef.current?.focus(), 0);
+  const showIssueScanNotice = (message, tone = 'info') => {
+    setIssueScanNotice({ message, tone });
+    window.setTimeout(() => setIssueScanNotice((current) => current?.message === message ? null : current), 2600);
+  };
+  const handleIssueScan = (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const code = issueScanValue.trim();
+    if (!code) {
+      focusIssueScanner();
+      return;
+    }
+    const matches = equipmentRows
+      .filter((item) => item.id && !isEquipmentSetComponent(item))
+      .filter((item) => equipmentMatchesScannerCode(item, code));
+    setIssueScanValue('');
+    if (!matches.length) {
+      showIssueScanNotice('Nie znaleziono sprzętu o podanym kodzie.', 'error');
+      focusIssueScanner();
+      return;
+    }
+    if (matches.length > 1) {
+      showIssueScanNotice('Znaleziono kilka pozycji. Wybierz właściwy sprzęt z listy.', 'warning');
+      openEquipmentPicker(code);
+      return;
+    }
+    const item = matches[0];
+    if (selectedEquipmentIds.includes(item.id)) {
+      showIssueScanNotice('Ten sprzęt jest już dodany do dokumentu.', 'warning');
+      focusIssueScanner();
+      return;
+    }
+    if (getScannerUnavailableReason(item)) {
+      showIssueScanNotice('Sprzęt nie jest dostępny do wypożyczenia.', 'error');
+      focusIssueScanner();
+      return;
+    }
+    setSelectedEquipmentIds((current) => [...new Set([...current, item.id])]);
+    showIssueScanNotice('Dodano sprzęt do dokumentu.', 'success');
+    focusIssueScanner();
   };
   const toggleRentalItemSelection = (id) => {
     setSelectedRentalItemIds((current) => {
@@ -2814,6 +3155,10 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   useEffect(() => { setLocalClients(clients); }, [clients]);
 
   useEffect(() => {
+    if (!equipmentPickerOpen && !clientPickerOpen && !clientEditorOpen && !previewEquipment) focusIssueScanner();
+  }, [equipmentPickerOpen, clientPickerOpen, clientEditorOpen, previewEquipment]);
+
+  useEffect(() => {
     if (!rentalItemContextMenu) return undefined;
     const closeMenu = () => setRentalItemContextMenu(null);
     window.addEventListener('click', closeMenu);
@@ -2826,82 +3171,6 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     };
   }, [rentalItemContextMenu]);
 
-  const visibleModalPosition = clampRentalModalPosition(modalPosition, modalSize);
-
-  useEffect(() => {
-    modalSizeRef.current = modalSize;
-    localStorage.setItem(RENTAL_MODAL_SIZE_KEY, JSON.stringify(modalSize));
-    setModalPosition((current) => clampRentalModalPosition(current, modalSize));
-  }, [modalSize]);
-
-  useEffect(() => {
-    modalPositionRef.current = modalPosition;
-    localStorage.setItem(RENTAL_MODAL_POSITION_KEY, JSON.stringify(modalPosition));
-  }, [modalPosition]);
-
-  useEffect(() => {
-    const handleWindowResize = () => {
-      const nextSize = clampRentalModalSize(modalSizeRef.current);
-      setModalSize(nextSize);
-      setModalPosition((position) => clampRentalModalPosition(position, nextSize));
-    };
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, []);
-
-  useEffect(() => {
-    const handlePointerMove = (event) => {
-      const resizeState = resizeStateRef.current;
-      if (resizeState) {
-        event.preventDefault();
-        setModalSize(clampRentalModalSize({
-          width: resizeState.startWidth + event.clientX - resizeState.startX,
-          height: resizeState.startHeight + event.clientY - resizeState.startY
-        }));
-        return;
-      }
-      const dragState = dragStateRef.current;
-      if (!dragState) return;
-      event.preventDefault();
-      setModalPosition(clampRentalModalPosition({
-        left: dragState.startLeft + event.clientX - dragState.startX,
-        top: dragState.startTop + event.clientY - dragState.startY
-      }, modalSizeRef.current));
-    };
-    const handlePointerUp = () => {
-      resizeStateRef.current = null;
-      dragStateRef.current = null;
-    };
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, []);
-
-  const startResize = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    resizeStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startWidth: modalSizeRef.current.width,
-      startHeight: modalSizeRef.current.height
-    };
-  };
-
-  const startDrag = (event) => {
-    if (event.target.closest('button, input, select, textarea, a')) return;
-    event.preventDefault();
-    dragStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startLeft: modalPositionRef.current.left,
-      startTop: modalPositionRef.current.top
-    };
-  };
-
   if (clientPickerOpen) {
     return <ClientPickerModal clients={localClients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={chooseClient} onCreateClient={openNewClientEditor} />;
   }
@@ -2911,46 +3180,54 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   }
 
   if (equipmentPickerOpen) {
-    return <EquipmentPickerModal title="Wybierz sprzęt do wypożyczenia" availableItems={availableEquipment} selectedIds={selectedEquipmentIds} onClose={() => setEquipmentPickerOpen(false)} onConfirm={addEquipment} />;
+    return <EquipmentPickerModal title="Wybierz sprzęt do wypożyczenia" availableItems={availableEquipment} selectedIds={selectedEquipmentIds} initialQuery={equipmentPickerInitialQuery} onClose={() => { setEquipmentPickerOpen(false); setEquipmentPickerInitialQuery(''); }} onConfirm={addEquipment} />;
   }
 
   if (previewEquipment) {
     return <RentalEquipmentPreviewModal equipment={previewEquipment} onClose={() => setPreviewEquipment(null)} />;
   }
 
-  return <div className="modal-backdrop draggable-modal-backdrop">
-    <div className="modal-card equipment-card-modal rental-record-modal resizable-equipment-modal draggable-equipment-modal" style={{ width: `${modalSize.width}px`, height: `${modalSize.height}px`, left: `${visibleModalPosition.left}px`, top: `${visibleModalPosition.top}px` }}>
-      <div className="modal-header draggable-modal-header" onPointerDown={startDrag}>
-        <div>
-          <p className="eyebrow">Wypożyczenia</p>
-          <h2>{rental ? 'Kartoteka wypożyczenia' : 'Nowe wypożyczenie'}</h2>
-          <p className="muted">Dokument wydania sprzętu do klienta.</p>
-        </div>
-        <button className="icon-button" onClick={onClose}><X size={18} /></button>
-      </div>
+  return <>
+    <ResizableModalFrame
+      className="rental-record-modal"
+      storageKey="fixer-rental-modal"
+      defaultSize={{ width: 1160, height: 760 }}
+      minSize={{ width: 960, height: 640 }}
+      eyebrow="Wypożyczenia"
+      title={rental ? 'Kartoteka wypożyczenia' : 'Nowe wypożyczenie'}
+      onClose={onClose}
+      footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onSave({ rental: form, selectedEquipmentIds })}><Save size={17} />Zapisz dokument</ButtonPrimary></>}
+    >
       <div className="rental-record-layout">
         <SectionPanel className="rental-record-section rental-record-header-section" title="Dokument">
           <div className="rental-document-grid">
-            <FormField className="rental-number-field" label="Numer"><AppInput value={form.rental_number} onChange={(event) => update('rental_number', event.target.value)} placeholder="automatycznie" /></FormField>
-            <div className="rental-status-field"><span>Status</span><DSStatusPill value={formatRentalStatus(form.status)} /></div>
-            <div className="rental-client-field">
-              <span>Klient</span>
-              <ButtonSecondary className={selectedClient ? 'rental-choice-button selected' : 'rental-choice-button'} onClick={() => setClientPickerOpen(true)}>
-                <strong>{selectedClient ? selectedClient.name : 'Wybierz klienta'}</strong>
-                {selectedClient?.client_kind && <small>({selectedClient.client_kind})</small>}
-              </ButtonSecondary>
+            <div className="rental-document-row rental-document-primary-row">
+              <FormField className="rental-number-field" label="Numer"><AppInput value={form.rental_number} onChange={(event) => update('rental_number', event.target.value)} placeholder="automatycznie" /></FormField>
+              <FormField className="rental-status-field" label="Status"><AppSelect value={form.status} onChange={(event) => update('status', event.target.value)}><option value="active">Aktywne</option><option value="partially_returned">Częściowo zwrócone</option><option value="returned">Zwrócone</option></AppSelect></FormField>
+              <div className="rental-client-field">
+                <ClientChoiceCard client={selectedClient} onClick={() => setClientPickerOpen(true)} />
+              </div>
             </div>
-            <FormField label="Typ wypożyczenia">
-              <AppSelect value={form.rental_type} onChange={(event) => update('rental_type', event.target.value)}>
-                {safeRentalTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-              </AppSelect>
-            </FormField>
-            <FormField className="rental-date-field rental-issue-date-field" label="Wydanie"><AppInput type="date" value={form.start_date} onChange={(event) => update('start_date', event.target.value)} /></FormField>
-            <FormField className="rental-date-field rental-return-date-field" label="Termin zwrotu"><AppInput type="date" value={form.planned_return_date} onChange={(event) => update('planned_return_date', event.target.value)} /></FormField>
+            <div className="rental-document-row rental-document-secondary-row">
+              <FormField className="rental-type-field" label="Typ wypożyczenia">
+                <AppSelect value={form.rental_type} onChange={(event) => update('rental_type', event.target.value)}>
+                  {safeRentalTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                </AppSelect>
+              </FormField>
+              <FormField className="rental-date-field rental-issue-date-field" label="Wydanie"><AppInput type="date" value={form.start_date} onChange={(event) => update('start_date', event.target.value)} /></FormField>
+              <FormField className="rental-date-field rental-return-date-field" label="Termin zwrotu"><AppInput type="date" value={form.planned_return_date} onChange={(event) => update('planned_return_date', event.target.value)} /></FormField>
+            </div>
           </div>
         </SectionPanel>
-
-        <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<ButtonPrimary className="rental-add-equipment-button" onClick={() => setEquipmentPickerOpen(true)}><Plus size={14} />Dodaj sprzęt</ButtonPrimary>}>
+        <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<ButtonPrimary className="rental-add-equipment-button" onClick={() => openEquipmentPicker()}><Plus size={14} />Dodaj sprzęt</ButtonPrimary>}>
+          <div className="rental-scanner-strip rental-issue-scanner-strip">
+            <label className="rental-scanner-field">
+              <Barcode size={16} />
+              <span>Skanuj kod / numer seryjny / nr inwentarzowy</span>
+              <AppInput ref={issueScannerRef} value={issueScanValue} onChange={(event) => setIssueScanValue(event.target.value)} onKeyDown={handleIssueScan} placeholder="Skan + Enter" autoComplete="off" />
+            </label>
+            {issueScanNotice && <div className={`rental-scanner-notice ${issueScanNotice.tone}`}>{issueScanNotice.message}</div>}
+          </div>
           <div className="rental-items-meta">
             <span>{selectedRentalItemIds.size ? `${selectedRentalItemIds.size} zaznaczono` : 'Brak zaznaczenia'}</span>
             <span className="rental-document-summary">{rentalSummary.items} pozycji · {rentalSummary.sets} zestawów · cena {rentalSummary.price} · kaucja {rentalSummary.deposit}</span>
@@ -2972,7 +3249,6 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
             </AppTable> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Użyj akcji Dodaj sprzęt w nagłówku tabeli, aby utworzyć dokument wydania." />}
           </div>
         </SectionPanel>
-
         <SectionPanel className="rental-record-section rental-record-terms-section" title="Warunki i rozliczenie">
           <div className="rental-terms-grid">
             <FormField className="rental-price-field" label="Cena łączna"><div className="money-input"><AppInput value={form.total_price} onChange={(event) => update('total_price', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 1200'} /><span>{rentalSettings.currency || 'zł'}</span></div></FormField>
@@ -2981,9 +3257,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
           </div>
         </SectionPanel>
       </div>
-      <div className="modal-actions"><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onSave({ rental: form, selectedEquipmentIds })}><Save size={17} />Zapisz dokument</ButtonPrimary></div>
-      <div className="modal-resize-handle" onPointerDown={startResize} title="Zmień rozmiar okna" aria-label="Zmień rozmiar okna" />
-    </div>
+    </ResizableModalFrame>
     {rentalItemContextMenu && <div className="row-context-menu rental-item-context-menu" style={{ left: rentalItemContextMenu.x, top: rentalItemContextMenu.y }} onClick={(event) => event.stopPropagation()}>
       <div className="context-menu-title">Sprzęt</div>
       <button type="button" onClick={() => runRentalItemAction('preview')}><FolderOpen size={14} />Podgląd sprzętu</button>
@@ -2992,7 +3266,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       {selectedRentalItemIds.size > 1 && <button type="button" className="danger-action" onClick={() => runRentalItemAction('removeSelected')}><Trash2 size={14} />Usuń zaznaczone</button>}
       <button type="button" className="danger-action" onClick={() => runRentalItemAction('remove')}><Trash2 size={14} />Usuń pozycję</button>
     </div>}
-  </div>;
+  </>;
 }
 
 function RentalEquipmentPreviewModal({ equipment, onClose }) {
@@ -3013,6 +3287,16 @@ function RentalEquipmentPreviewModal({ equipment, onClose }) {
       <tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}</tbody>
     </AppTable>
   </ModalFrame>;
+}
+
+function ClientChoiceCard({ client, onClick, className = '' }) {
+  const contact = [client?.phone, client?.email].filter(Boolean);
+  return <button type="button" className={`client-choice-card ${client ? 'selected' : ''} ${className}`.trim()} onClick={onClick}>
+    <span>Klient</span>
+    <strong>{client?.name || 'Wybierz klienta'}</strong>
+    <small>{contact.length ? contact.join(' · ') : 'Kliknij, aby wybrać'}</small>
+    <em>Zmień</em>
+  </button>;
 }
 
 function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm, onCreateClient = null }) {
@@ -3067,8 +3351,8 @@ function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm, onCr
     </ResizableModalFrame>;
 }
 
-function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], onClose, onConfirm }) {
-  const [query, setQuery] = useState('');
+function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], initialQuery = '', onClose, onConfirm }) {
+  const [query, setQuery] = useState(initialQuery);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
@@ -3157,16 +3441,6 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
     </ResizableModalFrame>;
 }
 const SERVICE_TABLE_KEY = 'service-orders-table';
-const SERVICE_TABLE_COLUMNS = [
-  { key: 'service_number', label: 'Numer' },
-  { key: 'client_name', label: 'Klient' },
-  { key: 'equipment_name', label: 'Sprzęt' },
-  { key: 'status', label: 'Status' },
-  { key: 'priority', label: 'Priorytet' },
-  { key: 'accepted_date_display', label: 'Przyjęcie' },
-  { key: 'planned_date_display', label: 'Planowany termin' },
-  { key: 'total_cost_display', label: 'Suma' }
-];
 
 function formatServiceMoney(value) {
   const number = Number(value ?? 0);
@@ -3175,14 +3449,13 @@ function formatServiceMoney(value) {
 
 function generateServiceNumber(existingRows = []) {
   const today = new Date();
-  const day = String(today.getDate()).padStart(2, '0');
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const year = String(today.getFullYear());
+  const settings = getDocumentSettings().numbering.service;
+  const prefix = settings.prefix || DEFAULT_DOCUMENT_NUMBERING.service.prefix;
   const sequence = existingRows.reduce((max, row) => {
-    const match = String(row.service_number ?? '').match(/SER\/(\d+)/);
+    const match = String(row.service_number ?? '').match(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/(\\d+)`));
     return Math.max(max, match ? Number(match[1]) : 0);
   }, 0) + 1;
-  return `SER/${String(sequence).padStart(3, '0')}/${day}/${month}/${year}`;
+  return formatDocumentNumber(settings, sequence, today);
 }
 
 function buildServiceDocumentData(order, type) {
@@ -3215,7 +3488,7 @@ function buildServiceDocumentData(order, type) {
   };
 }
 
-function ServiceModule() {
+function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [clients, setClients] = useState([]);
   const [equipmentRows, setEquipmentRows] = useState([]);
@@ -3226,20 +3499,57 @@ function ServiceModule() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [serviceHistoryCollapsed, setServiceHistoryCollapsed] = useState(true);
+  const [pendingOpenServiceId, setPendingOpenServiceId] = useState(null);
+  const [serviceStatuses, setServiceStatuses] = useState(SERVICE_STATUSES);
+  const [servicePriorities, setServicePriorities] = useState(SERVICE_PRIORITIES);
+  const [serviceDeviceCategories, setServiceDeviceCategories] = useState(DEFAULT_SERVICE_DEVICE_CATEGORIES);
+  const [serviceIntakeConditions, setServiceIntakeConditions] = useState(DEFAULT_SERVICE_INTAKE_CONDITIONS);
+  const [serviceExternalServices, setServiceExternalServices] = useState(DEFAULT_SERVICE_EXTERNAL_SERVICES);
+  const [serviceProgressTemplates, setServiceProgressTemplates] = useState(DEFAULT_SERVICE_PROGRESS_TEMPLATES);
 
   const loadServiceData = async () => {
     setLoading(true);
-    const [ordersResult, clientsResult, equipmentResult] = await Promise.all([fetchServiceOrders(), fetchClients(), fetchEquipment()]);
+    const [ordersResult, clientsResult, equipmentResult, statusesResult, prioritiesResult, categoriesResult, conditionsResult, externalServicesResult, progressTemplatesResult] = await Promise.all([
+      fetchServiceOrders(),
+      fetchClients(),
+      fetchEquipment(),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.status),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.priority),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.customerDeviceCategory),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.intakeCondition),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.externalService),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.progressTemplate)
+    ]);
     setRows(ordersResult.data ?? []);
     setClients(clientsResult.data ?? []);
     setEquipmentRows(equipmentResult.error ? demoEquipment : (equipmentResult.data ?? []));
+    setServiceStatuses((statusesResult.data?.length ? statusesResult.data.map((item) => item.name) : SERVICE_STATUSES));
+    setServicePriorities((prioritiesResult.data?.length ? prioritiesResult.data.map((item) => item.name) : SERVICE_PRIORITIES));
+    setServiceDeviceCategories((categoriesResult.data?.length ? categoriesResult.data.map((item) => item.name) : DEFAULT_SERVICE_DEVICE_CATEGORIES));
+    setServiceIntakeConditions((conditionsResult.data?.length ? conditionsResult.data.map((item) => item.name) : DEFAULT_SERVICE_INTAKE_CONDITIONS));
+    setServiceExternalServices((externalServicesResult.data?.length ? externalServicesResult.data.map((item) => item.name) : DEFAULT_SERVICE_EXTERNAL_SERVICES));
+    setServiceProgressTemplates((progressTemplatesResult.data?.length ? progressTemplatesResult.data.map((item) => item.name) : DEFAULT_SERVICE_PROGRESS_TEMPLATES));
     if (ordersResult.error) setNotice(`Nie udało się pobrać zleceń serwisowych z Supabase: ${ordersResult.error.message}. Sprawdź migrację 005_service_orders_schema.sql.`);
-    else if (ordersResult.local) setNotice('Serwis działa w lokalnym trybie zapisu.');
+    else if (statusesResult.error || prioritiesResult.error || categoriesResult.error || conditionsResult.error || externalServicesResult.error || progressTemplatesResult.error) setNotice('Nie udało się pobrać ustawień Serwisu z Supabase. Uruchom migracje słowników Serwisu.');
     else setNotice('');
     setLoading(false);
   };
 
   useEffect(() => { loadServiceData(); }, []);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'service') return;
+    if (dashboardIntent.serviceOrderId) setPendingOpenServiceId(dashboardIntent.serviceOrderId);
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent]);
+
+  useEffect(() => {
+    if (!pendingOpenServiceId || !rows.length) return;
+    const order = rows.find((row) => row.id === pendingOpenServiceId);
+    if (order) openServiceEditor(order);
+    setPendingOpenServiceId(null);
+  }, [pendingOpenServiceId, rows]);
 
   const resolveClient = (order) => order.clients ?? clients.find((client) => client.id === order.client_id) ?? null;
   const resolveEquipment = (order) => order.equipment ?? equipmentRows.find((item) => item.id === order.equipment_id) ?? null;
@@ -3254,13 +3564,17 @@ function ServiceModule() {
       equipment_name: order.customer_device_name || equipment?.name || '—',
       accepted_date_display: formatDashboardDate(order.accepted_date),
       planned_date_display: formatDashboardDate(order.planned_date),
+      completed_date_display: formatDashboardDate(order.completed_date),
       total_cost_display: formatServiceMoney(order.total_cost)
     };
   }), [rows, clients, equipmentRows]);
 
+  const activeTableRows = useMemo(() => tableRows.filter((order) => order.status !== 'Wydane'), [tableRows]);
+  const completedTableRows = useMemo(() => tableRows.filter((order) => order.status === 'Wydane'), [tableRows]);
+
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('pl');
-    return tableRows.filter((order) => {
+    return activeTableRows.filter((order) => {
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
       const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
       const searchable = [order.service_number, order.client_name, order.equipment_name, order.customer_device_brand, order.customer_device_model, order.customer_device_serial, order.status, order.priority, order.fault_description, order.diagnosis]
@@ -3269,7 +3583,7 @@ function ServiceModule() {
         .toLocaleLowerCase('pl');
       return matchesStatus && matchesPriority && (!query || searchable.includes(query));
     });
-  }, [tableRows, search, statusFilter, priorityFilter]);
+  }, [activeTableRows, search, statusFilter, priorityFilter]);
 
   const openServiceEditor = (order = null) => {
     setEditingOrder(order);
@@ -3279,8 +3593,9 @@ function ServiceModule() {
   const createNewOrder = () => {
     openServiceEditor({
       service_number: generateServiceNumber(rows),
-      status: 'Przyjęte',
-      priority: 'Normalny',
+      claim_type: 'Pogwarancyjna',
+      status: serviceStatuses[0] ?? 'Przyjęte',
+      priority: servicePriorities.includes('Normalny') ? 'Normalny' : (servicePriorities[0] ?? 'Normalny'),
       accepted_date: getLocalIsoDate(),
       planned_date: '',
       completed_date: '',
@@ -3292,6 +3607,7 @@ function ServiceModule() {
       parts_cost: '',
       other_cost: '',
       total_cost: '',
+      estimate_items: [],
       estimate_status: 'Roboczy',
       internal_notes: '',
       attachments: [],
@@ -3316,10 +3632,10 @@ function ServiceModule() {
       ? await updateServiceOrderRecord(order.id ?? order.localId, order)
       : await createServiceOrderRecord(order);
     if (result.error) {
-      alert(result.error.message);
+      alert(humanizeError(result.error, 'service'));
       return;
     }
-    if (result.local) setNotice('Zlecenie zapisano lokalnie, ponieważ Supabase nie jest skonfigurowany.');
+    if (order.status === 'Wydane') setServiceHistoryCollapsed(false);
     setEditorOpen(false);
     await loadServiceData();
   };
@@ -3332,22 +3648,35 @@ function ServiceModule() {
     if (!confirm(`Usunąć zlecenie ${order.service_number}?`)) return;
     const { error, local } = await deleteServiceOrderRecord(order.id ?? order.localId, order);
     if (error) {
-      alert(error.message);
+      alert(humanizeError(error, 'service'));
       return;
     }
-    if (local) setNotice('Zlecenie usunięto lokalnie.');
     await loadServiceData();
   };
 
   const changeServiceStatus = async (order) => {
-    const nextStatus = prompt(`Nowy status:\n${SERVICE_STATUSES.join('\n')}`, order.status);
+    const nextStatus = prompt(`Nowy status:\n${serviceStatuses.join('\n')}`, order.status);
     if (!nextStatus) return;
-    const normalized = SERVICE_STATUSES.find((status) => status.toLocaleLowerCase('pl') === nextStatus.trim().toLocaleLowerCase('pl'));
+    const normalized = serviceStatuses.find((status) => status.toLocaleLowerCase('pl') === nextStatus.trim().toLocaleLowerCase('pl'));
     if (!normalized) {
-      alert('Wybierz jeden z domyślnych statusów serwisu.');
+      alert('Wybierz jeden ze statusów serwisu dostępnych w Ustawieniach.');
       return;
     }
     await saveServiceOrder({ ...order, status: normalized, completed_date: normalized === 'Wydane' ? (order.completed_date || getLocalIsoDate()) : order.completed_date });
+  };
+
+  const handleRestoreServiceOrder = async (order) => {
+    if (!confirm(`Przywrócić zlecenie ${order.service_number} jako aktywne?`)) return;
+    const restoredStatus = serviceStatuses.find((s) => s !== 'Wydane') ?? 'Przyjęte';
+    await saveServiceOrder({ ...order, status: restoredStatus, completed_date: null });
+  };
+
+  const handleDeleteCompletedServiceOrder = async (order) => {
+    if (order.status !== 'Wydane') return;
+    if (!confirm(`Usunąć zlecenie ${order.service_number} z historii?`)) return;
+    const { error, local } = await deleteServiceOrderRecord(order.id ?? order.localId, order);
+    if (error) { alert(humanizeError(error, 'service')); return; }
+    await loadServiceData();
   };
 
   const createServiceDocument = (order, type) => {
@@ -3363,44 +3692,99 @@ function ServiceModule() {
     setPriorityFilter('all');
   };
 
+  const setServiceOrderStatus = async (order, newStatus) => {
+    if (newStatus === order.status) return;
+    if (newStatus === 'Wydane' && !confirm(`Zamknąć zlecenie ${order.service_number || 'serwisowe'} i przenieść do historii?`)) return;
+    await saveServiceOrder({ ...order, status: newStatus, completed_date: newStatus === 'Wydane' ? (order.completed_date || getLocalIsoDate()) : order.completed_date });
+  };
+
+  const serviceColumns = [
+    { key: 'service_number', label: 'Numer' },
+    { key: 'client_name', label: 'Klient' },
+    { key: 'equipment_name', label: 'Sprzęt' },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={serviceStatuses} onStatusChange={(newStatus) => setServiceOrderStatus(row, newStatus)} /> },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'accepted_date_display', label: 'Przyjęcie' },
+    { key: 'planned_date_display', label: 'Planowany termin' },
+    { key: 'total_cost_display', label: 'Suma' }
+  ];
+
+  const completedServiceColumns = [
+    { key: 'service_number', label: 'Numer' },
+    { key: 'client_name', label: 'Klient' },
+    { key: 'equipment_name', label: 'Sprzęt' },
+    { key: 'status', label: 'Status' },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'accepted_date_display', label: 'Przyjęcie' },
+    { key: 'completed_date_display', label: 'Zakończone' },
+    { key: 'total_cost_display', label: 'Suma' }
+  ];
+
   return <div className="module-page service-module-page">
     <section className="panel hero-panel service-hero-panel">
-      <p className="eyebrow">Moduł</p><h2>Serwis</h2>
-      <p className="muted">Zlecenia serwisowe, przyjęcia sprzętu, diagnoza, naprawa, koszty oraz dokumenty przyjęcia i wydania.</p>
       <div className="module-actions">
         <AppButton variant="primary" className="module-action-button" onClick={createNewOrder}><Plus size={18} />Nowe zlecenie</AppButton>
         <AppButton variant="secondary" className="module-action-button" onClick={loadServiceData}>Odśwież</AppButton>
       </div>
       {notice && <div className="notice">{notice}</div>}
     </section>
-    <section className="panel service-list-panel">
+    <section className="panel service-list-panel rentals-records-section">
+      <div className="rentals-section-heading">
+        <div>
+          <p className="eyebrow">Aktywne</p>
+          <h3>Aktywne zlecenia serwisowe</h3>
+        </div>
+        <span>{activeTableRows.length} pozycji</span>
+      </div>
       <div className="client-filter-bar service-filter-bar">
         <label>Szukaj<AppInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Numer, klient, sprzęt, opis, diagnoza" /></label>
-        <label>Status<AppSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{SERVICE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
-        <label>Priorytet<AppSelect value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="all">Wszystkie</option>{SERVICE_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></label>
+        <label>Status<AppSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{serviceStatuses.filter((s) => s !== 'Wydane').map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
+        <label>Priorytet<AppSelect value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="all">Wszystkie</option>{servicePriorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></label>
         <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść filtry</AppButton>
-        <span className="filter-count">{filteredRows.length} / {rows.length}</span>
+        <span className="filter-count">{filteredRows.length} / {activeTableRows.length}</span>
       </div>
       <DataTable
         storageKey={SERVICE_TABLE_KEY}
         loading={loading}
-        columns={SERVICE_TABLE_COLUMNS}
+        columns={serviceColumns}
         rows={filteredRows}
         onOpen={openServiceEditor}
         onEdit={openServiceEditor}
         onDelete={deleteServiceOrder}
-        canDelete={(order) => order.status !== 'Wydane'}
         openLabel="Otwórz"
         editLabel="Otwórz kartotekę"
         deleteLabel="Usuń zlecenie"
         customRowActions={[
-          { key: 'status', label: 'Zmień status', icon: SlidersHorizontal, onClick: changeServiceStatus },
           { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => createServiceDocument(order, 'acceptance') },
           { key: 'release', label: 'Utwórz dokument wydania', icon: Download, onClick: (order) => createServiceDocument(order, 'release') }
         ]}
       />
     </section>
-    {editorOpen && <ServiceOrderEditor order={editingOrder} clients={clients} equipmentRows={equipmentRows} existingRows={rows} onClose={() => setEditorOpen(false)} onSave={saveServiceOrder} />}
+    <section className="panel service-list-panel rentals-records-section service-completed-section">
+      <div className="rentals-section-heading">
+        <div>
+          <p className="eyebrow">Historia</p>
+          <h3>Zlecenia zakończone</h3>
+        </div>
+        <ButtonSecondary onClick={() => setServiceHistoryCollapsed((v) => !v)}>{serviceHistoryCollapsed ? 'Rozwiń' : 'Zwiń'} · {completedTableRows.length}</ButtonSecondary>
+      </div>
+      {!serviceHistoryCollapsed && <DataTable
+        storageKey={`${SERVICE_TABLE_KEY}-completed`}
+        loading={loading}
+        columns={completedServiceColumns}
+        rows={completedTableRows}
+        onOpen={openServiceEditor}
+        onDelete={handleDeleteCompletedServiceOrder}
+        openLabel="Podgląd zlecenia"
+        deleteLabel="Usuń z historii"
+        customRowActions={[
+          { key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: handleRestoreServiceOrder },
+          { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => createServiceDocument(order, 'acceptance') },
+          { key: 'release', label: 'Utwórz dokument wydania', icon: Download, onClick: (order) => createServiceDocument(order, 'release') }
+        ]}
+      />}
+    </section>
+    {editorOpen && <ServiceOrderEditor order={editingOrder} clients={clients} equipmentRows={equipmentRows} existingRows={rows} serviceStatuses={serviceStatuses} servicePriorities={servicePriorities} serviceDeviceCategories={serviceDeviceCategories} serviceIntakeConditions={serviceIntakeConditions} serviceExternalServices={serviceExternalServices} serviceProgressTemplates={serviceProgressTemplates} onClose={() => setEditorOpen(false)} onSave={saveServiceOrder} />}
   </div>;
 }
 
@@ -3411,12 +3795,34 @@ function formatServiceDateTime(value) {
   return date.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClose, onSave }) {
+function parseServiceAmount(value) {
+  if (value === '' || value === null || value === undefined) return 0;
+  const number = Number(String(value).replace(',', '.'));
+  return Number.isFinite(number) ? number : 0;
+}
+
+function buildServiceEstimateItems(order) {
+  if (Array.isArray(order?.estimate_items) && order.estimate_items.length) {
+    return order.estimate_items.map((item) => ({
+      id: item.id || crypto.randomUUID(),
+      name: String(item.name ?? '').trim(),
+      amount: item.amount ?? ''
+    })).filter((item) => item.name || String(item.amount ?? '').trim());
+  }
+  return [
+    { name: 'Koszt części', amount: order?.parts_cost },
+    { name: 'Koszt robocizny', amount: order?.labor_cost },
+    { name: 'Inne koszty', amount: order?.other_cost }
+  ].filter((item) => parseServiceAmount(item.amount) > 0).map((item) => ({ ...item, id: crypto.randomUUID() }));
+}
+
+function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, serviceStatuses = SERVICE_STATUSES, servicePriorities = SERVICE_PRIORITIES, serviceDeviceCategories = DEFAULT_SERVICE_DEVICE_CATEGORIES, serviceIntakeConditions = DEFAULT_SERVICE_INTAKE_CONDITIONS, serviceExternalServices = DEFAULT_SERVICE_EXTERNAL_SERVICES, serviceProgressTemplates = DEFAULT_SERVICE_PROGRESS_TEMPLATES, onClose, onSave }) {
   const [activeTab, setActiveTab] = useState('basic');
   const [form, setForm] = useState(() => ({
     service_number: order?.service_number || generateServiceNumber(existingRows),
-    status: order?.status || 'Przyjęte',
-    priority: order?.priority || 'Normalny',
+    claim_type: order?.claim_type || 'Pogwarancyjna',
+    status: order?.status || serviceStatuses[0] || 'Przyjęte',
+    priority: order?.priority || (servicePriorities.includes('Normalny') ? 'Normalny' : servicePriorities[0]) || 'Normalny',
     client_id: order?.client_id || order?.clients?.id || '',
     equipment_id: order?.equipment_id || order?.equipment?.id || '',
     accepted_date: order?.accepted_date || getLocalIsoDate(),
@@ -3428,17 +3834,24 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
     customer_device_serial: order?.customer_device_serial || order?.equipment?.serial || '',
     customer_device_code: order?.customer_device_code || order?.equipment?.barcode || order?.equipment?.inventory_number || '',
     customer_device_category: order?.customer_device_category || '',
-    intake_condition: order?.intake_condition || 'Dobry',
+    intake_condition: order?.intake_condition || (serviceIntakeConditions.includes('Dobry') ? 'Dobry' : serviceIntakeConditions[0]) || 'Dobry',
     intake_accessories: order?.intake_accessories || '',
     intake_visual_notes: order?.intake_visual_notes || '',
     fault_description: order?.fault_description || '',
     diagnosis: order?.diagnosis || '',
     work_performed: order?.work_performed || '',
     parts_materials: order?.parts_materials || '',
+    external_service: order?.external_service || '',
+    external_rma_number: order?.external_rma_number || '',
+    external_sent_date: order?.external_sent_date || '',
+    external_return_date: order?.external_return_date || '',
+    external_cost: order?.external_cost ?? '',
+    external_notes: order?.external_notes || '',
     labor_cost: order?.labor_cost ?? '',
     parts_cost: order?.parts_cost ?? '',
     other_cost: order?.other_cost ?? '',
     total_cost: order?.total_cost ?? '',
+    estimate_items: buildServiceEstimateItems(order),
     estimate_status: order?.estimate_status || 'Roboczy',
     internal_notes: order?.internal_notes || order?.notes || '',
     attachments: Array.isArray(order?.attachments) ? order.attachments : [],
@@ -3458,29 +3871,43 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
   const [newAttachmentName, setNewAttachmentName] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
   const [newAttachmentType, setNewAttachmentType] = useState('Zdjęcie');
+  const [newEstimateItemName, setNewEstimateItemName] = useState('');
+  const [newEstimateItemAmount, setNewEstimateItemAmount] = useState('');
 
   const orderId = form.id ?? form.localId;
   const selectedClient = localClients.find((client) => client.id === form.client_id) ?? order?.clients ?? null;
   const selectedEquipment = equipmentRows.find((item) => item.id === form.equipment_id) ?? order?.equipment ?? null;
-  const categories = [...new Set(['Kamera', 'Obiektyw', 'Audio', 'Oświetlenie', 'Komputer', 'Akcesoria', ...equipmentRows.map((item) => item.category).filter(Boolean), form.customer_device_category].filter(Boolean))];
-  const conditions = [...new Set([...(DEFAULT_CONFIG_DICTIONARIES.equipmentConditions ?? []), form.intake_condition].filter(Boolean))];
-  const laborCost = Number(String(form.labor_cost || 0).replace(',', '.')) || 0;
-  const partsCost = Number(String(form.parts_cost || 0).replace(',', '.')) || 0;
-  const otherCost = Number(String(form.other_cost || 0).replace(',', '.')) || 0;
-  const calculatedTotal = laborCost + partsCost + otherCost;
+  const categories = [...new Set([...serviceDeviceCategories, ...equipmentRows.map((item) => item.category).filter(Boolean), form.customer_device_category].filter(Boolean))];
+  const conditions = [...new Set([...serviceIntakeConditions, form.intake_condition].filter(Boolean))];
+  const externalServices = [...new Set([...serviceExternalServices, form.external_service].filter(Boolean))];
+  const calculatedTotal = form.estimate_items.reduce((sum, item) => sum + parseServiceAmount(item.amount), 0);
 
   const update = (key, value) => {
     setForm((current) => {
       const next = { ...current, [key]: value };
-      if (['labor_cost', 'parts_cost', 'other_cost'].includes(key)) {
-        const nextLabor = Number(String((key === 'labor_cost' ? value : current.labor_cost) || 0).replace(',', '.')) || 0;
-        const nextParts = Number(String((key === 'parts_cost' ? value : current.parts_cost) || 0).replace(',', '.')) || 0;
-        const nextOther = Number(String((key === 'other_cost' ? value : current.other_cost) || 0).replace(',', '.')) || 0;
-        next.total_cost = (nextLabor + nextParts + nextOther).toFixed(2);
-      }
+      if (key === 'estimate_items') next.total_cost = value.reduce((sum, item) => sum + parseServiceAmount(item.amount), 0).toFixed(2);
       if (key === 'status' && value === 'Wydane' && !next.completed_date) next.completed_date = getLocalIsoDate();
       return next;
     });
+  };
+
+  const addEstimateItem = () => {
+    update('estimate_items', [...form.estimate_items, { id: crypto.randomUUID(), name: '', amount: '' }]);
+  };
+
+  const updateEstimateItem = (id, key, value) => {
+    update('estimate_items', form.estimate_items.map((item) => item.id === id ? { ...item, [key]: value } : item));
+  };
+
+  const removeEstimateItem = (id) => {
+    update('estimate_items', form.estimate_items.filter((item) => item.id !== id));
+  };
+
+  const commitNewEstimateItem = () => {
+    if (!newEstimateItemName.trim() || !String(newEstimateItemAmount).trim()) return;
+    update('estimate_items', [...form.estimate_items, { id: crypto.randomUUID(), name: newEstimateItemName.trim(), amount: newEstimateItemAmount }]);
+    setNewEstimateItemName('');
+    setNewEstimateItemAmount('');
   };
 
   const loadProgress = async () => {
@@ -3491,7 +3918,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
       return;
     }
     setProgressRows(data ?? []);
-    setProgressNotice(local ? 'Postępy działają lokalnie, ponieważ Supabase nie jest skonfigurowany.' : '');
+    setProgressNotice('');
   };
 
   useEffect(() => { loadProgress(); }, [orderId]);
@@ -3534,7 +3961,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
     }
     const result = await createClientRecord(payload);
     if (result.error) {
-      alert(result.error.message);
+      alert(humanizeError(result.error, 'client'));
       return;
     }
     setClientEditorOpen(false);
@@ -3561,7 +3988,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
   const clearEquipmentLink = () => update('equipment_id', '');
 
   const submit = () => {
-    onSave({ ...order, ...form, total_cost: form.total_cost || calculatedTotal.toFixed(2) });
+    onSave({ ...order, ...form, total_cost: calculatedTotal.toFixed(2) });
   };
 
   const addProgress = async () => {
@@ -3575,7 +4002,21 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
       return;
     }
     setNewProgressText('');
-    setProgressNotice(local ? 'Wpis postępu zapisano lokalnie.' : '');
+    setProgressNotice('');
+    await loadProgress();
+  };
+
+  const addProgressTemplate = async (template) => {
+    if (!orderId) {
+      setProgressNotice('Najpierw zapisz zlecenie, potem dodaj wpis z szablonu.');
+      return;
+    }
+    const { error, local } = await createServiceOrderProgress(orderId, template, demoUser.name);
+    if (error) {
+      setProgressNotice(`Nie udało się zapisać wpisu z szablonu w Supabase: ${error.message}`);
+      return;
+    }
+    setProgressNotice('');
     await loadProgress();
   };
 
@@ -3587,7 +4028,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
     }
     setEditingProgressId(null);
     setEditingProgressText('');
-    setProgressNotice(local ? 'Wpis postępu zapisano lokalnie.' : '');
+    setProgressNotice('');
     await loadProgress();
   };
 
@@ -3598,7 +4039,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
       setProgressNotice(`Nie udało się usunąć wpisu w Supabase: ${error.message}`);
       return;
     }
-    setProgressNotice(local ? 'Wpis postępu usunięto lokalnie.' : '');
+    setProgressNotice('');
     await loadProgress();
   };
 
@@ -3617,7 +4058,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
   const tabs = [
     { id: 'basic', label: 'Dane podstawowe' },
     { id: 'progress', label: 'Postępy' },
-    { id: 'photos', label: 'Zdjęcia' },
+    { id: 'external', label: 'Serwis zewnętrzny' },
     { id: 'estimate', label: 'Kosztorys' },
     { id: 'notes', label: 'Notatki' }
   ];
@@ -3645,31 +4086,24 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
     onClose={onClose}
     footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
   >
+    <div className="service-document-strip">
+      <FormField label="Numer zlecenia"><AppInput value={form.service_number} onChange={(event) => update('service_number', event.target.value)} /></FormField>
+      <FormField label="Typ zgłoszenia"><AppSelect value={form.claim_type} onChange={(event) => update('claim_type', event.target.value)}><option>Gwarancyjna</option><option>Pogwarancyjna</option></AppSelect></FormField>
+      <FormField label="Status"><AppSelect value={form.status} onChange={(event) => update('status', event.target.value)}>{serviceStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
+      <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(event) => update('priority', event.target.value)}>{servicePriorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></FormField>
+      <FormField label="Data przyjęcia"><AppInput type="date" value={form.accepted_date} onChange={(event) => update('accepted_date', event.target.value)} /></FormField>
+      <FormField label="Planowany termin"><AppInput type="date" value={form.planned_date || ''} onChange={(event) => update('planned_date', event.target.value)} /></FormField>
+      <FormField label="Data zakończenia"><AppInput type="date" value={form.completed_date || ''} onChange={(event) => update('completed_date', event.target.value)} /></FormField>
+    </div>
     <div className="service-order-tabs" role="tablist" aria-label="Sekcje zlecenia serwisowego">
       {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
     </div>
     <div className="service-order-tab-panel">
-      {activeTab === 'basic' && <div className="service-tab-content">
-        <SectionPanel className="service-record-section service-record-main" title="Dane zlecenia">
-          <div className="service-form-grid service-form-grid-main">
-            <FormField label="Numer zlecenia"><AppInput value={form.service_number} onChange={(event) => update('service_number', event.target.value)} /></FormField>
-            <FormField label="Status"><AppSelect value={form.status} onChange={(event) => update('status', event.target.value)}>{SERVICE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
-            <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(event) => update('priority', event.target.value)}>{SERVICE_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></FormField>
-            <FormField label="Data przyjęcia"><AppInput type="date" value={form.accepted_date} onChange={(event) => update('accepted_date', event.target.value)} /></FormField>
-            <FormField label="Planowany termin"><AppInput type="date" value={form.planned_date || ''} onChange={(event) => update('planned_date', event.target.value)} /></FormField>
-            <FormField label="Data zakończenia"><AppInput type="date" value={form.completed_date || ''} onChange={(event) => update('completed_date', event.target.value)} /></FormField>
-          </div>
-        </SectionPanel>
-
+      {activeTab === 'basic' && <div className="service-tab-content service-tab-basic">
         <SectionPanel className="service-record-section" title="Klient i sprzęt klienta">
           <div className="service-customer-device-grid">
             <div className="service-link-row">
-              <button type="button" className={`service-link-card service-client-chip ${selectedClient ? 'selected' : ''}`} onClick={() => setClientPickerOpen(true)}>
-                <span>Klient</span>
-                <strong>{selectedClient?.name || 'Wybierz klienta'}</strong>
-                <small>{selectedClient?.phone || selectedClient?.email || 'Kliknij, aby wybrać'}</small>
-                <em>Zmień</em>
-              </button>
+              <ClientChoiceCard client={selectedClient} onClick={() => setClientPickerOpen(true)} className="service-client-chip" />
               <div className="service-linked-equipment-box">
                 <span>Powiązanie z magazynem</span>
                 <strong>{selectedEquipment?.name || 'Brak powiązania'}</strong>
@@ -3691,12 +4125,20 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
             </div>
           </div>
         </SectionPanel>
+        <SectionPanel className="service-record-section service-fault-section" title="Opis usterki">
+          <FormField label="Opis usterki"><AppTextarea value={form.fault_description} onChange={(event) => update('fault_description', event.target.value)} placeholder="Co zgłasza klient / operator?" /></FormField>
+        </SectionPanel>
+      </div>}
 
-        <SectionPanel className="service-record-section service-text-section" title="Opis i przebieg">
-          <div className="service-text-grid">
-            <FormField label="Opis usterki"><AppTextarea value={form.fault_description} onChange={(event) => update('fault_description', event.target.value)} placeholder="Co zgłasza klient / operator?" /></FormField>
-            <FormField label="Diagnoza"><AppTextarea value={form.diagnosis} onChange={(event) => update('diagnosis', event.target.value)} /></FormField>
-            <FormField label="Wykonane czynności"><AppTextarea value={form.work_performed} onChange={(event) => update('work_performed', event.target.value)} /></FormField>
+      {activeTab === 'external' && <div className="service-tab-content">
+        <SectionPanel className="service-record-section service-external-section" title="Obsługa zewnętrzna">
+          <div className="service-external-grid">
+            <FormField label="Serwis zewnętrzny"><AppSelect value={form.external_service} onChange={(event) => update('external_service', event.target.value)}><option value="">Brak</option>{externalServices.map((service) => <option key={service} value={service}>{service}</option>)}</AppSelect></FormField>
+            <FormField label="Numer zgłoszenia / RMA"><AppInput value={form.external_rma_number} onChange={(event) => update('external_rma_number', event.target.value)} /></FormField>
+            <FormField label="Data wysłania"><AppInput type="date" value={form.external_sent_date || ''} onChange={(event) => update('external_sent_date', event.target.value)} /></FormField>
+            <FormField label="Data powrotu"><AppInput type="date" value={form.external_return_date || ''} onChange={(event) => update('external_return_date', event.target.value)} /></FormField>
+            <FormField label="Koszt zewnętrzny"><div className="money-input"><AppInput value={form.external_cost} onChange={(event) => update('external_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
+            <FormField className="service-external-notes-field" label="Uwagi do serwisu zewnętrznego"><AppTextarea value={form.external_notes} onChange={(event) => update('external_notes', event.target.value)} /></FormField>
           </div>
         </SectionPanel>
       </div>}
@@ -3722,29 +4164,26 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
         </SectionPanel>
       </div>}
 
-      {activeTab === 'photos' && <div className="service-tab-content">
-        <SectionPanel className="service-record-section" title="Zdjęcia i załączniki">
-          <div className="attachment-add-grid service-attachment-add-grid">
-            <AppInput value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa zdjęcia / załącznika" />
-            <AppInput value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link, opis lub identyfikator pliku" />
-            <AppSelect value={newAttachmentType} onChange={(event) => setNewAttachmentType(event.target.value)}><option>Zdjęcie</option><option>Protokół</option><option>Inny</option></AppSelect>
-            <AppButton variant="secondary" size="sm" onClick={addAttachment}>Dodaj</AppButton>
-          </div>
-          <div className="equipment-list-box">
-            {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.type || 'Załącznik'}:</strong> {item.name || item.url}{item.url && item.name ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Upload plików nie jest jeszcze podłączony. Możesz zapisać opis/link załącznika w strukturze zlecenia.</p>}
-          </div>
-        </SectionPanel>
-      </div>}
-
       {activeTab === 'estimate' && <div className="service-tab-content">
         <SectionPanel className="service-record-section" title="Kosztorys">
-          <div className="service-estimate-grid">
-            <FormField className="service-wide-field" label="Części / materiały"><AppTextarea value={form.parts_materials} onChange={(event) => update('parts_materials', event.target.value)} /></FormField>
-            <FormField label="Koszt części"><div className="money-input"><AppInput value={form.parts_cost} onChange={(event) => update('parts_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
-            <FormField label="Koszt robocizny"><div className="money-input"><AppInput value={form.labor_cost} onChange={(event) => update('labor_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
-            <FormField label="Inne koszty"><div className="money-input"><AppInput value={form.other_cost} onChange={(event) => update('other_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
-            <FormField label="Status kosztorysu"><AppSelect value={form.estimate_status} onChange={(event) => update('estimate_status', event.target.value)}>{SERVICE_ESTIMATE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
-            <div className="service-total-box"><span>Suma</span><strong>{formatServiceMoney(form.total_cost || calculatedTotal)}</strong></div>
+          <div className="service-estimate-list">
+            <div className="service-estimate-add-bar">
+              <AppInput value={newEstimateItemName} onChange={(event) => setNewEstimateItemName(event.target.value)} placeholder="Nazwa pozycji" onKeyDown={(e) => e.key === 'Enter' && commitNewEstimateItem()} />
+              <div className="money-input"><AppInput value={newEstimateItemAmount} onChange={(event) => setNewEstimateItemAmount(event.target.value)} placeholder="0,00" onKeyDown={(e) => e.key === 'Enter' && commitNewEstimateItem()} /><span>zł</span></div>
+              <AppButton variant="secondary" size="sm" onClick={commitNewEstimateItem} disabled={!newEstimateItemName.trim() || !String(newEstimateItemAmount).trim()}>Dodaj</AppButton>
+            </div>
+            <div className="service-estimate-items">
+              {form.estimate_items.map((item) => <div className="service-estimate-item-row" key={item.id}>
+                <span className="service-estimate-item-name">{item.name}</span>
+                <span className="service-estimate-item-amount">{formatServiceMoney(item.amount)}</span>
+                <button type="button" className="ghost-mini-button" onClick={() => removeEstimateItem(item.id)}>Usuń</button>
+              </div>)}
+              {!form.estimate_items.length && <p className="muted">Brak pozycji kosztorysu.</p>}
+            </div>
+            <div className="service-estimate-footer">
+              <FormField label="Status kosztorysu"><AppSelect value={form.estimate_status} onChange={(event) => update('estimate_status', event.target.value)}>{SERVICE_ESTIMATE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
+              <div className="service-total-box"><span>Koszt końcowy / suma</span><strong>{formatServiceMoney(calculatedTotal)}</strong></div>
+            </div>
           </div>
         </SectionPanel>
       </div>}
@@ -3753,19 +4192,675 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, onClo
         <SectionPanel className="service-record-section" title="Notatki wewnętrzne">
           <FormField label="Notatki operatora"><AppTextarea className="large-notes" value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} placeholder="Wewnętrzne informacje dla obsługi. Nie mieszać z postępami serwisowymi." /></FormField>
         </SectionPanel>
+        <SectionPanel className="service-record-section" title="Zdjęcia i załączniki">
+          <div className="attachment-add-grid service-attachment-add-grid">
+            <AppInput value={newAttachmentName} onChange={(event) => setNewAttachmentName(event.target.value)} placeholder="Nazwa zdjęcia / załącznika" />
+            <AppInput value={newAttachmentUrl} onChange={(event) => setNewAttachmentUrl(event.target.value)} placeholder="Link, opis lub identyfikator pliku" />
+            <AppSelect value={newAttachmentType} onChange={(event) => setNewAttachmentType(event.target.value)}><option>Zdjęcie</option><option>Protokół</option><option>Inny</option></AppSelect>
+            <AppButton variant="secondary" size="sm" onClick={addAttachment}>Dodaj</AppButton>
+          </div>
+          <div className="equipment-list-box">
+            {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.type || 'Załącznik'}:</strong> {item.name || item.url}{item.url && item.name ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Możesz zapisać opis, link lub numer dokumentu.</p>}
+          </div>
+        </SectionPanel>
       </div>}
     </div>
   </ResizableModalFrame>;
 }
-function CalendarModule() {
-  return <ModulePage title="Kalendarz" description="Widok rezerwacji, wypożyczeń, terminów serwisowych i zadań na osi czasu." table={<Timeline />} />;
+const CALENDAR_VIEW_STORAGE_KEY = 'fixer-calendar-view';
+const CALENDAR_SOURCES_STORAGE_KEY = 'fixer-calendar-sources';
+const CALENDAR_SOURCES = [
+  { id: 'organizer', label: 'Organizer' },
+  { id: 'rentals', label: 'Wypożyczenia' },
+  { id: 'service', label: 'Serwis' },
+  { id: 'manual', label: 'Ręczne' }
+];
+const CALENDAR_VIEWS = [
+  { id: 'day', label: 'Dzień', icon: Clock },
+  { id: 'week', label: 'Tydzień', icon: Columns3 },
+  { id: 'month', label: 'Miesiąc', icon: Grid3X3 },
+  { id: 'agenda', label: 'Agenda', icon: List }
+];
+
+function getCalendarSettings() {
+  const defaultSources = Object.fromEntries(CALENDAR_SOURCES.map((source) => [source.id, true]));
+  return {
+    view: localStorage.getItem(CALENDAR_VIEW_STORAGE_KEY) || 'week',
+    sources: { ...defaultSources, ...getStoredJson(CALENDAR_SOURCES_STORAGE_KEY, defaultSources) }
+  };
 }
-function OrganizerModule() {
-  return <ModulePage title="Organizer" description="Projekty, zadania, komentarze, załączniki i przypomnienia inspirowane Asaną." table={<OrganizerBoard />} />;
+
+function toCalendarDate(value) {
+  if (!value) return null;
+  const text = String(value);
+  const date = text.includes('T') ? new Date(text) : new Date(`${text.slice(0, 10)}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
-function SettingsModule({ colorTheme, onChangeColorTheme }) {
+
+function toIsoDateValue(date) {
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function addCalendarDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getMonday(date) {
+  const next = new Date(date);
+  const day = next.getDay() || 7;
+  next.setDate(next.getDate() - day + 1);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function isSameCalendarDay(left, right) {
+  return toIsoDateValue(left) === toIsoDateValue(right);
+}
+
+function getCalendarRange(anchorDate, view) {
+  const anchor = toCalendarDate(anchorDate) ?? new Date();
+  if (view === 'day') {
+    const start = new Date(anchor); start.setHours(0, 0, 0, 0);
+    return { start, end: addCalendarDays(start, 1) };
+  }
+  if (view === 'month') {
+    const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    const start = getMonday(monthStart);
+    const end = addCalendarDays(start, 42);
+    return { start, end };
+  }
+  if (view === 'agenda') {
+    const start = new Date(anchor); start.setHours(0, 0, 0, 0);
+    return { start, end: addCalendarDays(start, 45) };
+  }
+  const start = getMonday(anchor);
+  return { start, end: addCalendarDays(start, 7) };
+}
+
+function formatCalendarRange(anchorDate, view) {
+  const { start, end } = getCalendarRange(anchorDate, view);
+  if (view === 'day') return start.toLocaleDateString('pl-PL', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+  const last = addCalendarDays(end, -1);
+  return `${start.toLocaleDateString('pl-PL', { day: '2-digit', month: 'short' })} - ${last.toLocaleDateString('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+}
+
+function getCalendarEventColor(event, statusColors = getStatusColors()) {
+  const statusKey = String(event.statusLabel ?? '').toLowerCase();
+  if (statusColors[statusKey]) return statusColors[statusKey];
+  if (event.source === 'rentals') return statusColors['aktywne'] ?? '#3b82f6';
+  if (event.source === 'service') return statusColors['serwis'] ?? '#6366f1';
+  if (event.source === 'organizer') return statusColors['do zrobienia'] ?? '#3b82f6';
+  return event.color || '#14b8a6';
+}
+
+function buildCalendarEvents({ organizerRows = [], rentalsRows = [], serviceRows = [], manualRows = [] }) {
+  const push = (events, event) => {
+    const start = toCalendarDate(event.start);
+    if (!start) return;
+    events.push({ ...event, start, dateKey: toIsoDateValue(start), id: event.id });
+  };
+  const events = [];
+
+  organizerRows.filter((task) => !task.archived).forEach((task) => {
+    const recordId = task.id ?? task.localId;
+    if (task.due_date) push(events, {
+      id: `organizer:due:${recordId}`,
+      source: 'organizer',
+      sourceId: recordId,
+      sourceRecord: task,
+      sourceLabel: 'Organizer',
+      title: task.title,
+      subtitle: task.category || task.priority || '',
+      start: task.due_date,
+      statusLabel: task.status,
+      typeLabel: 'Termin zadania'
+    });
+    if (task.reminder_at) push(events, {
+      id: `organizer:reminder:${recordId}`,
+      source: 'organizer',
+      sourceId: recordId,
+      sourceRecord: task,
+      sourceLabel: 'Organizer',
+      title: `Przypomnienie: ${task.title}`,
+      subtitle: task.category || task.priority || '',
+      start: task.reminder_at,
+      statusLabel: task.status,
+      typeLabel: 'Przypomnienie'
+    });
+  });
+
+  rentalsRows.filter((rental) => rental.status !== 'returned').forEach((rental) => {
+    if (rental.start_date) push(events, {
+      id: `rentals:start:${rental.id}`,
+      source: 'rentals',
+      sourceId: rental.id,
+      sourceRecord: rental,
+      sourceLabel: 'Wypożyczenia',
+      title: `Wydanie ${rental.rental_number || ''}`.trim(),
+      subtitle: rental.clients?.name || '',
+      start: rental.start_date,
+      statusLabel: formatRentalStatus(rental.status),
+      typeLabel: 'Planowane wydanie'
+    });
+    if (rental.planned_return_date) push(events, {
+      id: `rentals:return:${rental.id}`,
+      source: 'rentals',
+      sourceId: rental.id,
+      sourceRecord: rental,
+      sourceLabel: 'Wypożyczenia',
+      title: `Zwrot ${rental.rental_number || ''}`.trim(),
+      subtitle: rental.clients?.name || '',
+      start: rental.planned_return_date,
+      statusLabel: getRentalOverdueDays(rental) ? 'Po terminie' : formatRentalStatus(rental.status),
+      typeLabel: 'Planowany zwrot'
+    });
+  });
+
+  serviceRows.forEach((order) => {
+    const isClosed = order.status === 'Wydane' || order.status === 'Anulowane';
+    if (order.planned_date && !isClosed) push(events, {
+      id: `service:planned:${order.id}`,
+      source: 'service',
+      sourceId: order.id,
+      sourceRecord: order,
+      sourceLabel: 'Serwis',
+      title: `Serwis ${order.service_number || ''}`.trim(),
+      subtitle: order.customer_device_name || order.equipment?.name || '',
+      start: order.planned_date,
+      statusLabel: order.status,
+      typeLabel: 'Planowany termin'
+    });
+    if (order.completed_date) push(events, {
+      id: `service:completed:${order.id}`,
+      source: 'service',
+      sourceId: order.id,
+      sourceRecord: order,
+      sourceLabel: 'Serwis',
+      title: `Zakończenie ${order.service_number || ''}`.trim(),
+      subtitle: order.customer_device_name || '',
+      start: order.completed_date,
+      statusLabel: order.status,
+      typeLabel: 'Data zakończenia'
+    });
+    if (order.external_service && order.external_return_date && !isClosed) push(events, {
+      id: `service:external-return:${order.id}`,
+      source: 'service',
+      sourceId: order.id,
+      sourceRecord: order,
+      sourceLabel: 'Serwis',
+      title: `Powrót z ${order.external_service}`,
+      subtitle: order.service_number || order.customer_device_name || '',
+      start: order.external_return_date,
+      statusLabel: order.status,
+      typeLabel: 'Serwis zewnętrzny'
+    });
+  });
+
+  manualRows.forEach((event) => push(events, {
+    id: `manual:${event.id ?? event.localId}`,
+    source: 'manual',
+    sourceId: event.id ?? event.localId,
+    sourceRecord: event,
+    sourceLabel: 'Ręczne',
+    title: event.title,
+    subtitle: event.location || event.description || '',
+    start: event.start_at,
+    end: event.end_at,
+    color: event.color,
+    statusLabel: 'Ręczne',
+    typeLabel: 'Wydarzenie ręczne'
+  }));
+
+  return events.sort((left, right) => left.start - right.start || left.title.localeCompare(right.title, 'pl'));
+}
+
+function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDelete }) {
+  const [form, setForm] = useState(() => ({
+    title: event?.title ?? '',
+    description: event?.description ?? '',
+    start_at: event?.start_at ? String(event.start_at).slice(0, 16) : `${initialDate || getLocalIsoDate()}T09:00`,
+    end_at: event?.end_at ? String(event.end_at).slice(0, 16) : '',
+    all_day: event?.all_day !== false,
+    location: event?.location ?? '',
+    color: event?.color ?? '#14b8a6'
+  }));
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const submit = () => {
+    if (!form.title.trim()) { alert('Tytuł wydarzenia jest wymagany.'); return; }
+    onSave({ ...event, ...form, start_at: form.start_at ? new Date(form.start_at).toISOString() : null, end_at: form.end_at ? new Date(form.end_at).toISOString() : null });
+  };
+
+  return <ResizableModalFrame
+    className="calendar-event-modal"
+    storageKey="fixer-calendar-event-modal"
+    defaultSize={{ width: 680, height: 500 }}
+    minSize={{ width: 520, height: 420 }}
+    eyebrow="Kalendarz"
+    title={event ? 'Wydarzenie ręczne' : 'Nowe wydarzenie'}
+    onClose={onClose}
+    footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary>{event && <ButtonSecondary className="danger-action" onClick={() => onDelete(event)}><Trash2 size={15} />Usuń</ButtonSecondary>}<ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
+  >
+    <div className="calendar-event-form">
+      <FormField label="Tytuł *"><AppInput value={form.title} onChange={(event) => update('title', event.target.value)} /></FormField>
+      <div className="calendar-event-form-row">
+        <FormField label="Start"><AppInput type="datetime-local" value={form.start_at} onChange={(event) => update('start_at', event.target.value)} /></FormField>
+        <FormField label="Koniec"><AppInput type="datetime-local" value={form.end_at} onChange={(event) => update('end_at', event.target.value)} /></FormField>
+      </div>
+      <div className="calendar-event-form-row calendar-event-compact-row">
+        <FormField label="Miejsce"><AppInput value={form.location} onChange={(event) => update('location', event.target.value)} /></FormField>
+        <FormField label="Kolor"><AppInput type="color" value={form.color} onChange={(event) => update('color', event.target.value)} /></FormField>
+      </div>
+      <FormField label="Opis"><AppTextarea value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
+      <label className="settings-check calendar-all-day-check"><input type="checkbox" checked={form.all_day} onChange={(event) => update('all_day', event.target.checked)} />Wydarzenie całodniowe</label>
+    </div>
+  </ResizableModalFrame>;
+}
+
+function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate }) {
+  const settings = getCalendarSettings();
+  const [view, setView] = useState(CALENDAR_VIEWS.some((item) => item.id === settings.view) ? settings.view : 'week');
+  const [anchorDate, setAnchorDate] = useState(getLocalIsoDate());
+  const [sources, setSources] = useState(settings.sources);
+  const [organizerRows, setOrganizerRows] = useState([]);
+  const [rentalsRows, setRentalsRows] = useState([]);
+  const [serviceRows, setServiceRows] = useState([]);
+  const [manualRows, setManualRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [editingManualEvent, setEditingManualEvent] = useState(null);
+  const [newEventDate, setNewEventDate] = useState(null);
+  const [pendingOpenCalendarEventId, setPendingOpenCalendarEventId] = useState(null);
+  const statusColors = getStatusColors();
+
+  const loadCalendar = async () => {
+    setLoading(true);
+    const [organizerResult, rentalsResult, serviceResult, manualResult] = await Promise.all([
+      fetchOrganizerTasks(),
+      fetchRentals(),
+      fetchServiceOrders(),
+      fetchCalendarManualEvents()
+    ]);
+    setOrganizerRows(organizerResult.data ?? []);
+    setRentalsRows(rentalsResult.data ?? []);
+    setServiceRows(serviceResult.data ?? []);
+    setManualRows(manualResult.data ?? []);
+    const errors = [organizerResult.error ? 'Organizer' : '', rentalsResult.error ? 'Wypożyczenia' : '', serviceResult.error ? 'Serwis' : '', manualResult.error ? 'Kalendarz' : ''].filter(Boolean);
+    setNotice(errors.length ? `Nie udało się pobrać danych: ${errors.join(', ')}.` : '');
+    setLoading(false);
+  };
+
+  useEffect(() => { loadCalendar(); }, []);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'calendar') return;
+    if (dashboardIntent.eventId) setPendingOpenCalendarEventId(dashboardIntent.eventId);
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent]);
+
+  useEffect(() => {
+    if (!pendingOpenCalendarEventId || !manualRows.length) return;
+    const event = manualRows.find((row) => String(row.id ?? row.localId) === String(pendingOpenCalendarEventId));
+    if (event) setEditingManualEvent(event);
+    setPendingOpenCalendarEventId(null);
+  }, [pendingOpenCalendarEventId, manualRows]);
+
+  const changeView = (nextView) => {
+    setView(nextView);
+    localStorage.setItem(CALENDAR_VIEW_STORAGE_KEY, nextView);
+  };
+  const toggleSource = (sourceId) => {
+    setSources((current) => {
+      const next = { ...current, [sourceId]: !current[sourceId] };
+      localStorage.setItem(CALENDAR_SOURCES_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const allEvents = useMemo(() => buildCalendarEvents({ organizerRows, rentalsRows, serviceRows, manualRows }), [organizerRows, rentalsRows, serviceRows, manualRows]);
+  const { start, end } = getCalendarRange(anchorDate, view);
+  const visibleEvents = allEvents.filter((event) => sources[event.source] !== false && event.start >= start && event.start < end);
+  const days = Array.from({ length: Math.round((end - start) / (24 * 60 * 60 * 1000)) }, (_, index) => addCalendarDays(start, index));
+  const eventsByDay = (day) => visibleEvents.filter((event) => event.dateKey === toIsoDateValue(day));
+
+  const move = (direction) => {
+    const current = toCalendarDate(anchorDate) ?? new Date();
+    const next = view === 'month' ? new Date(current.getFullYear(), current.getMonth() + direction, 1) : addCalendarDays(current, direction * (view === 'day' ? 1 : view === 'agenda' ? 14 : 7));
+    setAnchorDate(toIsoDateValue(next));
+  };
+
+  const openEvent = (event) => {
+    if (event.source === 'manual') { setEditingManualEvent(event.sourceRecord); return; }
+    if (event.source === 'organizer') onNavigate('organizer', { type: 'organizer', taskId: event.sourceId });
+    if (event.source === 'rentals') onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: event.sourceId });
+    if (event.source === 'service') onNavigate('service', { type: 'service', serviceOrderId: event.sourceId });
+  };
+
+  const saveManualEvent = async (event) => {
+    const result = event.id || event.localId
+      ? await updateCalendarManualEvent(event.id ?? event.localId, event)
+      : await createCalendarManualEvent(event);
+    if (result.error) { alert(humanizeError(result.error, 'calendar')); return; }
+    setEditingManualEvent(null);
+    setNewEventDate(null);
+    await loadCalendar();
+  };
+
+  const removeManualEvent = async (event) => {
+    if (!confirm(`Usunąć wydarzenie: ${event.title}?`)) return;
+    const { error } = await deleteCalendarManualEvent(event.id ?? event.localId, event);
+    if (error) { alert(humanizeError(error, 'calendar')); return; }
+    setEditingManualEvent(null);
+    await loadCalendar();
+  };
+
+  const renderEvent = (event) => {
+    const color = getCalendarEventColor(event, statusColors);
+    return <button key={event.id} type="button" className={`calendar-event calendar-event-${event.source}`} style={{ '--event-color': color }} onClick={() => openEvent(event)} title={`${event.sourceLabel}: ${event.title}`}>
+      <span>{event.title}</span>
+      <small>{event.typeLabel}</small>
+    </button>;
+  };
+
+  const renderGrid = () => <div className={`calendar-grid calendar-grid-${view}`}>
+    {days.map((day) => {
+      const dayEvents = eventsByDay(day);
+      const outsideMonth = view === 'month' && day.getMonth() !== (toCalendarDate(anchorDate) ?? new Date()).getMonth();
+      return <div key={toIsoDateValue(day)} className={`calendar-day-cell ${isSameCalendarDay(day, new Date()) ? 'today' : ''} ${outsideMonth ? 'outside-month' : ''}`} onDoubleClick={() => setNewEventDate(toIsoDateValue(day))}>
+        <div className="calendar-day-head"><strong>{day.toLocaleDateString('pl-PL', { weekday: view === 'month' ? 'short' : 'long' })}</strong><span>{day.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })}</span></div>
+        <div className="calendar-day-events">{dayEvents.map(renderEvent)}{!dayEvents.length && <span className="calendar-empty-slot">Dwuklik</span>}</div>
+      </div>;
+    })}
+  </div>;
+
+  const renderAgenda = () => <div className="calendar-agenda">
+    {days.map((day) => {
+      const dayEvents = eventsByDay(day);
+      if (!dayEvents.length) return null;
+      return <div className="calendar-agenda-day" key={toIsoDateValue(day)}>
+        <div className="calendar-agenda-date"><strong>{day.toLocaleDateString('pl-PL', { weekday: 'long' })}</strong><span>{day.toLocaleDateString('pl-PL', { day: '2-digit', month: 'long', year: 'numeric' })}</span></div>
+        <div className="calendar-agenda-events">{dayEvents.map(renderEvent)}</div>
+      </div>;
+    })}
+    {!visibleEvents.length && <EmptyState title="Brak wydarzeń w wybranym zakresie." description="Dwuklik w widoku dnia, tygodnia lub miesiąca doda wydarzenie ręczne." />}
+  </div>;
+
+  return <div className="calendar-page">
+    <section className="panel calendar-toolbar-panel">
+      <div className="calendar-toolbar">
+        <div className="calendar-nav">
+          <ButtonSecondary onClick={() => move(-1)}>‹</ButtonSecondary>
+          <ButtonPrimary onClick={() => setAnchorDate(getLocalIsoDate())}>Dzisiaj</ButtonPrimary>
+          <ButtonSecondary onClick={() => move(1)}>›</ButtonSecondary>
+          <strong>{formatCalendarRange(anchorDate, view)}</strong>
+        </div>
+        <div className="calendar-view-switch">{CALENDAR_VIEWS.map((item) => {
+          const Icon = item.icon;
+          return <button key={item.id} type="button" className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)} title={item.label}><Icon size={15} /><span>{item.label}</span></button>;
+        })}</div>
+        <div className="calendar-source-filters">{CALENDAR_SOURCES.map((source) => <label key={source.id}><input type="checkbox" checked={sources[source.id] !== false} onChange={() => toggleSource(source.id)} />{source.label}</label>)}</div>
+      </div>
+      {notice && <div className="notice calendar-notice">{notice}</div>}
+    </section>
+    <section className="panel calendar-surface-panel">
+      {loading && <div className="loading-line">Ładowanie kalendarza...</div>}
+      {view === 'agenda' ? renderAgenda() : renderGrid()}
+    </section>
+    {(editingManualEvent || newEventDate) && <CalendarManualEventEditor event={editingManualEvent} initialDate={newEventDate} onClose={() => { setEditingManualEvent(null); setNewEventDate(null); }} onSave={saveManualEvent} onDelete={removeManualEvent} />}
+  </div>;
+}
+function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
+  const [form, setForm] = useState(() => ({
+    title: task?.title ?? '',
+    description: task?.description ?? '',
+    status: task?.status ?? ORGANIZER_TASK_STATUSES[0],
+    priority: task?.priority ?? 'Normalny',
+    due_date: task?.due_date ?? '',
+    reminder_at: task?.reminder_at ? String(task.reminder_at).slice(0, 16) : '',
+    category: task?.category ?? '',
+    linked_module: task?.linked_module ?? '',
+    linked_label: task?.linked_label ?? '',
+    ...(task ? { id: task.id, localId: task.localId, archived: task.archived, completed_date: task.completed_date, created_at: task.created_at } : {})
+  }));
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const submit = () => {
+    if (!form.title.trim()) { alert('Tytuł zadania jest wymagany.'); return; }
+    onSave({ ...form, reminder_at: form.reminder_at ? new Date(form.reminder_at).toISOString() : null, due_date: form.due_date || null });
+  };
+  return <ResizableModalFrame
+    className="organizer-task-modal"
+    storageKey="fixer-organizer-task-modal"
+    defaultSize={{ width: 760, height: 560 }}
+    minSize={{ width: 560, height: 420 }}
+    eyebrow="Organizer"
+    title={form.title || 'Nowe zadanie'}
+    onClose={onClose}
+    footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
+  >
+    <div className="organizer-task-strip">
+      <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{ORGANIZER_TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></FormField>
+      <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(e) => update('priority', e.target.value)}>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></FormField>
+      <FormField label="Termin wykonania"><AppInput type="date" value={form.due_date} onChange={(e) => update('due_date', e.target.value)} /></FormField>
+      <FormField label="Przypomnienie"><AppInput type="datetime-local" value={form.reminder_at} onChange={(e) => update('reminder_at', e.target.value)} /></FormField>
+    </div>
+    <div className="organizer-task-fields">
+      <FormField label="Tytuł *"><AppInput value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Co trzeba zrobić?" /></FormField>
+      <div className="organizer-task-meta-row">
+        <FormField label="Kategoria"><AppSelect value={form.category} onChange={(e) => update('category', e.target.value)}><option value="">Brak kategorii</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></FormField>
+        <FormField label="Powiązanie z modułem"><AppSelect value={form.linked_module} onChange={(e) => update('linked_module', e.target.value)}><option value="">Brak</option><option value="service">Serwis</option><option value="rental">Wypożyczenie</option><option value="client">Klient</option><option value="equipment">Sprzęt</option></AppSelect></FormField>
+        {form.linked_module && <FormField label="Opis powiązania"><AppInput value={form.linked_label} onChange={(e) => update('linked_label', e.target.value)} placeholder="np. numer zlecenia" /></FormField>}
+      </div>
+    </div>
+    <SectionPanel className="service-record-section service-fault-section" title="Opis / notatka">
+      <FormField label="Opis"><AppTextarea value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="Opcjonalne szczegóły, notatki, instrukcje..." /></FormField>
+    </SectionPanel>
+  </ResizableModalFrame>;
+}
+
+function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [historyCollapsed, setHistoryCollapsed] = useState(true);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [categories, setCategories] = useState(DEFAULT_ORGANIZER_CATEGORIES);
+  const [pendingOpenTaskId, setPendingOpenTaskId] = useState(null);
+
+  const loadData = async () => {
+    setLoading(true);
+    const [tasksResult, catsResult] = await Promise.all([fetchOrganizerTasks(), fetchOrganizerCategories()]);
+    setRows(tasksResult.data ?? []);
+    setCategories((catsResult.data ?? []).map((c) => c.name).filter(Boolean));
+    if (tasksResult.error) setNotice(`Nie udało się pobrać zadań z Supabase: ${tasksResult.error.message}. Uruchom migrację supabase/010_organizer_schema.sql.`);
+    else setNotice('');
+    setLoading(false);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'organizer') return;
+    if (dashboardIntent.taskId) setPendingOpenTaskId(dashboardIntent.taskId);
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent]);
+
+  useEffect(() => {
+    if (!pendingOpenTaskId || !rows.length) return;
+    const task = rows.find((r) => String(r.id ?? r.localId) === String(pendingOpenTaskId));
+    if (task) { setEditingTask(task); setEditorOpen(true); }
+    setPendingOpenTaskId(null);
+  }, [pendingOpenTaskId, rows]);
+
+  const today = getLocalIsoDate();
+
+  const activeRows = rows.filter((r) => !r.archived);
+  const historyRows = rows.filter((r) => r.archived);
+
+  const formatReminderDisplay = (value) => {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const toTableRow = (task) => ({
+    ...task,
+    _task: task,
+    due_date_display: formatDashboardDate(task.due_date),
+    reminder_display: formatReminderDisplay(task.reminder_at),
+    created_display: formatDashboardDate(task.created_at),
+    completed_display: formatDashboardDate(task.completed_date),
+    _overdue: task.due_date && String(task.due_date).slice(0, 10) < today
+  });
+
+  const activeTableRows = useMemo(() => activeRows.map(toTableRow), [activeRows, today]);
+  const historyTableRows = useMemo(() => historyRows.map(toTableRow), [historyRows]);
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('pl');
+    return activeTableRows.filter((row) => {
+      if (statusFilter !== 'all' && row.status !== statusFilter) return false;
+      if (priorityFilter !== 'all' && row.priority !== priorityFilter) return false;
+      if (categoryFilter !== 'all' && (row.category ?? '') !== categoryFilter) return false;
+      if (query) {
+        const searchable = [row.title, row.description, row.status, row.priority, row.category, row.linked_label].filter(Boolean).join(' ').toLocaleLowerCase('pl');
+        if (!searchable.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [activeTableRows, search, statusFilter, priorityFilter, categoryFilter]);
+
+  const saveTask = async (task) => {
+    if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
+    const result = task.id || task.localId
+      ? await updateOrganizerTask(task.id ?? task.localId, task)
+      : await createOrganizerTask(task);
+    if (result.error) { alert(humanizeError(result.error, 'organizer')); return; }
+    setEditorOpen(false);
+    await loadData();
+  };
+
+  const deleteTask = async (task) => {
+    if (!confirm(`Usunąć zadanie: „${task.title}"?`)) return;
+    const { error, local } = await deleteOrganizerTask(task.id ?? task.localId, task);
+    if (error) { alert(humanizeError(error, 'organizer')); return; }
+    await loadData();
+  };
+
+  const setTaskStatus = async (task, newStatus) => {
+    if (newStatus === task.status) return;
+    if (ORGANIZER_TERMINAL_STATUSES.includes(newStatus) && !confirm(`Przenieść zadanie „${task.title}" do historii?`)) return;
+    await saveTask({
+      ...task,
+      status: newStatus,
+      archived: ORGANIZER_TERMINAL_STATUSES.includes(newStatus),
+      completed_date: ORGANIZER_TERMINAL_STATUSES.includes(newStatus) ? today : task.completed_date
+    });
+  };
+
+  const handleRestoreTask = async (task) => {
+    if (!confirm(`Przywrócić zadanie „${task.title}" jako aktywne?`)) return;
+    await saveTask({ ...task, status: ORGANIZER_TASK_STATUSES[0], archived: false, completed_date: null });
+  };
+
+  const handleDeleteHistoryTask = async (task) => {
+    if (task.archived !== true) return;
+    if (!confirm(`Usunąć zadanie „${task.title}" z historii?`)) return;
+    const { error, local } = await deleteOrganizerTask(task.id ?? task.localId, task);
+    if (error) { alert(humanizeError(error, 'organizer')); return; }
+    await loadData();
+  };
+
+  const clearFilters = () => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); setCategoryFilter('all'); };
+
+  const organizerColumns = [
+    { key: 'title', label: 'Tytuł' },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={ORGANIZER_TASK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} /> },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'due_date_display', label: 'Termin' },
+    { key: 'category', label: 'Kategoria' },
+    { key: 'reminder_display', label: 'Przypomnienie' }
+  ];
+
+  const organizerHistoryColumns = [
+    { key: 'title', label: 'Tytuł' },
+    { key: 'status', label: 'Status' },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'due_date_display', label: 'Termin' },
+    { key: 'category', label: 'Kategoria' },
+    { key: 'completed_display', label: 'Zakończono' }
+  ];
+
+  return <div className="module-page organizer-module-page">
+    <section className="panel hero-panel organizer-hero-panel">
+      <div className="module-actions">
+        <AppButton variant="primary" className="module-action-button" onClick={() => { setEditingTask(null); setEditorOpen(true); }}><Plus size={18} />Nowe zadanie</AppButton>
+        <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
+      </div>
+      {notice && <div className="notice">{notice}</div>}
+    </section>
+
+    <section className="panel service-list-panel rentals-records-section">
+      <div className="rentals-section-heading">
+        <div><p className="eyebrow">Aktywne</p><h3>Zadania aktywne</h3></div>
+        <span>{activeRows.length} pozycji</span>
+      </div>
+      <div className="client-filter-bar organizer-filter-bar">
+        <label>Szukaj<AppInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tytuł, opis, kategoria..." /></label>
+        <label>Status<AppSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">Wszystkie</option>{ORGANIZER_TASK_STATUSES.filter((s) => !ORGANIZER_TERMINAL_STATUSES.includes(s)).map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></label>
+        <label>Priorytet<AppSelect value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}><option value="all">Wszystkie</option>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></label>
+        <label>Kategoria<AppSelect value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="all">Wszystkie</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></label>
+        <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść</AppButton>
+        <span className="filter-count">{filteredRows.length} / {activeRows.length}</span>
+      </div>
+      <DataTable
+        storageKey={ORGANIZER_TABLE_KEY}
+        loading={loading}
+        columns={organizerColumns}
+        rows={filteredRows}
+        onOpen={(row) => { setEditingTask(row._task); setEditorOpen(true); }}
+        onEdit={(row) => { setEditingTask(row._task); setEditorOpen(true); }}
+        onDelete={(row) => deleteTask(row._task)}
+        openLabel="Otwórz zadanie"
+        editLabel="Edytuj zadanie"
+        deleteLabel="Usuń zadanie"
+        customRowActions={[
+          { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCircle2, visible: (row) => !ORGANIZER_TERMINAL_STATUSES.includes(row.status), onClick: (row) => setTaskStatus(row._task, 'Zrobione') }
+        ]}
+      />
+    </section>
+
+    <section className="panel service-list-panel rentals-records-section service-completed-section">
+      <div className="rentals-section-heading">
+        <div><p className="eyebrow">Historia</p><h3>Zadania zakończone</h3></div>
+        <ButtonSecondary onClick={() => setHistoryCollapsed((v) => !v)}>{historyCollapsed ? 'Rozwiń' : 'Zwiń'} · {historyRows.length}</ButtonSecondary>
+      </div>
+      {!historyCollapsed && <DataTable
+        storageKey={ORGANIZER_HISTORY_TABLE_KEY}
+        loading={loading}
+        columns={organizerHistoryColumns}
+        rows={historyTableRows}
+        onOpen={(row) => { setEditingTask(row._task); setEditorOpen(true); }}
+        onDelete={(row) => handleDeleteHistoryTask(row._task)}
+        openLabel="Podgląd zadania"
+        deleteLabel="Usuń z historii"
+        customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => handleRestoreTask(row._task) }]}
+      />}
+    </section>
+
+    {editorOpen && <OrganizerTaskEditor task={editingTask} categories={categories} onClose={() => setEditorOpen(false)} onSave={saveTask} />}
+  </div>;
+}
+function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsGrid colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} />
+    <SettingsGrid dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} />
   </div>;
 }
 function ModulePage({ title, description, table }) {
@@ -3801,6 +4896,8 @@ const DEFAULT_COMPANY_PROFILE = {
   website: '',
   bankAccount: '',
   documentFooter: '',
+  documentHeader: '',
+  showLogoOnDocuments: true,
   logoDataUrl: ''
 };
 
@@ -3812,6 +4909,69 @@ function saveCompanyProfile(profile) {
   const nextProfile = { ...DEFAULT_COMPANY_PROFILE, ...profile };
   localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(nextProfile));
   return nextProfile;
+}
+
+const DOCUMENT_SETTINGS_STORAGE_KEY = 'fixer-document-settings';
+const DOCUMENT_TEMPLATE_OPTIONS = ['Standardowy'];
+const DEFAULT_DOCUMENT_NUMBERING = {
+  rentals: { prefix: 'WYP', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
+  returns: { prefix: 'ZW', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
+  service: { prefix: 'SER', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
+  estimates: { prefix: 'KOS', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 }
+};
+const DEFAULT_DOCUMENT_SETTINGS = {
+  templates: {
+    rentals: 'Standardowy',
+    returns: 'Standardowy',
+    service: 'Standardowy',
+    estimates: 'Standardowy',
+    tableExport: 'Standardowy'
+  },
+  numbering: DEFAULT_DOCUMENT_NUMBERING
+};
+
+function normalizeDocumentNumbering(value, fallback) {
+  return {
+    prefix: String(value?.prefix ?? fallback.prefix).trim().toUpperCase() || fallback.prefix,
+    format: String(value?.format ?? fallback.format).trim() || fallback.format,
+    padding: Math.max(1, Number(value?.padding ?? fallback.padding) || fallback.padding)
+  };
+}
+
+function normalizeDocumentSettings(settings) {
+  const templates = { ...DEFAULT_DOCUMENT_SETTINGS.templates, ...(settings?.templates ?? {}) };
+  Object.keys(templates).forEach((key) => {
+    if (!DOCUMENT_TEMPLATE_OPTIONS.includes(templates[key])) templates[key] = 'Standardowy';
+  });
+  return {
+    templates,
+    numbering: Object.fromEntries(Object.entries(DEFAULT_DOCUMENT_NUMBERING).map(([key, fallback]) => [
+      key,
+      normalizeDocumentNumbering(settings?.numbering?.[key], fallback)
+    ]))
+  };
+}
+
+function getDocumentSettings() {
+  return normalizeDocumentSettings(getStoredJson(DOCUMENT_SETTINGS_STORAGE_KEY, DEFAULT_DOCUMENT_SETTINGS));
+}
+
+function saveDocumentSettings(settings) {
+  const normalized = normalizeDocumentSettings(settings);
+  localStorage.setItem(DOCUMENT_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function formatDocumentNumber(settings, sequence, date = new Date()) {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear());
+  const nr = String(sequence).padStart(Number(settings.padding) || 3, '0');
+  const parts = { PREFIX: settings.prefix, NR: nr, DD: day, MM: month, YYYY: year };
+  return String(settings.format || DEFAULT_DOCUMENT_NUMBERING.service.format)
+    .split('/')
+    .map((part) => parts[part] ?? part)
+    .join('/');
 }
 
 const RENTAL_NUMBERING_STORAGE_KEY = 'fixer-rental-numbering';
@@ -4262,7 +5422,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
             const rowToneClass = row._rowTone ? `row-tone-${row._rowTone}` : '';
             const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${rowToneClass}`.trim();
             return <Fragment key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>
-              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={expandable ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.' : hasActions ? 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key}>{column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={expandable ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.' : hasActions ? 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
               {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>
@@ -4297,25 +5457,179 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   );
 }
 
+/* ── Global status colour system ── */
+const STATUS_COLORS_STORAGE_KEY = 'fixer-status-colors';
+
+const STATUS_COLOR_PALETTE = [
+  { id: 'blue', label: 'Niebieski', hex: '#3b82f6' },
+  { id: 'indigo', label: 'Indygo', hex: '#6366f1' },
+  { id: 'violet', label: 'Fioletowy', hex: '#8b5cf6' },
+  { id: 'teal', label: 'Morski', hex: '#14b8a6' },
+  { id: 'green', label: 'Zielony', hex: '#22c55e' },
+  { id: 'lime', label: 'Limonkowy', hex: '#84cc16' },
+  { id: 'yellow', label: 'Żółty', hex: '#eab308' },
+  { id: 'orange', label: 'Pomarańczowy', hex: '#f97316' },
+  { id: 'red', label: 'Czerwony', hex: '#ef4444' },
+  { id: 'rose', label: 'Różowy', hex: '#f43f5e' },
+  { id: 'gray', label: 'Szary', hex: '#64748b' },
+  { id: 'slate', label: 'Łupkowy', hex: '#94a3b8' }
+];
+
+const DEFAULT_STATUS_COLORS = {
+  'przyjęte': '#3b82f6', 'w diagnozie': '#6366f1', 'oczekuje na części': '#f97316',
+  'w naprawie': '#8b5cf6', 'gotowe do odbioru': '#22c55e', 'wydane': '#14b8a6',
+  'dostępny': '#22c55e', 'wypożyczony': '#3b82f6', 'rezerwacja': '#f97316',
+  'serwis': '#6366f1', 'uszkodzony': '#ef4444', 'wycofany': '#64748b', 'składnik zestawu': '#94a3b8',
+  'aktywne': '#3b82f6', 'częściowo zwrócone': '#f97316', 'zwrócone': '#22c55e', 'po terminie': '#ef4444',
+  'do zrobienia': '#3b82f6', 'w trakcie': '#8b5cf6', 'oczekuje': '#f97316', 'zrobione': '#22c55e',
+  'anulowane': '#ef4444',
+  'stały': '#22c55e', 'nowy': '#3b82f6', 'vip': '#eab308', 'problematyczny': '#ef4444', 'pracownik': '#6366f1'
+};
+
+function getStatusColors() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STATUS_COLORS_STORAGE_KEY) || 'null');
+    if (saved && typeof saved === 'object') return { ...DEFAULT_STATUS_COLORS, ...saved };
+  } catch {}
+  return { ...DEFAULT_STATUS_COLORS };
+}
+
+function saveStatusColors(colorMap) {
+  localStorage.setItem(STATUS_COLORS_STORAGE_KEY, JSON.stringify(colorMap));
+}
+
+function statusToCssClass(text) {
+  return 'sp-' + String(text ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+function injectStatusColorStyles(colorMap) {
+  let el = document.getElementById('fixer-status-colors-style');
+  if (!el) { el = document.createElement('style'); el.id = 'fixer-status-colors-style'; document.head.appendChild(el); }
+  const rules = [];
+  Object.entries(colorMap).forEach(([name, hex]) => {
+    if (!hex || !String(hex).startsWith('#')) return;
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    if (Number.isNaN(r + g + b)) return;
+    const cn = statusToCssClass(name);
+    rules.push(`.${cn}{background:rgba(${r},${g},${b},.17)!important;color:${hex}!important;}`);
+    const rd = Math.round(r * .65), gd = Math.round(g * .65), bd = Math.round(b * .65);
+    rules.push(`.app-shell.theme-light .${cn}{background:rgba(${r},${g},${b},.12)!important;color:rgb(${rd},${gd},${bd})!important;}`);
+  });
+  el.textContent = rules.join('');
+}
+
 function StatusPill({ value }) {
   const text = String(value ?? '');
+  const cssClass = statusToCssClass(text);
   const lower = text.toLowerCase();
   const tone = lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('uszk') ? 'danger'
     : lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly') ? 'success'
     : lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') ? 'warning'
     : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') ? 'info'
     : 'neutral';
-  return <span className={`status-pill ${tone}`}>{text}</span>;
+  return <span className={`status-pill ${cssClass} ${tone}`}>{text}</span>;
 }
 
-function Timeline() {
-  return <div className="timeline">{['Walizka stream — rezerwacja', 'Sony PXW-Z190 — wypożyczenie', 'Yamaha MG12XU — odbiór serwisu'].map((item, index) => <div className="timeline-row" key={item}><span>{index === 0 ? 'Dzisiaj' : index === 1 ? 'Jutro' : 'Za 7 dni'}</span><div><strong>{item}</strong></div></div>)}</div>;
+function StatusColorPicker({ statusName, currentHex, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const ref = useRef(null);
+
+  const openPicker = (e) => {
+    e.stopPropagation();
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const left = Math.min(rect.left, window.innerWidth - 224);
+    const pickerH = 172;
+    const top = rect.bottom + pickerH > window.innerHeight ? rect.top - pickerH - 4 : rect.bottom + 4;
+    setPos({ top, left });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const hex = currentHex ?? DEFAULT_STATUS_COLORS[statusName.toLowerCase()] ?? '#94a3b8';
+  return <>
+    <button type="button" ref={ref} className="status-color-swatch" style={{ background: hex }} onClick={openPicker} title={`Kolor statusu: ${statusName}`} aria-label="Zmień kolor" />
+    {open && createPortal(
+      <div className="status-color-picker" style={{ top: pos.top, left: pos.left }} onMouseDown={(e) => e.stopPropagation()}>
+        <p className="status-color-picker-label">{statusName}</p>
+        <div className="status-color-palette">
+          {STATUS_COLOR_PALETTE.map((color) => (
+            <button key={color.id} type="button" className={`status-color-option${hex === color.hex ? ' selected' : ''}`} style={{ background: color.hex }} title={color.label} onClick={(e) => { e.stopPropagation(); onSelect(statusName, color.hex); setOpen(false); }} />
+          ))}
+        </div>
+        <button type="button" className="status-color-reset-btn" onClick={(e) => { e.stopPropagation(); onSelect(statusName, DEFAULT_STATUS_COLORS[statusName.toLowerCase()] ?? null); setOpen(false); }}>Resetuj do domyślnego</button>
+      </div>,
+      document.body
+    )}
+  </>;
 }
-function OrganizerBoard() {
-  const columns = ['Do zrobienia', 'W trakcie', 'Gotowe'];
-  return <div className="kanban">{columns.map((column, index) => <div className="kanban-column" key={column}><h3>{column}</h3><div className="task-card"><strong>{index === 0 ? 'Uzupełnić dane klienta' : index === 1 ? 'Zweryfikować zestaw CASE-04' : 'Przygotować szablon umowy'}</strong><span>{index === 0 ? 'Klienci' : index === 1 ? 'Wypożyczenia' : 'Dokumenty'}</span></div></div>)}</div>;
+
+function ServiceStatusCell({ value, statuses, onStatusChange }) {
+  const [open, setOpen] = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
+  const [dropTheme, setDropTheme] = useState('');
+  const triggerRef = useRef(null);
+  const dropRef = useRef(null);
+
+  const openDropdown = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const estimatedHeight = statuses.length * 36 + 16;
+    const fitsBelow = rect.bottom + estimatedHeight + 8 <= window.innerHeight;
+    setDropPos({
+      top: fitsBelow ? rect.bottom + 4 : rect.top - estimatedHeight - 4,
+      left: rect.left
+    });
+    setDropTheme(document.querySelector('.app-shell')?.classList.contains('theme-light') ? 'theme-light' : '');
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleOutside = (e) => {
+      if (triggerRef.current?.contains(e.target) || dropRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const handleKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const handleScroll = () => setOpen(false);
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    document.addEventListener('scroll', handleScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <div className="service-status-cell" onClick={(e) => e.stopPropagation()}>
+      <button ref={triggerRef} type="button" className="service-status-trigger" onClick={openDropdown} title="Kliknij, aby zmienić status">
+        <StatusPill value={value} />
+        <ChevronDown size={11} className="service-status-chevron" />
+      </button>
+      {open && createPortal(
+        <div ref={dropRef} className={`service-status-dropdown${dropTheme ? ` ${dropTheme}` : ''}`} style={{ top: dropPos.top, left: dropPos.left }} onClick={(e) => e.stopPropagation()}>
+          {statuses.map((s) => (
+            <button key={s} type="button" className={`service-status-option${s === value ? ' active' : ''}`} onClick={() => { onStatusChange(s); setOpen(false); }}>
+              <StatusPill value={s} />
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 }
-function SettingsGrid({ colorTheme, onChangeColorTheme }) {
+
+function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {} }) {
   const themeOptions = [
     { id: 'dark', label: 'Ciemny', icon: Moon },
     { id: 'light', label: 'Jasny', icon: Sun }
@@ -4326,7 +5640,9 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     { id: 'equipment', label: 'Sprzęt', icon: Package, description: 'Kategorie, marki, lokalizacje i statusy sprzętu.' },
     { id: 'service', label: 'Serwis', icon: Wrench, description: 'Statusy serwisowe, priorytety i typy zgłoszeń.' },
     { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList, description: 'Statusy wypożyczeń, zwrotów i domyślne okresy.' },
+    { id: 'organizer', label: 'Organizer', icon: CheckCircle2, description: 'Kategorie zadań i konfiguracja Organizera.' },
     { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony PDF, numeracja, stopki i nagłówki.' },
+    { id: 'backups', label: 'Kopie bezpieczeństwa', icon: Download, description: 'Pełny backup danych i eksporty CSV.' },
     { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, układ tabel, okna i preferencje pracy.' }
   ];
   const [activeSection, setActiveSection] = useState('company');
@@ -4340,6 +5656,15 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   const [newEquipmentCategory, setNewEquipmentCategory] = useState('');
   const [newEquipmentStatus, setNewEquipmentStatus] = useState('');
   const [newEquipmentLocation, setNewEquipmentLocation] = useState('');
+  const [serviceStatusesSettings, setServiceStatusesSettings] = useState([]);
+  const [servicePrioritiesSettings, setServicePrioritiesSettings] = useState([]);
+  const [serviceDeviceCategoriesSettings, setServiceDeviceCategoriesSettings] = useState([]);
+  const [serviceIntakeConditionsSettings, setServiceIntakeConditionsSettings] = useState([]);
+  const [serviceExternalServicesSettings, setServiceExternalServicesSettings] = useState([]);
+  const [serviceProgressTemplatesSettings, setServiceProgressTemplatesSettings] = useState([]);
+  const [newServiceDictionaryValues, setNewServiceDictionaryValues] = useState({});
+  const [editingServiceDictionaryItem, setEditingServiceDictionaryItem] = useState(null);
+  const [editingServiceDictionaryValue, setEditingServiceDictionaryValue] = useState('');
   const [editingDictionaryItem, setEditingDictionaryItem] = useState(null);
   const [editingDictionaryValue, setEditingDictionaryValue] = useState('');
   const [configDictionaries, setConfigDictionaries] = useState(getConfigDictionaries);
@@ -4359,7 +5684,58 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
   const [companySaveNotice, setCompanySaveNotice] = useState('');
   const [rentalNumbering, setRentalNumbering] = useState(getRentalNumberingSettings);
   const [rentalNumberingNotice, setRentalNumberingNotice] = useState('');
+  const [documentSettings, setDocumentSettings] = useState(getDocumentSettings);
+  const [documentSettingsNotice, setDocumentSettingsNotice] = useState('');
+  const [backupNotice, setBackupNotice] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [restoreCandidate, setRestoreCandidate] = useState(null);
+  const restoreInputRef = useRef(null);
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
+  const [organizerCategoryItems, setOrganizerCategoryItems] = useState([]);
+  const [newOrganizerCategory, setNewOrganizerCategory] = useState('');
+  const [editingOrganizerCategory, setEditingOrganizerCategory] = useState(null);
+  const [editingOrganizerCategoryValue, setEditingOrganizerCategoryValue] = useState('');
+
+  const loadOrganizerSettings = async () => {
+    const result = await fetchOrganizerCategories();
+    setOrganizerCategoryItems(result.data ?? []);
+  };
+  useEffect(() => { loadOrganizerSettings(); }, []);
+
+  const addOrganizerCategoryItem = async () => {
+    const value = newOrganizerCategory.trim();
+    if (!value) return;
+    if (organizerCategoryItems.some((item) => item.name.toLowerCase() === value.toLowerCase())) { setNewOrganizerCategory(''); return; }
+    const { error, local } = await addOrganizerCategory(value, organizerCategoryItems.length + 1);
+    if (error) { alert(`Nie udało się zapisać kategorii: ${error.message}`); return; }
+    setNewOrganizerCategory('');
+    await loadOrganizerSettings();
+  };
+
+  const saveOrganizerCategoryItem = async () => {
+    const value = editingOrganizerCategoryValue.trim();
+    if (!editingOrganizerCategory || !value) return;
+    const { error, local } = await updateOrganizerCategory(editingOrganizerCategory.id, value);
+    if (error) { alert(`Nie udało się zapisać kategorii: ${error.message}`); return; }
+    setEditingOrganizerCategory(null);
+    setEditingOrganizerCategoryValue('');
+    await loadOrganizerSettings();
+  };
+
+  const deleteOrganizerCategoryItem = async (item) => {
+    if (organizerCategoryItems.length <= 1) { alert('Musi zostać przynajmniej jedna kategoria.'); return; }
+    if (!confirm(`Usunąć kategorię: ${item.name}?`)) return;
+    const { error, local } = await deleteOrganizerCategory(item.id);
+    if (error) { alert(`Nie udało się usunąć kategorii: ${error.message}`); return; }
+    await loadOrganizerSettings();
+  };
+
+  const resetOrganizerCategoryItems = async () => {
+    if (!confirm('Przywrócić domyślną listę kategorii?')) return;
+    const { error, local } = await resetOrganizerCategories();
+    if (error) { alert(`Nie udało się przywrócić domyślnych kategorii: ${error.message}`); return; }
+    await loadOrganizerSettings();
+  };
 
   useEffect(() => {
     if (!companySaveNotice) return undefined;
@@ -4371,7 +5747,15 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     return () => window.clearTimeout(timer);
   }, [companySaveNotice]);
 
-  const activeSectionData = sections.find((section) => section.id === activeSection) ?? sections[0];
+  useEffect(() => {
+    if (!documentSettingsNotice) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setDocumentSettingsNotice('');
+    }, 4000);
+
+    return () => window.clearTimeout(timer);
+  }, [documentSettingsNotice]);
 
   const updatePreference = (key, value) => {
     setPreferences((current) => {
@@ -4390,9 +5774,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     saveDashboardPreferenceState({ ...dashboardSettings, visible: { ...dashboardSettings.visible, [id]: !currentVisible } });
   };
 
-  const updateDashboardItemSize = (id, size) => {
-    saveDashboardPreferenceState({ ...dashboardSettings, sizes: { ...dashboardSettings.sizes, [id]: size } });
-  };
 
   const resetDashboardPreferences = () => {
     setDashboardSettings(resetDashboardSettings());
@@ -4424,6 +5805,120 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     const saved = saveRentalNumberingSettings(DEFAULT_RENTAL_NUMBERING);
     setRentalNumbering(saved);
     setRentalNumberingNotice('Przywrócono domyślną numerację wypożyczeń.');
+  };
+
+  const updateDocumentTemplate = (key, value) => {
+    setDocumentSettings((current) => ({ ...current, templates: { ...current.templates, [key]: value } }));
+    setDocumentSettingsNotice('');
+  };
+
+  const updateDocumentNumbering = (key, field, value) => {
+    setDocumentSettings((current) => ({
+      ...current,
+      numbering: {
+        ...current.numbering,
+        [key]: {
+          ...current.numbering[key],
+          [field]: field === 'padding' ? Math.max(1, Number(value) || 1) : value
+        }
+      }
+    }));
+    setDocumentSettingsNotice('');
+  };
+
+  const saveDocumentSettingsState = () => {
+    const savedDocumentSettings = saveDocumentSettings(documentSettings);
+    const savedCompanyProfile = saveCompanyProfile(companyProfile);
+    const savedRentalSettings = saveRentalNumberingSettings(rentalNumbering);
+    setDocumentSettings(savedDocumentSettings);
+    setCompanyProfile(savedCompanyProfile);
+    setRentalNumbering(savedRentalSettings);
+    setDocumentSettingsNotice('Ustawienia dokumentów zapisane.');
+  };
+
+  const resetDocumentSettingsState = () => {
+    if (!confirm('Przywrócić domyślne ustawienia dokumentów?')) return;
+    const saved = saveDocumentSettings(DEFAULT_DOCUMENT_SETTINGS);
+    setDocumentSettings(saved);
+    setDocumentSettingsNotice('Przywrócono domyślne ustawienia dokumentów.');
+  };
+
+  const createBackupFile = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setBackupBusy(true);
+      setBackupNotice('');
+    }
+    try {
+      const { backup, fileName, warnings } = await createBackupArchive();
+      downloadTextFile(fileName, JSON.stringify(backup, null, 2), 'application/json;charset=utf-8');
+      localStorage.removeItem(NOTIFICATIONS_BACKUP_FAILURE_KEY);
+      if (!silent) setBackupNotice(warnings.length ? `Backup utworzony z ostrzeżeniami: ${warnings.length}.` : 'Backup został utworzony.');
+      return true;
+    } catch (error) {
+      console.error('Backup failed', error);
+      localStorage.setItem(NOTIFICATIONS_BACKUP_FAILURE_KEY, JSON.stringify({ at: new Date().toISOString(), message: error?.message || 'Nie udało się utworzyć backupu.' }));
+      if (!silent) setBackupNotice(error?.message === BACKUP_FULL_ERROR_MESSAGE ? BACKUP_FULL_ERROR_MESSAGE : 'Nie udało się utworzyć pełnej kopii bezpieczeństwa. Backup nie został zapisany.');
+      return false;
+    } finally {
+      if (!silent) setBackupBusy(false);
+    }
+  };
+
+  const handleRestoreFile = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = String(reader.result ?? '');
+        const backup = parseBackupText(text);
+        setRestoreCandidate({ fileName: file.name, backup });
+        setBackupNotice('');
+      } catch (error) {
+        console.error('Backup validation failed', error);
+        setBackupNotice(error.message || 'Nieprawidłowy plik backupu.');
+      }
+    };
+    reader.onerror = () => setBackupNotice('Nie udało się odczytać pliku backupu.');
+    reader.readAsText(file);
+  };
+
+  const restoreBackupFromCandidate = async (makeCurrentBackup) => {
+    if (!restoreCandidate?.backup) return;
+    setBackupBusy(true);
+    setBackupNotice('');
+    try {
+      if (makeCurrentBackup) await createBackupFile({ silent: true });
+      const { warnings } = await restoreBackupArchive(restoreCandidate.backup);
+      setCompanyProfile(getCompanyProfile());
+      setDocumentSettings(getDocumentSettings());
+      setRentalNumbering(getRentalNumberingSettings());
+      setConfigDictionaries(getConfigDictionaries());
+      setDashboardSettings(getDashboardSettings());
+      setRestoreCandidate(null);
+      setBackupNotice(warnings.length ? `Backup przywrócony z ostrzeżeniami: ${warnings.length}.` : 'Backup został przywrócony.');
+    } catch (error) {
+      console.error('Backup restore failed', error);
+      setBackupNotice(error.message || 'Nie udało się przywrócić backupu.');
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const exportBackupCsv = async (moduleKey) => {
+    setBackupBusy(true);
+    setBackupNotice('');
+    try {
+      const { fileName, content } = await createCsvExport(moduleKey);
+      downloadTextFile(fileName, content);
+      setBackupNotice('Eksport CSV został utworzony.');
+    } catch (error) {
+      console.error('CSV export failed', error);
+      setBackupNotice('Nie udało się utworzyć eksportu CSV.');
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
   const saveConfigDictionaryState = (next) => {
@@ -4525,7 +6020,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     }
     setClientTypes(data);
     saveClientTypes(data.map((item) => item.name));
-    setNotice(local ? 'Ustawienia działają w trybie lokalnym.' : '');
+    setNotice('');
   };
 
   useEffect(() => { loadTypes(); }, []);
@@ -4541,12 +6036,16 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     setEquipmentLocations(locationsResult.data);
     if (categoriesResult.error || statusesResult.error || locationsResult.error) {
       setNotice('Nie udało się pobrać ustawień sprzętu z bazy. Program używa lokalnej listy zapasowej.');
-    } else if (categoriesResult.local || statusesResult.local || locationsResult.local) {
-      setNotice('Ustawienia działają w trybie lokalnym.');
     }
   };
 
   useEffect(() => { loadEquipmentSettings(); }, []);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'settings') return;
+    if (dashboardIntent.section && sections.some((section) => section.id === dashboardIntent.section)) setActiveSection(dashboardIntent.section);
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent, sections]);
 
   const startEditDictionaryItem = (type, item) => {
     setEditingDictionaryItem({ type, id: item.id });
@@ -4573,7 +6072,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     }
     type === 'category' ? setNewEquipmentCategory('') : type === 'location' ? setNewEquipmentLocation('') : setNewEquipmentStatus('');
     await loadEquipmentSettings();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const saveEquipmentDictionaryItem = async () => {
@@ -4586,7 +6084,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     }
     cancelEditDictionaryItem();
     await loadEquipmentSettings();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const removeEquipmentDictionaryItem = async (type, item) => {
@@ -4602,7 +6099,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       return;
     }
     await loadEquipmentSettings();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const resetEquipmentDictionary = async (type) => {
@@ -4613,7 +6109,129 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       return;
     }
     await loadEquipmentSettings();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
+  };
+
+  const serviceDictionaryList = (type) => {
+    if (type === SERVICE_DICTIONARY_TYPES.priority) return servicePrioritiesSettings;
+    if (type === SERVICE_DICTIONARY_TYPES.customerDeviceCategory) return serviceDeviceCategoriesSettings;
+    if (type === SERVICE_DICTIONARY_TYPES.intakeCondition) return serviceIntakeConditionsSettings;
+    if (type === SERVICE_DICTIONARY_TYPES.externalService) return serviceExternalServicesSettings;
+    if (type === SERVICE_DICTIONARY_TYPES.progressTemplate) return serviceProgressTemplatesSettings;
+    return serviceStatusesSettings;
+  };
+
+  const setServiceDictionaryList = (type, rows) => {
+    if (type === SERVICE_DICTIONARY_TYPES.priority) setServicePrioritiesSettings(rows);
+    else if (type === SERVICE_DICTIONARY_TYPES.customerDeviceCategory) setServiceDeviceCategoriesSettings(rows);
+    else if (type === SERVICE_DICTIONARY_TYPES.intakeCondition) setServiceIntakeConditionsSettings(rows);
+    else if (type === SERVICE_DICTIONARY_TYPES.externalService) setServiceExternalServicesSettings(rows);
+    else if (type === SERVICE_DICTIONARY_TYPES.progressTemplate) setServiceProgressTemplatesSettings(rows);
+    else setServiceStatusesSettings(rows);
+  };
+
+  const loadServiceSettings = async () => {
+    const [statusesResult, prioritiesResult, categoriesResult, conditionsResult, externalServicesResult, progressTemplatesResult] = await Promise.all([
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.status),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.priority),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.customerDeviceCategory),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.intakeCondition),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.externalService),
+      fetchServiceDictionary(SERVICE_DICTIONARY_TYPES.progressTemplate)
+    ]);
+    setServiceStatusesSettings(statusesResult.data ?? []);
+    setServicePrioritiesSettings(prioritiesResult.data ?? []);
+    setServiceDeviceCategoriesSettings(categoriesResult.data ?? []);
+    setServiceIntakeConditionsSettings(conditionsResult.data ?? []);
+    setServiceExternalServicesSettings(externalServicesResult.data ?? []);
+    setServiceProgressTemplatesSettings(progressTemplatesResult.data ?? []);
+    if (statusesResult.error || prioritiesResult.error || categoriesResult.error || conditionsResult.error || externalServicesResult.error || progressTemplatesResult.error) {
+      setNotice('Nie udało się pobrać ustawień Serwisu z Supabase. Uruchom migracje słowników Serwisu.');
+    } else if (statusesResult.local || prioritiesResult.local || categoriesResult.local || conditionsResult.local || externalServicesResult.local || progressTemplatesResult.local) {
+      setNotice('');
+    }
+  };
+
+  useEffect(() => { loadServiceSettings(); }, []);
+
+  const startEditServiceDictionaryItem = (type, item) => {
+    setEditingServiceDictionaryItem({ type, id: item.id });
+    setEditingServiceDictionaryValue(item.name);
+  };
+
+  const cancelEditServiceDictionaryItem = () => {
+    setEditingServiceDictionaryItem(null);
+    setEditingServiceDictionaryValue('');
+  };
+
+  const addServiceDictionaryItem = async (type) => {
+    const value = String(newServiceDictionaryValues[type] ?? '').trim();
+    if (!value) return;
+    const list = serviceDictionaryList(type);
+    if (list.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
+      setNewServiceDictionaryValues((current) => ({ ...current, [type]: '' }));
+      return;
+    }
+    const { error, local } = await addServiceDictionaryRecord(type, value, list.length + 1);
+    if (error) {
+      alert(`Nie udało się zapisać ustawienia Serwisu w Supabase: ${error.message}`);
+      return;
+    }
+    setNewServiceDictionaryValues((current) => ({ ...current, [type]: '' }));
+    await loadServiceSettings();
+  };
+
+  const saveServiceDictionaryItem = async () => {
+    const value = editingServiceDictionaryValue.trim();
+    if (!editingServiceDictionaryItem || !value) return;
+    const { error, local } = await updateServiceDictionaryRecord(editingServiceDictionaryItem.id, editingServiceDictionaryItem.type, value);
+    if (error) {
+      alert(`Nie udało się zapisać ustawienia Serwisu w Supabase: ${error.message}`);
+      return;
+    }
+    cancelEditServiceDictionaryItem();
+    await loadServiceSettings();
+  };
+
+  const removeServiceDictionaryItem = async (type, item) => {
+    const list = serviceDictionaryList(type);
+    if (list.length <= 1) {
+      alert('Musi zostać przynajmniej jedna pozycja.');
+      return;
+    }
+    if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych zleceniach, lepiej zostawić ją na liście.`)) return;
+    const { error, local } = await deleteServiceDictionaryRecord(item.id, type);
+    if (error) {
+      alert(`Nie udało się usunąć ustawienia Serwisu w Supabase: ${error.message}`);
+      return;
+    }
+    await loadServiceSettings();
+  };
+
+  const moveServiceDictionaryItem = async (type, item, direction) => {
+    const list = serviceDictionaryList(type);
+    const index = list.findIndex((row) => row.id === item.id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= list.length) return;
+    const next = [...list];
+    next.splice(index, 1);
+    next.splice(nextIndex, 0, item);
+    setServiceDictionaryList(type, next.map((row, rowIndex) => ({ ...row, sort_order: rowIndex + 1 })));
+    const { error, local } = await reorderServiceDictionaryRecords(type, next);
+    if (error) {
+      alert(`Nie udało się zmienić kolejności w Supabase: ${error.message}`);
+      await loadServiceSettings();
+      return;
+    }
+  };
+
+  const resetServiceDictionary = async (type) => {
+    if (!confirm('Przywrócić domyślną listę?')) return;
+    const { error, local } = await resetServiceDictionaryRecords(type);
+    if (error) {
+      alert(`Nie udało się przywrócić domyślnych ustawień Serwisu w Supabase: ${error.message}`);
+      return;
+    }
+    await loadServiceSettings();
   };
 
   const renderEquipmentDictionaryCard = (type, title, description, items, value, setValue) => (
@@ -4639,13 +6257,46 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
             <div className="dictionary-row-actions dictionary-icon-actions">
               {isEditing
                 ? <><button type="button" className="dictionary-icon-button save" onClick={saveEquipmentDictionaryItem} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditDictionaryItem} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
-                : <><button type="button" className="dictionary-icon-button edit" onClick={() => startEditDictionaryItem(type, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeEquipmentDictionaryItem(type, item)} aria-label="Usuń" title="Usuń">−</button></>}
+                : <>{type === 'status' && <StatusColorPicker statusName={item.name} currentHex={statusColors[item.name.toLowerCase()]} onSelect={onStatusColorChange} />}<button type="button" className="dictionary-icon-button edit" onClick={() => startEditDictionaryItem(type, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeEquipmentDictionaryItem(type, item)} aria-label="Usuń" title="Usuń">−</button></>}
             </div>
           </div>;
         })}
       </div>
     </div>
   );
+
+  const renderServiceDictionaryCard = (type, title, description, placeholder) => {
+    const items = serviceDictionaryList(type);
+    const value = newServiceDictionaryValues[type] ?? '';
+    return <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+      <div className="settings-card-header compact-card-header dictionary-card-header">
+        <div>
+          <h3>{title}</h3>
+          <p className="muted">{description}</p>
+        </div>
+        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={() => resetServiceDictionary(type)}>Domyślne</AppButton>
+      </div>
+      <div className="dictionary-add-compact">
+        <AppInput value={value} onChange={(event) => setNewServiceDictionaryValues((current) => ({ ...current, [type]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addServiceDictionaryItem(type); }} placeholder={placeholder} />
+        <button type="button" className="dictionary-icon-button add" onClick={() => addServiceDictionaryItem(type)} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
+      </div>
+      <div className="dictionary-list dictionary-list-compact">
+        {items.map((item, index) => {
+          const isEditing = editingServiceDictionaryItem?.type === type && editingServiceDictionaryItem?.id === item.id;
+          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
+            {isEditing
+              ? <input value={editingServiceDictionaryValue} onChange={(event) => setEditingServiceDictionaryValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveServiceDictionaryItem(); if (event.key === 'Escape') cancelEditServiceDictionaryItem(); }} autoFocus />
+              : <button type="button" className="dictionary-name-button" onClick={() => startEditServiceDictionaryItem(type, item)} title="Edytuj">{item.name}</button>}
+            <div className="dictionary-row-actions dictionary-icon-actions">
+              {isEditing
+                ? <><button type="button" className="dictionary-icon-button save" onClick={saveServiceDictionaryItem} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditServiceDictionaryItem} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
+                : <>{type === SERVICE_DICTIONARY_TYPES.status && <StatusColorPicker statusName={item.name} currentHex={statusColors[item.name.toLowerCase()]} onSelect={onStatusColorChange} />}<button type="button" className="dictionary-icon-button order" onClick={() => moveServiceDictionaryItem(type, item, -1)} disabled={index === 0} aria-label="Przesuń wyżej" title="Przesuń wyżej"><ArrowUp size={14} /></button><button type="button" className="dictionary-icon-button order" onClick={() => moveServiceDictionaryItem(type, item, 1)} disabled={index === items.length - 1} aria-label="Przesuń niżej" title="Przesuń niżej"><ArrowDown size={14} /></button><button type="button" className="dictionary-icon-button edit" onClick={() => startEditServiceDictionaryItem(type, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeServiceDictionaryItem(type, item)} aria-label="Usuń" title="Usuń">−</button></>}
+            </div>
+          </div>;
+        })}
+      </div>
+    </div>;
+  };
 
   const renderConfigDictionaryCard = (key, title, description) => {
     const items = normalizeConfigDictionary(key, configDictionaries[key]);
@@ -4694,7 +6345,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     }
     setNewType('');
     await loadTypes();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const startEditClientType = (type) => {
@@ -4717,7 +6367,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     }
     cancelEditClientType();
     await loadTypes();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const removeType = async (type) => {
@@ -4732,7 +6381,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       return;
     }
     await loadTypes();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const resetTypes = async () => {
@@ -4743,7 +6391,6 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
       return;
     }
     await loadTypes();
-    if (local) setNotice('Ustawienia zapisano lokalnie.');
   };
 
   const renderClientTypesDictionaryCard = () => (
@@ -4770,7 +6417,7 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
             <div className="dictionary-row-actions dictionary-icon-actions">
               {isEditing
                 ? <><button type="button" className="dictionary-icon-button save" onClick={saveClientType} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditClientType} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
-                : <><button type="button" className="dictionary-icon-button edit" onClick={() => startEditClientType(type)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeType(type)} aria-label="Usuń" title="Usuń">−</button></>}
+                : <><StatusColorPicker statusName={type.name} currentHex={statusColors[type.name.toLowerCase()]} onSelect={onStatusColorChange} /><button type="button" className="dictionary-icon-button edit" onClick={() => startEditClientType(type)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeType(type)} aria-label="Usuń" title="Usuń">−</button></>}
             </div>
           </div>;
         })}
@@ -4778,10 +6425,19 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
     </div>
   );
 
-  const placeholderGroups = {
-    service: ['Statusy serwisu', 'Priorytety', 'Typy zgłoszeń', 'Numeracja zleceń'],
-    documents: ['Szablony PDF', 'Numeracja dokumentów', 'Nagłówki dokumentów', 'Stopki dokumentów']
-  };
+  const documentTemplateRows = [
+    ['rentals', 'Wypożyczenie'],
+    ['returns', 'Zwrot'],
+    ['service', 'Zlecenie serwisowe'],
+    ['estimates', 'Kosztorys serwisowy'],
+    ['tableExport', 'Eksport tabel PDF']
+  ];
+  const documentNumberingRows = [
+    { key: 'rentals', label: 'Wypożyczenia', value: rentalNumbering, onChange: (_key, field, value) => updateRentalNumbering(field, value), preview: formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00')) },
+    { key: 'returns', label: 'Zwroty', value: documentSettings.numbering.returns, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.returns, 1, new Date('2026-06-03T12:00:00')) },
+    { key: 'service', label: 'Serwisy', value: documentSettings.numbering.service, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.service, 1, new Date('2026-06-03T12:00:00')) },
+    { key: 'estimates', label: 'Kosztorysy', value: documentSettings.numbering.estimates, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.estimates, 1, new Date('2026-06-03T12:00:00')) }
+  ];
 
 
   return <div className="settings-tabs-layout">
@@ -4889,60 +6545,65 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>}
 
-      {activeSection === 'interface' && <div className="settings-pane-grid settings-pane-grid-wide">
-        <div className="settings-card wide-settings-card">
-          <div>
-            <p className="eyebrow">Wygląd</p>
-            <h3>Motyw aplikacji</h3>
-            <p className="muted">Motyw jest zapamiętywany w przeglądarce. Jasny i ciemny wariant mają osobną kolorystykę.</p>
-          </div>
-          <div className="theme-choice-row">
-            {themeOptions.map((option) => {
-              const Icon = option.icon;
-              return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={18} /><span>{option.label}</span></button>;
-            })}
+      {activeSection === 'interface' && <div className="interface-settings-pane">
+        <div className="settings-card compact-admin-card interface-card interface-theme-card">
+          <div className="interface-card-header interface-theme-header">
+            <div>
+              <p className="eyebrow">Wygląd</p>
+              <h3>Motyw aplikacji</h3>
+              <p className="muted">Motyw jest zapamiętywany w przeglądarce. Jasny i ciemny wariant mają osobną kolorystykę.</p>
+            </div>
+            <div className="theme-choice-row interface-theme-switch">
+              {themeOptions.map((option) => {
+                const Icon = option.icon;
+                return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={16} /><span>{option.label}</span></button>;
+              })}
+            </div>
           </div>
         </div>
-        <div className="settings-card wide-settings-card dashboard-settings-card">
-          <div className="settings-card-header compact-card-header">
+        <div className="settings-card compact-admin-card interface-card interface-dashboard-card">
+          <div className="interface-card-header">
             <div>
               <p className="eyebrow">Dashboard</p>
-              <h3>Widoczność i szerokość kafli</h3>
-              <p className="muted">Ustawienia są zapisywane lokalnie w przeglądarce i odtwarzane po odświeżeniu strony.</p>
+              <h3>Widoczność elementów</h3>
+              <p className="muted">Ustawienia są zapisywane lokalnie. Kolejność i widoczność można zmieniać też bezpośrednio na Dashboardzie.</p>
             </div>
             <AppButton variant="secondary" size="sm" onClick={resetDashboardPreferences}><RotateCcw size={14} />Resetuj</AppButton>
           </div>
-          <div className="dashboard-settings-list">
-            {DASHBOARD_ITEMS.map((item) => <div className="dashboard-settings-row" key={item.id}>
-              <label className="settings-check dashboard-settings-toggle">
-                <input type="checkbox" checked={dashboardSettings.visible[item.id] !== false} onChange={() => toggleDashboardItem(item.id)} />
-                {item.label}
-              </label>
-              <AppSelect value={dashboardSettings.sizes[item.id] ?? item.defaultSize} onChange={(event) => updateDashboardItemSize(item.id, event.target.value)}>
-                <option value="small">Mały</option>
-                <option value="medium">Średni</option>
-                <option value="large">Duży</option>
-              </AppSelect>
-            </div>)}
+          <div className="dashboard-settings-list interface-dashboard-grid">
+            {DASHBOARD_ITEMS.map((item) => <label className="settings-check dashboard-settings-toggle interface-dashboard-item" key={item.id}>
+              <input type="checkbox" checked={dashboardSettings.visible[item.id] !== false} onChange={() => toggleDashboardItem(item.id)} />
+              <span>{item.label}</span>
+            </label>)}
           </div>
         </div>
-        <div className="settings-card">
-          <p className="eyebrow">Okna robocze</p>
-          <h3>Zachowanie okien</h3>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowSize} onChange={(event) => updatePreference('rememberWindowSize', event.target.checked)} />Zapamiętuj rozmiary okien</label>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowPosition} onChange={(event) => updatePreference('rememberWindowPosition', event.target.checked)} />Zapamiętuj pozycje okien</label>
+        <div className="settings-card compact-admin-card interface-card">
+          <div className="interface-card-header interface-card-header-compact">
+            <div>
+              <p className="eyebrow">Praca</p>
+              <h3>Zachowanie aplikacji</h3>
+            </div>
+          </div>
+          <div className="interface-check-grid">
+            <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowSize} onChange={(event) => updatePreference('rememberWindowSize', event.target.checked)} />Zapamiętuj rozmiary okien</label>
+            <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowPosition} onChange={(event) => updatePreference('rememberWindowPosition', event.target.checked)} />Zapamiętuj pozycje okien</label>
+            <label className="settings-check"><input type="checkbox" checked={preferences.confirmDelete} onChange={(event) => updatePreference('confirmDelete', event.target.checked)} />Pokazuj potwierdzenie usunięcia</label>
+          </div>
         </div>
-        <div className="settings-card">
-          <p className="eyebrow">Tabele</p>
-          <h3>Układ danych</h3>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} />Zapamiętuj układ kolumn</label>
-          <label className="settings-check"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} />Zapamiętuj filtry tabel</label>
-          <label className="settings-field">Domyślna liczba wierszy<AppSelect value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></AppSelect></label>
-        </div>
-        <div className="settings-card">
-          <p className="eyebrow">Bezpieczeństwo pracy</p>
-          <h3>Potwierdzenia</h3>
-          <label className="settings-check"><input type="checkbox" checked={preferences.confirmDelete} onChange={(event) => updatePreference('confirmDelete', event.target.checked)} />Pokazuj potwierdzenie usunięcia</label>
+        <div className="settings-card compact-admin-card interface-card">
+          <div className="interface-card-header interface-card-header-compact">
+            <div>
+              <p className="eyebrow">Tabele</p>
+              <h3>Układ danych</h3>
+            </div>
+          </div>
+          <div className="interface-table-controls">
+            <div className="interface-check-grid">
+              <label className="settings-check"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} />Zapamiętuj układ kolumn</label>
+              <label className="settings-check"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} />Zapamiętuj filtry tabel</label>
+            </div>
+            <label className="settings-field interface-rows-field">Domyślna liczba wierszy<AppSelect value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></AppSelect></label>
+          </div>
         </div>
       </div>}
 
@@ -4980,6 +6641,124 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
         </div>
       </div>}
 
+      {activeSection === 'service' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid service-settings-grid">
+        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.status, 'Statusy zleceń', 'Lista statusów widoczna w module Serwis, filtrach i kartotece.', 'np. Czeka na klienta')}
+        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.priority, 'Priorytety', 'Lista priorytetów widoczna w kartotece zlecenia.', 'np. Ekspresowy')}
+        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.customerDeviceCategory, 'Kategorie sprzętu klienta', 'Kategorie używane przy sprzęcie przyjmowanym do serwisu.', 'np. Monitor, Rekorder')}
+        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.intakeCondition, 'Stany przyjęcia', 'Lista stanów sprzętu klienta przy przyjęciu.', 'np. Zalany')}
+        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.externalService, 'Serwisy zewnętrzne', 'Lista serwisów, do których może zostać przekazany sprzęt klienta.', 'np. Sony Polska')}
+        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.progressTemplate, 'Szablony postępów', 'Szybkie wpisy dodawane w historii zgłoszenia.', 'np. Klient poinformowany')}
+      </div>}
+
+      {activeSection === 'documents' && <div className="documents-settings-pane">
+        <div className="firm-settings-header documents-settings-header">
+          <div>
+            <h3>Dokumenty PDF</h3>
+            <p className="muted">Ustawienia używane przez eksport PDF oraz numerację nowych dokumentów.</p>
+          </div>
+          <div className="settings-action-row">
+            <AppButton variant="secondary" size="sm" onClick={resetDocumentSettingsState}><RotateCcw size={14} />Domyślne</AppButton>
+            <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={15} />Zapisz</AppButton>
+          </div>
+        </div>
+        {documentSettingsNotice && <div className="notice firm-save-notice">{documentSettingsNotice}</div>}
+
+        <div className="documents-settings-grid">
+          <section className="settings-card compact-admin-card firm-card documents-card documents-templates-card">
+            <h3>Szablony PDF</h3>
+            <div className="document-template-list">
+              {documentTemplateRows.map(([key, label]) => <label className="firm-field document-template-row" key={key}>
+                {label}
+                <AppSelect value={documentSettings.templates[key] ?? 'Standardowy'} onChange={(event) => updateDocumentTemplate(key, event.target.value)}>
+                  {DOCUMENT_TEMPLATE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </AppSelect>
+              </label>)}
+            </div>
+          </section>
+
+          <section className="settings-card compact-admin-card firm-card documents-card documents-header-card">
+            <h3>Nagłówki dokumentów</h3>
+            <label className="firm-field firm-field-footer">Tekst nagłówka PDF<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} placeholder="np. Dokument wygenerowany przez FIXER WEB" /></label>
+            <label className="settings-check"><input type="checkbox" checked={companyProfile.showLogoOnDocuments !== false} onChange={(event) => updateCompanyProfile('showLogoOnDocuments', event.target.checked)} />Pokazuj logo firmy na PDF</label>
+            <div className="firm-preview document-company-source">
+              <strong>{companyProfile.legalName || companyProfile.name || 'Dane firmy'}</strong>
+              <span>{formatCompanyAddress(companyProfile) || 'Adres pobierany z zakładki Firma'}</span>
+              <span>{formatCompanyContact(companyProfile) || 'Kontakt pobierany z zakładki Firma'}</span>
+            </div>
+          </section>
+
+          <section className="settings-card compact-admin-card firm-card documents-card documents-footer-card">
+            <h3>Stopki dokumentów</h3>
+            <label className="firm-field firm-field-footer">Tekst stopki PDF<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę. W razie pytań prosimy o kontakt." /></label>
+            <div className="firm-preview document-footer-preview">
+              <span>{companyProfile.documentFooter?.trim() || 'Stopka pojawi się na eksportowanych dokumentach PDF po zapisaniu tekstu.'}</span>
+            </div>
+          </section>
+
+          <section className="settings-card compact-admin-card firm-card documents-card documents-numbering-card">
+            <h3>Numeracja dokumentów</h3>
+            <div className="document-numbering-list">
+              {documentNumberingRows.map((row) => <div className="document-numbering-row" key={row.key}>
+                <strong>{row.label}</strong>
+                <label className="firm-field">Prefiks<AppInput value={row.value.prefix} onChange={(event) => row.onChange(row.key, 'prefix', event.target.value)} /></label>
+                <label className="firm-field">Format<AppSelect value={row.value.format} onChange={(event) => row.onChange(row.key, 'format', event.target.value)}>{RENTAL_NUMBER_FORMATS.map((format) => <option key={format.value} value={format.value}>{format.label}</option>)}</AppSelect></label>
+                <label className="firm-field">Cyfry<AppInput type="number" min="1" value={row.value.padding ?? 3} onChange={(event) => row.onChange(row.key, 'padding', event.target.value)} /></label>
+                <span className="document-number-preview">{row.preview}</span>
+              </div>)}
+            </div>
+          </section>
+        </div>
+      </div>}
+
+      {activeSection === 'backups' && <div className="backup-settings-pane">
+        <div className="firm-settings-header backup-settings-header">
+          <div>
+            <h3>Kopie bezpieczeństwa</h3>
+            <p className="muted">Eksport pełnego stanu programu do jednego pliku JSON oraz szybkie eksporty CSV.</p>
+          </div>
+          <div className="settings-action-row">
+            <AppButton variant="primary" size="sm" onClick={() => createBackupFile()} disabled={backupBusy}><Download size={15} />Utwórz backup</AppButton>
+            <AppButton variant="secondary" size="sm" onClick={() => restoreInputRef.current?.click()} disabled={backupBusy}><FolderOpen size={15} />Przywróć backup</AppButton>
+            <input ref={restoreInputRef} type="file" accept="application/json,.json" onChange={handleRestoreFile} className="backup-file-input" />
+          </div>
+        </div>
+        {backupNotice && <div className="notice firm-save-notice">{backupNotice}</div>}
+
+        <div className="backup-settings-grid">
+          <section className="settings-card compact-admin-card firm-card backup-card backup-primary-card">
+            <h3>Pełny backup</h3>
+            <div className="backup-action-grid">
+              <button type="button" className="backup-action-button primary" onClick={() => createBackupFile()} disabled={backupBusy}>
+                <Download size={18} />
+                <span><strong>Utwórz backup</strong><small>Jeden plik JSON z danymi, relacjami i ustawieniami.</small></span>
+              </button>
+              <button type="button" className="backup-action-button" onClick={() => restoreInputRef.current?.click()} disabled={backupBusy}>
+                <FolderOpen size={18} />
+                <span><strong>Przywróć backup</strong><small>Przed importem wybierzesz, czy wykonać kopię obecnych danych.</small></span>
+              </button>
+            </div>
+          </section>
+
+          <section className="settings-card compact-admin-card firm-card backup-card">
+            <h3>Eksport CSV</h3>
+            <div className="backup-csv-grid">
+              <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('clients')} disabled={backupBusy}>Klienci CSV</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('equipment')} disabled={backupBusy}>Sprzęt CSV</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('rentals')} disabled={backupBusy}>Wypożyczenia CSV</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('service')} disabled={backupBusy}>Serwis CSV</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('organizer')} disabled={backupBusy}>Organizer CSV</AppButton>
+            </div>
+          </section>
+
+          <section className="settings-card compact-admin-card firm-card backup-card backup-scope-card">
+            <h3>Zakres backupu</h3>
+            <div className="backup-scope-list">
+              {BACKUP_INCLUDED_TABLES.map((table) => <span key={table}>{table}</span>)}
+            </div>
+          </section>
+        </div>
+      </div>}
+
       {activeSection === 'rentals' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid rental-settings-grid">
         <div className="settings-card wide-settings-card rental-numbering-card compact-admin-card">
           <div>
@@ -4994,34 +6773,95 @@ function SettingsGrid({ colorTheme, onChangeColorTheme }) {
             <label className="settings-field">Waluta<AppInput value={rentalNumbering.currency} onChange={(event) => updateRentalNumbering('currency', event.target.value)} /></label>
             <div className="rental-number-preview"><span>Przykład</span><strong>{formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00'))}</strong></div>
             <div className="settings-action-row rental-numbering-actions">
-              <AppButton variant="secondary" onClick={resetRentalNumbering}>Domyślne</AppButton>
-              <AppButton variant="primary" onClick={saveRentalNumbering}><Save size={16} />Zapisz</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={resetRentalNumbering}>Domyślne</AppButton>
+              <AppButton variant="primary" size="sm" onClick={saveRentalNumbering}><Save size={15} />Zapisz</AppButton>
             </div>
           </div>
           {rentalNumberingNotice && <div className="notice">{rentalNumberingNotice}</div>}
         </div>
         {renderConfigDictionaryCard('rentalTypes', 'Typy wypożyczeń', 'Lista typów widoczna w kartotece wypożyczenia.')}
         {renderConfigDictionaryCard('returnConditions', 'Stany zwrotu', 'Lista stanów widoczna w oknie rejestracji zwrotu.')}
-        <div className="settings-card compact-admin-card">
-          <h3>Statusy i zwroty</h3>
-          <p className="muted">Statusy wypożyczeń i zwrotów korzystają z istniejących wartości systemowych.</p>
-          <div className="tag-list"><span className="config-tag">Aktywne</span><span className="config-tag">Częściowo zwrócone</span><span className="config-tag">Zwrócone</span></div>
-        </div>
-        <div className="settings-card compact-admin-card">
-          <h3>Domyślne okresy</h3>
-          <p className="muted">Konfiguracja domyślnych okresów będzie dostępna bez wpływu na obecną obsługę zwrotów.</p>
-          <AppButton variant="secondary" disabled>W przygotowaniu</AppButton>
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div><h3>Kolory statusów wypożyczeń</h3><p className="muted">Statusy systemowe widoczne w tabelach i na Dashboardzie.</p></div>
+          </div>
+          <div className="dictionary-list dictionary-list-compact">
+            {['Aktywne', 'Częściowo zwrócone', 'Zwrócone', 'Po terminie'].map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
+              <span className="dictionary-name-static">{status}</span>
+              <div className="dictionary-row-actions dictionary-icon-actions">
+                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
+              </div>
+            </div>)}
+          </div>
         </div>
       </div>}
 
-      {placeholderGroups[activeSection] && <div className="settings-pane-grid settings-pane-grid-wide">
-        {placeholderGroups[activeSection].map((item) => <div className="settings-card compact-admin-card settings-dictionary-card" key={item}>
-          <p className="eyebrow">{activeSectionData.label}</p>
-          <h3>{item}</h3>
-          <p className="muted">Sekcja przygotowana pod konfigurację. Nie zmienia jeszcze działania istniejących modułów.</p>
-          <AppButton variant="secondary" disabled>W przygotowaniu</AppButton>
-        </div>)}
+      {activeSection === 'organizer' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div>
+              <h3>Kategorie zadań</h3>
+              <p className="muted">Lista kategorii / tagów zadań w Organizerze.</p>
+            </div>
+            <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={resetOrganizerCategoryItems}>Domyślne</AppButton>
+          </div>
+          <div className="dictionary-add-compact">
+            <AppInput value={newOrganizerCategory} onChange={(e) => setNewOrganizerCategory(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addOrganizerCategoryItem(); }} placeholder="np. Finanse" />
+            <button type="button" className="dictionary-icon-button add" onClick={addOrganizerCategoryItem} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
+          </div>
+          <div className="dictionary-list dictionary-list-compact">
+            {organizerCategoryItems.map((item) => {
+              const isEditing = editingOrganizerCategory?.id === item.id;
+              return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
+                {isEditing
+                  ? <input value={editingOrganizerCategoryValue} onChange={(e) => setEditingOrganizerCategoryValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveOrganizerCategoryItem(); if (e.key === 'Escape') { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); } }} autoFocus />
+                  : <button type="button" className="dictionary-name-button" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} title="Edytuj">{item.name}</button>}
+                <div className="dictionary-row-actions dictionary-icon-actions">
+                  {isEditing
+                    ? <><button type="button" className="dictionary-icon-button save" onClick={saveOrganizerCategoryItem} aria-label="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={() => { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); }} aria-label="Anuluj"><X size={15} /></button></>
+                    : <><button type="button" className="dictionary-icon-button edit" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} aria-label="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => deleteOrganizerCategoryItem(item)} aria-label="Usuń">−</button></>}
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div><h3>Kolory statusów zadań</h3><p className="muted">Kolor widoczny przy statusach w Organizerze i całym programie.</p></div>
+          </div>
+          <div className="dictionary-list dictionary-list-compact">
+            {ORGANIZER_TASK_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
+              <span className="dictionary-name-static">{status}</span>
+              <div className="dictionary-row-actions dictionary-icon-actions">
+                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
+              </div>
+            </div>)}
+          </div>
+        </div>
+        <div className="settings-card compact-admin-card">
+          <h3>Informacje</h3>
+          <p className="muted">Układ tabeli, ukrywanie kolumn i menu kontekstowe działają globalnie tak jak w module Serwis.</p>
+        </div>
       </div>}
+
+      {restoreCandidate && <ModalFrame
+        className="backup-restore-modal"
+        eyebrow="Kopie bezpieczeństwa"
+        title="Przywrócić backup?"
+        description={`Plik: ${restoreCandidate.fileName}. Import zastąpi obecne dane w tabelach objętych backupem.`}
+        onClose={() => setRestoreCandidate(null)}
+        footer={<>
+          <ButtonSecondary onClick={() => setRestoreCandidate(null)} disabled={backupBusy}>Anuluj</ButtonSecondary>
+          <ButtonSecondary onClick={() => restoreBackupFromCandidate(false)} disabled={backupBusy}>Nie</ButtonSecondary>
+          <ButtonPrimary onClick={() => restoreBackupFromCandidate(true)} disabled={backupBusy}>Tak</ButtonPrimary>
+        </>}
+      >
+        <div className="backup-restore-question">
+          <strong>Czy wykonać kopię obecnych danych przed importem?</strong>
+          <p>Opcja „Tak” zapisze aktualny stan do pliku JSON, a dopiero potem rozpocznie przywracanie wybranego backupu.</p>
+        </div>
+      </ModalFrame>}
+
     </section>
   </div>;
 }

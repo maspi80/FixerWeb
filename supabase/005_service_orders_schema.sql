@@ -95,7 +95,29 @@ create table if not exists public.service_order_attachments (
     updated_at timestamptz default now()
 );
 
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'service_orders_client_id_fkey') then
+    alter table public.service_orders
+      add constraint service_orders_client_id_fkey foreign key (client_id) references public.clients(id) on delete set null not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'service_orders_equipment_id_fkey') then
+    alter table public.service_orders
+      add constraint service_orders_equipment_id_fkey foreign key (equipment_id) references public.equipment(id) on delete set null not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'service_order_progress_service_order_id_fkey') then
+    alter table public.service_order_progress
+      add constraint service_order_progress_service_order_id_fkey foreign key (service_order_id) references public.service_orders(id) on delete cascade not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'service_order_attachments_service_order_id_fkey') then
+    alter table public.service_order_attachments
+      add constraint service_order_attachments_service_order_id_fkey foreign key (service_order_id) references public.service_orders(id) on delete cascade not valid;
+  end if;
+end;
+$$;
+
 create index if not exists idx_service_orders_service_number on public.service_orders(service_number);
+create unique index if not exists idx_service_orders_service_number_unique on public.service_orders(service_number) where service_number is not null;
 create index if not exists idx_service_orders_status on public.service_orders(status);
 create index if not exists idx_service_orders_priority on public.service_orders(priority);
 create index if not exists idx_service_orders_client_id on public.service_orders(client_id);
@@ -138,3 +160,5 @@ create policy service_attachments_select on public.service_order_attachments for
 create policy service_attachments_insert on public.service_order_attachments for insert to authenticated with check (true);
 create policy service_attachments_update on public.service_order_attachments for update to authenticated using (true) with check (true);
 create policy service_attachments_delete on public.service_order_attachments for delete to authenticated using (true);
+
+notify pgrst, 'reload schema';

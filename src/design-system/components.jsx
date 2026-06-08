@@ -8,9 +8,9 @@ export function AppButton({ className = '', type = 'button', variant = 'secondar
   return <button type={type} className={joinClassNames('app-button', `app-button-${variant}`, `app-button-${size}`, className)} {...props}>{children}</button>;
 }
 
-export function AppInput({ className = '', ...props }) {
-  return <input className={joinClassNames('app-input', className)} {...props} />;
-}
+export const AppInput = React.forwardRef(function AppInput({ className = '', ...props }, ref) {
+  return <input ref={ref} className={joinClassNames('app-input', className)} {...props} />;
+});
 
 export function AppSelect({ className = '', children, ...props }) {
   return <select className={joinClassNames('app-input app-select', className)} {...props}>{children}</select>;

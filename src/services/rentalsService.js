@@ -74,6 +74,11 @@ function getRentalRpcError(error) {
   if (code === '42883' || code === 'PGRST202' || message.toLocaleLowerCase('pl').includes('update_rental_with_items')) {
     return new Error('Nie znaleziono funkcji RPC update_rental_with_items w Supabase. Uruchom migrację supabase/006_atomic_rental_update.sql i spróbuj ponownie.');
   }
+  if (message.toLocaleLowerCase('pl').includes('create_rental_with_items')) {
+    return new Error('Nie znaleziono funkcji RPC create_rental_with_items w Supabase. Uruchom migrację supabase/012_production_safety_rpc.sql i spróbuj ponownie.');
+  }
+  if (String(error?.code ?? '') === '23505') return new Error('Dokument o takim numerze już istnieje. Zmień numer wypożyczenia i spróbuj ponownie.');
+  if (String(error?.code ?? '') === '23503') return new Error('Nie można zapisać wypożyczenia, bo wybrany klient lub sprzęt nie istnieje w bazie.');
   return error;
 }
 
@@ -173,23 +178,13 @@ export async function createRentalRecord(rental, items = []) {
     return { data: null, error };
   }
 
-  const { data: createdRental, error: rentalError } = await supabase
-    .from('rentals')
-    .insert(rentalPayload)
-    .select(rentalSelectColumns)
-    .single();
-  if (rentalError) return { data: null, error: rentalError };
+  const { data: createdRentalId, error: rpcError } = await supabase.rpc('create_rental_with_items', {
+    p_rental: rentalPayload,
+    p_items: itemRows
+  });
+  if (rpcError) return { data: null, error: getRentalRpcError(rpcError) };
 
-  itemRows = itemRows.map((item) => ({ ...item, rental_id: createdRental.id }));
-  if (itemRows.length) {
-    const { error: itemsError } = await supabase.from('rental_items').insert(itemRows);
-    if (itemsError) return { data: createdRental, error: itemsError };
-
-    const { error: equipmentError } = await markEquipmentIssued(itemRows.map((item) => item.equipment_id));
-    if (equipmentError) return { data: createdRental, error: equipmentError };
-  }
-
-  return fetchRentalRecord(createdRental.id);
+  return fetchRentalRecord(createdRentalId);
 }
 
 export async function fetchRentalRecord(id) {

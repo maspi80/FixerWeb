@@ -420,6 +420,8 @@ function normalizeExportValue(value) {
   const text = String(value).trim();
   const numberText = text.replace(/\s/g, '').replace(',', '.');
   if (numberText && !Number.isNaN(Number(numberText))) return Number(numberText);
+  const polishDate = text.match(/^(\d{2})[./-](\d{2})[./-](\d{4})/);
+  if (polishDate) return Date.parse(`${polishDate[3]}-${polishDate[2]}-${polishDate[1]}T00:00:00`);
   const timestamp = Date.parse(text);
   if (!Number.isNaN(timestamp) && /\d{4}-\d{2}-\d{2}|\d{2}[./-]\d{2}[./-]\d{4}/.test(text)) return timestamp;
   return text.toLocaleLowerCase('pl');
@@ -715,7 +717,7 @@ function App() {
         <section className="page-content">
           {activeModule === 'dashboard' && <Dashboard onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
           {activeModule === 'clients' && <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
           {activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
@@ -1263,9 +1265,7 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [editingClient, setEditingClient] = useState(null);
   const [editorInitialTab, setEditorInitialTab] = useState('data');
   const [notice, setNotice] = useState('');
-  const [clientTypeFilter, setClientTypeFilter] = useState('all');
-  const [clientKindFilter, setClientKindFilter] = useState('all');
-  const [clientSearch, setClientSearch] = useState('');
+  const [filters, setFilters] = useStoredState('fixer-clients-filters', { search: '', type: 'all', kind: 'all' });
   const [pendingOpenClientId, setPendingOpenClientId] = useState(null);
 
   const clientKinds = useMemo(() => {
@@ -1274,22 +1274,20 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   }, [rows]);
 
   const filteredRows = useMemo(() => {
-    const query = clientSearch.trim().toLocaleLowerCase('pl');
+    const query = String(filters.search ?? '').trim().toLocaleLowerCase('pl');
     return rows.filter((client) => {
-      const matchesType = clientTypeFilter === 'all' || client.type === clientTypeFilter;
-      const matchesKind = clientKindFilter === 'all' || client.client_kind === clientKindFilter;
+      const matchesType = filters.type === 'all' || client.type === filters.type;
+      const matchesKind = filters.kind === 'all' || client.client_kind === filters.kind;
       const searchable = [client.name, client.type, client.client_kind, client.phone, client.email, client.city, client.nip]
         .filter(Boolean)
         .join(' ')
         .toLocaleLowerCase('pl');
       return matchesType && matchesKind && (!query || searchable.includes(query));
     });
-  }, [rows, clientTypeFilter, clientKindFilter, clientSearch]);
+  }, [rows, filters]);
 
   const clearClientFilters = () => {
-    setClientTypeFilter('all');
-    setClientKindFilter('all');
-    setClientSearch('');
+    setFilters({ search: '', type: 'all', kind: 'all' });
   };
 
   const loadClients = async () => {
@@ -1412,8 +1410,8 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <div className="module-actions">
           <AppButton variant="primary" className="module-action-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</AppButton>
           <AppButton variant="secondary" className="module-action-button" onClick={loadClients}>Odśwież</AppButton>
-          <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><Download size={16} />Eksport CSV</AppButton>
-          <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Baza klientów', CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />Eksport PDF</AppButton>
+          <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><Download size={16} />CSV</AppButton>
+          <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Baza klientów', CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />PDF</AppButton>
 
         </div>
         {notice && <div className="notice">{notice}</div>}
@@ -1422,11 +1420,11 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <div className="client-filter-bar">
           <label>
             Szukaj
-            <AppInput value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nazwa, miasto, telefon, email, NIP" />
+            <AppInput value={filters.search ?? ''} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Nazwa, miasto, telefon, email, NIP" />
           </label>
           <label>
             Typ
-            <AppSelect value={clientTypeFilter} onChange={(event) => setClientTypeFilter(event.target.value)}>
+            <AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}>
               <option value="all">Wszyscy</option>
               <option value="Firma">Tylko firmy</option>
               <option value="Osoba prywatna">Tylko osoby prywatne</option>
@@ -1434,7 +1432,7 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
           </label>
           <label>
             Rodzaj klienta
-            <AppSelect value={clientKindFilter} onChange={(event) => setClientKindFilter(event.target.value)}>
+            <AppSelect value={filters.kind ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, kind: event.target.value }))}>
               <option value="all">Wszystkie rodzaje</option>
               {clientKinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
             </AppSelect>
@@ -1568,6 +1566,19 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
 const EQUIPMENT_SET_CATEGORY = 'Zestaw';
 const EQUIPMENT_SET_COMPONENT_STATUS = 'Składnik zestawu';
 const EQUIPMENT_AVAILABLE_STATUS = 'Dostępny';
+const EQUIPMENT_TABLE_KEY = 'equipment-table';
+const EQUIPMENT_TABLE_COLUMNS = [
+  { key: 'item_type', label: 'Typ' },
+  { key: 'name', label: 'Nazwa' },
+  { key: 'category', label: 'Kategoria' },
+  { key: 'brand', label: 'Marka' },
+  { key: 'model', label: 'Model' },
+  { key: 'serial', label: 'Numer seryjny' },
+  { key: 'inventory_number', label: 'Nr inw.' },
+  { key: 'status', label: 'Status' },
+  { key: 'location', label: 'Lokalizacja' },
+  { key: 'set_items_count', label: 'Składniki' }
+];
 
 function getEquipmentKey(item) {
   return item?.id ?? item?.localId ?? item?.inventory_number ?? item?.serial ?? item?.barcode ?? item?.name ?? '';
@@ -1634,7 +1645,7 @@ function getEquipmentSetStatus(setItems = []) {
   return EQUIPMENT_AVAILABLE_STATUS;
 }
 
-function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
+function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate }) {
   const [rows, setRows] = useState(demoEquipment);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -1644,6 +1655,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [equipmentStatuses, setEquipmentStatuses] = useState(() => getLocalEquipmentDictionaryNames('status'));
   const [equipmentLocations, setEquipmentLocations] = useState(() => getLocalEquipmentDictionaryNames('location'));
   const [equipmentConditions, setEquipmentConditions] = useState(() => getActiveConfigDictionaryNames('equipmentConditions'));
+  const [filters, setFilters] = useStoredState('fixer-equipment-filters', { search: '', category: 'all', status: 'all', location: 'all', brand: 'all', type: 'all' });
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('all');
   const [pendingOpenEquipmentId, setPendingOpenEquipmentId] = useState(null);
 
@@ -1896,14 +1908,37 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
   };
 
 
+  const equipmentFilterOptions = useMemo(() => ({
+    categories: [...new Set([...equipmentCategories, ...rows.map((item) => item.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pl')),
+    statuses: [...new Set([...equipmentStatuses, ...rows.map((item) => item.status).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pl')),
+    locations: [...new Set([...equipmentLocations, ...rows.map((item) => item.location).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pl')),
+    brands: [...new Set(rows.map((item) => item.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'))
+  }), [rows, equipmentCategories, equipmentStatuses, equipmentLocations]);
+
   const displayRows = useMemo(() => rows
     .filter((item) => !isEquipmentSetComponent(item))
+    .map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))
     .filter((item) => {
       if (dashboardStatusFilter === 'all') return true;
       const status = normalizeStatusText(item.status);
       const filter = normalizeStatusText(dashboardStatusFilter);
       return status === filter || status.includes(filter);
-    }), [rows, dashboardStatusFilter]);
+    })
+    .filter((item) => {
+      const query = String(filters.search ?? '').trim().toLocaleLowerCase('pl');
+      if ((filters.category ?? 'all') !== 'all' && item.category !== filters.category) return false;
+      if ((filters.status ?? 'all') !== 'all' && item.status !== filters.status) return false;
+      if ((filters.location ?? 'all') !== 'all' && item.location !== filters.location) return false;
+      if ((filters.brand ?? 'all') !== 'all' && item.brand !== filters.brand) return false;
+      if ((filters.type ?? 'all') !== 'all' && item.item_type !== filters.type) return false;
+      if (query) {
+        const searchable = [item.name, item.category, item.brand, item.model, item.serial, item.inventory_number, item.barcode, item.status, item.location, item.item_type].filter(Boolean).join(' ').toLocaleLowerCase('pl');
+        if (!searchable.includes(query)) return false;
+      }
+      return true;
+    }), [rows, dashboardStatusFilter, filters]);
+
+  const clearEquipmentFilters = () => setFilters({ search: '', category: 'all', status: 'all', location: 'all', brand: 'all', type: 'all' });
 
   const renderSetContents = (setRow) => {
     const components = Array.isArray(setRow.set_items) ? setRow.set_items : [];
@@ -1928,25 +1963,24 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent }) {
           <AppButton variant="primary" onClick={() => openEquipmentEditor(null)}><Plus size={18} />Dodaj sprzęt</AppButton>
           <AppButton variant="secondary" onClick={openSetEditor}><Package size={18} />Dodaj zestaw</AppButton>
           <AppButton variant="secondary" onClick={loadEquipment}>Odśwież</AppButton>
-          <AppButton variant="secondary">Eksport PDF</AppButton>
-          <AppButton variant="secondary">Ustawienia modułu</AppButton>
+          <AppButton variant="secondary" onClick={() => exportTableToCsv(EQUIPMENT_TABLE_KEY, EQUIPMENT_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><Download size={16} />CSV</AppButton>
+          <AppButton variant="secondary" onClick={() => exportTableToPdf('Sprzęt', EQUIPMENT_TABLE_KEY, EQUIPMENT_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><FileText size={16} />PDF</AppButton>
         </div>
         {notice && <div className="notice">{notice}</div>}
         {dashboardStatusFilter !== 'all' && <div className="notice">Filtr z Dashboardu: status {dashboardStatusFilter}. <button type="button" className="inline-notice-button" onClick={() => setDashboardStatusFilter('all')}>Pokaż wszystko</button></div>}
       </section>
       <section className="panel">
-        <DataTable storageKey="equipment-table" loading={loading} columns={[
-          { key: 'item_type', label: 'Typ' },
-          { key: 'name', label: 'Nazwa' },
-          { key: 'category', label: 'Kategoria' },
-          { key: 'brand', label: 'Marka' },
-          { key: 'model', label: 'Model' },
-          { key: 'serial', label: 'Numer seryjny' },
-          { key: 'inventory_number', label: 'Nr inw.' },
-          { key: 'status', label: 'Status' },
-          { key: 'location', label: 'Lokalizacja' },
-          { key: 'set_items_count', label: 'Składniki' }
-        ]} rows={displayRows.map((item) => ({ ...item, item_type: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt', set_items_count: Array.isArray(item.set_items) && item.set_items.length ? item.set_items.length : '' }))} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
+        <div className="client-filter-bar equipment-filter-bar">
+          <label>Szukaj<AppInput value={filters.search ?? ''} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Nazwa, marka, model, SN, kod" /></label>
+          <label>Kategoria<AppSelect value={filters.category ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}><option value="all">Wszystkie</option>{equipmentFilterOptions.categories.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
+          <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{equipmentFilterOptions.statuses.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
+          <label>Lokalizacja<AppSelect value={filters.location ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, location: event.target.value }))}><option value="all">Wszystkie</option>{equipmentFilterOptions.locations.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
+          <label>Producent<AppSelect value={filters.brand ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, brand: event.target.value }))}><option value="all">Wszyscy</option>{equipmentFilterOptions.brands.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
+          <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option><option value="Sprzęt">Sprzęt</option><option value="Zestaw">Zestaw</option></AppSelect></label>
+          <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearEquipmentFilters}>Wyczyść</AppButton>
+          <span className="filter-count">{displayRows.length} / {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>
+        </div>
+        <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} conditions={equipmentConditions} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
     </div>
@@ -2286,14 +2320,46 @@ function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
   return <EquipmentPickerModal title="Wybierz składniki z magazynu" availableItems={availableItems} selectedIds={[]} onClose={onClose} onConfirm={onConfirm} />;
 }
 const RENTALS_TABLE_KEY = 'rentals-table';
+const RENTAL_SELECTED_EQUIPMENT_TABLE_KEY = 'rental-selected-equipment-table';
+
+function getRentalItemBrand(item) {
+  return item?.brand_snapshot ?? item?.brand ?? item?.equipment?.brand ?? '';
+}
+
+function getRentalItemModel(item) {
+  return item?.model_snapshot ?? item?.model ?? item?.equipment?.model ?? '';
+}
+
+function summarizeDistinctValues(values, limit = 2) {
+  const unique = [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))];
+  if (!unique.length) return '—';
+  if (unique.length <= limit) return unique.join(', ');
+  return `${unique.slice(0, limit).join(', ')} +${unique.length - limit}`;
+}
+
 const RENTALS_TABLE_COLUMNS = [
   { key: 'rental_number', label: 'Numer' },
   { key: 'client', label: 'Klient' },
+  { key: 'rental_type', label: 'Typ' },
   { key: 'items_count', label: 'Pozycje' },
   { key: 'items_summary', label: 'Sprzęt' },
+  { key: 'brands_summary', label: 'Marka' },
+  { key: 'models_summary', label: 'Model' },
   { key: 'status', label: 'Status' },
   { key: 'start_date', label: 'Wydanie' },
   { key: 'planned_return_date', label: 'Termin zwrotu' }
+];
+
+const RENTAL_SELECTED_EQUIPMENT_COLUMNS = [
+  { key: 'name', label: 'Nazwa' },
+  { key: 'item_type_display', label: 'Typ' },
+  { key: 'brand', label: 'Marka' },
+  { key: 'model', label: 'Model' },
+  { key: 'serial', label: 'Numer seryjny' },
+  { key: 'code_display', label: 'Kod / Nr inw.' },
+  { key: 'category', label: 'Kategoria' },
+  { key: 'location', label: 'Lokalizacja' },
+  { key: 'issue_status', label: 'Status', renderCell: (row) => <DSStatusPill value={row.issue_status} /> }
 ];
 
 function formatRentalStatus(status) {
@@ -2602,6 +2668,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rentalSettings, setRentalSettings] = useState(getRentalNumberingSettings);
   const [rentalTypes, setRentalTypes] = useState(() => getActiveConfigDictionaryNames('rentalTypes'));
   const [returnConditions, setReturnConditions] = useState(() => getActiveConfigDictionaryNames('returnConditions'));
+  const [filters, setFilters] = useStoredState('fixer-rentals-filters', { search: '', status: 'all', type: 'all' });
   const [dashboardRentalFilter, setDashboardRentalFilter] = useState('all');
   const [pendingOpenRentalId, setPendingOpenRentalId] = useState(null);
   const [notice, setNotice] = useState('');
@@ -2753,7 +2820,16 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     await loadRentalDictionaries();
   };
 
-  const displayRows = rows.map((rental) => {
+  const equipmentById = useMemo(() => new Map(equipmentRows.map((item) => [String(item.id), item])), [equipmentRows]);
+  const enrichedRows = useMemo(() => rows.map((rental) => ({
+    ...rental,
+    rental_items: (rental.rental_items ?? []).map((item) => ({
+      ...item,
+      equipment: item.equipment ?? equipmentById.get(String(item.equipment_id)) ?? null
+    }))
+  })), [rows, equipmentById]);
+
+  const displayRows = enrichedRows.map((rental) => {
     const baseItems = getRentalBaseItems(rental);
     const overdueDays = getRentalOverdueDays(rental);
     return {
@@ -2761,21 +2837,36 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       _rental: rental,
       _rowTone: overdueDays ? 'overdue' : '',
       rental_number: rental.rental_number,
+      rental_type: rental.rental_type ?? '—',
       client: rental.clients?.name ?? '—',
       items_count: baseItems.length,
       items_summary: baseItems.map((item) => item.name_snapshot).filter(Boolean).join(', ') || '—',
+      brands_summary: summarizeDistinctValues(baseItems.map(getRentalItemBrand)),
+      models_summary: summarizeDistinctValues(baseItems.map(getRentalItemModel)),
       status: overdueDays ? 'Przeterminowane' : formatRentalStatus(rental.status),
       planned_return_date: overdueDays ? `${rental.planned_return_date} · po terminie ${overdueDays} ${overdueDays === 1 ? 'dzień' : 'dni'}` : rental.planned_return_date ?? '—'
     };
   });
+  const matchesRentalFilters = (row) => {
+    const query = String(filters.search ?? '').trim().toLocaleLowerCase('pl');
+    const rental = row._rental;
+    if ((filters.status ?? 'all') !== 'all' && rental?.status !== filters.status) return false;
+    if ((filters.type ?? 'all') !== 'all' && (rental?.rental_type ?? '') !== filters.type) return false;
+    if (query) {
+      const searchable = [row.rental_number, row.client, row.items_summary, row.brands_summary, row.models_summary, row.status, row.rental_type, row.start_date, row.planned_return_date].filter(Boolean).join(' ').toLocaleLowerCase('pl');
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  };
   const activeRows = displayRows.filter((row) => {
     const rental = row._rental;
     if (rental?.status === 'returned') return false;
     if (dashboardRentalFilter === 'overdue') return getRentalOverdueDays(rental) > 0;
     if (dashboardRentalFilter === 'today') return String(rental?.planned_return_date ?? '').slice(0, 10) === getLocalIsoDate();
-    return true;
+    return matchesRentalFilters(row);
   });
-  const returnedRows = displayRows.filter((row) => row._rental?.status === 'returned');
+  const returnedRows = displayRows.filter((row) => row._rental?.status === 'returned' && matchesRentalFilters(row));
+  const clearRentalFilters = () => setFilters({ search: '', status: 'all', type: 'all' });
   const canRegisterReturn = (row) => {
     const rental = row._rental ?? row;
     return rental?.status !== 'returned' && getRentalBaseItems(rental).length > 0;
@@ -2788,8 +2879,8 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     return <div className="expanded-set-panel">
       <div className="expanded-set-header"><strong>Pozycje wypożyczenia</strong><span>{items.length} pozycji</span></div>
       <table className="expanded-set-table">
-        <thead><tr><th>Typ</th><th>Nazwa</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th></tr></thead>
-        <tbody>{items.map((item, index) => <tr key={`${item.id ?? item.equipment_id}-${index}`}><td>{item.item_type === 'set' ? 'Zestaw' : item.item_type === 'set_component' ? 'Składnik' : 'Sprzęt'}</td><td><strong>{item.name_snapshot}</strong></td><td>{item.serial_snapshot || '—'}</td><td>{item.barcode_snapshot || item.inventory_number_snapshot || '—'}</td><td><StatusPill value={item.status} /></td></tr>)}</tbody>
+        <thead><tr><th>Typ</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th></tr></thead>
+        <tbody>{items.map((item, index) => <tr key={`${item.id ?? item.equipment_id}-${index}`}><td>{item.item_type === 'set' ? 'Zestaw' : item.item_type === 'set_component' ? 'Składnik' : 'Sprzęt'}</td><td><strong>{item.name_snapshot}</strong></td><td>{getRentalItemBrand(item) || '—'}</td><td>{getRentalItemModel(item) || '—'}</td><td>{item.serial_snapshot || '—'}</td><td>{item.barcode_snapshot || item.inventory_number_snapshot || '—'}</td><td><StatusPill value={item.status} /></td></tr>)}</tbody>
       </table>
     </div>;
   };
@@ -2799,13 +2890,20 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       <div className="module-actions">
         <ButtonPrimary onClick={() => openRentalEditor(null)}><Plus size={17} />Nowe wypożyczenie</ButtonPrimary>
         <ButtonSecondary onClick={() => { loadRentals(); loadRentalDictionaries(); }}>Odśwież</ButtonSecondary>
-        <ButtonSecondary onClick={() => exportTableToCsv(RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><Download size={15} />CSV</ButtonSecondary>
-        <ButtonSecondary onClick={() => exportTableToPdf('Wypożyczenia', RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><FileText size={15} />PDF</ButtonSecondary>
+        <ButtonSecondary onClick={() => exportTableToCsv(RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, activeRows)} disabled={!activeRows.length}><Download size={15} />CSV</ButtonSecondary>
+        <ButtonSecondary onClick={() => exportTableToPdf('Wypożyczenia', RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, activeRows)} disabled={!activeRows.length}><FileText size={15} />PDF</ButtonSecondary>
       </div>
       {notice && <div className="notice rentals-command-notice">{notice}</div>}
       {dashboardRentalFilter !== 'all' && <div className="notice rentals-command-notice">Filtr z Dashboardu: {dashboardRentalFilter === 'overdue' ? 'po terminie' : dashboardRentalFilter === 'today' ? 'zwroty dzisiaj' : 'aktywne wypożyczenia'}. <button type="button" className="inline-notice-button" onClick={() => setDashboardRentalFilter('all')}>Pokaż wszystko</button></div>}
     </section>
     <section className="panel rentals-table-panel rentals-records-section">
+      <div className="client-filter-bar rentals-filter-bar">
+        <label>Szukaj<AppInput value={filters.search ?? ''} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Numer, klient, sprzęt, marka, model" /></label>
+        <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option><option value="active">Aktywne</option><option value="partially_returned">Częściowo zwrócone</option><option value="returned">Zwrócone</option></AppSelect></label>
+        <label>Typ wypożyczenia<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{rentalTypes.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
+        <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearRentalFilters}>Wyczyść</AppButton>
+        <span className="filter-count">{activeRows.length + returnedRows.length} / {displayRows.length}</span>
+      </div>
       <div className="rentals-section-heading">
         <div>
           <p className="eyebrow">Aktywne</p>
@@ -2821,7 +2919,11 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
           <p className="eyebrow">Historia</p>
           <h3>Wypożyczenia zwrócone</h3>
         </div>
-        <ButtonSecondary onClick={() => setReturnedCollapsed((value) => !value)}>{returnedCollapsed ? 'Rozwiń' : 'Zwiń'} · {returnedRows.length}</ButtonSecondary>
+        <div className="section-export-actions">
+          <ButtonSecondary onClick={() => exportTableToCsv(`${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><Download size={15} />CSV</ButtonSecondary>
+          <ButtonSecondary onClick={() => exportTableToPdf('Historia wypożyczeń', `${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><FileText size={15} />PDF</ButtonSecondary>
+          <ButtonSecondary onClick={() => setReturnedCollapsed((value) => !value)}>{returnedCollapsed ? 'Rozwiń' : 'Zwiń'} · {returnedRows.length}</ButtonSecondary>
+        </div>
       </div>
       {!returnedCollapsed && <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />}
     </section>
@@ -2947,7 +3049,7 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
           <div className="rental-return-check">{returned ? <CheckCircle2 size={18} /> : null}</div>
           <div className="rental-return-name">
             <strong>{item.name_snapshot || 'Sprzęt'}</strong>
-            <small>SN: {item.serial_snapshot || '—'} · Kod: {item.barcode_snapshot || item.inventory_number_snapshot || '—'}</small>
+            <small>{[getRentalItemBrand(item), getRentalItemModel(item)].filter(Boolean).join(' ') || '—'} · SN: {item.serial_snapshot || '—'} · Kod: {item.barcode_snapshot || item.inventory_number_snapshot || '—'}</small>
           </div>
           <label className="rental-return-condition" onClick={(event) => event.stopPropagation()}>
             <span>Stan zwrotu</span>
@@ -3007,6 +3109,12 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   });
 
   const selectedEquipment = equipmentRows.filter((item) => selectedEquipmentIds.includes(item.id));
+  const selectedEquipmentRows = selectedEquipment.map((item) => ({
+    ...item,
+    item_type_display: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt',
+    code_display: item.barcode || item.inventory_number || item.serial || '—',
+    issue_status: 'Do wydania'
+  }));
   const selectedSetCount = selectedEquipment.filter(isEquipmentSet).length;
   const settlementOptional = form.rental_type === 'Bezpłatne' || form.rental_type === 'Wewnętrzne';
   const rentalSummary = {
@@ -3138,6 +3246,12 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     event.stopPropagation();
     setRentalItemContextMenu({ ...getSafeMenuPosition(event, 240, 260), item });
   };
+  const removeRentalEquipmentRows = async (items) => {
+    const ids = new Set(items.map((item) => item.id).filter(Boolean));
+    if (!ids.size) return;
+    setSelectedEquipmentIds((current) => current.filter((itemId) => !ids.has(itemId)));
+    setSelectedRentalItemIds(new Set());
+  };
   const runRentalItemAction = (action) => {
     const item = rentalItemContextMenu?.item;
     setRentalItemContextMenu(null);
@@ -3233,20 +3347,19 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
             <span className="rental-document-summary">{rentalSummary.items} pozycji · {rentalSummary.sets} zestawów · cena {rentalSummary.price} · kaucja {rentalSummary.deposit}</span>
           </div>
           <div className="rental-items-table-shell">
-            {selectedEquipment.length ? <AppTable className="set-components-table rental-items-table">
-              <thead><tr><th className="selection-cell"></th><th>Nazwa</th><th>Typ</th><th>Kod / SN</th><th>Kategoria</th><th>Lokalizacja</th><th>Status</th></tr></thead>
-              <tbody>{selectedEquipment.map((item) => (
-                <tr key={item.id} className={selectedRentalItemIds.has(item.id) ? 'selected-row' : ''} onClick={() => toggleRentalItemSelection(item.id)} onContextMenu={(event) => openRentalItemMenu(event, item)} onDoubleClick={() => setPreviewEquipment(item)} title="Pozycja sprzętu">
-                  <td className="selection-cell"><input type="checkbox" checked={selectedRentalItemIds.has(item.id)} onChange={() => toggleRentalItemSelection(item.id)} onClick={(event) => event.stopPropagation()} /></td>
-                  <td className="rental-item-name-cell"><strong>{item.name || '—'}</strong><small>{[item.brand, item.model].filter(Boolean).join(' ') || '—'}</small></td>
-                  <td>{isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt'}</td>
-                  <td className="rental-item-code-cell">{getRentalEquipmentCode(item)}</td>
-                  <td>{item.category || '—'}</td>
-                  <td>{item.location || '—'}</td>
-                  <td><DSStatusPill value="Do wydania" /></td>
-                </tr>
-              ))}</tbody>
-            </AppTable> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Użyj akcji Dodaj sprzęt w nagłówku tabeli, aby utworzyć dokument wydania." />}
+            {selectedEquipmentRows.length ? <DataTable
+              storageKey={RENTAL_SELECTED_EQUIPMENT_TABLE_KEY}
+              columns={RENTAL_SELECTED_EQUIPMENT_COLUMNS}
+              rows={selectedEquipmentRows}
+              onOpen={(item) => setPreviewEquipment(item)}
+              onDelete={(item) => removeRentalEquipment(item.id)}
+              onBulkDelete={removeRentalEquipmentRows}
+              openLabel="Podgląd sprzętu"
+              deleteLabel="Usuń z dokumentu"
+              customRowActions={[
+                { key: 'preview', label: 'Podgląd sprzętu', icon: FolderOpen, onClick: (item) => setPreviewEquipment(item) }
+              ]}
+            /> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Użyj akcji Dodaj sprzęt w nagłówku tabeli, aby utworzyć dokument wydania." />}
           </div>
         </SectionPanel>
         <SectionPanel className="rental-record-section rental-record-terms-section" title="Warunki i rozliczenie">
@@ -3300,29 +3413,28 @@ function ClientChoiceCard({ client, onClick, className = '' }) {
 }
 
 function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm, onCreateClient = null }) {
-  const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState('name');
-  const [highlightedClientId, setHighlightedClientId] = useState(selectedClientId ?? '');
+  const [filters, setFilters] = useStoredState('fixer-client-picker-filters', { query: '' });
 
   const filteredClients = useMemo(() => {
-    const text = query.trim().toLocaleLowerCase('pl');
+    const text = String(filters.query ?? '').trim().toLocaleLowerCase('pl');
     return clients
       .filter((client) => {
         const searchable = [client.name, client.type, client.client_kind, client.phone, client.email, client.city, client.nip].filter(Boolean).join(' ').toLocaleLowerCase('pl');
         return !text || searchable.includes(text);
       })
-      .sort((left, right) => String(left[sortKey] ?? '').localeCompare(String(right[sortKey] ?? ''), 'pl', { numeric: true, sensitivity: 'base' }));
-  }, [clients, query, sortKey]);
+      .map((client) => ({ ...client, picker_selected: client.id === selectedClientId ? 'Tak' : '' }));
+  }, [clients, filters, selectedClientId]);
 
-  useEffect(() => {
-    if (filteredClients.some((client) => client.id === highlightedClientId)) return;
-    setHighlightedClientId(filteredClients[0]?.id ?? '');
-  }, [filteredClients, highlightedClientId]);
-
-  const highlightedClient = filteredClients.find((client) => client.id === highlightedClientId) ?? null;
-  const confirmHighlightedClient = () => {
-    if (highlightedClient) onConfirm(highlightedClient);
-  };
+  const clientPickerColumns = [
+    { key: 'picker_selected', label: 'Wybrany' },
+    { key: 'name', label: 'Nazwa' },
+    { key: 'type', label: 'Typ' },
+    { key: 'client_kind', label: 'Rodzaj' },
+    { key: 'phone', label: 'Telefon' },
+    { key: 'email', label: 'Email' },
+    { key: 'city', label: 'Miasto' },
+    { key: 'nip', label: 'NIP' }
+  ];
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -3334,50 +3446,60 @@ function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm, onCr
 
   return <ResizableModalFrame className="shared-picker-modal client-picker-modal" storageKey="fixer-client-picker-modal" defaultSize={{ width: 980, height: 640 }} minSize={{ width: 720, height: 480 }} eyebrow="Klienci" title="Wybierz klienta" onClose={onClose} footer={<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary>}>
       <div className="shared-picker-toolbar">
-        <FormField label="Szukaj"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, telefon, email, miasto, NIP" autoFocus /></FormField>
-        <FormField label="Sortuj"><select value={sortKey} onChange={(event) => setSortKey(event.target.value)}><option value="name">Nazwa</option><option value="client_kind">Rodzaj</option><option value="city">Miasto</option></select></FormField>
+        <FormField label="Szukaj"><input value={filters.query ?? ''} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="Nazwa, telefon, email, miasto, NIP" autoFocus /></FormField>
         {onCreateClient && <AppButton variant="primary" size="sm" className="compact-button picker-create-button" onClick={onCreateClient}><Plus size={15} />Nowy klient</AppButton>}
       </div>
-      <div className="shared-picker-table-shell" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') confirmHighlightedClient(); }}>
-        <table className="set-picker-table">
-          <thead><tr><th>Nazwa</th><th>Typ</th><th>Rodzaj</th><th>Telefon</th><th>Email</th><th>Miasto</th></tr></thead>
-          <tbody>{filteredClients.map((client) => {
-            const selected = client.id === highlightedClientId;
-            return <tr key={client.id} tabIndex={0} className={selected ? 'selected-row' : ''} onClick={() => setHighlightedClientId(client.id)} onFocus={() => setHighlightedClientId(client.id)} onKeyDown={(event) => { if (event.key === 'Enter') onConfirm(client); }} onDoubleClick={() => onConfirm(client)}><td><strong>{client.name}</strong></td><td>{client.type || '—'}</td><td>{client.client_kind || '—'}</td><td>{client.phone || '—'}</td><td>{client.email || '—'}</td><td>{client.city || '—'}</td></tr>;
-          })}</tbody>
-        </table>
-        {!filteredClients.length && <EmptyState title="Brak klientów spełniających kryteria wyszukiwania." />}
+      <div className="shared-picker-table-shell">
+        {filteredClients.length ? <DataTable storageKey="client-picker-table" columns={clientPickerColumns} rows={filteredClients} onOpen={onConfirm} openLabel="Wybierz klienta" enableSelectionActions={false} /> : <EmptyState title="Brak klientów spełniających kryteria wyszukiwania." />}
       </div>
     </ResizableModalFrame>;
 }
 
 function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], initialQuery = '', onClose, onConfirm }) {
-  const [query, setQuery] = useState(initialQuery);
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [locationFilter, setLocationFilter] = useState('all');
-  const [sortKey, setSortKey] = useState('name');
+  const [filters, setFilters] = useStoredState('fixer-equipment-picker-filters', { query: '', category: 'all', status: 'all', location: 'all', sort: 'name' });
   const [selectedKeys, setSelectedKeys] = useState(() => new Set(selectedIds.map(String)));
+
+  useEffect(() => {
+    if (!initialQuery) return;
+    setFilters((current) => ({ ...current, query: initialQuery }));
+  }, [initialQuery]);
 
   const categories = useMemo(() => [...new Set(availableItems.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
   const statuses = useMemo(() => [...new Set(availableItems.map((item) => item.status).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
   const locations = useMemo(() => [...new Set(availableItems.map((item) => item.location).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')), [availableItems]);
 
   const filteredItems = useMemo(() => {
-    const text = query.trim().toLocaleLowerCase('pl');
+    const text = String(filters.query ?? '').trim().toLocaleLowerCase('pl');
     return availableItems
       .filter((item) => {
-        const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
-        const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
-        const matchesLocation = locationFilter === 'all' || item.location === locationFilter;
+        const matchesCategory = (filters.category ?? 'all') === 'all' || item.category === filters.category;
+        const matchesStatus = (filters.status ?? 'all') === 'all' || item.status === filters.status;
+        const matchesLocation = (filters.location ?? 'all') === 'all' || item.location === filters.location;
         const searchable = [item.name, item.category, item.brand, item.model, item.serial, item.inventory_number, item.barcode, item.location, item.status].filter(Boolean).join(' ').toLocaleLowerCase('pl');
         return matchesCategory && matchesStatus && matchesLocation && (!text || searchable.includes(text));
       })
-      .sort((left, right) => String(left[sortKey] ?? '').localeCompare(String(right[sortKey] ?? ''), 'pl', { numeric: true, sensitivity: 'base' }));
-  }, [availableItems, query, categoryFilter, statusFilter, locationFilter, sortKey]);
+      .sort((left, right) => String(left[filters.sort ?? 'name'] ?? '').localeCompare(String(right[filters.sort ?? 'name'] ?? ''), 'pl', { numeric: true, sensitivity: 'base' }));
+  }, [availableItems, filters]);
 
   const selectedItems = availableItems.filter((item) => selectedKeys.has(String(getEquipmentKey(item))));
   const visibleAllSelected = filteredItems.length > 0 && filteredItems.every((item) => selectedKeys.has(String(getEquipmentKey(item))));
+  const pickerRows = filteredItems.map((item) => ({
+    ...item,
+    picker_selected: selectedKeys.has(String(getEquipmentKey(item))) ? 'Tak' : '',
+    item_type_display: isEquipmentSet(item) ? 'Zestaw' : (item.category || '—'),
+    code_display: item.barcode || item.inventory_number || '—'
+  }));
+  const pickerColumns = [
+    { key: 'picker_selected', label: 'Wybierz', renderCell: (item) => <input type="checkbox" checked={selectedKeys.has(String(getEquipmentKey(item)))} onChange={() => toggleItem(item)} onClick={(event) => event.stopPropagation()} aria-label="Wybierz sprzęt" /> },
+    { key: 'name', label: 'Nazwa' },
+    { key: 'item_type_display', label: 'Kategoria' },
+    { key: 'brand', label: 'Marka' },
+    { key: 'model', label: 'Model' },
+    { key: 'serial', label: 'Numer seryjny' },
+    { key: 'code_display', label: 'Kod' },
+    { key: 'status', label: 'Status', renderCell: (item) => <DSStatusPill value={item.status} /> },
+    { key: 'location', label: 'Lokalizacja' }
+  ];
 
   const toggleItem = (item) => {
     const key = String(getEquipmentKey(item));
@@ -3402,11 +3524,7 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
   };
 
   const clearFilters = () => {
-    setQuery('');
-    setCategoryFilter('all');
-    setStatusFilter('all');
-    setLocationFilter('all');
-    setSortKey('name');
+    setFilters({ query: '', category: 'all', status: 'all', location: 'all', sort: 'name' });
   };
 
   useEffect(() => {
@@ -3419,24 +3537,17 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
 
   return <ResizableModalFrame className="shared-picker-modal equipment-picker-modal" storageKey="fixer-equipment-picker-modal" defaultSize={{ width: 1080, height: 720 }} minSize={{ width: 760, height: 520 }} eyebrow="Sprzęt" title={title} onClose={onClose} footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onConfirm(selectedItems)} disabled={!selectedItems.length}><Plus size={16} />Dodaj wybrane</ButtonPrimary></>}>
       <div className="equipment-picker-toolbar">
-        <FormField label="Szukaj"><AppInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nazwa, marka, model, SN, kod" autoFocus /></FormField>
-        <FormField label="Kategoria"><AppSelect value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">Wszystkie</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
-        <FormField label="Status"><AppSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
-        <FormField label="Lokalizacja"><AppSelect value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="all">Wszystkie</option>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
-        <FormField label="Sortuj"><AppSelect value={sortKey} onChange={(event) => setSortKey(event.target.value)}><option value="name">Nazwa</option><option value="category">Kategoria</option><option value="status">Status</option><option value="location">Lokalizacja</option></AppSelect></FormField>
+        <FormField label="Szukaj"><AppInput value={filters.query ?? ''} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} placeholder="Nazwa, marka, model, SN, kod" autoFocus /></FormField>
+        <FormField label="Kategoria"><AppSelect value={filters.category ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}><option value="all">Wszystkie</option>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
+        <FormField label="Status"><AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
+        <FormField label="Lokalizacja"><AppSelect value={filters.location ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, location: event.target.value }))}><option value="all">Wszystkie</option>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
+        <FormField label="Sortuj"><AppSelect value={filters.sort ?? 'name'} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}><option value="name">Nazwa</option><option value="category">Kategoria</option><option value="status">Status</option><option value="location">Lokalizacja</option></AppSelect></FormField>
         <ButtonGhost className="compact-table-button" onClick={clearFilters}>Wyczyść</ButtonGhost>
       </div>
       <div className="set-picker-summary"><strong>{selectedItems.length} zaznaczono</strong><span>{filteredItems.length} / {availableItems.length} dostępnych pozycji</span></div>
       <div className="shared-picker-table-shell" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' && selectedItems.length) onConfirm(selectedItems); }}>
-        <AppTable className="set-picker-table">
-          <thead><tr><th className="selection-cell"><input type="checkbox" checked={visibleAllSelected} onChange={toggleVisible} /></th><th>Nazwa</th><th>Kategoria</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Status</th><th>Lokalizacja</th></tr></thead>
-          <tbody>{filteredItems.map((item) => {
-            const key = String(getEquipmentKey(item));
-            const selected = selectedKeys.has(key);
-            return <tr key={key} className={selected ? 'selected-row' : ''} onDoubleClick={() => toggleItem(item)}><td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleItem(item)} /></td><td><strong>{item.name}</strong></td><td>{isEquipmentSet(item) ? 'Zestaw' : item.category || '—'}</td><td>{item.brand || '—'}</td><td>{item.model || '—'}</td><td>{item.serial || '—'}</td><td><DSStatusPill value={item.status} /></td><td>{item.location || '—'}</td></tr>;
-          })}</tbody>
-        </AppTable>
-        {!filteredItems.length && <EmptyState title="Brak pozycji spełniających aktualne filtry." />}
+        <div className="picker-visible-toggle"><label><input type="checkbox" checked={visibleAllSelected} onChange={toggleVisible} />Zaznacz widoczne</label></div>
+        {pickerRows.length ? <DataTable storageKey="equipment-picker-table" columns={pickerColumns} rows={pickerRows} onOpen={toggleItem} openLabel="Zaznacz / odznacz" enableSelectionActions={false} /> : <EmptyState title="Brak pozycji spełniających aktualne filtry." />}
       </div>
     </ResizableModalFrame>;
 }
@@ -3496,9 +3607,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [notice, setNotice] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [filters, setFilters] = useStoredState('fixer-service-filters', { search: '', status: 'all', priority: 'all', category: 'all' });
   const [serviceHistoryCollapsed, setServiceHistoryCollapsed] = useState(true);
   const [pendingOpenServiceId, setPendingOpenServiceId] = useState(null);
   const [serviceStatuses, setServiceStatuses] = useState(SERVICE_STATUSES);
@@ -3562,6 +3671,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
       number: order.service_number,
       client_name: client?.name ?? '—',
       equipment_name: order.customer_device_name || equipment?.name || '—',
+      category_display: order.customer_device_category || equipment?.category || '—',
       accepted_date_display: formatDashboardDate(order.accepted_date),
       planned_date_display: formatDashboardDate(order.planned_date),
       completed_date_display: formatDashboardDate(order.completed_date),
@@ -3573,17 +3683,20 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const completedTableRows = useMemo(() => tableRows.filter((order) => order.status === 'Wydane'), [tableRows]);
 
   const filteredRows = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('pl');
+    const query = String(filters.search ?? '').trim().toLocaleLowerCase('pl');
     return activeTableRows.filter((order) => {
-      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-      const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
-      const searchable = [order.service_number, order.client_name, order.equipment_name, order.customer_device_brand, order.customer_device_model, order.customer_device_serial, order.status, order.priority, order.fault_description, order.diagnosis]
+      const matchesStatus = filters.status === 'all' || order.status === filters.status;
+      const matchesPriority = filters.priority === 'all' || order.priority === filters.priority;
+      const matchesCategory = filters.category === 'all' || order.category_display === filters.category || order.customer_device_category === filters.category;
+      const searchable = [order.service_number, order.client_name, order.equipment_name, order.category_display, order.customer_device_brand, order.customer_device_model, order.customer_device_serial, order.status, order.priority, order.fault_description, order.diagnosis]
         .filter(Boolean)
         .join(' ')
         .toLocaleLowerCase('pl');
-      return matchesStatus && matchesPriority && (!query || searchable.includes(query));
+      return matchesStatus && matchesPriority && matchesCategory && (!query || searchable.includes(query));
     });
-  }, [activeTableRows, search, statusFilter, priorityFilter]);
+  }, [activeTableRows, filters]);
+
+  const serviceCategoryOptions = useMemo(() => [...new Set([...serviceDeviceCategories, ...tableRows.map((order) => order.category_display).filter((item) => item && item !== '—')])].sort((a, b) => a.localeCompare(b, 'pl')), [serviceDeviceCategories, tableRows]);
 
   const openServiceEditor = (order = null) => {
     setEditingOrder(order);
@@ -3687,9 +3800,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   };
 
   const clearFilters = () => {
-    setSearch('');
-    setStatusFilter('all');
-    setPriorityFilter('all');
+    setFilters({ search: '', status: 'all', priority: 'all', category: 'all' });
   };
 
   const setServiceOrderStatus = async (order, newStatus) => {
@@ -3702,6 +3813,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     { key: 'service_number', label: 'Numer' },
     { key: 'client_name', label: 'Klient' },
     { key: 'equipment_name', label: 'Sprzęt' },
+    { key: 'category_display', label: 'Kategoria' },
     { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={serviceStatuses} onStatusChange={(newStatus) => setServiceOrderStatus(row, newStatus)} /> },
     { key: 'priority', label: 'Priorytet' },
     { key: 'accepted_date_display', label: 'Przyjęcie' },
@@ -3713,6 +3825,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     { key: 'service_number', label: 'Numer' },
     { key: 'client_name', label: 'Klient' },
     { key: 'equipment_name', label: 'Sprzęt' },
+    { key: 'category_display', label: 'Kategoria' },
     { key: 'status', label: 'Status' },
     { key: 'priority', label: 'Priorytet' },
     { key: 'accepted_date_display', label: 'Przyjęcie' },
@@ -3725,6 +3838,8 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
       <div className="module-actions">
         <AppButton variant="primary" className="module-action-button" onClick={createNewOrder}><Plus size={18} />Nowe zlecenie</AppButton>
         <AppButton variant="secondary" className="module-action-button" onClick={loadServiceData}>Odśwież</AppButton>
+        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(SERVICE_TABLE_KEY, serviceColumns, filteredRows)} disabled={!filteredRows.length}><Download size={16} />CSV</AppButton>
+        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Aktywne zlecenia serwisowe', SERVICE_TABLE_KEY, serviceColumns, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />PDF</AppButton>
       </div>
       {notice && <div className="notice">{notice}</div>}
     </section>
@@ -3737,9 +3852,10 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <span>{activeTableRows.length} pozycji</span>
       </div>
       <div className="client-filter-bar service-filter-bar">
-        <label>Szukaj<AppInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Numer, klient, sprzęt, opis, diagnoza" /></label>
-        <label>Status<AppSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Wszystkie</option>{serviceStatuses.filter((s) => s !== 'Wydane').map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
-        <label>Priorytet<AppSelect value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="all">Wszystkie</option>{servicePriorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></label>
+        <label>Szukaj<AppInput value={filters.search ?? ''} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Numer, klient, sprzęt, opis, diagnoza" /></label>
+        <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{serviceStatuses.filter((s) => s !== 'Wydane').map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
+        <label>Priorytet<AppSelect value={filters.priority ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, priority: event.target.value }))}><option value="all">Wszystkie</option>{servicePriorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></label>
+        <label>Kategoria<AppSelect value={filters.category ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}><option value="all">Wszystkie</option>{serviceCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</AppSelect></label>
         <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść filtry</AppButton>
         <span className="filter-count">{filteredRows.length} / {activeTableRows.length}</span>
       </div>
@@ -3766,7 +3882,11 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
           <p className="eyebrow">Historia</p>
           <h3>Zlecenia zakończone</h3>
         </div>
-        <ButtonSecondary onClick={() => setServiceHistoryCollapsed((v) => !v)}>{serviceHistoryCollapsed ? 'Rozwiń' : 'Zwiń'} · {completedTableRows.length}</ButtonSecondary>
+        <div className="section-export-actions">
+          <ButtonSecondary onClick={() => exportTableToCsv(`${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><Download size={15} />CSV</ButtonSecondary>
+          <ButtonSecondary onClick={() => exportTableToPdf('Historia serwisów', `${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><FileText size={15} />PDF</ButtonSecondary>
+          <ButtonSecondary onClick={() => setServiceHistoryCollapsed((v) => !v)}>{serviceHistoryCollapsed ? 'Rozwiń' : 'Zwiń'} · {completedTableRows.length}</ButtonSecondary>
+        </div>
       </div>
       {!serviceHistoryCollapsed && <DataTable
         storageKey={`${SERVICE_TABLE_KEY}-completed`}
@@ -4221,6 +4341,15 @@ const CALENDAR_VIEWS = [
   { id: 'month', label: 'Miesiąc', icon: Grid3X3 },
   { id: 'agenda', label: 'Agenda', icon: List }
 ];
+const CALENDAR_EXPORT_TABLE_KEY = 'calendar-agenda-table';
+const CALENDAR_EXPORT_COLUMNS = [
+  { key: 'date_display', label: 'Data' },
+  { key: 'sourceLabel', label: 'Źródło' },
+  { key: 'title', label: 'Tytuł' },
+  { key: 'typeLabel', label: 'Typ' },
+  { key: 'subtitle', label: 'Opis' },
+  { key: 'statusLabel', label: 'Status' }
+];
 
 function getCalendarSettings() {
   const defaultSources = Object.fromEntries(CALENDAR_SOURCES.map((source) => [source.id, true]));
@@ -4464,6 +4593,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   const [view, setView] = useState(CALENDAR_VIEWS.some((item) => item.id === settings.view) ? settings.view : 'week');
   const [anchorDate, setAnchorDate] = useState(getLocalIsoDate());
   const [sources, setSources] = useState(settings.sources);
+  const [filters, setFilters] = useStoredState('fixer-calendar-filters', { type: 'all', status: 'all' });
   const [organizerRows, setOrganizerRows] = useState([]);
   const [rentalsRows, setRentalsRows] = useState([]);
   const [serviceRows, setServiceRows] = useState([]);
@@ -4521,7 +4651,20 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
 
   const allEvents = useMemo(() => buildCalendarEvents({ organizerRows, rentalsRows, serviceRows, manualRows }), [organizerRows, rentalsRows, serviceRows, manualRows]);
   const { start, end } = getCalendarRange(anchorDate, view);
-  const visibleEvents = allEvents.filter((event) => sources[event.source] !== false && event.start >= start && event.start < end);
+  const calendarFilterOptions = useMemo(() => ({
+    types: [...new Set(allEvents.map((event) => event.typeLabel).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')),
+    statuses: [...new Set(allEvents.map((event) => event.statusLabel).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'))
+  }), [allEvents]);
+  const visibleEvents = allEvents.filter((event) => {
+    if (sources[event.source] === false || event.start < start || event.start >= end) return false;
+    if ((filters.type ?? 'all') !== 'all' && event.typeLabel !== filters.type) return false;
+    if ((filters.status ?? 'all') !== 'all' && event.statusLabel !== filters.status) return false;
+    return true;
+  });
+  const visibleEventRows = visibleEvents.map((event) => ({
+    ...event,
+    date_display: formatServiceDateTime(event.start)
+  }));
   const days = Array.from({ length: Math.round((end - start) / (24 * 60 * 60 * 1000)) }, (_, index) => addCalendarDays(start, index));
   const eventsByDay = (day) => visibleEvents.filter((event) => event.dateKey === toIsoDateValue(day));
 
@@ -4536,6 +4679,10 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     if (event.source === 'organizer') onNavigate('organizer', { type: 'organizer', taskId: event.sourceId });
     if (event.source === 'rentals') onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: event.sourceId });
     if (event.source === 'service') onNavigate('service', { type: 'service', serviceOrderId: event.sourceId });
+  };
+  const openDay = (day) => {
+    setAnchorDate(toIsoDateValue(day));
+    changeView('day');
   };
 
   const saveManualEvent = async (event) => {
@@ -4567,10 +4714,12 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   const renderGrid = () => <div className={`calendar-grid calendar-grid-${view}`}>
     {days.map((day) => {
       const dayEvents = eventsByDay(day);
+      const visibleDayEvents = view === 'month' ? dayEvents.slice(0, 4) : dayEvents;
+      const hiddenDayEvents = dayEvents.length - visibleDayEvents.length;
       const outsideMonth = view === 'month' && day.getMonth() !== (toCalendarDate(anchorDate) ?? new Date()).getMonth();
       return <div key={toIsoDateValue(day)} className={`calendar-day-cell ${isSameCalendarDay(day, new Date()) ? 'today' : ''} ${outsideMonth ? 'outside-month' : ''}`} onDoubleClick={() => setNewEventDate(toIsoDateValue(day))}>
         <div className="calendar-day-head"><strong>{day.toLocaleDateString('pl-PL', { weekday: view === 'month' ? 'short' : 'long' })}</strong><span>{day.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })}</span></div>
-        <div className="calendar-day-events">{dayEvents.map(renderEvent)}{!dayEvents.length && <span className="calendar-empty-slot">Dwuklik</span>}</div>
+        <div className="calendar-day-events">{visibleDayEvents.map(renderEvent)}{hiddenDayEvents > 0 && <button type="button" className="calendar-more-events" onClick={() => openDay(day)}>+{hiddenDayEvents} więcej</button>}{!dayEvents.length && <span className="calendar-empty-slot">Dwuklik</span>}</div>
       </div>;
     })}
   </div>;
@@ -4594,6 +4743,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
           <ButtonSecondary onClick={() => move(-1)}>‹</ButtonSecondary>
           <ButtonPrimary onClick={() => setAnchorDate(getLocalIsoDate())}>Dzisiaj</ButtonPrimary>
           <ButtonSecondary onClick={() => move(1)}>›</ButtonSecondary>
+          <ButtonPrimary onClick={() => setNewEventDate(getLocalIsoDate())}><Plus size={16} />Nowe wydarzenie</ButtonPrimary>
           <strong>{formatCalendarRange(anchorDate, view)}</strong>
         </div>
         <div className="calendar-view-switch">{CALENDAR_VIEWS.map((item) => {
@@ -4601,6 +4751,14 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
           return <button key={item.id} type="button" className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)} title={item.label}><Icon size={15} /><span>{item.label}</span></button>;
         })}</div>
         <div className="calendar-source-filters">{CALENDAR_SOURCES.map((source) => <label key={source.id}><input type="checkbox" checked={sources[source.id] !== false} onChange={() => toggleSource(source.id)} />{source.label}</label>)}</div>
+        <div className="calendar-event-filters">
+          <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.types.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
+          <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
+        </div>
+        <div className="calendar-export-actions">
+          <ButtonSecondary onClick={() => exportTableToCsv(CALENDAR_EXPORT_TABLE_KEY, CALENDAR_EXPORT_COLUMNS, visibleEventRows)} disabled={!visibleEventRows.length}><Download size={15} />CSV</ButtonSecondary>
+          <ButtonSecondary onClick={() => exportTableToPdf('Kalendarz / agenda', CALENDAR_EXPORT_TABLE_KEY, CALENDAR_EXPORT_COLUMNS, visibleEventRows)} disabled={!visibleEventRows.length}><FileText size={15} />PDF</ButtonSecondary>
+        </div>
       </div>
       {notice && <div className="notice calendar-notice">{notice}</div>}
     </section>
@@ -4663,10 +4821,7 @@ function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [filters, setFilters] = useStoredState('fixer-organizer-filters', { search: '', status: 'all', priority: 'all', category: 'all' });
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -4724,18 +4879,18 @@ function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const historyTableRows = useMemo(() => historyRows.map(toTableRow), [historyRows]);
 
   const filteredRows = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('pl');
+    const query = String(filters.search ?? '').trim().toLocaleLowerCase('pl');
     return activeTableRows.filter((row) => {
-      if (statusFilter !== 'all' && row.status !== statusFilter) return false;
-      if (priorityFilter !== 'all' && row.priority !== priorityFilter) return false;
-      if (categoryFilter !== 'all' && (row.category ?? '') !== categoryFilter) return false;
+      if ((filters.status ?? 'all') !== 'all' && row.status !== filters.status) return false;
+      if ((filters.priority ?? 'all') !== 'all' && row.priority !== filters.priority) return false;
+      if ((filters.category ?? 'all') !== 'all' && (row.category ?? '') !== filters.category) return false;
       if (query) {
         const searchable = [row.title, row.description, row.status, row.priority, row.category, row.linked_label].filter(Boolean).join(' ').toLocaleLowerCase('pl');
         if (!searchable.includes(query)) return false;
       }
       return true;
     });
-  }, [activeTableRows, search, statusFilter, priorityFilter, categoryFilter]);
+  }, [activeTableRows, filters]);
 
   const saveTask = async (task) => {
     if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
@@ -4778,7 +4933,7 @@ function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
     await loadData();
   };
 
-  const clearFilters = () => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); setCategoryFilter('all'); };
+  const clearFilters = () => setFilters({ search: '', status: 'all', priority: 'all', category: 'all' });
 
   const organizerColumns = [
     { key: 'title', label: 'Tytuł' },
@@ -4803,6 +4958,8 @@ function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
       <div className="module-actions">
         <AppButton variant="primary" className="module-action-button" onClick={() => { setEditingTask(null); setEditorOpen(true); }}><Plus size={18} />Nowe zadanie</AppButton>
         <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
+        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(ORGANIZER_TABLE_KEY, organizerColumns, filteredRows)} disabled={!filteredRows.length}><Download size={16} />CSV</AppButton>
+        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania aktywne', ORGANIZER_TABLE_KEY, organizerColumns, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />PDF</AppButton>
       </div>
       {notice && <div className="notice">{notice}</div>}
     </section>
@@ -4813,10 +4970,10 @@ function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <span>{activeRows.length} pozycji</span>
       </div>
       <div className="client-filter-bar organizer-filter-bar">
-        <label>Szukaj<AppInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tytuł, opis, kategoria..." /></label>
-        <label>Status<AppSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">Wszystkie</option>{ORGANIZER_TASK_STATUSES.filter((s) => !ORGANIZER_TERMINAL_STATUSES.includes(s)).map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></label>
-        <label>Priorytet<AppSelect value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}><option value="all">Wszystkie</option>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></label>
-        <label>Kategoria<AppSelect value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="all">Wszystkie</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></label>
+        <label>Szukaj<AppInput value={filters.search ?? ''} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} placeholder="Tytuł, opis, kategoria..." /></label>
+        <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(e) => setFilters((current) => ({ ...current, status: e.target.value }))}><option value="all">Wszystkie</option>{ORGANIZER_TASK_STATUSES.filter((s) => !ORGANIZER_TERMINAL_STATUSES.includes(s)).map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></label>
+        <label>Priorytet<AppSelect value={filters.priority ?? 'all'} onChange={(e) => setFilters((current) => ({ ...current, priority: e.target.value }))}><option value="all">Wszystkie</option>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></label>
+        <label>Kategoria<AppSelect value={filters.category ?? 'all'} onChange={(e) => setFilters((current) => ({ ...current, category: e.target.value }))}><option value="all">Wszystkie</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></label>
         <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść</AppButton>
         <span className="filter-count">{filteredRows.length} / {activeRows.length}</span>
       </div>
@@ -4840,7 +4997,11 @@ function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
     <section className="panel service-list-panel rentals-records-section service-completed-section">
       <div className="rentals-section-heading">
         <div><p className="eyebrow">Historia</p><h3>Zadania zakończone</h3></div>
-        <ButtonSecondary onClick={() => setHistoryCollapsed((v) => !v)}>{historyCollapsed ? 'Rozwiń' : 'Zwiń'} · {historyRows.length}</ButtonSecondary>
+        <div className="section-export-actions">
+          <ButtonSecondary onClick={() => exportTableToCsv(ORGANIZER_HISTORY_TABLE_KEY, organizerHistoryColumns, historyTableRows)} disabled={!historyTableRows.length}><Download size={15} />CSV</ButtonSecondary>
+          <ButtonSecondary onClick={() => exportTableToPdf('Historia zadań', ORGANIZER_HISTORY_TABLE_KEY, organizerHistoryColumns, historyTableRows)} disabled={!historyTableRows.length}><FileText size={15} />PDF</ButtonSecondary>
+          <ButtonSecondary onClick={() => setHistoryCollapsed((v) => !v)}>{historyCollapsed ? 'Rozwiń' : 'Zwiń'} · {historyRows.length}</ButtonSecondary>
+        </div>
       </div>
       {!historyCollapsed && <DataTable
         storageKey={ORGANIZER_HISTORY_TABLE_KEY}
@@ -4863,13 +5024,6 @@ function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme,
     <SettingsGrid dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} />
   </div>;
 }
-function ModulePage({ title, description, table }) {
-  return <div className="module-page"><section className="panel hero-panel"><p className="eyebrow">Moduł</p><h2>{title}</h2><p className="muted">{description}</p><div className="module-actions"><AppButton variant="primary">Dodaj wpis</AppButton><AppButton variant="secondary">Eksport PDF</AppButton><AppButton variant="secondary">Ustawienia modułu</AppButton></div></section><section className="panel">{table}</section></div>;
-}
-function PanelHeader({ title, action, onClick }) {
-  return <div className="panel-header"><h2>{title}</h2>{action && <button onClick={onClick}>{action}<ChevronRight size={16} /></button>}</div>;
-}
-
 function getStoredJson(key, fallback) {
   try {
     const saved = localStorage.getItem(key);
@@ -4877,6 +5031,18 @@ function getStoredJson(key, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function useStoredState(key, fallback) {
+  const [value, setValue] = useState(() => getStoredJson(key, fallback));
+  const updateValue = (nextValue) => {
+    setValue((current) => {
+      const resolved = typeof nextValue === 'function' ? nextValue(current) : nextValue;
+      localStorage.setItem(key, JSON.stringify(resolved));
+      return resolved;
+    });
+  };
+  return [value, updateValue];
 }
 
 const COMPANY_PROFILE_STORAGE_KEY = 'fixer-company-profile';
@@ -5092,7 +5258,7 @@ function formatCompanyContact(profile) {
   return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń' }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -5171,6 +5337,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       const text = String(value).trim();
       const numberText = text.replace(/\s/g, '').replace(',', '.');
       if (numberText && !Number.isNaN(Number(numberText))) return Number(numberText);
+      const polishDate = text.match(/^(\d{2})[./-](\d{2})[./-](\d{4})/);
+      if (polishDate) return Date.parse(`${polishDate[3]}-${polishDate[2]}-${polishDate[1]}T00:00:00`);
       const timestamp = Date.parse(text);
       if (!Number.isNaN(timestamp) && /\d{4}-\d{2}-\d{2}|\d{2}[./-]\d{2}[./-]\d{4}/.test(text)) return timestamp;
       return text.toLocaleLowerCase('pl');
@@ -5191,7 +5359,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const getRowKey = (row, index) => String(row.id ?? row.localId ?? row.number ?? row.name ?? index);
   const selectedRows = sortedRows.filter((row, index) => selectedRowKeys.has(getRowKey(row, index)));
   const allVisibleSelected = sortedRows.length > 0 && sortedRows.every((row, index) => selectedRowKeys.has(getRowKey(row, index)));
-  const hasSelectionActions = true;
+  const hasSelectionActions = enableSelectionActions;
   const hasExpandableRows = Boolean(isRowExpandable && renderExpandedRow);
 
   useEffect(() => {
@@ -5413,7 +5581,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       <div className="table-scroll">
         <AppTable>
           <colgroup>{hasSelectionActions && <col className="selection-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => <th key={column.key} draggable onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={draggedColumn === column.key ? 'dragging-column' : ''}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
+          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => <th key={column.key} draggable aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${sortKey === column.key ? 'sorted' : ''}`.trim()}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
           <tbody>{sortedRows.map((row, index) => {
             const rowKey = getRowKey(row, index);
             const selected = selectedRowKeys.has(rowKey);

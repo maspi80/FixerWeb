@@ -2,6 +2,7 @@ import { fetchCalendarManualEvents } from './calendarService';
 import { fetchClients } from './clientsService';
 import { fetchEquipment } from './equipmentService';
 import { fetchOrganizerTasks } from './organizerService';
+import { fetchProjects, fetchAllProjectTasks } from './projectsService';
 import { fetchRentals } from './rentalsService';
 import { fetchServiceOrders } from './serviceOrdersService';
 
@@ -13,6 +14,7 @@ const MODULE_LABELS = {
   rentals: 'Wypożyczenia',
   service: 'Serwis',
   organizer: 'Organizer',
+  projects: 'Projekty',
   calendar: 'Kalendarz'
 };
 
@@ -184,6 +186,48 @@ function buildOrganizerResults(rows, query) {
   return limitAndSort(results, query);
 }
 
+function buildProjectResults(projects, tasks, query) {
+  const tasksByProject = {};
+  tasks.forEach((t) => { (tasksByProject[t.project_id] = tasksByProject[t.project_id] ?? []).push(t); });
+
+  const projectResults = projects.map((project) => {
+    const projectId = project.id ?? project.localId;
+    const clientName = project.clients?.name ?? '';
+    const projectTasks = (tasksByProject[projectId] ?? []).map((t) => t.title).join(' ');
+    const bag = textBag([project.project_number, project.name, clientName, project.status, project.description, projectTasks]);
+    if (!matchesQuery(bag, query)) return null;
+    return {
+      id: `projects:${projectId}`,
+      module: 'projects',
+      group: MODULE_LABELS.projects,
+      recordType: 'Projekt',
+      title: project.name || project.project_number || 'Projekt',
+      description: [project.project_number, clientName, project.status].filter(Boolean).join(' · '),
+      status: project.status || '',
+      active: !project.archived,
+      intent: { type: 'projects', projectId }
+    };
+  }).filter(Boolean);
+
+  const taskResults = tasks.map((task) => {
+    const bag = textBag([task.title, task.description, task.status, task.priority]);
+    if (!matchesQuery(bag, query)) return null;
+    return {
+      id: `project-task:${task.id ?? task.localId}`,
+      module: 'projects',
+      group: MODULE_LABELS.projects,
+      recordType: 'Zadanie projektu',
+      title: task.title || 'Zadanie',
+      description: [task.priority, task.status, task.due_date ? `Termin ${task.due_date}` : ''].filter(Boolean).join(' · '),
+      status: task.status || '',
+      active: !task.archived,
+      intent: { type: 'projects', projectId: task.project_id, taskId: task.id ?? task.localId }
+    };
+  }).filter(Boolean);
+
+  return limitAndSort([...projectResults, ...taskResults], query);
+}
+
 function buildCalendarResults(rows, query) {
   const results = rows.map((event) => {
     const bag = textBag([event.title, event.description, event.location, 'wydarzenie ręczne', calendarDate(event.start_at)]);
@@ -206,12 +250,14 @@ function buildCalendarResults(rows, query) {
 export async function searchGlobalRecords(query) {
   if (normalizeSearchText(query).length < 2) return [];
 
-  const [clients, equipment, rentals, service, organizer, calendar] = await Promise.all([
+  const [clients, equipment, rentals, service, organizer, projects, projectTasks, calendar] = await Promise.all([
     safeLoad('clients', fetchClients),
     safeLoad('equipment', fetchEquipment),
     safeLoad('rentals', fetchRentals),
     safeLoad('service', fetchServiceOrders),
     safeLoad('organizer', fetchOrganizerTasks),
+    safeLoad('projects', fetchProjects),
+    safeLoad('project-tasks', fetchAllProjectTasks),
     safeLoad('calendar', fetchCalendarManualEvents)
   ]);
 
@@ -221,6 +267,7 @@ export async function searchGlobalRecords(query) {
     { module: 'rentals', label: MODULE_LABELS.rentals, results: buildRentalResults(rentals, query) },
     { module: 'service', label: MODULE_LABELS.service, results: buildServiceResults(service, query) },
     { module: 'organizer', label: MODULE_LABELS.organizer, results: buildOrganizerResults(organizer, query) },
+    { module: 'projects', label: MODULE_LABELS.projects, results: buildProjectResults(projects, projectTasks, query) },
     { module: 'calendar', label: MODULE_LABELS.calendar, results: buildCalendarResults(calendar, query) }
   ];
 }

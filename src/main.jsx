@@ -2,8 +2,8 @@ import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import {
-  ArrowDown, ArrowUp, Bell, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, LockKeyhole,
-  LogOut, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
+  AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard, LockKeyhole,
+  LogOut, MessageSquare, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
   ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
@@ -11,6 +11,7 @@ import './design-system/components.css';
 import {
   AppButton,
   AppInput,
+  AppSection,
   AppSelect,
   AppTable,
   AppTextarea,
@@ -81,12 +82,24 @@ import {
   updateOrganizerTask
 } from './services/organizerService';
 import { createCalendarManualEvent, deleteCalendarManualEvent, fetchCalendarManualEvents, updateCalendarManualEvent } from './services/calendarService';
+import {
+  createProject, createProjectTask, deleteProject, deleteProjectTask,
+  createProjectSection, updateProjectSection, deleteProjectSection, fetchProjectSections,
+  createTaskComment, updateTaskComment, deleteTaskComment, fetchTaskComments,
+  fetchAllProjectTasks, fetchProjectAllComments, fetchProjects, fetchProjectTasks,
+  PROJECT_PRIORITIES, PROJECT_STATUSES, PROJECT_TASK_PRIORITIES,
+  PROJECT_TASK_STATUSES, PROJECT_TASK_TERMINAL_STATUSES, PROJECT_TASK_COMMENT_TYPES, PROJECT_TERMINAL_STATUSES,
+  updateProject, updateProjectTask
+} from './services/projectsService';
 import { searchGlobalRecords } from './services/globalSearchService';
 import { BACKUP_FULL_ERROR_MESSAGE, BACKUP_INCLUDED_TABLES, createBackupArchive, createCsvExport, parseBackupText, restoreBackupArchive } from './services/backupService';
 
 const ORGANIZER_TABLE_KEY = 'organizer-tasks-table';
 const ORGANIZER_HISTORY_TABLE_KEY = 'organizer-history-table';
+const PROJECTS_TABLE_KEY = 'projects-table';
+const PROJECTS_HISTORY_TABLE_KEY = 'projects-history-table';
 const NOTIFICATIONS_READ_STORAGE_KEY = 'fixer-notifications-read';
+const NOTIFICATIONS_DELETED_STORAGE_KEY = 'fixer-notifications-deleted';
 const NOTIFICATIONS_BACKUP_FAILURE_KEY = 'fixer-last-backup-failure';
 const NOTIFICATIONS_RETENTION_DAYS = 30;
 
@@ -442,11 +455,33 @@ function sortRowsForExport(rows, sortKey, sortDir = 'asc') {
   });
 }
 
+const TABLE_COLUMN_ALIGNMENTS = ['left', 'center', 'right'];
+
+function normalizeColumnAlignment(value) {
+  return TABLE_COLUMN_ALIGNMENTS.includes(value) ? value : null;
+}
+
+function getDefaultColumnAlignment(column) {
+  const explicit = normalizeColumnAlignment(column?.align);
+  if (explicit) return explicit;
+  const key = String(column?.key ?? '').toLocaleLowerCase('pl');
+  const label = String(column?.label ?? '').toLocaleLowerCase('pl');
+  const text = `${key} ${label}`;
+  if (/(amount|balance|cost|count|deposit|fee|gross|items_count|net|price|quantity|set_items_count|sum|total|value|wartosc|ilość|ilosc|kaucja|kwota|liczba|pozycje|składniki|skladniki|suma|cena)/.test(text)) return 'right';
+  if (/(accepted|barcode|code|completed|date|deadline|due|inventory|number|phone|planned|priority|reminder|return|serial|status|type|wybrany|data|kod|nip|nr|numer|planowany|priorytet|przypomnienie|regon|seryjny|status|telefon|termin|typ|wydanie|zakończone|zakonczone)/.test(text)) return 'center';
+  return 'left';
+}
+
+function getColumnAlignment(column, columnAlignments = {}) {
+  return normalizeColumnAlignment(columnAlignments?.[column.key]) ?? getDefaultColumnAlignment(column);
+}
+
 function getExportTableData(storageKey, columns, rows) {
   const fallback = {
     visibleColumns: columns.map((column) => column.key),
     columnOrder: columns.map((column) => column.key),
     columnWidths: {},
+    columnAlignments: {},
     sortKey: null,
     sortDir: 'asc'
   };
@@ -457,7 +492,7 @@ function getExportTableData(storageKey, columns, rows) {
   const activeColumns = orderedColumns.filter((column) => visible.includes(column.key));
   const safeColumns = activeColumns.length ? activeColumns : columns;
   return {
-    columns: safeColumns,
+    columns: safeColumns.map((column) => ({ ...column, align: getColumnAlignment(column, preference.columnAlignments) })),
     rows: sortRowsForExport(rows, preference.sortKey, preference.sortDir)
   };
 }
@@ -484,8 +519,8 @@ function exportTableToPdf(title, storageKey, columns, rows) {
   const company = getCompanyProfile();
   const documentSettings = getDocumentSettings();
   const date = new Date().toLocaleDateString('pl-PL');
-  const header = exportData.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
-  const body = exportData.rows.map((row) => `<tr>${exportData.columns.map((column) => `<td>${escapeHtml(formatExportCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
+  const header = exportData.columns.map((column) => `<th class="align-${escapeHtml(column.align)}">${escapeHtml(column.label)}</th>`).join('');
+  const body = exportData.rows.map((row) => `<tr>${exportData.columns.map((column) => `<td class="align-${escapeHtml(column.align)}">${escapeHtml(formatExportCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
   const companyName = company.name || company.legalName || 'FIXER WEB';
   const companyAddress = formatCompanyAddress(company);
   const companyTax = formatCompanyTaxData(company);
@@ -503,7 +538,7 @@ function exportTableToPdf(title, storageKey, columns, rows) {
     return;
   }
   printWindow.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-kicker{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}.document-custom-header{border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;color:#334155;font-size:11px}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo:empty{display:none}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}@media print{button{display:none}}
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-kicker{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}.document-custom-header{border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;color:#334155;font-size:11px}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo:empty{display:none}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}.align-center{text-align:center}.align-right{text-align:right}.align-left{text-align:left}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}@media print{button{display:none}}
   </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddress ? `<p class="company-line">${escapeHtml(companyAddress)}</p>` : ''}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}<script>window.onload=function(){window.focus();window.print();};</script></body></html>`);
   printWindow.document.close();
 }
@@ -514,6 +549,7 @@ const modules = [
   { id: 'equipment', label: 'Sprzęt', icon: Package },
   { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList },
   { id: 'service', label: 'Serwis', icon: Wrench },
+  { id: 'projects', label: 'Projekty', icon: Briefcase },
   { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
   { id: 'organizer', label: 'Organizer', icon: CheckCircle2 },
   { id: 'settings', label: 'Ustawienia', icon: Settings }
@@ -526,6 +562,7 @@ function NotificationsBell({ onNavigate }) {
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [readMap, setReadMap] = useState(readNotificationReadMap);
+  const [deletedMap, setDeletedMap] = useState(readNotificationDeletedMap);
   const [loadError, setLoadError] = useState('');
   const panelRef = useRef(null);
 
@@ -536,6 +573,7 @@ function NotificationsBell({ onNavigate }) {
       const rows = await buildOperatorNotifications();
       setNotifications(rows);
       setReadMap(readNotificationReadMap());
+      setDeletedMap(readNotificationDeletedMap());
     } catch (error) {
       console.warn('Notifications failed', error);
       setLoadError('Nie udało się odświeżyć powiadomień.');
@@ -548,7 +586,7 @@ function NotificationsBell({ onNavigate }) {
     loadNotifications();
     const onFocus = () => loadNotifications();
     const onStorage = (event) => {
-      if ([NOTIFICATIONS_READ_STORAGE_KEY, NOTIFICATIONS_BACKUP_FAILURE_KEY, COMPANY_PROFILE_STORAGE_KEY].includes(event.key)) loadNotifications();
+      if ([NOTIFICATIONS_READ_STORAGE_KEY, NOTIFICATIONS_DELETED_STORAGE_KEY, NOTIFICATIONS_BACKUP_FAILURE_KEY, COMPANY_PROFILE_STORAGE_KEY].includes(event.key)) loadNotifications();
     };
     window.addEventListener('focus', onFocus);
     window.addEventListener('storage', onStorage);
@@ -574,8 +612,10 @@ function NotificationsBell({ onNavigate }) {
     };
   }, [open]);
 
-  const unreadCount = notifications.filter((item) => !readMap[item.id]).length;
-  const visibleNotifications = notifications.slice(0, 18);
+  const activeNotifications = notifications.filter((item) => !deletedMap[item.id]);
+  const unreadCount = activeNotifications.filter((item) => !readMap[item.id]).length;
+  const visibleNotifications = activeNotifications.slice(0, 18);
+  const readVisibleCount = activeNotifications.filter((item) => readMap[item.id]).length;
   const markRead = (id) => {
     const next = saveNotificationReadMap({ ...readNotificationReadMap(), [id]: new Date().toISOString() });
     setReadMap(next);
@@ -583,8 +623,29 @@ function NotificationsBell({ onNavigate }) {
   const markAllRead = () => {
     const timestamp = new Date().toISOString();
     const next = { ...readNotificationReadMap() };
-    notifications.forEach((item) => { next[item.id] = timestamp; });
+    activeNotifications.forEach((item) => { next[item.id] = timestamp; });
     setReadMap(saveNotificationReadMap(next));
+  };
+  const deleteReadNotifications = () => {
+    const readIds = activeNotifications.filter((item) => readMap[item.id]).map((item) => item.id);
+    if (!readIds.length) return;
+    if (!confirm(`Usunąć przeczytane powiadomienia: ${readIds.length}? Nieprzeczytane pozostaną na liście.`)) return;
+    const timestamp = new Date().toISOString();
+    const nextDeleted = { ...readNotificationDeletedMap() };
+    readIds.forEach((id) => { nextDeleted[id] = timestamp; });
+    const nextRead = { ...readNotificationReadMap() };
+    readIds.forEach((id) => { delete nextRead[id]; });
+    setDeletedMap(saveNotificationDeletedMap(nextDeleted));
+    setReadMap(saveNotificationReadMap(nextRead));
+  };
+  const clearAllNotifications = () => {
+    if (!activeNotifications.length) return;
+    if (!confirm(`Wyczyścić wszystkie powiadomienia: ${activeNotifications.length}? Historia lokalna centrum powiadomień zostanie wyczyszczona.`)) return;
+    const timestamp = new Date().toISOString();
+    const nextDeleted = { ...readNotificationDeletedMap() };
+    activeNotifications.forEach((item) => { nextDeleted[item.id] = timestamp; });
+    setDeletedMap(saveNotificationDeletedMap(nextDeleted));
+    setReadMap(saveNotificationReadMap({}));
   };
   const openNotification = (notification) => {
     markRead(notification.id);
@@ -603,7 +664,11 @@ function NotificationsBell({ onNavigate }) {
           <strong>Powiadomienia</strong>
           <span>{unreadCount ? `${unreadCount} nieprzeczytane` : 'Brak nowych powiadomień'}</span>
         </div>
-        <button type="button" onClick={markAllRead} disabled={!unreadCount}>Oznacz wszystkie jako przeczytane</button>
+        <div className="notifications-actions">
+          <button type="button" onClick={markAllRead} disabled={!unreadCount} title="Oznacz wszystkie jako przeczytane" aria-label="Oznacz wszystkie jako przeczytane"><CheckCheck size={15} /></button>
+          <button type="button" onClick={deleteReadNotifications} disabled={!readVisibleCount} title="Usuń przeczytane" aria-label="Usuń przeczytane"><Trash2 size={15} /></button>
+          <button type="button" className="danger-action" onClick={clearAllNotifications} disabled={!activeNotifications.length} title="Wyczyść wszystkie" aria-label="Wyczyść wszystkie"><Eraser size={15} /></button>
+        </div>
       </div>
       {loading && <div className="notifications-state">Odświeżam...</div>}
       {loadError && <div className="notifications-state error">{loadError}</div>}
@@ -623,6 +688,23 @@ function NotificationsBell({ onNavigate }) {
       </div>}
     </div>}
   </div>;
+}
+
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error('AppErrorBoundary caught:', error, info?.componentStack); }
+  render() {
+    if (this.state.error) {
+      return <div style={{ padding: '40px', fontFamily: 'monospace', color: '#f87171', background: '#0f172a', minHeight: '100vh' }}>
+        <h2 style={{ color: '#fb923c' }}>Błąd renderowania</h2>
+        <p>{String(this.state.error?.message ?? this.state.error)}</p>
+        <pre style={{ fontSize: '12px', whiteSpace: 'pre-wrap', color: '#94a3b8', marginTop: '16px' }}>{this.state.error?.stack}</pre>
+        <button onClick={() => this.setState({ error: null })} style={{ marginTop: '20px', padding: '8px 18px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Spróbuj ponownie</button>
+      </div>;
+    }
+    return this.props.children;
+  }
 }
 
 function App() {
@@ -721,6 +803,7 @@ function App() {
           {activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
+          {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'organizer' && <OrganizerModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} />}
         </section>
@@ -987,6 +1070,7 @@ const DASHBOARD_ITEMS = [
   { id: 'todayServices', label: 'Serwisy na dziś', area: 'card', tone: 'service-today' },
   { id: 'overdueTasksCard', label: 'Zaległe zadania', area: 'card', tone: 'task-danger' },
   { id: 'todayTasksCard', label: 'Zadania na dziś', area: 'card', tone: 'task-today' },
+  { id: 'overdueProjectsCard', label: 'Projekty po terminie', area: 'card', tone: 'task-danger' },
   { id: 'attentionPanel', label: 'Wymaga uwagi dziś', area: 'panel', tone: 'attention' },
   { id: 'todayTasks', label: 'Zadania do zrobienia', area: 'panel', tone: 'tasks' },
   { id: 'activeServices', label: 'Aktywne serwisy', area: 'panel', tone: 'service' },
@@ -1040,6 +1124,7 @@ function Dashboard({ onNavigate }) {
   const [rentalsRows, setRentalsRows] = useState([]);
   const [serviceRows, setServiceRows] = useState([]);
   const [organizerRows, setOrganizerRows] = useState([]);
+  const [projectRows, setProjectRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
@@ -1049,12 +1134,13 @@ function Dashboard({ onNavigate }) {
     let active = true;
     const loadDashboard = async () => {
       setLoading(true);
-      const [rentalsResult, serviceResult, organizerResult] = await Promise.all([fetchRentals(), fetchServiceOrders(), fetchOrganizerTasks()]);
+      const [rentalsResult, serviceResult, organizerResult, projectsResult] = await Promise.all([fetchRentals(), fetchServiceOrders(), fetchOrganizerTasks(), fetchProjects()]);
       if (!active) return;
       setRentalsRows(rentalsResult.data ?? []);
       setServiceRows(serviceResult.data ?? []);
       setOrganizerRows(organizerResult.data ?? []);
-      const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : ''].filter(Boolean);
+      setProjectRows(projectsResult.data ?? []);
+      const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : '', projectsResult.error ? 'projekty' : ''].filter(Boolean);
       setNotice(errors.length ? `Nie udało się pobrać danych: ${errors.join(', ')}. Część sekcji może być niepełna.` : '');
       setLoading(false);
     };
@@ -1112,6 +1198,9 @@ function Dashboard({ onNavigate }) {
     const reminderToday = task.reminder_at && String(task.reminder_at).slice(0, 10) === today;
     return dueToday || reminderToday;
   });
+  const activeProjects = projectRows.filter((p) => !p.archived);
+  const overdueProjects = activeProjects.filter((p) => p.due_date && String(p.due_date).slice(0, 10) < today);
+  const todayProjects = activeProjects.filter((p) => String(p.due_date ?? '').slice(0, 10) === today);
 
   const cardDataMap = {
     overdueRentals: { value: overdueRentals.length, isActive: overdueRentals.length > 0, target: ['rentals', { type: 'rentals', filter: 'overdue' }] },
@@ -1119,7 +1208,8 @@ function Dashboard({ onNavigate }) {
     overdueServices: { value: overdueServices.length, isActive: overdueServices.length > 0, target: ['service', null] },
     todayServices: { value: todayServices.length, isActive: todayServices.length > 0, target: ['service', null] },
     overdueTasksCard: { value: overdueTasks.length, isActive: overdueTasks.length > 0, target: ['organizer', null] },
-    todayTasksCard: { value: todayOrReminderTasks.length, isActive: todayOrReminderTasks.length > 0, target: ['organizer', null] }
+    todayTasksCard: { value: todayOrReminderTasks.length, isActive: todayOrReminderTasks.length > 0, target: ['organizer', null] },
+    overdueProjectsCard: { value: overdueProjects.length, isActive: overdueProjects.length > 0, target: ['projects', null] }
   };
 
   const orderedCards = (dashboardSettings.cardOrder ?? []).map((id) => {
@@ -1136,7 +1226,9 @@ function Dashboard({ onNavigate }) {
     ...overdueServices.slice(0, 3).map((s) => ({ tone: 'service-danger', text: `${s.service_number} — ${s.customer_device_name || '—'}`, sub: 'Serwis po terminie', onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
     ...todayServices.slice(0, 2).map((s) => ({ tone: 'service-today', text: `${s.service_number} — ${s.customer_device_name || '—'}`, sub: 'Termin serwisu dziś', onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
     ...overdueTasks.slice(0, 2).map((t) => ({ tone: 'task-danger', text: t.title, sub: 'Zadanie zaległe', onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
-    ...todayOrReminderTasks.slice(0, 2).map((t) => ({ tone: 'task-today', text: t.title, sub: 'Przypomnienie na dziś', onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) }))
+    ...todayOrReminderTasks.slice(0, 2).map((t) => ({ tone: 'task-today', text: t.title, sub: 'Przypomnienie na dziś', onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
+    ...overdueProjects.slice(0, 2).map((p) => ({ tone: 'task-danger', text: `${p.project_number ? p.project_number + ' — ' : ''}${p.name}`, sub: 'Projekt po terminie', onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) })),
+    ...todayProjects.slice(0, 2).map((p) => ({ tone: 'task-today', text: `${p.project_number ? p.project_number + ' — ' : ''}${p.name}`, sub: 'Termin projektu dziś', onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) }))
   ].slice(0, 14);
 
   const panelTitles = { attentionPanel: 'Wymaga uwagi dziś', activeServices: 'Aktywne serwisy', activeRentalsPanel: 'Aktywne wypożyczenia', todayTasks: 'Zadania do zrobienia' };
@@ -2393,17 +2485,31 @@ function addDaysIso(dateIso, days) {
 function readNotificationReadMap() {
   const threshold = Date.now() - NOTIFICATIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const stored = getStoredJson(NOTIFICATIONS_READ_STORAGE_KEY, {});
+  const deleted = readNotificationDeletedMap();
   const next = {};
+  const nextDeleted = { ...deleted };
   Object.entries(stored && typeof stored === 'object' ? stored : {}).forEach(([id, value]) => {
     const timestamp = Date.parse(value);
     if (!Number.isNaN(timestamp) && timestamp >= threshold) next[id] = value;
+    else if (!Number.isNaN(timestamp)) nextDeleted[id] = value;
   });
   if (Object.keys(next).length !== Object.keys(stored ?? {}).length) localStorage.setItem(NOTIFICATIONS_READ_STORAGE_KEY, JSON.stringify(next));
+  if (Object.keys(nextDeleted).length !== Object.keys(deleted).length) localStorage.setItem(NOTIFICATIONS_DELETED_STORAGE_KEY, JSON.stringify(nextDeleted));
   return next;
 }
 
 function saveNotificationReadMap(map) {
   localStorage.setItem(NOTIFICATIONS_READ_STORAGE_KEY, JSON.stringify(map));
+  return map;
+}
+
+function readNotificationDeletedMap() {
+  const stored = getStoredJson(NOTIFICATIONS_DELETED_STORAGE_KEY, {});
+  return stored && typeof stored === 'object' ? stored : {};
+}
+
+function saveNotificationDeletedMap(map) {
+  localStorage.setItem(NOTIFICATIONS_DELETED_STORAGE_KEY, JSON.stringify(map));
   return map;
 }
 
@@ -2426,10 +2532,12 @@ function pushNotification(list, notification) {
 }
 
 async function buildOperatorNotifications() {
-  const [rentalsResult, serviceResult, organizerResult, calendarResult] = await Promise.all([
+  const [rentalsResult, serviceResult, organizerResult, projectsResult, projectTasksResult, calendarResult] = await Promise.all([
     fetchRentals(),
     fetchServiceOrders(),
     fetchOrganizerTasks(),
+    fetchProjects(),
+    fetchAllProjectTasks(),
     fetchCalendarManualEvents()
   ]);
   const today = getLocalIsoDate();
@@ -2520,6 +2628,40 @@ async function buildOperatorNotifications() {
     if (reminder === today) pushNotification(notifications, { ...base, id: `organizer:reminder:${taskId}:${task.reminder_at}`, title: 'Przypomnienie', detail: task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'Dzisiaj', tone: 'info', priority: 2, createdAt: task.reminder_at });
   });
 
+  (projectsResult.data ?? []).filter((project) => !project.archived).forEach((project) => {
+    const projectId = project.id ?? project.localId;
+    const due = String(project.due_date ?? '').slice(0, 10);
+    if (!due) return;
+    const base = {
+      source: 'projects',
+      targetModule: 'projects',
+      intent: { type: 'projects', projectId },
+      primary: project.name || project.project_number || 'Projekt',
+      secondary: project.clients?.name || project.priority || '',
+      createdAt: `${due}T09:00:00`
+    };
+    if (due < today) pushNotification(notifications, { ...base, id: `projects:overdue:${projectId}:${due}`, title: 'Projekt po terminie', detail: project.priority || 'Zaległy projekt', tone: 'danger', priority: 0 });
+    else if (due === today) pushNotification(notifications, { ...base, id: `projects:today:${projectId}:${due}`, title: 'Termin projektu dziś', detail: project.priority || 'Termin dziś', tone: 'warning', priority: 1 });
+    else if (due === tomorrow) pushNotification(notifications, { ...base, id: `projects:tomorrow:${projectId}:${due}`, title: 'Termin projektu jutro', detail: project.priority || 'Termin jutro', tone: 'info', priority: 3 });
+  });
+
+  (projectTasksResult.data ?? []).filter((task) => !task.archived && !PROJECT_TASK_TERMINAL_STATUSES.includes(task.status)).forEach((task) => {
+    const taskId = task.id ?? task.localId;
+    const due = String(task.due_date ?? '').slice(0, 10);
+    const reminder = String(task.reminder_at ?? '').slice(0, 10);
+    const base = {
+      source: 'projects',
+      targetModule: 'projects',
+      intent: { type: 'projects', projectId: task.project_id, taskId },
+      primary: task.title,
+      secondary: task.priority || '',
+      createdAt: `${due || reminder || today}T09:00:00`
+    };
+    if (due && due < today) pushNotification(notifications, { ...base, id: `project-task:overdue:${taskId}:${due}`, title: 'Zadanie projektu po terminie', detail: task.priority || 'Zaległe', tone: 'danger', priority: 0 });
+    else if (due === today) pushNotification(notifications, { ...base, id: `project-task:today:${taskId}:${due}`, title: 'Zadanie projektu na dziś', detail: task.priority || 'Termin dziś', tone: 'warning', priority: 1 });
+    if (reminder === today) pushNotification(notifications, { ...base, id: `project-task:reminder:${taskId}:${task.reminder_at}`, title: 'Przypomnienie zadania', detail: task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'Dzisiaj', tone: 'info', priority: 2, createdAt: task.reminder_at });
+  });
+
   (calendarResult.data ?? []).forEach((event) => {
     const start = notificationDateTime(event.start_at);
     if (!start) return;
@@ -2567,7 +2709,7 @@ async function buildOperatorNotifications() {
     createdAt: backupFailure.at
   });
 
-  const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : '', calendarResult.error ? 'kalendarz' : ''].filter(Boolean);
+  const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : '', projectsResult.error ? 'projekty' : '', calendarResult.error ? 'kalendarz' : ''].filter(Boolean);
   if (errors.length) console.warn(`Notifications incomplete: ${errors.join(', ')}`);
 
   return notifications
@@ -4331,6 +4473,7 @@ const CALENDAR_VIEW_STORAGE_KEY = 'fixer-calendar-view';
 const CALENDAR_SOURCES_STORAGE_KEY = 'fixer-calendar-sources';
 const CALENDAR_SOURCES = [
   { id: 'organizer', label: 'Organizer' },
+  { id: 'projects', label: 'Projekty' },
   { id: 'rentals', label: 'Wypożyczenia' },
   { id: 'service', label: 'Serwis' },
   { id: 'manual', label: 'Ręczne' }
@@ -4422,10 +4565,11 @@ function getCalendarEventColor(event, statusColors = getStatusColors()) {
   if (event.source === 'rentals') return statusColors['aktywne'] ?? '#3b82f6';
   if (event.source === 'service') return statusColors['serwis'] ?? '#6366f1';
   if (event.source === 'organizer') return statusColors['do zrobienia'] ?? '#3b82f6';
+  if (event.source === 'projects') return statusColors['planowany'] ?? '#6366f1';
   return event.color || '#14b8a6';
 }
 
-function buildCalendarEvents({ organizerRows = [], rentalsRows = [], serviceRows = [], manualRows = [] }) {
+function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTaskRows = [], rentalsRows = [], serviceRows = [], manualRows = [] }) {
   const push = (events, event) => {
     const start = toCalendarDate(event.start);
     if (!start) return;
@@ -4458,6 +4602,50 @@ function buildCalendarEvents({ organizerRows = [], rentalsRows = [], serviceRows
       start: task.reminder_at,
       statusLabel: task.status,
       typeLabel: 'Przypomnienie'
+    });
+  });
+
+  projectRows.filter((project) => !project.archived).forEach((project) => {
+    const recordId = project.id ?? project.localId;
+    if (project.due_date) push(events, {
+      id: `projects:due:${recordId}`,
+      source: 'projects',
+      sourceId: recordId,
+      sourceRecord: project,
+      sourceLabel: 'Projekty',
+      title: project.name || project.project_number || 'Projekt',
+      subtitle: project.clients?.name || project.priority || '',
+      start: project.due_date,
+      statusLabel: project.status,
+      typeLabel: 'Termin projektu'
+    });
+  });
+
+  projectTaskRows.filter((task) => !task.archived).forEach((task) => {
+    const recordId = task.id ?? task.localId;
+    if (task.due_date) push(events, {
+      id: `project-task:due:${recordId}`,
+      source: 'projects',
+      sourceId: task.project_id,
+      sourceRecord: task,
+      sourceLabel: 'Projekty',
+      title: task.title,
+      subtitle: task.priority || '',
+      start: task.due_date,
+      statusLabel: task.status,
+      typeLabel: 'Termin zadania projektu'
+    });
+    if (task.reminder_at) push(events, {
+      id: `project-task:reminder:${recordId}`,
+      source: 'projects',
+      sourceId: task.project_id,
+      sourceRecord: task,
+      sourceLabel: 'Projekty',
+      title: `Przypomnienie: ${task.title}`,
+      subtitle: task.priority || '',
+      start: task.reminder_at,
+      statusLabel: task.status,
+      typeLabel: 'Przypomnienie zadania'
     });
   });
 
@@ -4597,6 +4785,8 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   const [organizerRows, setOrganizerRows] = useState([]);
   const [rentalsRows, setRentalsRows] = useState([]);
   const [serviceRows, setServiceRows] = useState([]);
+  const [projectRows, setProjectRows] = useState([]);
+  const [projectTaskRows, setProjectTaskRows] = useState([]);
   const [manualRows, setManualRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
@@ -4607,17 +4797,21 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
 
   const loadCalendar = async () => {
     setLoading(true);
-    const [organizerResult, rentalsResult, serviceResult, manualResult] = await Promise.all([
+    const [organizerResult, rentalsResult, serviceResult, projectsResult, projectTasksResult, manualResult] = await Promise.all([
       fetchOrganizerTasks(),
       fetchRentals(),
       fetchServiceOrders(),
+      fetchProjects(),
+      fetchAllProjectTasks(),
       fetchCalendarManualEvents()
     ]);
     setOrganizerRows(organizerResult.data ?? []);
     setRentalsRows(rentalsResult.data ?? []);
     setServiceRows(serviceResult.data ?? []);
+    setProjectRows(projectsResult.data ?? []);
+    setProjectTaskRows(projectTasksResult.data ?? []);
     setManualRows(manualResult.data ?? []);
-    const errors = [organizerResult.error ? 'Organizer' : '', rentalsResult.error ? 'Wypożyczenia' : '', serviceResult.error ? 'Serwis' : '', manualResult.error ? 'Kalendarz' : ''].filter(Boolean);
+    const errors = [organizerResult.error ? 'Organizer' : '', rentalsResult.error ? 'Wypożyczenia' : '', serviceResult.error ? 'Serwis' : '', projectsResult.error ? 'Projekty' : '', manualResult.error ? 'Kalendarz' : ''].filter(Boolean);
     setNotice(errors.length ? `Nie udało się pobrać danych: ${errors.join(', ')}.` : '');
     setLoading(false);
   };
@@ -4649,7 +4843,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     });
   };
 
-  const allEvents = useMemo(() => buildCalendarEvents({ organizerRows, rentalsRows, serviceRows, manualRows }), [organizerRows, rentalsRows, serviceRows, manualRows]);
+  const allEvents = useMemo(() => buildCalendarEvents({ organizerRows, projectRows, projectTaskRows, rentalsRows, serviceRows, manualRows }), [organizerRows, projectRows, projectTaskRows, rentalsRows, serviceRows, manualRows]);
   const { start, end } = getCalendarRange(anchorDate, view);
   const calendarFilterOptions = useMemo(() => ({
     types: [...new Set(allEvents.map((event) => event.typeLabel).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')),
@@ -4679,6 +4873,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     if (event.source === 'organizer') onNavigate('organizer', { type: 'organizer', taskId: event.sourceId });
     if (event.source === 'rentals') onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: event.sourceId });
     if (event.source === 'service') onNavigate('service', { type: 'service', serviceOrderId: event.sourceId });
+    if (event.source === 'projects') onNavigate('projects', { type: 'projects', projectId: event.sourceId });
   };
   const openDay = (day) => {
     setAnchorDate(toIsoDateValue(day));
@@ -4769,6 +4964,1034 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     {(editingManualEvent || newEventDate) && <CalendarManualEventEditor event={editingManualEvent} initialDate={newEventDate} onClose={() => { setEditingManualEvent(null); setNewEventDate(null); }} onSave={saveManualEvent} onDelete={removeManualEvent} />}
   </div>;
 }
+/* ══════════════════════════════════════════════════════════════
+   MODUŁ PROJEKTY
+══════════════════════════════════════════════════════════════ */
+
+function getNextProjectSequence(projectsList, settings) {
+  const formatParts = (settings.format || DEFAULT_DOCUMENT_NUMBERING.projects.format).split('/');
+  const nrIndex = formatParts.indexOf('NR');
+  const prefixIndex = formatParts.indexOf('PREFIX');
+  const expectedPrefix = settings.prefix || DEFAULT_DOCUMENT_NUMBERING.projects.prefix;
+  return (projectsList ?? []).reduce((max, project) => {
+    const parts = String(project?.project_number ?? '').split('/');
+    if (nrIndex < 0 || prefixIndex < 0 || parts[prefixIndex] !== expectedPrefix) return max;
+    return Math.max(max, Number(parts[nrIndex]) || 0);
+  }, 0) + 1;
+}
+
+function generateNextProjectNumber(projectsList, documentSettings) {
+  const settings = documentSettings?.numbering?.projects ?? DEFAULT_DOCUMENT_NUMBERING.projects;
+  return formatDocumentNumber(settings, getNextProjectSequence(projectsList, settings));
+}
+
+function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) {
+  const taskId = task?.id ?? task?.localId;
+  const [activeTab, setActiveTab] = useState('data');
+  const [form, setForm] = useState(() => ({
+    title: task?.title ?? '',
+    description: task?.description ?? '',
+    status: task?.status ?? PROJECT_TASK_STATUSES[0],
+    priority: task?.priority ?? 'Normalny',
+    due_date: task?.due_date ?? '',
+    reminder_at: task?.reminder_at ? String(task.reminder_at).slice(0, 16) : '',
+    section_id: task?.section_id ?? '',
+    ...(task ? { id: task.id, localId: task.localId, project_id: task.project_id, archived: task.archived, completed_at: task.completed_at, created_at: task.created_at } : { project_id: projectId })
+  }));
+  const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [newCommentType, setNewCommentType] = useState('Komentarz');
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+
+  const loadComments = async () => {
+    if (!taskId) return;
+    setCommentsLoading(true);
+    const result = await fetchTaskComments(taskId);
+    setComments(result.data ?? []);
+    setCommentsLoading(false);
+  };
+
+  useEffect(() => { if (activeTab === 'comments') loadComments(); }, [activeTab, taskId]);
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { setNotice('Tytuł zadania jest wymagany.'); return; }
+    setBusy(true);
+    await onSave({
+      ...form,
+      section_id: form.section_id || null,
+      reminder_at: form.reminder_at ? new Date(form.reminder_at).toISOString() : null
+    });
+    setBusy(false);
+  };
+
+  const addComment = async () => {
+    if (!newComment.trim()) return;
+    if (!taskId) { setNotice('Najpierw zapisz zadanie, aby dodać komentarz.'); return; }
+    const result = await createTaskComment(taskId, newComment, newCommentType, demoUser.name);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    setNewComment('');
+    await loadComments();
+  };
+
+  const saveCommentEdit = async (comment) => {
+    const result = await updateTaskComment(comment.id ?? comment.localId, editingCommentText, comment);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    setEditingCommentId(null);
+    setEditingCommentText('');
+    await loadComments();
+  };
+
+  const removeComment = async (comment) => {
+    if (!window.confirm('Usunąć komentarz?')) return;
+    await deleteTaskComment(comment.id ?? comment.localId, comment);
+    await loadComments();
+  };
+
+  const tabs = [
+    { id: 'data', label: 'Dane zadania' },
+    { id: 'comments', label: `Komentarze${task ? '' : ''}` }
+  ].filter((tab) => !task ? tab.id === 'data' : true);
+
+  return <ResizableModalFrame storageKey="fixer-project-task-modal" defaultSize={{ width: 680, height: 520 }} minSize={{ width: 500, height: 400 }} eyebrow="Zadanie projektu" title={task ? 'Edytuj zadanie' : 'Nowe zadanie'} onClose={onClose}
+    footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary><ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{task ? 'Zapisz' : 'Dodaj'}</ButtonPrimary></>}>
+    {notice && <div className="notice">{notice}</div>}
+    <div className="record-tabs" role="tablist">
+      {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+    </div>
+
+    {activeTab === 'data' && <div className="project-task-form">
+      <FormField label="Tytuł *">
+        <AppInput value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Tytuł zadania" autoFocus />
+      </FormField>
+      <FormField label="Opis">
+        <AppTextarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis lub notatki do zadania" />
+      </FormField>
+      <div className="project-task-meta-grid">
+        <div className="project-task-meta-column">
+          <FormField label="Status">
+            <AppSelect value={form.status} onChange={(e) => set('status', e.target.value)}>
+              {PROJECT_TASK_STATUSES.map((s) => <option key={s}>{s}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Priorytet">
+            <AppSelect value={form.priority} onChange={(e) => set('priority', e.target.value)}>
+              {PROJECT_TASK_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+            </AppSelect>
+          </FormField>
+          {sections.length > 0 && <FormField label="Sekcja">
+            <AppSelect value={form.section_id ?? ''} onChange={(e) => set('section_id', e.target.value)}>
+              <option value="">Brak sekcji</option>
+              {sections.map((s) => <option key={s.id ?? s.localId} value={s.id ?? s.localId}>{s.name}</option>)}
+            </AppSelect>
+          </FormField>}
+        </div>
+        <div className="project-task-meta-column">
+          <FormField label="Termin">
+            <AppInput type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} />
+          </FormField>
+          <FormField label="Przypomnienie">
+            <AppInput type="datetime-local" value={form.reminder_at} onChange={(e) => set('reminder_at', e.target.value)} />
+          </FormField>
+        </div>
+      </div>
+    </div>}
+
+    {activeTab === 'comments' && <div className="service-tab-content">
+      <div className="service-progress-add">
+        <div className="service-estimate-add-bar">
+          <AppSelect value={newCommentType} onChange={(e) => setNewCommentType(e.target.value)} style={{ flex: '0 0 auto', width: 130 }}>
+            {PROJECT_TASK_COMMENT_TYPES.map((t) => <option key={t}>{t}</option>)}
+          </AppSelect>
+          <AppInput value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Treść komentarza..." onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && addComment()} style={{ flex: 1 }} />
+          <button type="button" className="project-icon-action primary-action" onClick={addComment} disabled={!newComment.trim()} aria-label="Dodaj komentarz" title="Dodaj komentarz"><Plus size={15} /></button>
+        </div>
+      </div>
+      <div className="service-progress-list">
+        {commentsLoading && <div className="loading-line">Ładowanie komentarzy...</div>}
+        {!commentsLoading && comments.map((c) => {
+          const isEditing = editingCommentId === (c.id ?? c.localId);
+          return <div className="service-progress-row" key={c.id ?? c.localId}>
+            <div className="service-progress-meta">
+              <strong>{c.author || 'Operator'}</strong>
+              <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>{c.type}</span>
+              <span>{formatServiceDateTime(c.created_at)}</span>
+            </div>
+            {isEditing
+              ? <AppTextarea value={editingCommentText} onChange={(e) => setEditingCommentText(e.target.value)} rows={2} />
+              : <p style={{ margin: '4px 0' }}>{c.body}</p>}
+            <div className="service-inline-actions">
+              {isEditing
+                ? <><button type="button" className="project-icon-action primary-action" onClick={() => saveCommentEdit(c)} aria-label="Zapisz komentarz" title="Zapisz komentarz"><Save size={14} /></button><button type="button" className="project-icon-action" onClick={() => { setEditingCommentId(null); setEditingCommentText(''); }} aria-label="Anuluj edycję" title="Anuluj edycję"><X size={14} /></button></>
+                : <><button type="button" className="project-icon-action" onClick={() => { setEditingCommentId(c.id ?? c.localId); setEditingCommentText(c.body); }} aria-label="Edytuj komentarz" title="Edytuj komentarz">✎</button><button type="button" className="project-icon-action danger-action" onClick={() => removeComment(c)} aria-label="Usuń komentarz" title="Usuń komentarz"><Trash2 size={14} /></button></>}
+            </div>
+          </div>;
+        })}
+        {!commentsLoading && !comments.length && <EmptyState title={task ? 'Brak komentarzy.' : 'Zapisz zadanie, aby dodać komentarze.'} />}
+      </div>
+    </div>}
+  </ResizableModalFrame>;
+}
+
+function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, onClose, onSave }) {
+  const isNew = !project;
+  const [activeTab, setActiveTab] = useState('data');
+  const projectTasksListRef = useRef(null);
+  const [form, setForm] = useState(() => {
+    const safeProject = project ?? {};
+    return {
+      project_number: String(safeProject.project_number ?? generateNextProjectNumber(allProjects, documentSettings)),
+      name: String(safeProject.name ?? ''),
+      description: String(safeProject.description ?? ''),
+      client_id: safeProject.client_id ?? '',
+      status: safeProject.status ?? 'Planowany',
+      priority: safeProject.priority ?? 'Normalny',
+      start_date: safeProject.start_date ?? '',
+      due_date: safeProject.due_date ?? '',
+      notes: String(safeProject.notes ?? ''),
+      archived: Boolean(safeProject.archived),
+      completed_at: safeProject.completed_at ?? null,
+      ...(project ? { id: project.id, localId: project.localId, created_at: project.created_at } : {})
+    };
+  });
+  const [tasks, setTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [clientEditorOpen, setClientEditorOpen] = useState(false);
+  const [localClients, setLocalClients] = useState(() => Array.isArray(clients) ? clients : []);
+
+  useEffect(() => { setLocalClients(Array.isArray(clients) ? clients : []); }, [clients]);
+
+  const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const projectId = project?.id ?? project?.localId;
+
+  const selectedClient = localClients.find((c) => c.id === form.client_id || c.localId === form.client_id) ?? null;
+
+  const openNewClientEditor = () => { setClientPickerOpen(false); setClientEditorOpen(true); };
+
+  const saveNewClientFromProject = async (clientForm) => {
+    const payload = {
+      name: clientForm.name, type: clientForm.type, client_kind: clientForm.client_kind,
+      phone: clientForm.phone, email: clientForm.email, street: clientForm.street,
+      building_number: clientForm.building_number, apartment_number: clientForm.apartment_number,
+      postal_code: clientForm.postal_code, city: clientForm.city, country: clientForm.country,
+      nip: clientForm.type === 'Firma' ? clientForm.nip : '',
+      regon: clientForm.type === 'Firma' ? clientForm.regon : '',
+      notes: clientForm.notes
+    };
+    if (!clientForm.name?.trim()) { alert('Nazwa klienta jest wymagana.'); return; }
+    if (!isSupabaseConfigured) { alert('Brak konfiguracji bazy danych Supabase. Dane klientów nie mogą zostać zapisane.'); return; }
+    const result = await createClientRecord(payload);
+    if (result.error) { alert(humanizeError(result.error, 'client')); return; }
+    setClientEditorOpen(false);
+    setLocalClients((current) => [result.data, ...current.filter((c) => c.id !== result.data.id)]);
+    set('client_id', result.data.id);
+  };
+
+  const [sections, setSections] = useState([]);
+  const [editingSectionId, setEditingSectionId] = useState(null);
+  const [editingSectionName, setEditingSectionName] = useState('');
+  const [collapsedSections, setCollapsedSections] = useState(new Set());
+  const [commentCounts, setCommentCounts] = useState({});
+  const [sectionMenu, setSectionMenu] = useState(null);
+  const [sectionModalOpen, setSectionModalOpen] = useState(false);
+  const [newSectionName, setNewSectionName] = useState('');
+  const [sectionNameError, setSectionNameError] = useState('');
+
+  const loadTasks = async () => {
+    if (!projectId) return;
+    setTasksLoading(true);
+    const [tasksResult, sectionsResult, commentsResult] = await Promise.all([
+      fetchProjectTasks(projectId),
+      fetchProjectSections(projectId),
+      fetchProjectAllComments(projectId)
+    ]);
+    const counts = {};
+    (commentsResult.data ?? []).forEach((c) => {
+      const tid = String(c.task_id);
+      counts[tid] = (counts[tid] ?? 0) + 1;
+    });
+    setTasks(tasksResult.data ?? []);
+    setSections(sectionsResult.data ?? []);
+    setCommentCounts(counts);
+    setTasksLoading(false);
+  };
+
+  useEffect(() => { if (activeTab === 'tasks') loadTasks(); }, [activeTab, projectId]);
+
+  useEffect(() => {
+    if (!sectionMenu) return;
+    const close = () => setSectionMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', close);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('keydown', close); };
+  }, [sectionMenu]);
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { setNotice('Nazwa projektu jest wymagana.'); return; }
+    setBusy(true);
+    await onSave({ ...form, client_id: form.client_id || null });
+    setBusy(false);
+  };
+
+  const openNewTask = (sectionId = null) => {
+    setEditingTask(sectionId ? { section_id: sectionId, project_id: projectId } : null);
+    setTaskEditorOpen(true);
+  };
+  const openEditTask = (row) => { setEditingTask(row._task ?? row); setTaskEditorOpen(true); };
+
+  const saveTask = async (taskForm) => {
+    const tid = taskForm.id ?? taskForm.localId;
+    const result = tid ? await updateProjectTask(tid, taskForm) : await createProjectTask(taskForm);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
+    setTaskEditorOpen(false);
+    setEditingTask(null);
+    await loadTasks();
+  };
+
+  const setTaskStatus = async (task, newStatus) => {
+    if (newStatus === task.status) return;
+    const isTerminal = PROJECT_TASK_TERMINAL_STATUSES.includes(newStatus);
+    if (isTerminal && !window.confirm(`Przenieść zadanie do historii?`)) return;
+    const tid = task.id ?? task.localId;
+    await updateProjectTask(tid, { ...task, status: newStatus, archived: isTerminal, completed_at: isTerminal ? new Date().toISOString() : task.completed_at });
+    await loadTasks();
+  };
+
+  const deleteTask = async (row) => {
+    const task = row._task ?? row;
+    if (!window.confirm(`Usunąć zadanie "${task.title}"?`)) return;
+    await deleteProjectTask(task.id ?? task.localId, task);
+    await loadTasks();
+  };
+
+  const openSectionModal = () => {
+    setNewSectionName('');
+    setSectionNameError('');
+    setSectionModalOpen(true);
+  };
+
+  const closeSectionModal = () => {
+    setSectionModalOpen(false);
+    setNewSectionName('');
+    setSectionNameError('');
+  };
+
+  const addSection = async () => {
+    const sectionName = newSectionName.trim();
+    if (!sectionName) { setSectionNameError('Podaj nazwę sekcji.'); return; }
+    if (sectionName.length > 100) { setSectionNameError('Nazwa sekcji może mieć maksymalnie 100 znaków.'); return; }
+    if (!projectId) { setNotice('Najpierw zapisz projekt.'); return; }
+    await createProjectSection(projectId, sectionName, (sections.length + 1) * 10);
+    setNewSectionName('');
+    setSectionModalOpen(false);
+    await loadTasks();
+    window.requestAnimationFrame(() => projectTasksListRef.current?.focus?.());
+  };
+
+  const saveSection = async (id) => {
+    if (!editingSectionName.trim()) return;
+    await updateProjectSection(id, editingSectionName);
+    setEditingSectionId(null);
+    setEditingSectionName('');
+    await loadTasks();
+  };
+
+  const removeSection = async (section) => {
+    const sid = section.id ?? section.localId;
+    const hasTasks = tasks.some((t) => !t.archived && String(t.section_id) === String(sid));
+    if (hasTasks && !window.confirm('Sekcja zawiera zadania. Usunięcie odłączy je od sekcji. Kontynuować?')) return;
+    setSectionMenu(null);
+    await deleteProjectSection(sid);
+    await loadTasks();
+  };
+
+  const toggleSectionCollapse = (sid) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(String(sid))) next.delete(String(sid)); else next.add(String(sid));
+      return next;
+    });
+  };
+
+  const openSectionMenu = (e, section) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSectionMenu({ x: e.clientX, y: e.clientY, section });
+  };
+
+  const activeTasks = tasks.filter((t) => !t.archived);
+  const historyTasks = tasks.filter((t) => t.archived);
+
+  const tasksBySection = (sectionId) =>
+    activeTasks.filter((t) => String(t.section_id ?? '') === String(sectionId ?? ''));
+  const unsectionedTasks = activeTasks.filter((t) => !t.section_id);
+
+  const makeTaskColumns = (storageKeyPrefix) => [
+    { key: 'title', label: 'Nazwa' },
+    {
+      key: 'status', label: 'Status',
+      renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_TASK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} />
+    },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'due_date', label: 'Termin' },
+    { key: 'comment_count', label: 'Kom.', align: 'right' },
+    { key: 'created_display', label: 'Utworzono' }
+  ];
+
+  const makeTaskRows = (taskList) => taskList.map((t) => ({
+    ...t,
+    _task: t,
+    comment_count: commentCounts[String(t.id ?? t.localId)] ?? 0,
+    created_display: t.created_at ? formatDashboardDate(t.created_at) : '—'
+  }));
+
+  const taskCustomActions = [
+    { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCheck, visible: (row) => !PROJECT_TASK_TERMINAL_STATUSES.includes(row.status), onClick: (row) => setTaskStatus(row._task, 'Zrobione') }
+  ];
+
+  const historyTaskColumns = [
+    { key: 'title', label: 'Nazwa' },
+    { key: 'status', label: 'Status' },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'due_date', label: 'Termin' }
+  ];
+  const historyTaskRows = historyTasks.map((t) => ({ ...t, _task: t }));
+
+  const tabs = [
+    { id: 'data', label: 'Dane projektu' },
+    { id: 'tasks', label: `Zadania${activeTasks.length ? ` (${activeTasks.length})` : ''}` },
+    { id: 'notes', label: 'Notatki' }
+  ].filter((tab) => !isNew || tab.id === 'data');
+
+  return <>
+    <ResizableModalFrame storageKey="fixer-project-modal" defaultSize={{ width: 900, height: 640 }} minSize={{ width: 640, height: 480 }} eyebrow="Projekt" title={isNew ? 'Nowy projekt' : String(project?.name || project?.project_number || 'Projekt')} onClose={onClose}
+      footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary><ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{isNew ? 'Utwórz projekt' : 'Zapisz'}</ButtonPrimary></>}>
+      {notice && <div className="notice">{notice}</div>}
+      <div className="record-tabs" role="tablist">
+        {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+      </div>
+
+      {activeTab === 'data' && <div className="service-order-form-body">
+        <div className="service-order-strip project-main-strip">
+          <FormField label="Numer projektu">
+            <AppInput value={form.project_number} onChange={(e) => set('project_number', e.target.value)} placeholder="np. PRJ/001/..." />
+          </FormField>
+          <FormField label="Status">
+            <AppSelect value={form.status} onChange={(e) => set('status', e.target.value)}>
+              {PROJECT_STATUSES.map((s) => <option key={s}>{s}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Priorytet">
+            <AppSelect value={form.priority} onChange={(e) => set('priority', e.target.value)}>
+              {PROJECT_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+            </AppSelect>
+          </FormField>
+        </div>
+        <div className="project-date-row">
+          <FormField label="Start"><AppInput type="date" value={form.start_date} onChange={(e) => set('start_date', e.target.value)} /></FormField>
+          <FormField label="Termin"><AppInput type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} /></FormField>
+        </div>
+        <FormField label="Nazwa projektu *">
+          <AppInput value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nazwa projektu" autoFocus={isNew} />
+        </FormField>
+        <FormField label="Klient">
+          <div className="client-choice-row">
+            {selectedClient
+              ? <span className="project-client-chip"><strong>{selectedClient.name}</strong><span className="project-client-actions"><button type="button" className="project-icon-action" onClick={() => setClientPickerOpen(true)} aria-label="Zmień klienta" title="Zmień klienta"><Search size={14} /></button><button type="button" className="project-icon-action danger-action" onClick={() => set('client_id', '')} aria-label="Usuń powiązanie klienta" title="Usuń powiązanie klienta"><X size={14} /></button></span></span>
+              : <ButtonSecondary size="sm" onClick={() => setClientPickerOpen(true)}>Wybierz klienta</ButtonSecondary>}
+          </div>
+        </FormField>
+        <FormField label="Opis">
+          <AppTextarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." />
+        </FormField>
+      </div>}
+
+      {activeTab === 'tasks' && <div className="project-tasks-panel">
+        <div className="project-tasks-toolbar">
+          <AppButton variant="primary" className="compact-table-button" size="sm" onClick={() => openNewTask(null)}><Plus size={14} />Nowe zadanie</AppButton>
+          <AppButton variant="secondary" className="compact-table-button project-section-add-button" size="sm" onClick={openSectionModal}><Plus size={14} />Sekcja</AppButton>
+        </div>
+        {tasksLoading && <div className="loading-line">Ładowanie zadań...</div>}
+        {!tasksLoading && <div className="project-sections-list" ref={projectTasksListRef} tabIndex={-1}>
+          {sections.map((section) => {
+            const sid = String(section.id ?? section.localId);
+            const sectionTasks = tasksBySection(sid);
+            const collapsed = collapsedSections.has(sid);
+            const isEditing = editingSectionId === sid;
+            const skey = `pt-s${sid.slice(0,8)}-${projectId?.slice(0,8) ?? 'new'}`;
+            return <div key={sid} className="project-section-block">
+              <div className="project-section-toggle" onClick={() => !isEditing && toggleSectionCollapse(sid)} onContextMenu={(e) => openSectionMenu(e, section)}>
+                <span className="project-section-chevron">{collapsed ? '▸' : '▾'}</span>
+                {isEditing
+                  ? <><AppInput value={editingSectionName} onChange={(e) => setEditingSectionName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveSection(sid); if (e.key === 'Escape') { setEditingSectionId(null); setEditingSectionName(''); } }} onClick={(e) => e.stopPropagation()} autoFocus className="project-section-edit-input" />
+                    <button type="button" className="column-resizer-hint" onClick={(e) => { e.stopPropagation(); saveSection(sid); }} title="Zapisz"><Save size={12} /></button>
+                    <button type="button" className="column-resizer-hint" onClick={(e) => { e.stopPropagation(); setEditingSectionId(null); setEditingSectionName(''); }} title="Anuluj"><X size={12} /></button></>
+                  : <><span className="project-section-name">{section.name}</span><span className="project-section-count muted">({sectionTasks.length})</span></>}
+              </div>
+              {!collapsed && <DataTable
+                storageKey={skey}
+                columns={makeTaskColumns(skey)}
+                rows={makeTaskRows(sectionTasks)}
+                onOpen={openEditTask}
+                onEdit={openEditTask}
+                onDelete={deleteTask}
+                openLabel="Otwórz zadanie"
+                editLabel="Edytuj zadanie"
+                deleteLabel="Usuń zadanie"
+                customRowActions={taskCustomActions}
+                enableSelectionActions={false}
+              />}
+            </div>;
+          })}
+          {(sections.length === 0 || unsectionedTasks.length > 0) && <div className="project-section-block">
+            {sections.length > 0 && <div className="project-section-toggle" onClick={() => toggleSectionCollapse('__unsectioned__')} onContextMenu={(e) => { e.preventDefault(); openNewTask(null); }}>
+              <span className="project-section-chevron">{collapsedSections.has('__unsectioned__') ? '▸' : '▾'}</span>
+              <span className="project-section-name muted">Bez sekcji</span>
+              <span className="project-section-count muted">({unsectionedTasks.length})</span>
+            </div>}
+            {(!collapsedSections.has('__unsectioned__')) && <DataTable
+              storageKey={`pt-unsect-${projectId?.slice(0,8) ?? 'new'}`}
+              columns={makeTaskColumns('pt-unsect')}
+              rows={makeTaskRows(unsectionedTasks)}
+              onOpen={openEditTask}
+              onEdit={openEditTask}
+              onDelete={deleteTask}
+              openLabel="Otwórz zadanie"
+              editLabel="Edytuj zadanie"
+              deleteLabel="Usuń zadanie"
+              customRowActions={taskCustomActions}
+              enableSelectionActions={false}
+            />}
+          </div>}
+          {!activeTasks.length && !tasksLoading && <EmptyState title="Brak aktywnych zadań." />}
+        </div>}
+        {historyTaskRows.length > 0 && <details className="project-history-section">
+          <summary className="history-toggle">Historia zadań ({historyTaskRows.length})</summary>
+          <DataTable storageKey={`pt-hist-${projectId?.slice(0,8) ?? 'new'}`} columns={historyTaskColumns} rows={historyTaskRows} enableSelectionActions={false}
+            onOpen={openEditTask} openLabel="Podgląd zadania"
+            customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: PROJECT_TASK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }]}
+          />
+        </details>}
+        {sectionMenu && <div className="row-context-menu" style={{ left: sectionMenu.x, top: sectionMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <div className="context-menu-title">Sekcja: {sectionMenu.section.name}</div>
+          <button type="button" onClick={() => { const sid = sectionMenu.section.id ?? sectionMenu.section.localId; setSectionMenu(null); openNewTask(sid); }}><Plus size={14} />Dodaj zadanie</button>
+          <button type="button" onClick={() => { const sid = sectionMenu.section.id ?? sectionMenu.section.localId; setSectionMenu(null); setEditingSectionId(sid); setEditingSectionName(sectionMenu.section.name); }}>✎ Zmień nazwę</button>
+          <div className="context-menu-separator" />
+          <button type="button" className="danger-action" onClick={() => removeSection(sectionMenu.section)}><Trash2 size={14} />Usuń sekcję</button>
+        </div>}
+      </div>}
+
+      {activeTab === 'notes' && <div className="service-order-form-body">
+        <FormField label="Notatki">
+          <AppTextarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={10} placeholder="Notatki do projektu..." />
+        </FormField>
+      </div>}
+    </ResizableModalFrame>
+
+    {clientPickerOpen && <ClientPickerModal clients={localClients} selectedClientId={form.client_id} onClose={() => setClientPickerOpen(false)} onConfirm={(client) => { set('client_id', client.id ?? client.localId); setClientPickerOpen(false); }} onCreateClient={openNewClientEditor} />}
+
+    {clientEditorOpen && <ClientEditor client={null} initialTab="data" onClose={() => { setClientEditorOpen(false); setClientPickerOpen(true); }} onSave={saveNewClientFromProject} />}
+
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
+
+    {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={closeSectionModal} footer={<><ButtonSecondary onClick={closeSectionModal}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
+      <FormField label="Nazwa sekcji" error={sectionNameError}>
+        <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
+      </FormField>
+    </ModalFrame>}
+  </>;
+}
+
+const PROJECT_DETAILS_WIDTH_KEY = 'fixer-project-details-panel-width';
+const PROJECT_DETAILS_COLLAPSED_KEY = 'fixer.projects.detailsPanelCollapsed';
+const PROJECT_DETAILS_SELECTED_KEY = 'fixer.projects.selectedProjectId';
+
+function getSavedProjectDetailsWidth() {
+  const saved = Number(localStorage.getItem(PROJECT_DETAILS_WIDTH_KEY));
+  if (Number.isFinite(saved) && saved > 0) return saved;
+  return Math.round(Math.min(620, Math.max(420, window.innerWidth * 0.38)));
+}
+
+function getSavedProjectDetailsCollapsed() {
+  return localStorage.getItem(PROJECT_DETAILS_COLLAPSED_KEY) === 'true';
+}
+
+function ProjectTaskInlineComments({ task, onChanged }) {
+  const taskId = task?.id ?? task?.localId;
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [newCommentType, setNewCommentType] = useState('Komentarz');
+  const [notice, setNotice] = useState('');
+
+  const loadComments = async () => {
+    if (!taskId) return;
+    setLoading(true);
+    const result = await fetchTaskComments(taskId);
+    if (result.error) setNotice(`Nie udało się pobrać komentarzy: ${result.error.message}`);
+    setComments(result.data ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadComments(); }, [taskId]);
+
+  const addComment = async () => {
+    if (!newComment.trim()) return;
+    const result = await createTaskComment(taskId, newComment, newCommentType, demoUser.name);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    setNewComment('');
+    await loadComments();
+    onChanged?.();
+  };
+
+  return <div className="project-task-inline-comments">
+    {notice && <div className="notice">{notice}</div>}
+    <div className="project-comments-add">
+      <AppSelect value={newCommentType} onChange={(event) => setNewCommentType(event.target.value)}>{PROJECT_TASK_COMMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</AppSelect>
+      <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+      <button type="button" className="project-icon-action primary-action" onClick={addComment} disabled={!newComment.trim()} aria-label="Dodaj komentarz" title="Dodaj komentarz"><Plus size={15} /></button>
+    </div>
+    <div className="project-comments-list">
+      {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
+      {!loading && comments.map((comment) => <div className="project-comment-row" key={comment.id ?? comment.localId}>
+        <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
+        <p>{comment.body}</p>
+      </div>)}
+      {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
+    </div>
+  </div>;
+}
+
+function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onRefreshProject }) {
+  const projectId = project?.id ?? project?.localId;
+  const [tasks, setTasks] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [commentCounts, setCommentCounts] = useState({});
+  const [expandedTasks, setExpandedTasks] = useState(new Set());
+  const [collapsedSections, setCollapsedSections] = useState(new Set());
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [sectionModalOpen, setSectionModalOpen] = useState(false);
+  const [newSectionName, setNewSectionName] = useState('');
+  const [sectionNameError, setSectionNameError] = useState('');
+
+  const loadPanelData = async () => {
+    if (!projectId || collapsed) return;
+    setLoading(true);
+    const [tasksResult, sectionsResult, commentsResult] = await Promise.all([
+      fetchProjectTasks(projectId),
+      fetchProjectSections(projectId),
+      fetchProjectAllComments(projectId)
+    ]);
+    const counts = {};
+    (commentsResult.data ?? []).forEach((comment) => {
+      const tid = String(comment.task_id);
+      counts[tid] = (counts[tid] ?? 0) + 1;
+    });
+    if (tasksResult.error || sectionsResult.error || commentsResult.error) setNotice('Nie udało się pobrać pełnych danych panelu projektu.');
+    else setNotice('');
+    setTasks(tasksResult.data ?? []);
+    setSections(sectionsResult.data ?? []);
+    setCommentCounts(counts);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadPanelData(); }, [projectId, collapsed]);
+  useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
+
+  const displayTasks = tasks;
+  const tasksBySection = (sectionId) => displayTasks.filter((task) => String(task.section_id ?? '') === String(sectionId ?? ''));
+  const unsectionedTasks = displayTasks.filter((task) => !task.section_id);
+
+  const openNewTask = (sectionId = null) => {
+    setEditingTask(sectionId ? { section_id: sectionId, project_id: projectId } : { project_id: projectId });
+    setTaskEditorOpen(true);
+  };
+
+  const saveTask = async (taskForm) => {
+    const tid = taskForm.id ?? taskForm.localId;
+    const result = tid ? await updateProjectTask(tid, taskForm) : await createProjectTask(taskForm);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
+    setTaskEditorOpen(false);
+    setEditingTask(null);
+    await loadPanelData();
+    onRefreshProject?.();
+  };
+
+  const toggleTaskDone = async (task) => {
+    if (!task) return;
+    const tid = task.id ?? task.localId;
+    const done = task.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(task.status);
+    await updateProjectTask(tid, done
+      ? { ...task, status: PROJECT_TASK_STATUSES[0], archived: false, completed_at: null }
+      : { ...task, status: 'Zrobione', archived: true, completed_at: task.completed_at || new Date().toISOString() });
+    await loadPanelData();
+  };
+
+  const addSection = async () => {
+    const sectionName = newSectionName.trim();
+    if (!sectionName) { setSectionNameError('Podaj nazwę sekcji.'); return; }
+    if (sectionName.length > 100) { setSectionNameError('Nazwa sekcji może mieć maksymalnie 100 znaków.'); return; }
+    const result = await createProjectSection(projectId, sectionName, (sections.length + 1) * 10);
+    if (result.error) { setSectionNameError(result.error.message); return; }
+    setNewSectionName('');
+    setSectionModalOpen(false);
+    await loadPanelData();
+  };
+
+  const toggleSection = (key) => {
+    setCollapsedSections((current) => {
+      const next = new Set(current);
+      if (next.has(String(key))) next.delete(String(key));
+      else next.add(String(key));
+      return next;
+    });
+  };
+
+  const removeSection = async (section, sectionTasks = []) => {
+    const sid = String(section.id ?? section.localId);
+    const hasTasks = sectionTasks.length > 0;
+    const message = hasTasks
+      ? 'Sekcja zawiera zadania. Usunięcie sekcji usunie również przypisane zadania i ich komentarze/postępy. Czy kontynuować?'
+      : `Czy na pewno usunąć sekcję "${section.name}"?`;
+    if (!window.confirm(message)) return;
+    setNotice('');
+    for (const task of sectionTasks) {
+      const result = await deleteProjectTask(task.id ?? task.localId, task);
+      if (result.error) {
+        setNotice(humanizeError(result.error, 'Nie udało się usunąć zadań sekcji'));
+        return;
+      }
+    }
+    const result = await deleteProjectSection(section.id ?? section.localId);
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Nie udało się usunąć sekcji'));
+      return;
+    }
+    setCollapsedSections((current) => {
+      const next = new Set(current);
+      next.delete(sid);
+      return next;
+    });
+    setExpandedTasks((current) => {
+      const next = new Set(current);
+      sectionTasks.forEach((task) => next.delete(String(task.id ?? task.localId)));
+      return next;
+    });
+    await loadPanelData();
+    onRefreshProject?.();
+  };
+
+  const toggleTaskExpanded = (task) => {
+    const key = String(task.id ?? task.localId);
+    setExpandedTasks((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const renderTask = (task) => {
+    const taskKey = String(task.id ?? task.localId);
+    const comments = commentCounts[taskKey] ?? 0;
+    const done = task.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(task.status);
+    const expanded = expandedTasks.has(taskKey);
+    return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''}`} key={taskKey}>
+      <div className="project-detail-task-row">
+        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskDone(task); }} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
+          {done && <CheckCircle2 size={16} />}
+        </button>
+        <button type="button" className="project-detail-task-main" onClick={() => toggleTaskExpanded(task)} aria-expanded={expanded}>
+          <strong>{task.title}</strong>
+          <span>{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
+        </button>
+        <button type="button" className="project-detail-task-comments" onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
+        <div className="project-detail-task-actions">
+          <button type="button" className="project-icon-action" onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Komentarze" title="Komentarze / postęp"><MessageSquare size={14} /></button>
+          <button type="button" className="project-icon-action" onClick={(event) => { event.stopPropagation(); setEditingTask(task); setTaskEditorOpen(true); }} aria-label="Edytuj zadanie" title="Edytuj">✎</button>
+        </div>
+      </div>
+      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} />}
+    </div>;
+  };
+
+  if (collapsed) {
+    return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /><span>Szczegóły</span></button>
+    </aside>;
+  }
+
+  return <aside className="project-details-panel" style={{ width: `${width}px` }}>
+    <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
+    <div className="project-details-header">
+      <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
+      <div>
+        <strong>{project?.name || project?.project_number || 'Wybierz projekt'}</strong>
+        {project && <span>{project.status || '—'} · Termin: {project.due_date || 'brak'}</span>}
+      </div>
+    </div>
+    {!project && <EmptyState title="Wybierz projekt z listy." description="Pojedynczy klik pokazuje zadania i sekcje. Dwuklik otwiera kartotekę." />}
+    {project && <div className="project-details-body">
+      {notice && <div className="notice">{notice}</div>}
+      <div className="project-details-toolbar">
+        <button type="button" className="project-icon-action primary-action" onClick={() => openNewTask(null)} aria-label="Dodaj zadanie" title="Dodaj zadanie"><Plus size={15} /></button>
+        <button type="button" className="project-icon-action" onClick={() => { setNewSectionName(''); setSectionNameError(''); setSectionModalOpen(true); }} aria-label="Dodaj sekcję" title="Dodaj sekcję"><Columns3 size={15} /></button>
+      </div>
+      {loading && <div className="loading-line">Ładowanie szczegółów projektu...</div>}
+      {!loading && <div className="project-detail-sections">
+        {sections.map((section) => {
+          const sid = String(section.id ?? section.localId);
+          const sectionTasks = tasksBySection(sid);
+          const sectionCollapsed = collapsedSections.has(sid);
+          return <section className="project-detail-section" key={sid}>
+            <div className="project-detail-section-head">
+              <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection(sid)}>
+                <span>{sectionCollapsed ? '▸' : '▾'}</span><strong>{section.name}</strong><em>({sectionTasks.length})</em>
+              </button>
+              <button type="button" className="project-detail-section-delete" onClick={(event) => { event.stopPropagation(); removeSection(section, sectionTasks); }} aria-label={`Usuń sekcję ${section.name}`} title="Usuń sekcję"><Trash2 size={13} /></button>
+            </div>
+            {!sectionCollapsed && <div className="project-detail-task-list">{sectionTasks.map(renderTask)}{!sectionTasks.length && <div className="project-detail-empty">Brak zadań.</div>}</div>}
+          </section>;
+        })}
+        {(sections.length === 0 || unsectionedTasks.length > 0) && <section className="project-detail-section">
+          <div className="project-detail-section-head">
+            <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection('__unsectioned__')}>
+              <span>{collapsedSections.has('__unsectioned__') ? '▸' : '▾'}</span><strong>Bez sekcji</strong><em>({unsectionedTasks.length})</em>
+            </button>
+          </div>
+          {!collapsedSections.has('__unsectioned__') && <div className="project-detail-task-list">{unsectionedTasks.map(renderTask)}{!unsectionedTasks.length && <div className="project-detail-empty">Brak zadań.</div>}</div>}
+        </section>}
+      </div>}
+    </div>}
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
+    {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={() => setSectionModalOpen(false)} footer={<><ButtonSecondary onClick={() => setSectionModalOpen(false)}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
+      <FormField label="Nazwa sekcji" error={sectionNameError}>
+        <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
+      </FormField>
+    </ModalFrame>}
+  </aside>;
+}
+
+function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
+  const [rows, setRows] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [filters, setFilters] = useStoredState('fixer-projects-filters', { search: '', status: '', priority: '' });
+  const [historyCollapsed, setHistoryCollapsed] = useState(true);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState(null);
+  const [pendingOpenProjectId, setPendingOpenProjectId] = useState(null);
+  const [selectedProjectKey, setSelectedProjectKey] = useState(() => localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY));
+  const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedProjectDetailsCollapsed);
+  const [detailsWidth, setDetailsWidth] = useState(getSavedProjectDetailsWidth);
+  const documentSettings = getDocumentSettings();
+
+  const loadData = async () => {
+    setLoading(true);
+    const [projectsResult, clientsResult] = await Promise.all([fetchProjects(), fetchClients()]);
+    setRows(projectsResult.data ?? []);
+    setClients(clientsResult.data ?? []);
+    if (projectsResult.error) setNotice(`Nie udało się pobrać projektów: ${humanizeError(projectsResult.error)}`);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECT_DETAILS_COLLAPSED_KEY, detailsCollapsed ? 'true' : 'false');
+  }, [detailsCollapsed]);
+
+  useEffect(() => {
+    if (selectedProjectKey) localStorage.setItem(PROJECT_DETAILS_SELECTED_KEY, selectedProjectKey);
+  }, [selectedProjectKey]);
+
+  useEffect(() => {
+    if (dashboardIntent?.type !== 'projects') return;
+    if (dashboardIntent.projectId) setPendingOpenProjectId(dashboardIntent.projectId);
+    onConsumeDashboardIntent?.();
+  }, [dashboardIntent, onConsumeDashboardIntent]);
+
+  useEffect(() => {
+    if (!pendingOpenProjectId || !rows.length) return;
+    const project = rows.find((r) => String(r.id ?? r.localId) === String(pendingOpenProjectId));
+    if (project) setSelectedProjectKey(String(project.id ?? project.localId));
+    setPendingOpenProjectId(null);
+  }, [pendingOpenProjectId, rows]);
+
+  const activeRows = rows.filter((r) => !r.archived);
+  const historyRows = rows.filter((r) => r.archived);
+
+  const filterRows = (source) => source.filter((r) => {
+    const q = (filters.search ?? '').toLowerCase().trim();
+    if (q && !`${r.name} ${r.project_number} ${r.clients?.name ?? ''} ${r.description}`.toLowerCase().includes(q)) return false;
+    if (filters.status && r.status !== filters.status) return false;
+    if (filters.priority && r.priority !== filters.priority) return false;
+    return true;
+  });
+
+  const filteredActive = filterRows(activeRows);
+  const filteredHistory = filterRows(historyRows);
+
+  const saveProject = async (form) => {
+    const projectId = form.id ?? form.localId;
+    let result;
+    if (projectId) {
+      const isTerminal = PROJECT_TERMINAL_STATUSES.includes(form.status);
+      const wasArchived = editingProject?.archived;
+      if (isTerminal && !wasArchived) {
+        if (!window.confirm('Przenieść projekt do historii?')) { return; }
+        form = { ...form, archived: true, completed_at: form.completed_at || new Date().toISOString() };
+      }
+      result = await updateProject(projectId, form);
+    } else {
+      result = await createProject(form);
+    }
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu projektu')); return; }
+    setEditorOpen(false);
+    setEditingProject(null);
+    await loadData();
+  };
+
+  const handleDelete = async (project) => {
+    if (!window.confirm(`Usunąć projekt "${project.name}"?`)) return;
+    const result = await deleteProject(project.id ?? project.localId, project);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania projektu')); return; }
+    await loadData();
+  };
+
+  const handleRestore = async (project) => {
+    if (!project) return;
+    await updateProject(project.id ?? project.localId, { ...project, archived: false, status: 'Planowany', completed_at: null });
+    await loadData();
+  };
+
+  const setProjectStatus = async (project, nextStatus) => {
+    if (!project || nextStatus === project.status) return;
+    const projectId = project.id ?? project.localId;
+    const isTerminal = PROJECT_TERMINAL_STATUSES.includes(nextStatus);
+    if (isTerminal && !project.archived && !window.confirm('Przenieść projekt do historii?')) return;
+    const payload = {
+      ...project,
+      status: nextStatus,
+      archived: isTerminal ? true : project.archived,
+      completed_at: isTerminal ? (project.completed_at || new Date().toISOString()) : project.completed_at
+    };
+    const result = await updateProject(projectId, payload);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany statusu projektu')); return; }
+    setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, ...payload, ...(result.data ?? {}) } : row));
+  };
+
+  const openNewProject = () => { setEditingProject(null); setEditorOpen(true); };
+  const openProject = (project) => { setEditingProject(project); setEditorOpen(true); };
+
+  const activeColumns = [
+    { key: 'project_number', label: 'Numer' },
+    { key: 'name', label: 'Nazwa' },
+    { key: 'client_name', label: 'Klient' },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_STATUSES} onStatusChange={(status) => setProjectStatus(row._project ?? row, status)} /> },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'due_date', label: 'Termin' }
+  ];
+
+  const historyColumns = [
+    { key: 'project_number', label: 'Numer' },
+    { key: 'name', label: 'Nazwa' },
+    { key: 'client_name', label: 'Klient' },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_STATUSES} onStatusChange={(status) => setProjectStatus(row._project ?? row, status)} /> },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'due_date', label: 'Termin' },
+    { key: 'completed_display', label: 'Zakończono' }
+  ];
+
+  const mapRow = (r) => ({
+    ...r,
+    _project: r,
+    client_name: r.clients?.name ?? '',
+    completed_display: r.completed_at ? formatDashboardDate(r.completed_at) : '—'
+  });
+
+  const activeTableRows = filteredActive.map(mapRow);
+  const historyTableRows = filteredHistory.map(mapRow);
+  const selectedProject = rows.find((row) => String(row.id ?? row.localId) === String(selectedProjectKey)) ?? activeTableRows[0] ?? null;
+
+  const selectProject = (project) => {
+    setSelectedProjectKey(String(project.id ?? project.localId));
+  };
+
+  const startDetailsResize = (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = detailsWidth;
+    const onMouseMove = (moveEvent) => {
+      const nextWidth = Math.min(Math.max(340, startWidth - (moveEvent.clientX - startX)), Math.max(420, window.innerWidth * 0.68));
+      setDetailsWidth(nextWidth);
+      localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.classList.remove('resizing-project-details');
+    };
+    document.body.classList.add('resizing-project-details');
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''}`}>
+    <div className="projects-workspace">
+      <div className="projects-list-pane">
+        <AppSection title="Projekty">
+          <div className="module-actions">
+            <AppButton variant="primary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Nowy projekt</AppButton>
+            <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
+            <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>
+            <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
+          </div>
+          <div className="module-filters project-filter-bar">
+            <AppInput placeholder="Szukaj..." value={filters.search ?? ''} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
+            <AppSelect value={filters.status ?? ''} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
+              <option value="">Wszystkie statusy</option>
+              {PROJECT_STATUSES.filter((s) => !PROJECT_TERMINAL_STATUSES.includes(s)).map((s) => <option key={s}>{s}</option>)}
+            </AppSelect>
+            <AppSelect value={filters.priority ?? ''} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
+              <option value="">Wszystkie priorytety</option>
+              {PROJECT_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+            </AppSelect>
+          </div>
+          {notice && <div className="notice">{notice}</div>}
+          <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
+            onRowClick={selectProject} onOpen={openProject} onEdit={openProject} onDelete={handleDelete} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
+        </AppSection>
+
+        <AppSection title={<button type="button" className="history-toggle-button" onClick={() => setHistoryCollapsed((v) => !v)}>
+          Historia projektów {historyCollapsed ? '▸' : '▾'} <span className="history-count">({historyRows.length})</span>
+        </button>}>
+          {!historyCollapsed && <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
+            onRowClick={selectProject} onOpen={openProject} onEdit={openProject} onDelete={handleDelete} openLabel="Otwórz"
+            customRowActions={[{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }]}
+          />}
+        </AppSection>
+      </div>
+      <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} />
+    </div>
+
+    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
+  </div>;
+}
+
 function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
   const [form, setForm] = useState(() => ({
     title: task?.title ?? '',
@@ -5083,7 +6306,8 @@ const DEFAULT_DOCUMENT_NUMBERING = {
   rentals: { prefix: 'WYP', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
   returns: { prefix: 'ZW', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
   service: { prefix: 'SER', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
-  estimates: { prefix: 'KOS', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 }
+  estimates: { prefix: 'KOS', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
+  projects: { prefix: 'PRJ', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 }
 };
 const DEFAULT_DOCUMENT_SETTINGS = {
   templates: {
@@ -5258,12 +6482,13 @@ function formatCompanyContact(profile) {
   return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
     columnOrder: columns.map((column) => column.key),
     columnWidths: {},
+    columnAlignments: {},
     sortKey: null,
     sortDir: 'asc'
   }), [columnsSignature]);
@@ -5276,6 +6501,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
   const [visibleColumns, setVisibleColumns] = useState(initialPreference.visibleColumns);
   const [columnOrder, setColumnOrder] = useState(initialPreference.columnOrder);
   const [columnWidths, setColumnWidths] = useState(initialPreference.columnWidths);
+  const [columnAlignments, setColumnAlignments] = useState(initialPreference.columnAlignments ?? {});
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState(() => new Set());
@@ -5285,6 +6511,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       visibleColumns: nextPreference.visibleColumns ?? visibleColumns,
       columnOrder: nextPreference.columnOrder ?? columnOrder,
       columnWidths: nextPreference.columnWidths ?? columnWidths,
+      columnAlignments: nextPreference.columnAlignments ?? columnAlignments,
       sortKey: Object.prototype.hasOwnProperty.call(nextPreference, 'sortKey') ? nextPreference.sortKey : sortKey,
       sortDir: nextPreference.sortDir ?? sortDir
     });
@@ -5297,6 +6524,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       setVisibleColumns(data.visibleColumns);
       setColumnOrder(data.columnOrder);
       setColumnWidths(data.columnWidths);
+      setColumnAlignments(data.columnAlignments ?? {});
       setSortKey(data.sortKey ?? null);
       setSortDir(data.sortDir ?? 'asc');
     });
@@ -5389,6 +6617,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
 
   const activeColumns = orderedColumns.filter((column) => visibleColumns.includes(column.key));
   const hasActions = Boolean(onOpen || onEdit || onDuplicate || onHistory || onDelete || customRowActions.length);
+  const selectedContextColumn = contextMenu?.columnKey ? columns.find((column) => column.key === contextMenu.columnKey) : null;
 
   const applySort = (key, direction = 'asc') => {
     setSortKey(key);
@@ -5468,6 +6697,40 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     persistTablePreference({ visibleColumns: next });
   };
 
+  const setColumnAlignment = (key, alignment) => {
+    const normalized = normalizeColumnAlignment(alignment);
+    if (!key || !normalized) return;
+    setColumnAlignments((current) => {
+      const next = { ...current, [key]: normalized };
+      setContextMenu(null);
+      persistTablePreference({ columnAlignments: next });
+      return next;
+    });
+  };
+
+  const openColumnSubmenu = (submenu, event = null) => {
+    setContextMenu((current) => {
+      if (!current) return current;
+      if (!submenu) return { ...current, submenu: null, submenuPosition: null };
+      const viewport = window.visualViewport;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const offsetLeft = viewport?.offsetLeft ?? 0;
+      const offsetTop = viewport?.offsetTop ?? 0;
+      const padding = 18;
+      const submenuWidth = 220;
+      const submenuHeight = submenu === 'columns' ? Math.min(360, Math.max(180, orderedColumns.length * 36 + 16)) : 140;
+      const rect = event?.currentTarget?.getBoundingClientRect?.();
+      const baseX = rect ? rect.right + 6 : current.x + 226;
+      const fallbackLeftX = rect ? rect.left - submenuWidth - 6 : current.x - submenuWidth - 6;
+      const opensLeft = baseX + submenuWidth + padding > offsetLeft + viewportWidth;
+      const x = opensLeft ? Math.max(offsetLeft + padding, fallbackLeftX) : Math.min(baseX, offsetLeft + viewportWidth - submenuWidth - padding);
+      const preferredY = rect ? rect.top : current.y;
+      const y = Math.min(Math.max(offsetTop + padding, preferredY), Math.max(offsetTop + padding, offsetTop + viewportHeight - submenuHeight - padding));
+      return { ...current, submenu, submenuPosition: { x, y }, submenuSide: opensLeft ? 'left' : 'right' };
+    });
+  };
+
   const moveColumn = (sourceKey, targetKey) => {
     if (!sourceKey || sourceKey === targetKey) return;
     setColumnOrder((current) => {
@@ -5514,16 +6777,22 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
     setVisibleColumns(keys);
     setColumnOrder(keys);
     setColumnWidths({});
+    setColumnAlignments({});
     setSortKey(null);
     setSortDir('asc');
-    persistTablePreference({ visibleColumns: keys, columnOrder: keys, columnWidths: {}, sortKey: null, sortDir: 'asc' });
+    persistTablePreference({ visibleColumns: keys, columnOrder: keys, columnWidths: {}, columnAlignments: {}, sortKey: null, sortDir: 'asc' });
     setContextMenu(null);
   };
 
   const openColumnMenu = (event, columnKey = null) => {
     event.preventDefault();
     setRowContextMenu(null);
-    setContextMenu({ ...getSafeMenuPosition(event, 250, 420), columnKey });
+    const position = getSafeMenuPosition(event, 230, 260);
+    const viewport = window.visualViewport;
+    const viewportWidth = viewport?.width ?? window.innerWidth;
+    const offsetLeft = viewport?.offsetLeft ?? 0;
+    const submenuSide = position.x + 230 + 230 + 18 > offsetLeft + viewportWidth ? 'left' : 'right';
+    setContextMenu({ ...position, columnKey, submenu: null, submenuSide });
   };
 
   const openRowMenu = (event, row) => {
@@ -5581,7 +6850,10 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
       <div className="table-scroll">
         <AppTable>
           <colgroup>{hasSelectionActions && <col className="selection-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => <th key={column.key} draggable aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${sortKey === column.key ? 'sorted' : ''}`.trim()}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>)}</tr></thead>
+          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
+            const alignment = getColumnAlignment(column, columnAlignments);
+            return <th key={column.key} draggable aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${sortKey === column.key ? 'sorted' : ''} table-align-${alignment}`.trim()}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>;
+          })}</tr></thead>
           <tbody>{sortedRows.map((row, index) => {
             const rowKey = getRowKey(row, index);
             const selected = selectedRowKeys.has(rowKey);
@@ -5589,8 +6861,13 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
             const expanded = expandable && expandedRowKeys.has(rowKey);
             const rowToneClass = row._rowTone ? `row-tone-${row._rowTone}` : '';
             const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${rowToneClass}`.trim();
+            const rowTitle = expandable
+              ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.'
+              : hasActions
+                ? onRowClick ? 'Pojedynczy klik pokazuje szczegóły. Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.'
+                : 'Prawy klik pokazuje operacje tabeli.';
             return <Fragment key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>
-              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={expandable ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.' : hasActions ? 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Prawy klik pokazuje operacje tabeli.'}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
               {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>
@@ -5612,14 +6889,33 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onEdit,
         {(rowContextMenu.row?.id || rowContextMenu.row?.localId || rowContextMenu.row?.number) && <button type="button" onClick={() => runRowAction('copyId')}><Copy size={14} />Kopiuj ID / numer</button>}
         {onDelete && canDelete(rowContextMenu.row) && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />{deleteLabel}</button></>}
       </div>}
-      {contextMenu && <div className="column-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()}>
-        <div className="context-menu-title">Widoczne kolumny</div>
-        {orderedColumns.map((column) => {
-          const checked = visibleColumns.includes(column.key);
-          const disabled = checked && visibleColumns.length === 1;
-          return <label key={column.key} className={disabled ? 'disabled' : ''}><input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleColumn(column.key)} />{column.label}</label>;
-        })}
-        <button type="button" onClick={resetColumns}>Przywróć domyślne kolumny</button>
+      {contextMenu && <div className="column-context-menu column-menu-desktop" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()} onMouseLeave={() => openColumnSubmenu(null)}>
+        <div className="column-menu-submenu-row" onMouseEnter={(event) => openColumnSubmenu('alignment', event)}>
+          <button type="button" className={contextMenu.submenu === 'alignment' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'alignment' ? null : 'alignment', event)}>Wyrównanie <ChevronRight size={14} /></button>
+          {contextMenu.submenu === 'alignment' && selectedContextColumn && <div className={`column-submenu column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }}>
+            {[
+              { value: 'left', label: 'Do lewej', icon: AlignLeft },
+              { value: 'center', label: 'Do środka', icon: AlignCenter },
+              { value: 'right', label: 'Do prawej', icon: AlignRight }
+            ].map((item) => {
+              const Icon = item.icon;
+              const active = getColumnAlignment(selectedContextColumn, columnAlignments) === item.value;
+              return <button key={item.value} type="button" className={active ? 'active' : ''} onClick={() => setColumnAlignment(selectedContextColumn.key, item.value)}><span className="submenu-check">{active ? '✓' : ''}</span><Icon size={14} />{item.label}</button>;
+            })}
+          </div>}
+        </div>
+        <div className="column-menu-submenu-row" onMouseEnter={(event) => openColumnSubmenu('columns', event)}>
+          <button type="button" className={contextMenu.submenu === 'columns' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'columns' ? null : 'columns', event)}>Kolumny <ChevronRight size={14} /></button>
+          {contextMenu.submenu === 'columns' && <div className={`column-submenu column-submenu-columns column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }}>
+            {orderedColumns.map((column) => {
+              const checked = visibleColumns.includes(column.key);
+              const disabled = checked && visibleColumns.length === 1;
+              return <label key={column.key} className={disabled ? 'disabled' : ''}><input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleColumn(column.key)} />{column.label}</label>;
+            })}
+          </div>}
+        </div>
+        <div className="context-menu-separator" />
+        <button type="button" onClick={resetColumns}>Resetuj ustawienia tabeli</button>
       </div>}
     </div>
   );
@@ -5651,7 +6947,8 @@ const DEFAULT_STATUS_COLORS = {
   'aktywne': '#3b82f6', 'częściowo zwrócone': '#f97316', 'zwrócone': '#22c55e', 'po terminie': '#ef4444',
   'do zrobienia': '#3b82f6', 'w trakcie': '#8b5cf6', 'oczekuje': '#f97316', 'zrobione': '#22c55e',
   'anulowane': '#ef4444',
-  'stały': '#22c55e', 'nowy': '#3b82f6', 'vip': '#eab308', 'problematyczny': '#ef4444', 'pracownik': '#6366f1'
+  'stały': '#22c55e', 'nowy': '#3b82f6', 'vip': '#eab308', 'problematyczny': '#ef4444', 'pracownik': '#6366f1',
+  'planowany': '#6366f1', 'wstrzymany': '#f97316', 'zakończony': '#22c55e'
 };
 
 function getStatusColors() {
@@ -5809,6 +7106,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     { id: 'service', label: 'Serwis', icon: Wrench, description: 'Statusy serwisowe, priorytety i typy zgłoszeń.' },
     { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList, description: 'Statusy wypożyczeń, zwrotów i domyślne okresy.' },
     { id: 'organizer', label: 'Organizer', icon: CheckCircle2, description: 'Kategorie zadań i konfiguracja Organizera.' },
+    { id: 'projects', label: 'Projekty', icon: Briefcase, description: 'Kolory statusów projektów i numeracja.' },
     { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony PDF, numeracja, stopki i nagłówki.' },
     { id: 'backups', label: 'Kopie bezpieczeństwa', icon: Download, description: 'Pełny backup danych i eksporty CSV.' },
     { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, układ tabel, okna i preferencje pracy.' }
@@ -6604,7 +7902,8 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     { key: 'rentals', label: 'Wypożyczenia', value: rentalNumbering, onChange: (_key, field, value) => updateRentalNumbering(field, value), preview: formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00')) },
     { key: 'returns', label: 'Zwroty', value: documentSettings.numbering.returns, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.returns, 1, new Date('2026-06-03T12:00:00')) },
     { key: 'service', label: 'Serwisy', value: documentSettings.numbering.service, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.service, 1, new Date('2026-06-03T12:00:00')) },
-    { key: 'estimates', label: 'Kosztorysy', value: documentSettings.numbering.estimates, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.estimates, 1, new Date('2026-06-03T12:00:00')) }
+    { key: 'estimates', label: 'Kosztorysy', value: documentSettings.numbering.estimates, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.estimates, 1, new Date('2026-06-03T12:00:00')) },
+    { key: 'projects', label: 'Projekty', value: documentSettings.numbering.projects, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.projects, 1, new Date('2026-06-03T12:00:00')) }
   ];
 
 
@@ -6964,6 +8263,39 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
         </div>
       </div>}
 
+      {activeSection === 'projects' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div><h3>Kolory statusów projektów</h3><p className="muted">Kolor widoczny przy statusach w module Projekty.</p></div>
+          </div>
+          <div className="dictionary-list dictionary-list-compact">
+            {PROJECT_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
+              <span className="dictionary-name-static">{status}</span>
+              <div className="dictionary-row-actions dictionary-icon-actions">
+                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
+              </div>
+            </div>)}
+          </div>
+        </div>
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div><h3>Kolory statusów zadań projektów</h3><p className="muted">Kolor widoczny przy statusach zadań projektu.</p></div>
+          </div>
+          <div className="dictionary-list dictionary-list-compact">
+            {PROJECT_TASK_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
+              <span className="dictionary-name-static">{status}</span>
+              <div className="dictionary-row-actions dictionary-icon-actions">
+                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
+              </div>
+            </div>)}
+          </div>
+        </div>
+        <div className="settings-card compact-admin-card">
+          <h3>Numeracja projektów</h3>
+          <p className="muted">Numerację projektów można skonfigurować w sekcji <strong>Dokumenty → Numeracja</strong>.</p>
+        </div>
+      </div>}
+
       {activeSection === 'organizer' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
         <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
           <div className="settings-card-header compact-card-header dictionary-card-header">
@@ -7034,4 +8366,4 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<AppErrorBoundary><App /></AppErrorBoundary>);

@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { fetchClients } from './clientsService';
 import { fetchEquipment } from './equipmentService';
 import { fetchOrganizerTasks } from './organizerService';
+import { fetchProjects, fetchAllProjectTasks } from './projectsService';
 import { fetchRentals } from './rentalsService';
 import { fetchServiceOrders } from './serviceOrdersService';
 
@@ -20,7 +21,11 @@ const BACKUP_TABLES = [
   'service_dictionaries',
   'organizer_categories',
   'organizer_tasks',
-  'calendar_events'
+  'calendar_events',
+  'projects',
+  'project_tasks',
+  'project_task_sections',
+  'project_task_comments'
 ];
 
 const DELETE_ORDER = [
@@ -29,6 +34,10 @@ const DELETE_ORDER = [
   'rental_items',
   'calendar_events',
   'organizer_tasks',
+  'project_task_comments',
+  'project_tasks',
+  'project_task_sections',
+  'projects',
   'service_orders',
   'rentals',
   'organizer_categories',
@@ -46,13 +55,17 @@ const INSERT_ORDER = [
   'equipment_dictionaries',
   'service_dictionaries',
   'organizer_categories',
+  'projects',
+  'project_task_sections',
   'rentals',
   'rental_items',
   'service_orders',
   'service_order_progress',
   'service_order_attachments',
   'organizer_tasks',
-  'calendar_events'
+  'calendar_events',
+  'project_tasks',
+  'project_task_comments'
 ];
 
 const SETTINGS_KEYS = [
@@ -68,6 +81,10 @@ const SETTINGS_KEYS = [
   'fixer-service-dictionaries',
   'fixer-organizer-categories',
   'fixer-organizer-tasks',
+  'fixer-projects',
+  'fixer-project-tasks',
+  'fixer-project-task-sections',
+  'fixer-project-task-comments',
   'fixer-calendar-events',
   'fixer-calendar-view',
   'fixer-calendar-sources',
@@ -160,6 +177,33 @@ const CSV_DEFINITIONS = {
       ['status', 'Status'],
       ['priority', 'Priorytet'],
       ['category', 'Kategoria'],
+      ['due_date', 'Termin'],
+      ['reminder_at', 'Przypomnienie']
+    ]
+  },
+  projects: {
+    filePrefix: 'fixer-projekty',
+    loader: fetchProjects,
+    mapRow: (row) => ({ ...row, client_name: row.clients?.name ?? '' }),
+    columns: [
+      ['project_number', 'Numer'],
+      ['name', 'Nazwa'],
+      ['client_name', 'Klient'],
+      ['status', 'Status'],
+      ['priority', 'Priorytet'],
+      ['start_date', 'Start'],
+      ['due_date', 'Termin'],
+      ['description', 'Opis']
+    ]
+  },
+  project_tasks: {
+    filePrefix: 'fixer-zadania-projektow',
+    loader: fetchAllProjectTasks,
+    columns: [
+      ['title', 'Tytuł'],
+      ['description', 'Opis'],
+      ['status', 'Status'],
+      ['priority', 'Priorytet'],
       ['due_date', 'Termin'],
       ['reminder_at', 'Przypomnienie']
     ]

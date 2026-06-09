@@ -6,7 +6,7 @@ export const PROJECT_TERMINAL_STATUSES = ['Zakończony', 'Anulowany'];
 export const PROJECT_TASK_STATUSES = ['Do zrobienia', 'W trakcie', 'Oczekuje', 'Zrobione', 'Anulowane'];
 export const PROJECT_TASK_PRIORITIES = ['Niski', 'Normalny', 'Wysoki', 'Pilny'];
 export const PROJECT_TASK_TERMINAL_STATUSES = ['Zrobione', 'Anulowane'];
-export const PROJECT_TASK_COMMENT_TYPES = ['Komentarz', 'Decyzja', 'Problem'];
+export const PROJECT_TASK_COMMENT_TYPES = ['Komentarz', 'Postęp', 'Decyzja', 'Problem'];
 
 const LOCAL_PROJECTS_KEY = 'fixer-projects';
 const LOCAL_PROJECT_TASKS_KEY = 'fixer-project-tasks';

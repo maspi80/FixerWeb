@@ -7,6 +7,7 @@ export const DEFAULT_ORGANIZER_CATEGORIES = ['Ogólne', 'Serwis', 'Wypożyczenia
 
 const LOCAL_TASKS_KEY = 'fixer-organizer-tasks';
 const LOCAL_CATEGORIES_KEY = 'fixer-organizer-categories';
+const LOCAL_COMMENTS_KEY = 'fixer-organizer-task-comments';
 
 const taskColumns = `
   id, title, description, status, priority, due_date, reminder_at,
@@ -95,9 +96,52 @@ export async function updateOrganizerTask(id, task) {
 export async function deleteOrganizerTask(id, task = null) {
   if (!isSupabaseConfigured || task?.localId) {
     writeLocal(LOCAL_TASKS_KEY, readLocal(LOCAL_TASKS_KEY).filter((row) => String(row.id ?? row.localId) !== String(id)));
+    writeLocal(LOCAL_COMMENTS_KEY, readLocal(LOCAL_COMMENTS_KEY).filter((row) => String(row.task_id) !== String(id)));
     return { error: null, local: true };
   }
   const { error } = await supabase.from('organizer_tasks').delete().eq('id', id);
+  return { error, local: false };
+}
+
+// ─── Organizer Task Comments ─────────────────────────────────────────────────
+
+export async function fetchOrganizerTaskComments(taskId) {
+  if (!taskId) return { data: [], error: null, local: !isSupabaseConfigured };
+  if (!isSupabaseConfigured) {
+    return { data: readLocal(LOCAL_COMMENTS_KEY).filter((row) => String(row.task_id) === String(taskId)), error: null, local: true };
+  }
+  const { data, error } = await supabase
+    .from('organizer_task_comments')
+    .select('*')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+  return { data: data ?? [], error, local: false };
+}
+
+export async function createOrganizerTaskComment(taskId, body, type = 'Komentarz', author = '') {
+  if (!taskId) return { data: null, error: new Error('ID zadania jest wymagane.'), local: false };
+  if (!body?.trim()) return { data: null, error: new Error('Treść komentarza jest wymagana.'), local: false };
+  if (!isSupabaseConfigured) {
+    const now = new Date().toISOString();
+    const created = { id: crypto.randomUUID(), localId: crypto.randomUUID(), task_id: taskId, body: body.trim(), type, author, created_at: now, updated_at: now };
+    writeLocal(LOCAL_COMMENTS_KEY, [...readLocal(LOCAL_COMMENTS_KEY), created]);
+    return { data: created, error: null, local: true };
+  }
+  const { data, error } = await supabase
+    .from('organizer_task_comments')
+    .insert({ task_id: taskId, body: body.trim(), type, author })
+    .select('*')
+    .single();
+  return { data, error, local: false };
+}
+
+export async function deleteOrganizerTaskComment(id, comment = null) {
+  if (!id) return { error: new Error('ID komentarza jest wymagane.'), local: false };
+  if (!isSupabaseConfigured || comment?.localId) {
+    writeLocal(LOCAL_COMMENTS_KEY, readLocal(LOCAL_COMMENTS_KEY).filter((row) => String(row.id ?? row.localId) !== String(id)));
+    return { error: null, local: true };
+  }
+  const { error } = await supabase.from('organizer_task_comments').delete().eq('id', id);
   return { error, local: false };
 }
 

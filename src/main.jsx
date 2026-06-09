@@ -69,9 +69,12 @@ import {
 import {
   addOrganizerCategory,
   DEFAULT_ORGANIZER_CATEGORIES,
+  createOrganizerTaskComment,
   deleteOrganizerCategory,
+  deleteOrganizerTaskComment,
   deleteOrganizerTask,
   fetchOrganizerCategories,
+  fetchOrganizerTaskComments,
   fetchOrganizerTasks,
   createOrganizerTask,
   ORGANIZER_TASK_PRIORITIES,
@@ -549,7 +552,7 @@ const modules = [
   { id: 'equipment', label: 'Sprzęt', icon: Package },
   { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList },
   { id: 'service', label: 'Serwis', icon: Wrench },
-  { id: 'projects', label: 'Projekty', icon: Briefcase },
+  { id: 'projects', label: 'Zadania i projekty', icon: Briefcase },
   { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
   { id: 'organizer', label: 'Organizer', icon: CheckCircle2 },
   { id: 'settings', label: 'Ustawienia', icon: Settings }
@@ -4471,6 +4474,8 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
 }
 const CALENDAR_VIEW_STORAGE_KEY = 'fixer-calendar-view';
 const CALENDAR_SOURCES_STORAGE_KEY = 'fixer-calendar-sources';
+const CALENDAR_ACTIVE_SOURCES_STORAGE_KEY = 'fixer.calendar.activeSources';
+const CALENDAR_SOURCE_SETTINGS_STORAGE_KEY = 'fixer.calendar.sourceSettings';
 const CALENDAR_SOURCES = [
   { id: 'organizer', label: 'Organizer' },
   { id: 'projects', label: 'Projekty' },
@@ -4478,6 +4483,13 @@ const CALENDAR_SOURCES = [
   { id: 'service', label: 'Serwis' },
   { id: 'manual', label: 'Ręczne' }
 ];
+const DEFAULT_CALENDAR_SOURCE_COLORS = {
+  organizer: '#3b82f6',
+  projects: '#6366f1',
+  rentals: '#0ea5e9',
+  service: '#8b5cf6',
+  manual: '#14b8a6'
+};
 const CALENDAR_VIEWS = [
   { id: 'day', label: 'Dzień', icon: Clock },
   { id: 'week', label: 'Tydzień', icon: Columns3 },
@@ -4495,11 +4507,45 @@ const CALENDAR_EXPORT_COLUMNS = [
 ];
 
 function getCalendarSettings() {
-  const defaultSources = Object.fromEntries(CALENDAR_SOURCES.map((source) => [source.id, true]));
+  const defaultSources = getDefaultCalendarSources();
+  const activeSources = getStoredJson(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY, null);
+  const legacySources = getStoredJson(CALENDAR_SOURCES_STORAGE_KEY, null);
   return {
     view: localStorage.getItem(CALENDAR_VIEW_STORAGE_KEY) || 'week',
-    sources: { ...defaultSources, ...getStoredJson(CALENDAR_SOURCES_STORAGE_KEY, defaultSources) }
+    sources: { ...defaultSources, ...(activeSources ?? legacySources ?? {}) },
+    sourceSettings: getCalendarSourceSettings()
   };
+}
+
+function getCalendarSourceSettings() {
+  const saved = getStoredJson(CALENDAR_SOURCE_SETTINGS_STORAGE_KEY, {});
+  return Object.fromEntries(CALENDAR_SOURCES.map((source) => {
+    const current = saved?.[source.id] ?? {};
+    return [source.id, {
+      sourceId: source.id,
+      label: source.label,
+      enabledByDefault: current.enabledByDefault !== false,
+      color: current.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] || '#64748b'
+    }];
+  }));
+}
+
+function saveCalendarSourceSettings(settings) {
+  const normalized = Object.fromEntries(CALENDAR_SOURCES.map((source) => {
+    const current = settings?.[source.id] ?? {};
+    return [source.id, {
+      sourceId: source.id,
+      label: source.label,
+      enabledByDefault: current.enabledByDefault !== false,
+      color: current.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] || '#64748b'
+    }];
+  }));
+  localStorage.setItem(CALENDAR_SOURCE_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function getDefaultCalendarSources(settings = getCalendarSourceSettings()) {
+  return Object.fromEntries(CALENDAR_SOURCES.map((source) => [source.id, settings?.[source.id]?.enabledByDefault !== false]));
 }
 
 function toCalendarDate(value) {
@@ -4559,14 +4605,14 @@ function formatCalendarRange(anchorDate, view) {
   return `${start.toLocaleDateString('pl-PL', { day: '2-digit', month: 'short' })} - ${last.toLocaleDateString('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' })}`;
 }
 
-function getCalendarEventColor(event, statusColors = getStatusColors()) {
+function getCalendarEventColor(event, statusColors = getStatusColors(), sourceSettings = getCalendarSourceSettings()) {
   const statusKey = String(event.statusLabel ?? '').toLowerCase();
   if (statusColors[statusKey]) return statusColors[statusKey];
-  if (event.source === 'rentals') return statusColors['aktywne'] ?? '#3b82f6';
-  if (event.source === 'service') return statusColors['serwis'] ?? '#6366f1';
-  if (event.source === 'organizer') return statusColors['do zrobienia'] ?? '#3b82f6';
-  if (event.source === 'projects') return statusColors['planowany'] ?? '#6366f1';
-  return event.color || '#14b8a6';
+  if (event.source === 'rentals') return statusColors['aktywne'] ?? sourceSettings?.rentals?.color ?? '#3b82f6';
+  if (event.source === 'service') return statusColors['serwis'] ?? sourceSettings?.service?.color ?? '#6366f1';
+  if (event.source === 'organizer') return statusColors['do zrobienia'] ?? sourceSettings?.organizer?.color ?? '#3b82f6';
+  if (event.source === 'projects') return statusColors['planowany'] ?? sourceSettings?.projects?.color ?? '#6366f1';
+  return event.color || sourceSettings?.[event.source]?.color || '#14b8a6';
 }
 
 function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTaskRows = [], rentalsRows = [], serviceRows = [], manualRows = [] }) {
@@ -4781,6 +4827,8 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   const [view, setView] = useState(CALENDAR_VIEWS.some((item) => item.id === settings.view) ? settings.view : 'week');
   const [anchorDate, setAnchorDate] = useState(getLocalIsoDate());
   const [sources, setSources] = useState(settings.sources);
+  const [sourceSettings, setSourceSettings] = useState(settings.sourceSettings);
+  const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
   const [filters, setFilters] = useStoredState('fixer-calendar-filters', { type: 'all', status: 'all' });
   const [organizerRows, setOrganizerRows] = useState([]);
   const [rentalsRows, setRentalsRows] = useState([]);
@@ -4819,6 +4867,31 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   useEffect(() => { loadCalendar(); }, []);
 
   useEffect(() => {
+    const onStorage = (event) => {
+      if (event.key !== CALENDAR_SOURCE_SETTINGS_STORAGE_KEY) return;
+      const nextSettings = getCalendarSourceSettings();
+      setSourceSettings(nextSettings);
+      if (!localStorage.getItem(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY)) setSources(getDefaultCalendarSources(nextSettings));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  useEffect(() => {
+    if (!sourceDropdownOpen) return undefined;
+    const close = (event) => {
+      if (event.type === 'keydown' && event.key !== 'Escape') return;
+      setSourceDropdownOpen(false);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', close);
+    };
+  }, [sourceDropdownOpen]);
+
+  useEffect(() => {
     if (dashboardIntent?.type !== 'calendar') return;
     if (dashboardIntent.eventId) setPendingOpenCalendarEventId(dashboardIntent.eventId);
     onConsumeDashboardIntent?.();
@@ -4838,7 +4911,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   const toggleSource = (sourceId) => {
     setSources((current) => {
       const next = { ...current, [sourceId]: !current[sourceId] };
-      localStorage.setItem(CALENDAR_SOURCES_STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
   };
@@ -4899,7 +4972,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   };
 
   const renderEvent = (event) => {
-    const color = getCalendarEventColor(event, statusColors);
+    const color = getCalendarEventColor(event, statusColors, sourceSettings);
     return <button key={event.id} type="button" className={`calendar-event calendar-event-${event.source}`} style={{ '--event-color': color }} onClick={() => openEvent(event)} title={`${event.sourceLabel}: ${event.title}`}>
       <span>{event.title}</span>
       <small>{event.typeLabel}</small>
@@ -4914,7 +4987,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
       const outsideMonth = view === 'month' && day.getMonth() !== (toCalendarDate(anchorDate) ?? new Date()).getMonth();
       return <div key={toIsoDateValue(day)} className={`calendar-day-cell ${isSameCalendarDay(day, new Date()) ? 'today' : ''} ${outsideMonth ? 'outside-month' : ''}`} onDoubleClick={() => setNewEventDate(toIsoDateValue(day))}>
         <div className="calendar-day-head"><strong>{day.toLocaleDateString('pl-PL', { weekday: view === 'month' ? 'short' : 'long' })}</strong><span>{day.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })}</span></div>
-        <div className="calendar-day-events">{visibleDayEvents.map(renderEvent)}{hiddenDayEvents > 0 && <button type="button" className="calendar-more-events" onClick={() => openDay(day)}>+{hiddenDayEvents} więcej</button>}{!dayEvents.length && <span className="calendar-empty-slot">Dwuklik</span>}</div>
+        <div className="calendar-day-events">{visibleDayEvents.map(renderEvent)}{hiddenDayEvents > 0 && <button type="button" className="calendar-more-events" onClick={() => openDay(day)}>+{hiddenDayEvents} więcej</button>}{!dayEvents.length && <span className="calendar-empty-slot">+ Dodaj</span>}</div>
       </div>;
     })}
   </div>;
@@ -4931,28 +5004,50 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     {!visibleEvents.length && <EmptyState title="Brak wydarzeń w wybranym zakresie." description="Dwuklik w widoku dnia, tygodnia lub miesiąca doda wydarzenie ręczne." />}
   </div>;
 
+  const activeSourceCount = CALENDAR_SOURCES.filter((source) => sources[source.id] !== false).length;
+  const sourceSummary = activeSourceCount === CALENDAR_SOURCES.length ? 'Źródła: wszystkie' : `Źródła: ${activeSourceCount}/${CALENDAR_SOURCES.length}`;
+
   return <div className="calendar-page">
     <section className="panel calendar-toolbar-panel">
       <div className="calendar-toolbar">
-        <div className="calendar-nav">
-          <ButtonSecondary onClick={() => move(-1)}>‹</ButtonSecondary>
-          <ButtonPrimary onClick={() => setAnchorDate(getLocalIsoDate())}>Dzisiaj</ButtonPrimary>
-          <ButtonSecondary onClick={() => move(1)}>›</ButtonSecondary>
-          <ButtonPrimary onClick={() => setNewEventDate(getLocalIsoDate())}><Plus size={16} />Nowe wydarzenie</ButtonPrimary>
-          <strong>{formatCalendarRange(anchorDate, view)}</strong>
+        <div className="calendar-toolbar-left">
+          <div className="calendar-nav">
+            <div className="calendar-nav-controls">
+              <ButtonSecondary onClick={() => move(-1)} aria-label="Poprzedni zakres">‹</ButtonSecondary>
+              <ButtonPrimary onClick={() => setAnchorDate(getLocalIsoDate())}>Dzisiaj</ButtonPrimary>
+              <ButtonSecondary onClick={() => move(1)} aria-label="Następny zakres">›</ButtonSecondary>
+            </div>
+            <strong>{formatCalendarRange(anchorDate, view)}</strong>
+          </div>
+          <ButtonPrimary className="calendar-new-event-button" onClick={() => setNewEventDate(getLocalIsoDate())}><Plus size={16} />Nowe wydarzenie</ButtonPrimary>
         </div>
-        <div className="calendar-view-switch">{CALENDAR_VIEWS.map((item) => {
-          const Icon = item.icon;
-          return <button key={item.id} type="button" className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)} title={item.label}><Icon size={15} /><span>{item.label}</span></button>;
-        })}</div>
-        <div className="calendar-source-filters">{CALENDAR_SOURCES.map((source) => <label key={source.id}><input type="checkbox" checked={sources[source.id] !== false} onChange={() => toggleSource(source.id)} />{source.label}</label>)}</div>
-        <div className="calendar-event-filters">
-          <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.types.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
-          <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
+        <div className="calendar-toolbar-center">
+          <div className="calendar-view-switch">{CALENDAR_VIEWS.map((item) => {
+            const Icon = item.icon;
+            return <button key={item.id} type="button" className={view === item.id ? 'active' : ''} onClick={() => changeView(item.id)} title={item.label}><Icon size={15} /><span>{item.label}</span></button>;
+          })}</div>
         </div>
-        <div className="calendar-export-actions">
-          <ButtonSecondary onClick={() => exportTableToCsv(CALENDAR_EXPORT_TABLE_KEY, CALENDAR_EXPORT_COLUMNS, visibleEventRows)} disabled={!visibleEventRows.length}><Download size={15} />CSV</ButtonSecondary>
-          <ButtonSecondary onClick={() => exportTableToPdf('Kalendarz / agenda', CALENDAR_EXPORT_TABLE_KEY, CALENDAR_EXPORT_COLUMNS, visibleEventRows)} disabled={!visibleEventRows.length}><FileText size={15} />PDF</ButtonSecondary>
+        <div className="calendar-toolbar-right">
+          <div className="calendar-source-dropdown" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className={`calendar-source-trigger ${sourceDropdownOpen ? 'active' : ''}`} onClick={() => setSourceDropdownOpen((value) => !value)} aria-expanded={sourceDropdownOpen}>
+              {sourceSummary}<ChevronDown size={14} />
+            </button>
+            {sourceDropdownOpen && <div className="calendar-source-menu">
+              {CALENDAR_SOURCES.map((source) => <label key={source.id}>
+                <input type="checkbox" checked={sources[source.id] !== false} onChange={() => toggleSource(source.id)} />
+                <span className="calendar-source-dot" style={{ background: sourceSettings[source.id]?.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] }} />
+                {source.label}
+              </label>)}
+            </div>}
+          </div>
+          <div className="calendar-event-filters">
+            <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.types.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
+            <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
+          </div>
+          <div className="calendar-export-actions">
+            <ButtonSecondary onClick={() => exportTableToCsv(CALENDAR_EXPORT_TABLE_KEY, CALENDAR_EXPORT_COLUMNS, visibleEventRows)} disabled={!visibleEventRows.length}><Download size={15} />CSV</ButtonSecondary>
+            <ButtonSecondary onClick={() => exportTableToPdf('Kalendarz / agenda', CALENDAR_EXPORT_TABLE_KEY, CALENDAR_EXPORT_COLUMNS, visibleEventRows)} disabled={!visibleEventRows.length}><FileText size={15} />PDF</ButtonSecondary>
+          </div>
         </div>
       </div>
       {notice && <div className="notice calendar-notice">{notice}</div>}
@@ -5373,7 +5468,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   ].filter((tab) => !isNew || tab.id === 'data');
 
   return <>
-    <ResizableModalFrame storageKey="fixer-project-modal" defaultSize={{ width: 900, height: 640 }} minSize={{ width: 640, height: 480 }} eyebrow="Projekt" title={isNew ? 'Nowy projekt' : String(project?.name || project?.project_number || 'Projekt')} onClose={onClose}
+    <ResizableModalFrame storageKey="fixer-project-modal" defaultSize={{ width: 900, height: 640 }} minSize={{ width: 640, height: 480 }} eyebrow="Projekt" title={isNew ? 'Nowy projekt' : String(project?.name || 'Projekt bez nazwy')} onClose={onClose}
       footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary><ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{isNew ? 'Utwórz projekt' : 'Zapisz'}</ButtonPrimary></>}>
       {notice && <div className="notice">{notice}</div>}
       <div className="record-tabs" role="tablist">
@@ -5553,6 +5648,14 @@ function ProjectTaskInlineComments({ task, onChanged }) {
     onChanged?.();
   };
 
+  const removeComment = async (comment) => {
+    if (!window.confirm('Czy na pewno usunąć ten komentarz/postęp?')) return;
+    const result = await deleteTaskComment(comment.id ?? comment.localId, comment);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    await loadComments();
+    onChanged?.();
+  };
+
   return <div className="project-task-inline-comments">
     {notice && <div className="notice">{notice}</div>}
     <div className="project-comments-add">
@@ -5564,6 +5667,64 @@ function ProjectTaskInlineComments({ task, onChanged }) {
       {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
       {!loading && comments.map((comment) => <div className="project-comment-row" key={comment.id ?? comment.localId}>
         <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
+        <button type="button" className="project-comment-delete" onClick={() => removeComment(comment)} aria-label="Usuń komentarz/postęp" title="Usuń komentarz/postęp"><Trash2 size={13} /></button>
+        <p>{comment.body}</p>
+      </div>)}
+      {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
+    </div>
+  </div>;
+}
+
+function SimpleTaskComments({ task, onChanged }) {
+  const taskId = task?.id ?? task?.localId;
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [newCommentType, setNewCommentType] = useState('Komentarz');
+  const [notice, setNotice] = useState('');
+
+  const loadComments = async () => {
+    if (!taskId) return;
+    setLoading(true);
+    const result = await fetchOrganizerTaskComments(taskId);
+    if (result.error) setNotice(`Nie udało się pobrać komentarzy: ${result.error.message}`);
+    else setNotice('');
+    setComments(result.data ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadComments(); }, [taskId]);
+
+  const addComment = async () => {
+    if (!newComment.trim()) return;
+    const result = await createOrganizerTaskComment(taskId, newComment, newCommentType, demoUser.name);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    setNewComment('');
+    await loadComments();
+    onChanged?.();
+  };
+
+  const removeComment = async (comment) => {
+    if (!window.confirm('Czy na pewno usunąć ten komentarz/postęp?')) return;
+    const result = await deleteOrganizerTaskComment(comment.id ?? comment.localId, comment);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    await loadComments();
+    onChanged?.();
+  };
+
+  return <div className="simple-task-comments">
+    <div className="simple-task-comments-title">Komentarze / postęp <span>({comments.length})</span></div>
+    {notice && <div className="notice">{notice}</div>}
+    <div className="project-comments-add">
+      <AppSelect value={newCommentType} onChange={(event) => setNewCommentType(event.target.value)}>{PROJECT_TASK_COMMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</AppSelect>
+      <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza lub postępu..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+      <button type="button" className="project-icon-action primary-action" onClick={addComment} disabled={!newComment.trim()} aria-label="Dodaj komentarz" title="Dodaj komentarz"><Plus size={15} /></button>
+    </div>
+    <div className="project-comments-list">
+      {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
+      {!loading && comments.map((comment) => <div className="project-comment-row" key={comment.id ?? comment.localId}>
+        <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
+        <button type="button" className="project-comment-delete" onClick={() => removeComment(comment)} aria-label="Usuń komentarz/postęp" title="Usuń komentarz/postęp"><Trash2 size={13} /></button>
         <p>{comment.body}</p>
       </div>)}
       {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
@@ -5573,6 +5734,7 @@ function ProjectTaskInlineComments({ task, onChanged }) {
 
 function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onRefreshProject }) {
   const projectId = project?.id ?? project?.localId;
+  const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const [tasks, setTasks] = useState([]);
   const [sections, setSections] = useState([]);
   const [commentCounts, setCommentCounts] = useState({});
@@ -5615,6 +5777,13 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   const unsectionedTasks = displayTasks.filter((task) => !task.section_id);
 
   const openNewTask = (sectionId = null) => {
+    if (sectionId) {
+      setCollapsedSections((current) => {
+        const next = new Set(current);
+        next.delete(String(sectionId));
+        return next;
+      });
+    }
     setEditingTask(sectionId ? { section_id: sectionId, project_id: projectId } : { project_id: projectId });
     setTaskEditorOpen(true);
   };
@@ -5738,7 +5907,8 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     <div className="project-details-header">
       <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
       <div>
-        <strong>{project?.name || project?.project_number || 'Wybierz projekt'}</strong>
+        <span className="project-details-type">Projekt</span>
+        <strong>{project ? projectTitle : 'Wybierz projekt'}</strong>
         {project && <span>{project.status || '—'} · Termin: {project.due_date || 'brak'}</span>}
       </div>
     </div>
@@ -5760,6 +5930,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
               <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection(sid)}>
                 <span>{sectionCollapsed ? '▸' : '▾'}</span><strong>{section.name}</strong><em>({sectionTasks.length})</em>
               </button>
+              <button type="button" className="project-detail-section-action" onClick={(event) => { event.stopPropagation(); openNewTask(sid); }} aria-label={`Dodaj zadanie do sekcji ${section.name}`} title="Dodaj zadanie do sekcji"><Plus size={13} /></button>
               <button type="button" className="project-detail-section-delete" onClick={(event) => { event.stopPropagation(); removeSection(section, sectionTasks); }} aria-label={`Usuń sekcję ${section.name}`} title="Usuń sekcję"><Trash2 size={13} /></button>
             </div>
             {!sectionCollapsed && <div className="project-detail-task-list">{sectionTasks.map(renderTask)}{!sectionTasks.length && <div className="project-detail-empty">Brak zadań.</div>}</div>}
@@ -5784,15 +5955,64 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   </aside>;
 }
 
+function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onEditTask, onStatusChange, onChanged }) {
+  const done = Boolean(task?.archived) || ORGANIZER_TERMINAL_STATUSES.includes(task?.status);
+  const title = String(task?.title ?? '').trim() || 'Zadanie bez tytułu';
+
+  if (collapsed) {
+    return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /><span>Szczegóły</span></button>
+    </aside>;
+  }
+
+  return <aside className="project-details-panel simple-task-details-panel" style={{ width: `${width}px` }}>
+    <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
+    <div className="project-details-header">
+      <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
+      <div>
+        <span className="project-details-type">Zadanie</span>
+        <strong>{task ? title : 'Wybierz zadanie'}</strong>
+        {task && <span>{task.status || '—'} · Termin: {task.due_date || 'brak'}</span>}
+      </div>
+    </div>
+    {!task && <EmptyState title="Wybierz zadanie lub projekt z listy." />}
+    {task && <div className="project-details-body">
+      <div className="project-details-toolbar">
+        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => onStatusChange(task, done ? ORGANIZER_TASK_STATUSES[0] : 'Zrobione')} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
+          {done && <CheckCircle2 size={16} />}
+        </button>
+        <button type="button" className="project-icon-action" onClick={() => onEditTask(task)} aria-label="Edytuj zadanie" title="Edytuj zadanie">✎</button>
+      </div>
+      <div className={`simple-task-details-card ${done ? 'is-done' : ''}`}>
+        <strong>{title}</strong>
+        <dl>
+          <div><dt>Status</dt><dd>{task.status || '—'}</dd></div>
+          <div><dt>Priorytet</dt><dd>{task.priority || '—'}</dd></div>
+          <div><dt>Termin</dt><dd>{task.due_date || 'brak'}</dd></div>
+          <div><dt>Przypomnienie</dt><dd>{task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'brak'}</dd></div>
+          {task.category && <div><dt>Kategoria</dt><dd>{task.category}</dd></div>}
+          {task.linked_label && <div><dt>Powiązanie</dt><dd>{task.linked_label}</dd></div>}
+        </dl>
+        <p>{task.description || 'Brak opisu.'}</p>
+      </div>
+      <SimpleTaskComments task={task} onChanged={onChanged} />
+    </div>}
+  </aside>;
+}
+
 function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
+  const [organizerRows, setOrganizerRows] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [filters, setFilters] = useStoredState('fixer-projects-filters', { search: '', status: '', priority: '' });
+  const [filters, setFilters] = useStoredState('fixer-projects-filters', { search: '', type: 'all', status: '', priority: '' });
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const [editingSimpleTask, setEditingSimpleTask] = useState(null);
+  const [categories, setCategories] = useState(DEFAULT_ORGANIZER_CATEGORIES);
   const [pendingOpenProjectId, setPendingOpenProjectId] = useState(null);
   const [selectedProjectKey, setSelectedProjectKey] = useState(() => localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY));
   const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedProjectDetailsCollapsed);
@@ -5801,10 +6021,13 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   const loadData = async () => {
     setLoading(true);
-    const [projectsResult, clientsResult] = await Promise.all([fetchProjects(), fetchClients()]);
+    const [projectsResult, clientsResult, tasksResult, catsResult] = await Promise.all([fetchProjects(), fetchClients(), fetchOrganizerTasks(), fetchOrganizerCategories()]);
     setRows(projectsResult.data ?? []);
     setClients(clientsResult.data ?? []);
+    setOrganizerRows(tasksResult.data ?? []);
+    setCategories((catsResult.data ?? []).map((item) => item.name).filter(Boolean));
     if (projectsResult.error) setNotice(`Nie udało się pobrać projektów: ${humanizeError(projectsResult.error)}`);
+    else if (tasksResult.error) setNotice(`Nie udało się pobrać prostych zadań: ${humanizeError(tasksResult.error)}`);
     setLoading(false);
   };
 
@@ -5834,18 +6057,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const activeRows = rows.filter((r) => !r.archived);
   const historyRows = rows.filter((r) => r.archived);
 
-  const filterRows = (source) => source.filter((r) => {
-    const q = (filters.search ?? '').toLowerCase().trim();
-    if (q && !`${r.name} ${r.project_number} ${r.clients?.name ?? ''} ${r.description}`.toLowerCase().includes(q)) return false;
-    if (filters.status && r.status !== filters.status) return false;
-    if (filters.priority && r.priority !== filters.priority) return false;
-    return true;
-  });
-
-  const filteredActive = filterRows(activeRows);
-  const filteredHistory = filterRows(historyRows);
-
   const saveProject = async (form) => {
+    if (!String(form.name ?? '').trim()) { setNotice('Nazwa projektu jest wymagana'); return; }
     const projectId = form.id ?? form.localId;
     let result;
     if (projectId) {
@@ -5894,21 +6107,70 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, ...payload, ...(result.data ?? {}) } : row));
   };
 
+  const setProjectPriority = async (project, nextPriority) => {
+    if (!project || nextPriority === project.priority) return;
+    const projectId = project.id ?? project.localId;
+    const result = await updateProject(projectId, { ...project, priority: nextPriority });
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany priorytetu projektu')); return; }
+    setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, priority: nextPriority, ...(result.data ?? {}) } : row));
+  };
+
+  const saveSimpleTask = async (task) => {
+    if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
+    const result = task.id || task.localId
+      ? await updateOrganizerTask(task.id ?? task.localId, task)
+      : await createOrganizerTask(task);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
+    setTaskEditorOpen(false);
+    setEditingSimpleTask(null);
+    await loadData();
+  };
+
+  const setSimpleTaskStatus = async (task, nextStatus) => {
+    if (!task || nextStatus === task.status) return;
+    const done = ORGANIZER_TERMINAL_STATUSES.includes(nextStatus);
+    const payload = {
+      ...task,
+      status: nextStatus,
+      archived: done,
+      completed_date: done ? (task.completed_date || getLocalIsoDate()) : null
+    };
+    const result = await updateOrganizerTask(task.id ?? task.localId, payload);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany statusu zadania')); return; }
+    setOrganizerRows((current) => current.map((row) => String(row.id ?? row.localId) === String(task.id ?? task.localId) ? { ...row, ...payload, ...(result.data ?? {}) } : row));
+  };
+
+  const setSimpleTaskPriority = async (task, nextPriority) => {
+    if (!task || nextPriority === task.priority) return;
+    const result = await updateOrganizerTask(task.id ?? task.localId, { ...task, priority: nextPriority });
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany priorytetu zadania')); return; }
+    setOrganizerRows((current) => current.map((row) => String(row.id ?? row.localId) === String(task.id ?? task.localId) ? { ...row, priority: nextPriority, ...(result.data ?? {}) } : row));
+  };
+
+  const deleteSimpleTask = async (task) => {
+    if (!window.confirm(`Usunąć zadanie "${task.title}"?`)) return;
+    const result = await deleteOrganizerTask(task.id ?? task.localId, task);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania zadania')); return; }
+    await loadData();
+  };
+
   const openNewProject = () => { setEditingProject(null); setEditorOpen(true); };
   const openProject = (project) => { setEditingProject(project); setEditorOpen(true); };
+  const openNewSimpleTask = () => { setEditingSimpleTask(null); setTaskEditorOpen(true); };
+  const openSimpleTask = (task) => { setEditingSimpleTask(task); setTaskEditorOpen(true); };
 
   const activeColumns = [
-    { key: 'project_number', label: 'Numer' },
-    { key: 'name', label: 'Nazwa' },
-    { key: 'client_name', label: 'Klient' },
-    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_STATUSES} onStatusChange={(status) => setProjectStatus(row._project ?? row, status)} /> },
-    { key: 'priority', label: 'Priorytet' },
+    { key: 'type_label', label: 'Typ', align: 'center', renderCell: (row) => <span className={`work-type-pill ${row._workType}`}>{row.type_label}</span> },
+    { key: 'displayTitle', label: 'Nazwa', renderCell: (row) => <span className={row._workType === 'task' && row._source?.archived ? 'work-title-done' : ''}>{row.displayTitle}</span> },
+    { key: 'client_name', label: 'Klient / powiązanie' },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={row._workType === 'project' ? PROJECT_STATUSES : ORGANIZER_TASK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => <ServiceStatusCell value={row.priority} statuses={row._workType === 'project' ? PROJECT_PRIORITIES : ORGANIZER_TASK_PRIORITIES} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> },
     { key: 'due_date', label: 'Termin' }
   ];
 
   const historyColumns = [
     { key: 'project_number', label: 'Numer' },
-    { key: 'name', label: 'Nazwa' },
+    { key: 'displayTitle', label: 'Nazwa' },
     { key: 'client_name', label: 'Klient' },
     { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_STATUSES} onStatusChange={(status) => setProjectStatus(row._project ?? row, status)} /> },
     { key: 'priority', label: 'Priorytet' },
@@ -5916,20 +6178,59 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     { key: 'completed_display', label: 'Zakończono' }
   ];
 
-  const mapRow = (r) => ({
+  const mapProjectRow = (r) => ({
     ...r,
     _project: r,
+    _source: r,
+    _workType: 'project',
+    itemType: 'project',
+    work_key: `project:${r.id ?? r.localId}`,
+    type_label: 'Projekt',
+    displayTitle: String(r.name ?? '').trim() || 'Projekt bez nazwy',
+    title: String(r.name ?? '').trim() || 'Projekt bez nazwy',
     client_name: r.clients?.name ?? '',
     completed_display: r.completed_at ? formatDashboardDate(r.completed_at) : '—'
   });
 
-  const activeTableRows = filteredActive.map(mapRow);
-  const historyTableRows = filteredHistory.map(mapRow);
-  const selectedProject = rows.find((row) => String(row.id ?? row.localId) === String(selectedProjectKey)) ?? activeTableRows[0] ?? null;
+  const mapTaskRow = (task) => ({
+    ...task,
+    _task: task,
+    _source: task,
+    _workType: 'task',
+    itemType: 'task',
+    work_key: `task:${task.id ?? task.localId}`,
+    type_label: 'Zadanie',
+    displayTitle: String(task.title ?? '').trim() || 'Zadanie bez tytułu',
+    title: String(task.title ?? '').trim() || 'Zadanie bez tytułu',
+    client_name: task.linked_label || task.category || '',
+    completed_display: task.completed_date ? formatDashboardDate(task.completed_date) : '—'
+  });
 
-  const selectProject = (project) => {
-    setSelectedProjectKey(String(project.id ?? project.localId));
+  const workRows = [...activeRows.map(mapProjectRow), ...organizerRows.map(mapTaskRow)];
+  const filterWorkRows = (source) => source.filter((row) => {
+    const q = (filters.search ?? '').toLowerCase().trim();
+    if ((filters.type ?? 'all') !== 'all' && row._workType !== filters.type) return false;
+    if (filters.status && row.status !== filters.status) return false;
+    if (filters.priority && row.priority !== filters.priority) return false;
+    if (q && !`${row.displayTitle} ${row.project_number ?? ''} ${row.client_name ?? ''} ${row.description ?? ''} ${row.status ?? ''} ${row.priority ?? ''}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const activeTableRows = filterWorkRows(workRows);
+  const historyTableRows = historyRows.map(mapProjectRow);
+  const selectedWork = activeTableRows.find((row) => row.work_key === selectedProjectKey)
+    ?? activeTableRows.find((row) => selectedProjectKey && String(row.id ?? row.localId) === String(selectedProjectKey))
+    ?? activeTableRows[0]
+    ?? null;
+  const selectedProject = selectedWork?._workType === 'project' ? selectedWork._source : null;
+  const selectedSimpleTask = selectedWork?._workType === 'task' ? selectedWork._source : null;
+
+  const selectWorkItem = (row) => {
+    setSelectedProjectKey(row.work_key ?? `${row._workType}:${row.id ?? row.localId}`);
   };
+
+  const openWorkItem = (row) => row._workType === 'project' ? openProject(row._source) : openSimpleTask(row._source);
+  const deleteWorkItem = (row) => row._workType === 'project' ? handleDelete(row._source) : deleteSimpleTask(row._source);
 
   const startDetailsResize = (event) => {
     event.preventDefault();
@@ -5953,42 +6254,52 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''}`}>
     <div className="projects-workspace">
       <div className="projects-list-pane">
-        <AppSection title="Projekty">
+        <AppSection title="Zadania i projekty">
           <div className="module-actions">
-            <AppButton variant="primary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Nowy projekt</AppButton>
+            <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Proste zadanie</AppButton>
+            <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>
-            <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
+            <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania i projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
           </div>
           <div className="module-filters project-filter-bar">
+            <div className="work-type-switch" role="group" aria-label="Typ wpisu">
+              {[['all', 'Wszystko'], ['task', 'Zadania'], ['project', 'Projekty']].map(([value, label]) => (
+                <button key={value} type="button" className={(filters.type ?? 'all') === value ? 'active' : ''} onClick={() => setFilters((current) => ({ ...current, type: value }))}>{label}</button>
+              ))}
+            </div>
             <AppInput placeholder="Szukaj..." value={filters.search ?? ''} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
             <AppSelect value={filters.status ?? ''} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
               <option value="">Wszystkie statusy</option>
               {PROJECT_STATUSES.filter((s) => !PROJECT_TERMINAL_STATUSES.includes(s)).map((s) => <option key={s}>{s}</option>)}
+              {ORGANIZER_TASK_STATUSES.filter((s) => !PROJECT_STATUSES.includes(s)).map((s) => <option key={s}>{s}</option>)}
             </AppSelect>
             <AppSelect value={filters.priority ?? ''} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
               <option value="">Wszystkie priorytety</option>
-              {PROJECT_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+              {[...new Set([...PROJECT_PRIORITIES, ...ORGANIZER_TASK_PRIORITIES])].map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
           </div>
           {notice && <div className="notice">{notice}</div>}
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
-            onRowClick={selectProject} onOpen={openProject} onEdit={openProject} onDelete={handleDelete} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
+            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
         </AppSection>
 
         <AppSection title={<button type="button" className="history-toggle-button" onClick={() => setHistoryCollapsed((v) => !v)}>
           Historia projektów {historyCollapsed ? '▸' : '▾'} <span className="history-count">({historyRows.length})</span>
         </button>}>
           {!historyCollapsed && <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
-            onRowClick={selectProject} onOpen={openProject} onEdit={openProject} onDelete={handleDelete} openLabel="Otwórz"
+            onRowClick={selectWorkItem} onOpen={openProject} onEdit={openProject} onDelete={handleDelete} openLabel="Otwórz"
             customRowActions={[{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }]}
           />}
         </AppSection>
       </div>
-      <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} />
+      {selectedSimpleTask
+        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onChanged={loadData} />
+        : <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} />}
     </div>
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
+    {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
   </div>;
 }
 
@@ -6020,23 +6331,23 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
     onClose={onClose}
     footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
   >
-    <div className="organizer-task-strip">
-      <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{ORGANIZER_TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></FormField>
-      <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(e) => update('priority', e.target.value)}>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></FormField>
-      <FormField label="Termin wykonania"><AppInput type="date" value={form.due_date} onChange={(e) => update('due_date', e.target.value)} /></FormField>
-      <FormField label="Przypomnienie"><AppInput type="datetime-local" value={form.reminder_at} onChange={(e) => update('reminder_at', e.target.value)} /></FormField>
-    </div>
-    <div className="organizer-task-fields">
+    <div className="organizer-task-fields organizer-task-compact-form">
       <FormField label="Tytuł *"><AppInput value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Co trzeba zrobić?" /></FormField>
-      <div className="organizer-task-meta-row">
-        <FormField label="Kategoria"><AppSelect value={form.category} onChange={(e) => update('category', e.target.value)}><option value="">Brak kategorii</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></FormField>
-        <FormField label="Powiązanie z modułem"><AppSelect value={form.linked_module} onChange={(e) => update('linked_module', e.target.value)}><option value="">Brak</option><option value="service">Serwis</option><option value="rental">Wypożyczenie</option><option value="client">Klient</option><option value="equipment">Sprzęt</option></AppSelect></FormField>
-        {form.linked_module && <FormField label="Opis powiązania"><AppInput value={form.linked_label} onChange={(e) => update('linked_label', e.target.value)} placeholder="np. numer zlecenia" /></FormField>}
+      <FormField label="Opis"><AppTextarea value={form.description} onChange={(e) => update('description', e.target.value)} rows={3} placeholder="Opcjonalne szczegóły, notatki, instrukcje..." /></FormField>
+      <div className="organizer-task-meta-grid">
+        <div className="organizer-task-meta-column">
+          <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{ORGANIZER_TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></FormField>
+          <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(e) => update('priority', e.target.value)}>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></FormField>
+          <FormField label="Kategoria"><AppSelect value={form.category} onChange={(e) => update('category', e.target.value)}><option value="">Brak kategorii</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></FormField>
+        </div>
+        <div className="organizer-task-meta-column">
+          <FormField label="Termin wykonania"><AppInput type="date" value={form.due_date} onChange={(e) => update('due_date', e.target.value)} /></FormField>
+          <FormField label="Przypomnienie"><AppInput type="datetime-local" value={form.reminder_at} onChange={(e) => update('reminder_at', e.target.value)} /></FormField>
+          <FormField label="Powiązanie z modułem"><AppSelect value={form.linked_module} onChange={(e) => update('linked_module', e.target.value)}><option value="">Brak</option><option value="service">Serwis</option><option value="rental">Wypożyczenie</option><option value="client">Klient</option><option value="equipment">Sprzęt</option></AppSelect></FormField>
+        </div>
       </div>
+      {form.linked_module && <FormField label="Opis powiązania"><AppInput value={form.linked_label} onChange={(e) => update('linked_label', e.target.value)} placeholder="np. numer zlecenia" /></FormField>}
     </div>
-    <SectionPanel className="service-record-section service-fault-section" title="Opis / notatka">
-      <FormField label="Opis"><AppTextarea value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="Opcjonalne szczegóły, notatki, instrukcje..." /></FormField>
-    </SectionPanel>
   </ResizableModalFrame>;
 }
 
@@ -6521,8 +6832,13 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     let active = true;
     fetchTablePreference(storageKey, defaultPreference).then(({ data }) => {
       if (!active || !data) return;
-      setVisibleColumns(data.visibleColumns);
-      setColumnOrder(data.columnOrder);
+      const availableKeys = columns.map((column) => column.key);
+      const orderedExisting = (data.columnOrder ?? []).filter((key) => availableKeys.includes(key));
+      const missingOrder = availableKeys.filter((key) => !orderedExisting.includes(key));
+      const visibleExisting = (data.visibleColumns ?? []).filter((key) => availableKeys.includes(key));
+      const missingVisible = columns.filter((column) => column.defaultVisible !== false && !visibleExisting.includes(column.key)).map((column) => column.key);
+      setVisibleColumns(visibleExisting.length ? [...visibleExisting, ...missingVisible] : availableKeys);
+      setColumnOrder([...orderedExisting, ...missingOrder]);
       setColumnWidths(data.columnWidths);
       setColumnAlignments(data.columnAlignments ?? {});
       setSortKey(data.sortKey ?? null);
@@ -6540,7 +6856,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     });
     setVisibleColumns((current) => {
       const next = current.filter((key) => availableKeys.includes(key));
-      return next.length ? next : availableKeys;
+      const missing = columns.filter((column) => column.defaultVisible !== false && !next.includes(column.key)).map((column) => column.key);
+      return next.length ? [...next, ...missing] : availableKeys;
     });
   }, [columnsSignature]);
 
@@ -7107,6 +7424,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList, description: 'Statusy wypożyczeń, zwrotów i domyślne okresy.' },
     { id: 'organizer', label: 'Organizer', icon: CheckCircle2, description: 'Kategorie zadań i konfiguracja Organizera.' },
     { id: 'projects', label: 'Projekty', icon: Briefcase, description: 'Kolory statusów projektów i numeracja.' },
+    { id: 'calendar', label: 'Kalendarz', icon: CalendarDays, description: 'Domyślna widoczność i kolory źródeł kalendarza.' },
     { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony PDF, numeracja, stopki i nagłówki.' },
     { id: 'backups', label: 'Kopie bezpieczeństwa', icon: Download, description: 'Pełny backup danych i eksporty CSV.' },
     { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, układ tabel, okna i preferencje pracy.' }
@@ -7161,6 +7479,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
   const [newOrganizerCategory, setNewOrganizerCategory] = useState('');
   const [editingOrganizerCategory, setEditingOrganizerCategory] = useState(null);
   const [editingOrganizerCategoryValue, setEditingOrganizerCategoryValue] = useState('');
+  const [calendarSourceSettings, setCalendarSourceSettings] = useState(getCalendarSourceSettings);
 
   const loadOrganizerSettings = async () => {
     const result = await fetchOrganizerCategories();
@@ -7194,6 +7513,25 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     const { error, local } = await deleteOrganizerCategory(item.id);
     if (error) { alert(`Nie udało się usunąć kategorii: ${error.message}`); return; }
     await loadOrganizerSettings();
+  };
+
+  const updateCalendarSourceSetting = (sourceId, field, value) => {
+    if (field === 'enabledByDefault') localStorage.removeItem(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY);
+    setCalendarSourceSettings((current) => saveCalendarSourceSettings({
+      ...current,
+      [sourceId]: { ...current[sourceId], [field]: value }
+    }));
+  };
+
+  const resetCalendarSourceSettings = () => {
+    const defaults = Object.fromEntries(CALENDAR_SOURCES.map((source) => [source.id, {
+      sourceId: source.id,
+      label: source.label,
+      enabledByDefault: true,
+      color: DEFAULT_CALENDAR_SOURCE_COLORS[source.id]
+    }]));
+    setCalendarSourceSettings(saveCalendarSourceSettings(defaults));
+    localStorage.removeItem(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY);
   };
 
   const resetOrganizerCategoryItems = async () => {
@@ -8293,6 +8631,41 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
         <div className="settings-card compact-admin-card">
           <h3>Numeracja projektów</h3>
           <p className="muted">Numerację projektów można skonfigurować w sekcji <strong>Dokumenty → Numeracja</strong>.</p>
+        </div>
+      </div>}
+
+      {activeSection === 'calendar' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid calendar-settings-grid">
+        <div className="settings-card compact-admin-card settings-dictionary-card calendar-source-settings-card">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div>
+              <h3>Źródła kalendarza</h3>
+              <p className="muted">Ustaw domyślną widoczność źródeł. To nie wyłącza powiadomień.</p>
+            </div>
+            <AppButton variant="secondary" size="sm" onClick={resetCalendarSourceSettings}><RotateCcw size={14} />Domyślne</AppButton>
+          </div>
+          <div className="calendar-source-settings-list">
+            {CALENDAR_SOURCES.map((source) => {
+              const settings = calendarSourceSettings[source.id] ?? {};
+              return <div className="calendar-source-settings-row" key={source.id}>
+                <div className="calendar-source-settings-name">
+                  <span className="calendar-source-dot" style={{ background: settings.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] }} />
+                  <strong>{source.label}</strong>
+                </div>
+                <label className="settings-check calendar-source-default-toggle">
+                  <input type="checkbox" checked={settings.enabledByDefault !== false} onChange={(event) => updateCalendarSourceSetting(source.id, 'enabledByDefault', event.target.checked)} />
+                  Widoczne domyślnie
+                </label>
+                <label className="calendar-source-color-field">
+                  Kolor
+                  <AppInput type="color" value={settings.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id]} onChange={(event) => updateCalendarSourceSetting(source.id, 'color', event.target.value)} />
+                </label>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div className="settings-card compact-admin-card">
+          <h3>Filtr roboczy</h3>
+          <p className="muted">Dropdown „Źródła” w Kalendarzu jest filtrem bieżącej pracy. Domyślne źródła z tej sekcji zostaną użyte, gdy nie ma zapisanego roboczego wyboru.</p>
         </div>
       </div>}
 

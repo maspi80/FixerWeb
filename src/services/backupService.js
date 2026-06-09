@@ -21,6 +21,7 @@ const BACKUP_TABLES = [
   'service_dictionaries',
   'organizer_categories',
   'organizer_tasks',
+  'organizer_task_comments',
   'calendar_events',
   'projects',
   'project_tasks',
@@ -33,6 +34,7 @@ const DELETE_ORDER = [
   'service_order_progress',
   'rental_items',
   'calendar_events',
+  'organizer_task_comments',
   'organizer_tasks',
   'project_task_comments',
   'project_tasks',
@@ -63,6 +65,7 @@ const INSERT_ORDER = [
   'service_order_progress',
   'service_order_attachments',
   'organizer_tasks',
+  'organizer_task_comments',
   'calendar_events',
   'project_tasks',
   'project_task_comments'
@@ -81,6 +84,7 @@ const SETTINGS_KEYS = [
   'fixer-service-dictionaries',
   'fixer-organizer-categories',
   'fixer-organizer-tasks',
+  'fixer-organizer-task-comments',
   'fixer-projects',
   'fixer-project-tasks',
   'fixer-project-task-sections',
@@ -88,6 +92,8 @@ const SETTINGS_KEYS = [
   'fixer-calendar-events',
   'fixer-calendar-view',
   'fixer-calendar-sources',
+  'fixer.calendar.sourceSettings',
+  'fixer.calendar.activeSources',
   'fixer-density',
   'fixer-color-theme',
   'fixer-sidebar'
@@ -315,6 +321,7 @@ function ensureReference(rows, field, allowedIds, message) {
 
 function validateBackupRelations(backup) {
   const tables = backup.tables ?? {};
+  if (!Object.prototype.hasOwnProperty.call(tables, 'organizer_task_comments')) tables.organizer_task_comments = [];
   BACKUP_TABLES.forEach((table) => ensureArrayTable(tables, table));
 
   REQUIRED_SETTINGS_KEYS.forEach((key) => {
@@ -327,6 +334,7 @@ function validateBackupRelations(backup) {
   const equipmentIds = new Set(tables.equipment.map((row) => String(row.id)).filter(Boolean));
   const rentalIds = new Set(tables.rentals.map((row) => String(row.id)).filter(Boolean));
   const serviceOrderIds = new Set(tables.service_orders.map((row) => String(row.id)).filter(Boolean));
+  const organizerTaskIds = new Set(tables.organizer_tasks.map((row) => String(row.id)).filter(Boolean));
 
   ensureReference(tables.rentals, 'client_id', clientIds, 'Backup zawiera wypożyczenie powiązane z nieistniejącym klientem.');
   ensureReference(tables.rental_items, 'rental_id', rentalIds, 'Backup zawiera pozycję wypożyczenia bez dokumentu źródłowego.');
@@ -336,6 +344,7 @@ function validateBackupRelations(backup) {
   ensureReference(tables.service_orders, 'equipment_id', equipmentIds, 'Backup zawiera zlecenie serwisowe powiązane z nieistniejącym sprzętem.');
   ensureReference(tables.service_order_progress, 'service_order_id', serviceOrderIds, 'Backup zawiera wpis postępu bez zlecenia serwisowego.');
   ensureReference(tables.service_order_attachments, 'service_order_id', serviceOrderIds, 'Backup zawiera załącznik bez zlecenia serwisowego.');
+  ensureReference(tables.organizer_task_comments, 'task_id', organizerTaskIds, 'Backup zawiera komentarz prostego zadania bez zadania źródłowego.');
 }
 
 export function validateBackupObject(backup) {

@@ -1066,6 +1066,7 @@ function getDashboardActivityKind(operation) {
 }
 
 const DASHBOARD_SETTINGS_STORAGE_KEY = 'fixer-dashboard-layout-v2';
+const DASHBOARD_DEFAULT_PANEL_LAYOUT = { columnPercent: 50, rowPercent: 50 };
 const DASHBOARD_ITEMS = [
   { id: 'overdueRentals', label: 'Zwroty po terminie', area: 'card', tone: 'rental-danger' },
   { id: 'todayReturns', label: 'Zwroty dzisiaj', area: 'card', tone: 'rental-today' },
@@ -1074,17 +1075,39 @@ const DASHBOARD_ITEMS = [
   { id: 'overdueTasksCard', label: 'Zaległe zadania', area: 'card', tone: 'task-danger' },
   { id: 'todayTasksCard', label: 'Zadania na dziś', area: 'card', tone: 'task-today' },
   { id: 'overdueProjectsCard', label: 'Projekty po terminie', area: 'card', tone: 'task-danger' },
-  { id: 'attentionPanel', label: 'Wymaga uwagi dziś', area: 'panel', tone: 'attention' },
+  { id: 'attentionPanel', label: 'Najważniejsze dziś', area: 'panel', tone: 'attention' },
   { id: 'todayTasks', label: 'Zadania do zrobienia', area: 'panel', tone: 'tasks' },
   { id: 'activeServices', label: 'Aktywne serwisy', area: 'panel', tone: 'service' },
   { id: 'activeRentalsPanel', label: 'Aktywne wypożyczenia', area: 'panel', tone: 'rental' }
 ];
 
+function isServiceWaitingForPickup(order) {
+  const status = normalizeStatusText(order?.status);
+  return ['gotowe', 'do odbioru', 'oczekuje na odbior', 'oczekuje na odbiór'].some((part) => status.includes(normalizeStatusText(part)));
+}
+
+function buildDashboardAttentionItem({ key, source, icon: Icon, tone, title, dueDate, label, priority, onClick }) {
+  const days = daysUntilDate(dueDate);
+  return {
+    key,
+    source,
+    Icon,
+    tone,
+    title,
+    dueDate,
+    label,
+    priority,
+    days: days ?? 999,
+    onClick
+  };
+}
+
 function getDefaultDashboardSettings() {
   return {
     visible: Object.fromEntries(DASHBOARD_ITEMS.map((item) => [item.id, true])),
     cardOrder: DASHBOARD_ITEMS.filter((item) => item.area === 'card').map((item) => item.id),
-    panelOrder: DASHBOARD_ITEMS.filter((item) => item.area === 'panel').map((item) => item.id)
+    panelOrder: ['todayTasks', 'attentionPanel', 'activeServices', 'activeRentalsPanel'],
+    panelLayout: { ...DASHBOARD_DEFAULT_PANEL_LAYOUT }
   };
 }
 
@@ -1096,10 +1119,24 @@ function normalizeDashboardSettings(settings) {
     const safe = Array.isArray(saved) ? saved : [];
     return [...safe.filter((id) => def.includes(id)), ...def.filter((id) => !safe.includes(id))];
   };
+  const normalizePercent = (value, fallback) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(68, Math.max(32, number));
+  };
+  const legacyPanelOrder = ['attentionPanel', 'todayTasks', 'activeServices', 'activeRentalsPanel'];
+  const savedPanelOrder = settings?.panelOrder;
+  const panelOrder = Array.isArray(savedPanelOrder) && savedPanelOrder.join('|') === legacyPanelOrder.join('|') && !settings?.panelLayout
+    ? defaults.panelOrder
+    : normalizeOrder(savedPanelOrder, defaults.panelOrder);
   return {
     visible,
     cardOrder: normalizeOrder(settings?.cardOrder, defaults.cardOrder),
-    panelOrder: normalizeOrder(settings?.panelOrder, defaults.panelOrder)
+    panelOrder,
+    panelLayout: {
+      columnPercent: normalizePercent(settings?.panelLayout?.columnPercent, defaults.panelLayout.columnPercent),
+      rowPercent: normalizePercent(settings?.panelLayout?.rowPercent, defaults.panelLayout.rowPercent)
+    }
   };
 }
 
@@ -1132,6 +1169,7 @@ function Dashboard({ onNavigate }) {
   const [notice, setNotice] = useState('');
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
   const [editMode, setEditMode] = useState(false);
+  const panelsGridRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -1187,6 +1225,35 @@ function Dashboard({ onNavigate }) {
 
   const resetDashboardLayout = () => setDashboardSettings(resetDashboardSettings());
 
+  const startPanelResize = (axis, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const grid = panelsGridRef.current;
+    if (!grid) return;
+    const rect = grid.getBoundingClientRect();
+    const onMouseMove = (moveEvent) => {
+      const nextPercent = axis === 'x'
+        ? ((moveEvent.clientX - rect.left) / rect.width) * 100
+        : ((moveEvent.clientY - rect.top) / rect.height) * 100;
+      const clamped = Math.min(68, Math.max(32, nextPercent));
+      updateDashboardSettings((current) => ({
+        ...current,
+        panelLayout: {
+          ...(current.panelLayout ?? DASHBOARD_DEFAULT_PANEL_LAYOUT),
+          [axis === 'x' ? 'columnPercent' : 'rowPercent']: clamped
+        }
+      }));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.classList.remove('resizing-dashboard-layout');
+    };
+    document.body.classList.add('resizing-dashboard-layout');
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
   const today = getLocalIsoDate();
   const activeRentals = rentalsRows.filter((rental) => rental.status !== 'returned');
   const overdueRentals = activeRentals.filter((rental) => getRentalOverdueDays(rental) > 0);
@@ -1194,6 +1261,7 @@ function Dashboard({ onNavigate }) {
   const activeServices = serviceRows.filter((order) => order.status !== 'Wydane');
   const overdueServices = activeServices.filter((order) => order.planned_date && String(order.planned_date).slice(0, 10) < today);
   const todayServices = activeServices.filter((order) => String(order.planned_date ?? '').slice(0, 10) === today);
+  const pickupServices = activeServices.filter(isServiceWaitingForPickup);
   const activeTasks = organizerRows.filter((task) => !task.archived);
   const overdueTasks = activeTasks.filter((task) => task.due_date && String(task.due_date).slice(0, 10) < today);
   const todayOrReminderTasks = activeTasks.filter((task) => {
@@ -1215,38 +1283,57 @@ function Dashboard({ onNavigate }) {
     overdueProjectsCard: { value: overdueProjects.length, isActive: overdueProjects.length > 0, target: ['projects', null] }
   };
 
+  const metricIcons = {
+    overdueRentals: Package,
+    todayReturns: Clock,
+    overdueServices: Wrench,
+    todayServices: CalendarDays,
+    overdueTasksCard: ClipboardList,
+    todayTasksCard: CheckCircle2,
+    overdueProjectsCard: Briefcase
+  };
+
   const orderedCards = (dashboardSettings.cardOrder ?? []).map((id) => {
     const meta = DASHBOARD_ITEMS.find((item) => item.id === id);
     const data = cardDataMap[id];
-    return meta && data ? { ...meta, ...data } : null;
+    const Icon = metricIcons[id] ?? LayoutDashboard;
+    return meta && data ? { ...meta, ...data, Icon } : null;
   }).filter(Boolean);
 
   const orderedPanels = (dashboardSettings.panelOrder ?? []).map((id) => DASHBOARD_ITEMS.find((item) => item.id === id)).filter(Boolean);
 
   const attentionItems = [
-    ...overdueRentals.slice(0, 4).map((r) => ({ tone: 'rental-danger', text: `${r.rental_number} — ${r.clients?.name ?? '—'}`, sub: `Po terminie ${getRentalOverdueDays(r)} ${getRentalOverdueDays(r) === 1 ? 'dzień' : 'dni'}`, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
-    ...todayReturns.slice(0, 3).map((r) => ({ tone: 'rental-today', text: `${r.rental_number} — ${r.clients?.name ?? '—'}`, sub: 'Zwrot planowany na dziś', onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
-    ...overdueServices.slice(0, 3).map((s) => ({ tone: 'service-danger', text: `${s.service_number} — ${s.customer_device_name || '—'}`, sub: 'Serwis po terminie', onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
-    ...todayServices.slice(0, 2).map((s) => ({ tone: 'service-today', text: `${s.service_number} — ${s.customer_device_name || '—'}`, sub: 'Termin serwisu dziś', onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
-    ...overdueTasks.slice(0, 2).map((t) => ({ tone: 'task-danger', text: t.title, sub: 'Zadanie zaległe', onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
-    ...todayOrReminderTasks.slice(0, 2).map((t) => ({ tone: 'task-today', text: t.title, sub: 'Przypomnienie na dziś', onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
-    ...overdueProjects.slice(0, 2).map((p) => ({ tone: 'task-danger', text: `${p.project_number ? p.project_number + ' — ' : ''}${p.name}`, sub: 'Projekt po terminie', onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) })),
-    ...todayProjects.slice(0, 2).map((p) => ({ tone: 'task-today', text: `${p.project_number ? p.project_number + ' — ' : ''}${p.name}`, sub: 'Termin projektu dziś', onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) }))
-  ].slice(0, 14);
+    ...overdueRentals.map((r) => buildDashboardAttentionItem({ key: `rental:${r.id ?? r.localId ?? r.rental_number}`, source: 'Wypożyczenie', icon: Package, tone: 'rental-danger', title: `${r.rental_number} — ${r.clients?.name ?? '—'}`, dueDate: r.planned_return_date, label: `Zwrot po terminie: ${getRentalOverdueDays(r)} ${getRentalOverdueDays(r) === 1 ? 'dzień' : 'dni'}`, priority: 10, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
+    ...overdueServices.map((s) => buildDashboardAttentionItem({ key: `service:${s.id ?? s.localId ?? s.service_number}`, source: 'Serwis', icon: Wrench, tone: 'service-danger', title: `${s.service_number} — ${s.customer_device_name || '—'}`, dueDate: s.planned_date, label: 'Serwis po terminie', priority: 20, onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
+    ...overdueTasks.map((t) => buildDashboardAttentionItem({ key: `task:${t.id ?? t.localId}`, source: 'Zadanie', icon: ClipboardList, tone: 'task-danger', title: t.title || 'Zadanie bez tytułu', dueDate: t.due_date, label: 'Zadanie po terminie', priority: 30, onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
+    ...overdueProjects.map((p) => buildDashboardAttentionItem({ key: `project:${p.id ?? p.localId ?? p.project_number}`, source: 'Projekt', icon: Briefcase, tone: 'project-danger', title: `${p.project_number ? p.project_number + ' — ' : ''}${p.name || 'Projekt bez nazwy'}`, dueDate: p.due_date, label: 'Projekt po terminie', priority: 40, onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) })),
+    ...todayReturns.map((r) => buildDashboardAttentionItem({ key: `rental:${r.id ?? r.localId ?? r.rental_number}`, source: 'Wypożyczenie', icon: Package, tone: 'rental-today', title: `${r.rental_number} — ${r.clients?.name ?? '—'}`, dueDate: r.planned_return_date, label: 'Zwrot sprzętu dzisiaj', priority: 50, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
+    ...todayServices.map((s) => buildDashboardAttentionItem({ key: `service:${s.id ?? s.localId ?? s.service_number}`, source: 'Serwis', icon: Wrench, tone: 'service-today', title: `${s.service_number} — ${s.customer_device_name || '—'}`, dueDate: s.planned_date, label: 'Termin serwisu dzisiaj', priority: 60, onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
+    ...pickupServices.map((s) => buildDashboardAttentionItem({ key: `service:${s.id ?? s.localId ?? s.service_number}`, source: 'Serwis', icon: Wrench, tone: 'service-pickup', title: `${s.service_number} — ${s.customer_device_name || '—'}`, dueDate: s.planned_date, label: 'Oczekuje na odbiór', priority: 70, onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
+    ...todayOrReminderTasks.map((t) => buildDashboardAttentionItem({ key: `task:${t.id ?? t.localId}`, source: 'Zadanie', icon: ClipboardList, tone: 'task-today', title: t.title || 'Zadanie bez tytułu', dueDate: t.due_date || t.reminder_at, label: t.due_date ? 'Zadanie na dziś' : 'Przypomnienie na dziś', priority: 80, onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
+    ...todayProjects.map((p) => buildDashboardAttentionItem({ key: `project:${p.id ?? p.localId ?? p.project_number}`, source: 'Projekt', icon: Briefcase, tone: 'project-today', title: `${p.project_number ? p.project_number + ' — ' : ''}${p.name || 'Projekt bez nazwy'}`, dueDate: p.due_date, label: 'Termin projektu dzisiaj', priority: 90, onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) }))
+  ].sort((left, right) => left.priority - right.priority || left.days - right.days || String(left.title).localeCompare(String(right.title), 'pl'))
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.key === item.key) === index)
+    .slice(0, 5);
 
-  const panelTitles = { attentionPanel: 'Wymaga uwagi dziś', activeServices: 'Aktywne serwisy', activeRentalsPanel: 'Aktywne wypożyczenia', todayTasks: 'Zadania do zrobienia' };
+  const panelTitles = { attentionPanel: 'Najważniejsze dziś', activeServices: 'Aktywne serwisy', activeRentalsPanel: 'Aktywne wypożyczenia', todayTasks: 'Zadania do zrobienia' };
+  const panelIcons = { attentionPanel: Bell, activeServices: Wrench, activeRentalsPanel: Package, todayTasks: ClipboardList };
   const panelActions = { activeServices: () => onNavigate('service', null), activeRentalsPanel: () => onNavigate('rentals', { type: 'rentals', filter: 'active' }), todayTasks: () => onNavigate('organizer', null) };
+
+  const renderDashboardEmpty = (message) => <div className="dashboard-empty-state"><CheckCircle2 size={15} /><span>{message}</span></div>;
 
   const renderPanelContent = (id) => {
     if (id === 'attentionPanel') return <div className="dashboard-table-scroll dashboard-attention-list">
-      {attentionItems.map((item, i) => <button key={i} type="button" className={`dashboard-attention-item dashboard-attention-item--${item.tone}`} onClick={item.onClick}>
-        <span className="dashboard-attention-item-text">{item.text}</span>
-        <span className="dashboard-attention-item-sub">{item.sub}</span>
+      {attentionItems.map((item, i) => <button key={`${item.source}-${item.title}-${i}`} type="button" className={`dashboard-attention-item dashboard-attention-item--${item.tone}`} onClick={item.onClick}>
+        <span className="dashboard-attention-source"><item.Icon size={14} /><span>{item.source}</span></span>
+        <span className="dashboard-attention-item-text">{item.title}</span>
+        <span className="dashboard-attention-item-date">{formatDashboardDate(item.dueDate)}</span>
+        <span className="dashboard-attention-item-sub">{item.label}</span>
       </button>)}
-      {!attentionItems.length && <p className="muted dashboard-attention-empty">Brak pilnych spraw na dziś.</p>}
+      {!attentionItems.length && renderDashboardEmpty('Brak spraw wymagających uwagi.')}
     </div>;
 
-    if (id === 'activeServices') return <div className="dashboard-table-scroll"><table className="dashboard-mini-table">
+    if (id === 'activeServices') return <div className="dashboard-table-scroll">{activeServices.length ? <table className="dashboard-mini-table">
       <thead><tr><th>Numer</th><th>Sprzęt</th><th>Status</th><th>Termin</th></tr></thead>
       <tbody>
         {activeServices.slice(0, 10).map((order) => <tr key={order.id ?? order.service_number} onClick={() => onNavigate('service', { type: 'service', serviceOrderId: order.id })}>
@@ -1254,11 +1341,10 @@ function Dashboard({ onNavigate }) {
           <td><StatusPill value={order.status} /></td>
           <td className={order.planned_date && String(order.planned_date).slice(0, 10) < today ? 'dashboard-overdue-date' : ''}>{formatDashboardDate(order.planned_date)}</td>
         </tr>)}
-        {!activeServices.length && <tr><td colSpan="4" className="dashboard-empty-cell">Brak aktywnych zleceń serwisowych.</td></tr>}
       </tbody>
-    </table></div>;
+    </table> : renderDashboardEmpty('Brak aktywnych serwisów.')}</div>;
 
-    if (id === 'activeRentalsPanel') return <div className="dashboard-table-scroll"><table className="dashboard-mini-table">
+    if (id === 'activeRentalsPanel') return <div className="dashboard-table-scroll">{activeRentals.length ? <table className="dashboard-mini-table">
       <thead><tr><th>Numer</th><th>Klient</th><th>Termin zwrotu</th><th>Status</th></tr></thead>
       <tbody>
         {activeRentals.slice(0, 10).map((rental) => {
@@ -1269,20 +1355,18 @@ function Dashboard({ onNavigate }) {
             <td><StatusPill value={getRentalOverdueDays(rental) ? 'Po terminie' : formatRentalStatus(rental.status)} /></td>
           </tr>;
         })}
-        {!activeRentals.length && <tr><td colSpan="4" className="dashboard-empty-cell">Brak aktywnych wypożyczeń.</td></tr>}
       </tbody>
-    </table></div>;
+    </table> : renderDashboardEmpty('Brak aktywnych wypożyczeń.')}</div>;
 
-    if (id === 'todayTasks') return <div className="dashboard-table-scroll"><table className="dashboard-mini-table">
+    if (id === 'todayTasks') return <div className="dashboard-table-scroll">{activeTasks.length ? <table className="dashboard-mini-table">
       <thead><tr><th>Tytuł</th><th>Priorytet</th><th>Termin</th></tr></thead>
       <tbody>
         {activeTasks.slice(0, 10).map((task) => <tr key={task.id ?? task.localId} onClick={() => onNavigate('organizer', { type: 'organizer', taskId: task.id ?? task.localId })}>
           <td>{task.title}</td><td>{task.priority}</td>
           <td className={task.due_date && String(task.due_date).slice(0, 10) < today ? 'dashboard-overdue-date' : ''}>{formatDashboardDate(task.due_date)}</td>
         </tr>)}
-        {!activeTasks.length && <tr><td colSpan="3" className="dashboard-empty-cell">Brak aktywnych zadań.</td></tr>}
       </tbody>
-    </table></div>;
+    </table> : renderDashboardEmpty('Brak zadań do wykonania.')}</div>;
 
     return null;
   };
@@ -1311,7 +1395,7 @@ function Dashboard({ onNavigate }) {
               <button type="button" className="dashboard-reorder-btn" onClick={(e) => { e.stopPropagation(); moveCard(index, -1); }} disabled={index === 0}>‹</button>
               <button type="button" className="dashboard-reorder-btn" onClick={(e) => { e.stopPropagation(); moveCard(index, 1); }} disabled={index === orderedCards.length - 1}>›</button>
             </div>}
-            <span>{card.label}</span>
+            <span className="dashboard-metric-label"><card.Icon size={13} />{card.label}</span>
             <strong>{card.value}</strong>
           </button>;
         })}
@@ -1319,14 +1403,22 @@ function Dashboard({ onNavigate }) {
       </div>
     </div>
 
-    <div className="dashboard-panels-grid">
+    <div
+      className="dashboard-panels-grid"
+      ref={panelsGridRef}
+      style={{
+        '--dashboard-left-column': `${dashboardSettings.panelLayout?.columnPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.columnPercent}%`,
+        '--dashboard-top-row': `${dashboardSettings.panelLayout?.rowPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.rowPercent}%`
+      }}
+    >
       {orderedPanels.map((panel, index) => {
         const isVisible = isDashboardItemVisible(panel.id);
         if (!isVisible && !editMode) return null;
         const navigate = panelActions[panel.id];
+        const PanelIcon = panelIcons[panel.id] ?? LayoutDashboard;
         return <section key={panel.id} className={`panel dashboard-table-panel dashboard-panel--${panel.tone} ${!isVisible ? 'panel-hidden' : ''}`}>
           <div className="dashboard-panel-header-row">
-            <h2 className="dashboard-panel-title">{panelTitles[panel.id] ?? panel.label}</h2>
+            <h2 className="dashboard-panel-title"><PanelIcon size={15} />{panelTitles[panel.id] ?? panel.label}</h2>
             {editMode
               ? <div className="dashboard-panel-controls">
                   <button type="button" className="dashboard-panel-ctrl-btn" onClick={() => movePanel(index, -1)} disabled={index === 0}><ArrowUp size={11} /></button>
@@ -1338,6 +1430,10 @@ function Dashboard({ onNavigate }) {
           {isVisible && renderPanelContent(panel.id)}
         </section>;
       })}
+      {editMode && <>
+        <div className="dashboard-resize-handle dashboard-resize-handle-x" role="separator" aria-orientation="vertical" title="Zmień szerokość sekcji" onMouseDown={(event) => startPanelResize('x', event)} />
+        <div className="dashboard-resize-handle dashboard-resize-handle-y" role="separator" aria-orientation="horizontal" title="Zmień wysokość sekcji" onMouseDown={(event) => startPanelResize('y', event)} />
+      </>}
     </div>
   </div>;
 }

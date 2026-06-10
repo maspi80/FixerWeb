@@ -8,6 +8,13 @@ import { fetchServiceOrders } from './serviceOrdersService';
 
 export const BACKUP_VERSION = '1.0.0';
 
+function formatRentalStatusLabel(status) {
+  if (status === 'returned') return 'Zwrócone';
+  if (status === 'partially_returned') return 'Częściowo zwrócone';
+  if (status === 'active') return 'Aktywne';
+  return status ?? '';
+}
+
 const BACKUP_TABLES = [
   'clients',
   'client_types',
@@ -143,6 +150,7 @@ const CSV_DEFINITIONS = {
     loader: fetchRentals,
     mapRow: (row) => ({
       ...row,
+      status_label: formatRentalStatusLabel(row.status),
       client_name: row.clients?.name ?? '',
       items_summary: (row.rental_items ?? []).map((item) => item.name_snapshot).filter(Boolean).join(', ')
     }),
@@ -150,9 +158,10 @@ const CSV_DEFINITIONS = {
       ['rental_number', 'Numer'],
       ['client_name', 'Klient'],
       ['items_summary', 'Sprzęt'],
-      ['status', 'Status'],
+      ['status_label', 'Status'],
       ['start_date', 'Wydanie'],
-      ['planned_return_date', 'Planowany zwrot']
+      ['planned_return_date', 'Planowany zwrot'],
+      ['actual_return_date', 'Faktyczny zwrot']
     ]
   },
   service: {
@@ -175,7 +184,7 @@ const CSV_DEFINITIONS = {
     ]
   },
   organizer: {
-    filePrefix: 'fixer-organizer',
+    filePrefix: 'fixer-zadania',
     loader: fetchOrganizerTasks,
     columns: [
       ['title', 'Tytuł'],

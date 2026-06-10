@@ -16,7 +16,7 @@ const rentalSelectColumns = `
   total_price,
   created_at,
   updated_at,
-  clients(id, name, phone, email),
+  clients(id, name, type, client_kind, phone, email, street, building_number, apartment_number, postal_code, city, country, nip, regon),
   rental_items(
     id,
     rental_id,

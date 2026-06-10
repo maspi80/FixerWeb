@@ -78,6 +78,7 @@ create index if not exists idx_rentals_client_id on public.rentals(client_id);
 create index if not exists idx_rentals_status on public.rentals(status);
 create index if not exists idx_rentals_start_date on public.rentals(start_date);
 create index if not exists idx_rentals_planned_return_date on public.rentals(planned_return_date);
+create index if not exists idx_rentals_actual_return_date on public.rentals(actual_return_date);
 create index if not exists idx_rentals_created_at on public.rentals(created_at);
 
 create index if not exists idx_rental_items_rental_id on public.rental_items(rental_id);

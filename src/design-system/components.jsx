@@ -112,14 +112,37 @@ export function FormField({ className = '', label, error, hint, required = false
   </label>;
 }
 
-export function StatusPill({ value, tone = 'auto', className = '' }) {
+const SYSTEM_STATUS_LABELS = {
+  active: 'Aktywne',
+  partially_returned: 'Częściowo zwrócone',
+  returned: 'Zwrócone',
+  issued: 'Wydany',
+  damaged: 'Uszkodzony',
+  lost: 'Zagubiony',
+  service_required: 'Wymaga serwisu',
+  available: 'Dostępny',
+  unavailable: 'Niedostępny',
+  pending: 'Oczekuje',
+  completed: 'Zakończone',
+  complete: 'Zakończone',
+  cancelled: 'Anulowane',
+  canceled: 'Anulowane'
+};
+
+function formatSystemStatusLabel(value) {
   const text = String(value ?? '');
+  const key = text.trim().toLowerCase();
+  return SYSTEM_STATUS_LABELS[key] ?? text;
+}
+
+export function StatusPill({ value, tone = 'auto', className = '' }) {
+  const text = formatSystemStatusLabel(value);
   const lower = text.toLowerCase();
   const resolvedTone = tone === 'auto'
-    ? lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('lost') || lower.includes('damaged') || lower.includes('uszk') ? 'danger'
-      : lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly') || lower.includes('returned') ? 'success'
-      : lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') || lower.includes('service') ? 'warning'
-      : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') || lower.includes('issued') ? 'info'
+    ? lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('zagub') || lower.includes('uszk') ? 'danger'
+      : lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly') ? 'success'
+      : lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') ? 'warning'
+      : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') || lower.includes('wydany') ? 'info'
       : 'neutral'
     : tone;
   return <AppBadge tone={resolvedTone} className={joinClassNames('ds-status-pill', `tone-${resolvedTone}`, className)}>{text}</AppBadge>;

@@ -13,8 +13,8 @@ const MODULE_LABELS = {
   equipment: 'Sprzęt',
   rentals: 'Wypożyczenia',
   service: 'Serwis',
-  organizer: 'Organizer',
-  projects: 'Projekty',
+  organizer: 'Zadania i projekty',
+  projects: 'Zadania i projekty',
   calendar: 'Kalendarz'
 };
 
@@ -129,7 +129,7 @@ function buildRentalResults(rows, query) {
   const results = rows.map((rental) => {
     const itemNames = (rental.rental_items ?? []).map((item) => [item.name_snapshot, item.serial_snapshot, item.inventory_number_snapshot, item.barcode_snapshot].filter(Boolean).join(' '));
     const status = rentalStatusLabel(rental.status);
-    const bag = textBag([rental.rental_number, rental.clients?.name, status, rental.start_date, rental.planned_return_date, ...itemNames]);
+    const bag = textBag([rental.rental_number, rental.clients?.name, status, rental.start_date, rental.planned_return_date, rental.actual_return_date, ...itemNames]);
     if (!matchesQuery(bag, query)) return null;
     return {
       id: `rentals:${rental.id ?? rental.rental_number}`,
@@ -137,7 +137,11 @@ function buildRentalResults(rows, query) {
       group: MODULE_LABELS.rentals,
       recordType: 'Wypożyczenie',
       title: rental.rental_number || 'Wypożyczenie',
-      description: [rental.clients?.name, itemNames.slice(0, 2).join(', '), rental.planned_return_date ? `Zwrot ${rental.planned_return_date}` : ''].filter(Boolean).join(' · '),
+      description: [
+        rental.clients?.name,
+        itemNames.slice(0, 2).join(', '),
+        rental.actual_return_date ? `Faktyczny zwrot ${rental.actual_return_date}` : rental.planned_return_date ? `Zwrot ${rental.planned_return_date}` : ''
+      ].filter(Boolean).join(' · '),
       status,
       active: rental.status !== 'returned',
       intent: { type: 'rentals', filter: 'open', rentalId: rental.id }
@@ -173,14 +177,14 @@ function buildOrganizerResults(rows, query) {
     if (!matchesQuery(bag, query)) return null;
     return {
       id: `organizer:${task.id ?? task.localId}`,
-      module: 'organizer',
+      module: 'projects',
       group: MODULE_LABELS.organizer,
       recordType: 'Zadanie',
       title: task.title || 'Zadanie',
       description: [task.category, task.priority, task.due_date ? `Termin ${task.due_date}` : '', task.description].filter(Boolean).join(' · '),
       status: task.status || '',
       active: !task.archived,
-      intent: { type: 'organizer', taskId: task.id ?? task.localId }
+      intent: { type: 'projects', taskId: task.id ?? task.localId }
     };
   }).filter(Boolean);
   return limitAndSort(results, query);
@@ -261,13 +265,14 @@ export async function searchGlobalRecords(query) {
     safeLoad('calendar', fetchCalendarManualEvents)
   ]);
 
+  const workResults = limitAndSort([...buildOrganizerResults(organizer, query), ...buildProjectResults(projects, projectTasks, query)], query);
+
   return [
     { module: 'clients', label: MODULE_LABELS.clients, results: buildClientResults(clients, query) },
     { module: 'equipment', label: MODULE_LABELS.equipment, results: buildEquipmentResults(equipment, query) },
     { module: 'rentals', label: MODULE_LABELS.rentals, results: buildRentalResults(rentals, query) },
     { module: 'service', label: MODULE_LABELS.service, results: buildServiceResults(service, query) },
-    { module: 'organizer', label: MODULE_LABELS.organizer, results: buildOrganizerResults(organizer, query) },
-    { module: 'projects', label: MODULE_LABELS.projects, results: buildProjectResults(projects, projectTasks, query) },
+    { module: 'projects', label: MODULE_LABELS.projects, results: workResults },
     { module: 'calendar', label: MODULE_LABELS.calendar, results: buildCalendarResults(calendar, query) }
   ];
 }

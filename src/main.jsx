@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard, LockKeyhole,
   LogOut, MessageSquare, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Plus, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, History, Plus, Printer, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -97,8 +97,6 @@ import {
 import { searchGlobalRecords } from './services/globalSearchService';
 import { BACKUP_FULL_ERROR_MESSAGE, BACKUP_INCLUDED_TABLES, createBackupArchive, createCsvExport, parseBackupText, restoreBackupArchive } from './services/backupService';
 
-const ORGANIZER_TABLE_KEY = 'organizer-tasks-table';
-const ORGANIZER_HISTORY_TABLE_KEY = 'organizer-history-table';
 const PROJECTS_TABLE_KEY = 'projects-table';
 const PROJECTS_HISTORY_TABLE_KEY = 'projects-history-table';
 const NOTIFICATIONS_READ_STORAGE_KEY = 'fixer-notifications-read';
@@ -389,6 +387,22 @@ function ResizableModalFrame({ className = '', storageKey, defaultSize, minSize,
 }
 
 
+function printHtmlInIframe(html) {
+  const existing = document.getElementById('__fixer-print-frame');
+  if (existing) existing.remove();
+  const iframe = document.createElement('iframe');
+  iframe.id = '__fixer-print-frame';
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:none;opacity:0;pointer-events:none;';
+  document.body.appendChild(iframe);
+  const cleanHtml = html.replace(/<script>\s*window\.onload[^<]*<\/script>/g, '');
+  iframe.addEventListener('load', () => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+  }, { once: true });
+  iframe.srcdoc = cleanHtml;
+}
+
 function normalizeFileNamePart(value) {
   const text = String(value ?? 'tabela').trim().toLocaleLowerCase('pl');
   return text
@@ -535,15 +549,9 @@ function exportTableToPdf(title, storageKey, columns, rows) {
     : '';
   const headerText = String(company.documentHeader ?? '').trim();
   const templateName = documentSettings.templates?.tableExport ?? 'Standardowy';
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
-  if (!printWindow) {
-    alert('Przeglądarka zablokowała okno eksportu PDF. Zezwól na wyskakujące okna dla FIXER WEB.');
-    return;
-  }
-  printWindow.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-kicker{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}.document-custom-header{border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;color:#334155;font-size:11px}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo:empty{display:none}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}.align-center{text-align:center}.align-right{text-align:right}.align-left{text-align:left}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}@media print{button{display:none}}
-  </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddress ? `<p class="company-line">${escapeHtml(companyAddress)}</p>` : ''}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}<script>window.onload=function(){window.focus();window.print();};</script></body></html>`);
-  printWindow.document.close();
+  printHtmlInIframe(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-kicker{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}.document-custom-header{border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;color:#334155;font-size:11px}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo:empty{display:none}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}.align-center{text-align:center}.align-right{text-align:right}.align-left{text-align:left}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}
+  </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddress ? `<p class="company-line">${escapeHtml(companyAddress)}</p>` : ''}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}</body></html>`);
 }
 
 const modules = [
@@ -554,9 +562,30 @@ const modules = [
   { id: 'service', label: 'Serwis', icon: Wrench },
   { id: 'projects', label: 'Zadania i projekty', icon: Briefcase },
   { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
-  { id: 'organizer', label: 'Organizer', icon: CheckCircle2 },
   { id: 'settings', label: 'Ustawienia', icon: Settings }
 ];
+
+const BACKUP_TABLE_LABELS = {
+  organizer_categories: 'Kategorie zadań',
+  organizer_tasks: 'Zadania',
+  organizer_task_comments: 'Komentarze zadań',
+  projects: 'Projekty',
+  project_tasks: 'Zadania projektów',
+  project_task_sections: 'Sekcje zadań projektów',
+  project_task_comments: 'Komentarze zadań projektów'
+};
+
+function formatBackupTableLabel(table) {
+  return BACKUP_TABLE_LABELS[table] ?? table;
+}
+
+function normalizeModuleNavigation(moduleId, intent = null) {
+  if (moduleId !== 'organizer') return { moduleId, intent };
+  return {
+    moduleId: 'projects',
+    intent: intent ? { ...intent, type: intent.type === 'organizer' ? 'projects' : intent.type, legacySource: 'organizer' } : null
+  };
+}
 
 const demoUser = { name: 'Mariusz', role: 'Administrator', email: 'admin@fixer.local' };
 
@@ -744,6 +773,11 @@ function App() {
     : demoUser;
 
   const currentModule = modules.find((module) => module.id === activeModule) ?? modules[0];
+  const navigateToModule = (moduleId, intent = null) => {
+    const next = normalizeModuleNavigation(moduleId, intent);
+    setModuleIntent(next.intent);
+    setActiveModule(next.moduleId);
+  };
 
   const handleLogout = async () => {
     if (isSupabaseConfigured) await supabase.auth.signOut();
@@ -754,8 +788,7 @@ function App() {
 
   const openGlobalSearchResult = (result) => {
     if (!result?.module) return;
-    setModuleIntent(result.intent ?? null);
-    setActiveModule(result.module);
+    navigateToModule(result.module, result.intent ?? null);
     setGlobalSearch('');
   };
 
@@ -767,7 +800,7 @@ function App() {
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}`}>
       <Sidebar
         activeModule={activeModule}
-        setActiveModule={setActiveModule}
+        setActiveModule={(moduleId) => navigateToModule(moduleId)}
         collapsed={sidebarCollapsed}
         onToggle={() => {
           const next = !sidebarCollapsed;
@@ -794,20 +827,16 @@ function App() {
             setColorTheme(nextTheme);
             localStorage.setItem('fixer-color-theme', nextTheme);
           }}
-          onNavigate={(moduleId, intent = null) => {
-            setModuleIntent(intent);
-            setActiveModule(moduleId);
-          }}
+          onNavigate={navigateToModule}
         />
         <section className="page-content">
-          {activeModule === 'dashboard' && <Dashboard onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
+          {activeModule === 'dashboard' && <Dashboard onNavigate={navigateToModule} />}
           {activeModule === 'clients' && <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
+          {activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={(moduleId, intent = null) => { setModuleIntent(intent); setActiveModule(moduleId); }} />}
+          {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'organizer' && <OrganizerModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} />}
         </section>
       </main>
@@ -1181,7 +1210,7 @@ function Dashboard({ onNavigate }) {
       setServiceRows(serviceResult.data ?? []);
       setOrganizerRows(organizerResult.data ?? []);
       setProjectRows(projectsResult.data ?? []);
-      const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : '', projectsResult.error ? 'projekty' : ''].filter(Boolean);
+      const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'zadania' : '', projectsResult.error ? 'projekty' : ''].filter(Boolean);
       setNotice(errors.length ? `Nie udało się pobrać danych: ${errors.join(', ')}. Część sekcji może być niepełna.` : '');
       setLoading(false);
     };
@@ -1278,8 +1307,8 @@ function Dashboard({ onNavigate }) {
     todayReturns: { value: todayReturns.length, isActive: todayReturns.length > 0, target: ['rentals', { type: 'rentals', filter: 'today' }] },
     overdueServices: { value: overdueServices.length, isActive: overdueServices.length > 0, target: ['service', null] },
     todayServices: { value: todayServices.length, isActive: todayServices.length > 0, target: ['service', null] },
-    overdueTasksCard: { value: overdueTasks.length, isActive: overdueTasks.length > 0, target: ['organizer', null] },
-    todayTasksCard: { value: todayOrReminderTasks.length, isActive: todayOrReminderTasks.length > 0, target: ['organizer', null] },
+    overdueTasksCard: { value: overdueTasks.length, isActive: overdueTasks.length > 0, target: ['projects', { type: 'projects', filter: 'tasks' }] },
+    todayTasksCard: { value: todayOrReminderTasks.length, isActive: todayOrReminderTasks.length > 0, target: ['projects', { type: 'projects', filter: 'tasks' }] },
     overdueProjectsCard: { value: overdueProjects.length, isActive: overdueProjects.length > 0, target: ['projects', null] }
   };
 
@@ -1305,12 +1334,12 @@ function Dashboard({ onNavigate }) {
   const attentionItems = [
     ...overdueRentals.map((r) => buildDashboardAttentionItem({ key: `rental:${r.id ?? r.localId ?? r.rental_number}`, source: 'Wypożyczenie', icon: Package, tone: 'rental-danger', title: `${r.rental_number} — ${r.clients?.name ?? '—'}`, dueDate: r.planned_return_date, label: `Zwrot po terminie: ${getRentalOverdueDays(r)} ${getRentalOverdueDays(r) === 1 ? 'dzień' : 'dni'}`, priority: 10, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
     ...overdueServices.map((s) => buildDashboardAttentionItem({ key: `service:${s.id ?? s.localId ?? s.service_number}`, source: 'Serwis', icon: Wrench, tone: 'service-danger', title: `${s.service_number} — ${s.customer_device_name || '—'}`, dueDate: s.planned_date, label: 'Serwis po terminie', priority: 20, onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
-    ...overdueTasks.map((t) => buildDashboardAttentionItem({ key: `task:${t.id ?? t.localId}`, source: 'Zadanie', icon: ClipboardList, tone: 'task-danger', title: t.title || 'Zadanie bez tytułu', dueDate: t.due_date, label: 'Zadanie po terminie', priority: 30, onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
+    ...overdueTasks.map((t) => buildDashboardAttentionItem({ key: `task:${t.id ?? t.localId}`, source: 'Zadanie', icon: ClipboardList, tone: 'task-danger', title: t.title || 'Zadanie bez tytułu', dueDate: t.due_date, label: 'Zadanie po terminie', priority: 30, onClick: () => onNavigate('projects', { type: 'projects', taskId: t.id ?? t.localId }) })),
     ...overdueProjects.map((p) => buildDashboardAttentionItem({ key: `project:${p.id ?? p.localId ?? p.project_number}`, source: 'Projekt', icon: Briefcase, tone: 'project-danger', title: `${p.project_number ? p.project_number + ' — ' : ''}${p.name || 'Projekt bez nazwy'}`, dueDate: p.due_date, label: 'Projekt po terminie', priority: 40, onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) })),
     ...todayReturns.map((r) => buildDashboardAttentionItem({ key: `rental:${r.id ?? r.localId ?? r.rental_number}`, source: 'Wypożyczenie', icon: Package, tone: 'rental-today', title: `${r.rental_number} — ${r.clients?.name ?? '—'}`, dueDate: r.planned_return_date, label: 'Zwrot sprzętu dzisiaj', priority: 50, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
     ...todayServices.map((s) => buildDashboardAttentionItem({ key: `service:${s.id ?? s.localId ?? s.service_number}`, source: 'Serwis', icon: Wrench, tone: 'service-today', title: `${s.service_number} — ${s.customer_device_name || '—'}`, dueDate: s.planned_date, label: 'Termin serwisu dzisiaj', priority: 60, onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
     ...pickupServices.map((s) => buildDashboardAttentionItem({ key: `service:${s.id ?? s.localId ?? s.service_number}`, source: 'Serwis', icon: Wrench, tone: 'service-pickup', title: `${s.service_number} — ${s.customer_device_name || '—'}`, dueDate: s.planned_date, label: 'Oczekuje na odbiór', priority: 70, onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
-    ...todayOrReminderTasks.map((t) => buildDashboardAttentionItem({ key: `task:${t.id ?? t.localId}`, source: 'Zadanie', icon: ClipboardList, tone: 'task-today', title: t.title || 'Zadanie bez tytułu', dueDate: t.due_date || t.reminder_at, label: t.due_date ? 'Zadanie na dziś' : 'Przypomnienie na dziś', priority: 80, onClick: () => onNavigate('organizer', { type: 'organizer', taskId: t.id ?? t.localId }) })),
+    ...todayOrReminderTasks.map((t) => buildDashboardAttentionItem({ key: `task:${t.id ?? t.localId}`, source: 'Zadanie', icon: ClipboardList, tone: 'task-today', title: t.title || 'Zadanie bez tytułu', dueDate: t.due_date || t.reminder_at, label: t.due_date ? 'Zadanie na dziś' : 'Przypomnienie na dziś', priority: 80, onClick: () => onNavigate('projects', { type: 'projects', taskId: t.id ?? t.localId }) })),
     ...todayProjects.map((p) => buildDashboardAttentionItem({ key: `project:${p.id ?? p.localId ?? p.project_number}`, source: 'Projekt', icon: Briefcase, tone: 'project-today', title: `${p.project_number ? p.project_number + ' — ' : ''}${p.name || 'Projekt bez nazwy'}`, dueDate: p.due_date, label: 'Termin projektu dzisiaj', priority: 90, onClick: () => onNavigate('projects', { type: 'projects', projectId: p.id ?? p.localId }) }))
   ].sort((left, right) => left.priority - right.priority || left.days - right.days || String(left.title).localeCompare(String(right.title), 'pl'))
     .filter((item, index, items) => items.findIndex((candidate) => candidate.key === item.key) === index)
@@ -1318,7 +1347,7 @@ function Dashboard({ onNavigate }) {
 
   const panelTitles = { attentionPanel: 'Najważniejsze dziś', activeServices: 'Aktywne serwisy', activeRentalsPanel: 'Aktywne wypożyczenia', todayTasks: 'Zadania do zrobienia' };
   const panelIcons = { attentionPanel: Bell, activeServices: Wrench, activeRentalsPanel: Package, todayTasks: ClipboardList };
-  const panelActions = { activeServices: () => onNavigate('service', null), activeRentalsPanel: () => onNavigate('rentals', { type: 'rentals', filter: 'active' }), todayTasks: () => onNavigate('organizer', null) };
+  const panelActions = { activeServices: () => onNavigate('service', null), activeRentalsPanel: () => onNavigate('rentals', { type: 'rentals', filter: 'active' }), todayTasks: () => onNavigate('projects', { type: 'projects', filter: 'tasks' }) };
 
   const renderDashboardEmpty = (message) => <div className="dashboard-empty-state"><CheckCircle2 size={15} /><span>{message}</span></div>;
 
@@ -1361,7 +1390,7 @@ function Dashboard({ onNavigate }) {
     if (id === 'todayTasks') return <div className="dashboard-table-scroll">{activeTasks.length ? <table className="dashboard-mini-table">
       <thead><tr><th>Tytuł</th><th>Priorytet</th><th>Termin</th></tr></thead>
       <tbody>
-        {activeTasks.slice(0, 10).map((task) => <tr key={task.id ?? task.localId} onClick={() => onNavigate('organizer', { type: 'organizer', taskId: task.id ?? task.localId })}>
+        {activeTasks.slice(0, 10).map((task) => <tr key={task.id ?? task.localId} onClick={() => onNavigate('projects', { type: 'projects', taskId: task.id ?? task.localId })}>
           <td>{task.title}</td><td>{task.priority}</td>
           <td className={task.due_date && String(task.due_date).slice(0, 10) < today ? 'dashboard-overdue-date' : ''}>{formatDashboardDate(task.due_date)}</td>
         </tr>)}
@@ -2538,7 +2567,8 @@ const RENTALS_TABLE_COLUMNS = [
   { key: 'models_summary', label: 'Model' },
   { key: 'status', label: 'Status' },
   { key: 'start_date', label: 'Wydanie' },
-  { key: 'planned_return_date', label: 'Termin zwrotu' }
+  { key: 'planned_return_date', label: 'Termin zwrotu' },
+  { key: 'actual_return_date', label: 'Faktyczny zwrot' }
 ];
 
 const RENTAL_SELECTED_EQUIPMENT_COLUMNS = [
@@ -2557,6 +2587,15 @@ function formatRentalStatus(status) {
   if (status === 'partially_returned') return 'Częściowo zwrócone';
   if (status === 'returned') return 'Zwrócone';
   return 'Aktywne';
+}
+
+function formatRentalItemStatus(status) {
+  if (status === 'issued') return 'Wydany';
+  if (status === 'returned') return 'Zwrócony';
+  if (status === 'damaged') return 'Uszkodzony';
+  if (status === 'lost') return 'Zagubiony';
+  if (status === 'service_required') return 'Wymaga serwisu';
+  return status || '—';
 }
 
 function getLocalIsoDate() {
@@ -2714,9 +2753,9 @@ async function buildOperatorNotifications() {
     const due = String(task.due_date ?? '').slice(0, 10);
     const reminder = String(task.reminder_at ?? '').slice(0, 10);
     const base = {
-      source: 'organizer',
-      targetModule: 'organizer',
-      intent: { type: 'organizer', taskId },
+      source: 'projects',
+      targetModule: 'projects',
+      intent: { type: 'projects', taskId },
       primary: task.title,
       secondary: task.category || task.priority || '',
       createdAt: `${due || reminder || today}T09:00:00`
@@ -2808,7 +2847,7 @@ async function buildOperatorNotifications() {
     createdAt: backupFailure.at
   });
 
-  const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'organizer' : '', projectsResult.error ? 'projekty' : '', calendarResult.error ? 'kalendarz' : ''].filter(Boolean);
+  const errors = [rentalsResult.error ? 'wypożyczenia' : '', serviceResult.error ? 'serwis' : '', organizerResult.error ? 'zadania' : '', projectsResult.error ? 'projekty' : '', calendarResult.error ? 'kalendarz' : ''].filter(Boolean);
   if (errors.length) console.warn(`Notifications incomplete: ${errors.join(', ')}`);
 
   return notifications
@@ -2872,6 +2911,129 @@ function getRentalEquipmentCode(item) {
   return item?.serial || item?.barcode || item?.inventory_number || '—';
 }
 
+function getRentalAgreementTemplate(settings = getDocumentSettings()) {
+  return normalizeRentalAgreementTemplate(settings?.documentTemplates?.[RENTAL_AGREEMENT_TEMPLATE_KEY]);
+}
+
+function formatAgreementDate(value) {
+  if (!value) return '';
+  const text = String(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return String(value);
+  return new Date(`${text}T12:00:00`).toLocaleDateString('pl-PL');
+}
+
+function compactLines(lines) {
+  return lines.map((line) => String(line ?? '').trim()).filter(Boolean);
+}
+
+function formatClientDocumentAddress(client = {}) {
+  return compactLines([
+    [client.street, client.building_number, client.apartment_number ? `/${client.apartment_number}` : ''].filter(Boolean).join(''),
+    [client.postal_code, client.city].filter(Boolean).join(' '),
+    client.country
+  ]).join(', ');
+}
+
+function getRentalAgreementColumnValue(key, item, index) {
+  const equipment = item?.equipment ?? {};
+  const values = {
+    lp: index + 1,
+    name: item?.name_snapshot || equipment.name || 'Sprzęt',
+    brand: getRentalItemBrand(item),
+    model: getRentalItemModel(item),
+    serial: item?.serial_snapshot || equipment.serial || '',
+    barcode: item?.barcode_snapshot || equipment.barcode || '',
+    inventory: item?.inventory_number_snapshot || equipment.inventory_number || '',
+    quantity: 1,
+    conditionOut: item?.condition_out || equipment.condition || '',
+    notes: compactLines([item?.damage_notes, item?.settlement_notes]).join('; ')
+  };
+  return values[key] ?? '';
+}
+
+function getRentalAgreementData(rental, settings = getDocumentSettings(), company = getCompanyProfile()) {
+  const template = getRentalAgreementTemplate(settings);
+  const items = getRentalBaseItems(rental);
+  const enabledColumns = template.columns.filter((column) => column.enabled);
+  return {
+    template,
+    company,
+    client: rental?.clients ?? {},
+    rental,
+    items,
+    columns: enabledColumns.length ? enabledColumns : DEFAULT_RENTAL_AGREEMENT_COLUMNS.filter((column) => column.enabled),
+    issueDate: getLocalIsoDate(),
+    documentNumber: rental?.rental_number || '',
+    title: template.documentTitle || 'Umowa wypożyczenia sprzętu'
+  };
+}
+
+function canCreateRentalAgreement(rental) {
+  return Boolean(rental?.client_id && getRentalBaseItems(rental).length);
+}
+
+function renderPartyBlock(title, lines) {
+  const safeLines = compactLines(lines);
+  return `<div class="agreement-party"><h2>${escapeHtml(title)}</h2>${safeLines.length ? safeLines.map((line) => `<p>${escapeHtml(line)}</p>`).join('') : '<p>Brak danych.</p>'}</div>`;
+}
+
+function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, settings = getDocumentSettings(), company = getCompanyProfile() } = {}) {
+  const data = getRentalAgreementData(rental, settings, company);
+  const companyName = company.legalName || company.name || 'FIXER WEB';
+  const companyAddress = formatCompanyAddress(company);
+  const companyTax = formatCompanyTaxData(company);
+  const companyContact = formatCompanyContact(company);
+  const client = data.client ?? {};
+  const clientIsCompany = String(client.type ?? '').toLocaleLowerCase('pl') === 'firma';
+  const clientAddress = formatClientDocumentAddress(client);
+  const showLogo = company.showLogoOnDocuments !== false;
+  const logo = showLogo
+    ? company.logoDataUrl ? `<img src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>` : `<div class="agreement-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`
+    : '';
+  const headerText = String(company.documentHeader ?? '').trim();
+  const companyFooter = String(company.documentFooter ?? '').trim();
+  const equipmentHeader = data.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
+  const equipmentRows = data.items.map((item, index) => `<tr>${data.columns.map((column) => `<td>${escapeHtml(getRentalAgreementColumnValue(column.key, item, index) || '—')}</td>`).join('')}</tr>`).join('');
+  const terms = data.template.terms.map((term, index) => `<li><span>${index + 1}.</span><p>${escapeHtml(term)}</p></li>`).join('');
+  const documentMeta = compactLines([
+    data.documentNumber ? `Numer dokumentu: ${data.documentNumber}` : '',
+    data.rental?.rental_number ? `Numer wypożyczenia: ${data.rental.rental_number}` : '',
+    `Data wystawienia: ${formatAgreementDate(data.issueDate)}`,
+    data.rental?.start_date ? `Data wydania: ${formatAgreementDate(data.rental.start_date)}` : '',
+    data.rental?.planned_return_date ? `Planowany zwrot: ${formatAgreementDate(data.rental.planned_return_date)}` : ''
+  ]);
+  const companyLines = [
+    companyName,
+    companyAddress,
+    companyTax,
+    companyContact,
+    company.bankAccount ? `Konto: ${company.bankAccount}` : ''
+  ];
+  const clientLines = clientIsCompany
+    ? [client.name, client.nip ? `NIP: ${client.nip}` : '', clientAddress, client.client_kind ? `Osoba kontaktowa: ${client.client_kind}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']
+    : [client.name, clientAddress, client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : ''];
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(data.title)}</title><style>
+    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{margin:0;color:#111827;font-family:Arial,sans-serif;background:#fff}.agreement-document{max-width:210mm;margin:0 auto;background:#fff}.agreement-preview-shell{padding:0}.agreement-kicker{margin:0 0 8px;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em}.agreement-custom-header{border:1px solid #dbe3ef;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:12px;color:#334155;font-size:11px}.agreement-header{display:flex;justify-content:space-between;gap:18px;border-bottom:2px solid #dbe3ef;padding-bottom:14px;margin-bottom:16px}.agreement-brand{display:flex;gap:12px;align-items:flex-start}.agreement-logo{width:70px;height:70px;border:1px solid #dbe3ef;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.agreement-logo:empty{display:none}.agreement-logo img{max-width:100%;max-height:100%;object-fit:contain}.agreement-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.agreement-company-name{margin:0 0 4px;font-size:17px;font-weight:800}.agreement-line{margin:0 0 3px;color:#475569;font-size:10.5px}.agreement-title{text-align:right}.agreement-title h1{margin:0 0 6px;font-size:21px;line-height:1.15}.agreement-title p{margin:0 0 3px;color:#475569;font-size:11px}.agreement-parties{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}.agreement-party{border:1px solid #dbe3ef;border-radius:12px;padding:10px 12px;min-height:95px}.agreement-party h2,.agreement-section h2{margin:0 0 7px;color:#0f172a;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.agreement-party p{margin:0 0 4px;color:#334155;font-size:11px}.agreement-section{margin-top:14px}.agreement-equipment-table{width:100%;border-collapse:collapse;font-size:9.2px}.agreement-equipment-table th,.agreement-equipment-table td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left;vertical-align:top}.agreement-equipment-table th{background:#eef2f7;color:#0f172a;font-weight:800}.agreement-equipment-table tr:nth-child(even) td{background:#f8fafc}.agreement-terms{list-style:none;margin:0;padding:0;display:grid;gap:5px}.agreement-terms li{display:grid;grid-template-columns:24px 1fr;gap:6px;font-size:11px;color:#334155}.agreement-terms span{font-weight:800;color:#0f172a}.agreement-terms p{margin:0}.agreement-signatures{display:grid;grid-template-columns:1fr 1fr;gap:36px;margin-top:28px;break-inside:avoid}.agreement-signature{font-size:11px;color:#334155}.agreement-signature strong{display:block;margin-bottom:28px;color:#0f172a}.agreement-signature span{display:block;border-top:1px dotted #475569;padding-top:6px;text-align:center}.agreement-footer{border-top:1px solid #dbe3ef;margin-top:18px;padding-top:8px;color:#64748b;font-size:10px}.agreement-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:10px;background:#fff;border-bottom:1px solid #dbe3ef}.agreement-toolbar button{border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;padding:7px 10px;font-weight:700;cursor:pointer}@media print{.agreement-toolbar{display:none}.agreement-document{max-width:none}}@media(max-width:760px){.agreement-parties,.agreement-signatures{grid-template-columns:1fr}.agreement-header{flex-direction:column}.agreement-title{text-align:left}}
+  </style></head><body>${preview ? '' : '<div class="agreement-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="agreement-document">
+    <p class="agreement-kicker">Szablon: ${escapeHtml(data.template.name)}</p>
+    ${headerText ? `<div class="agreement-custom-header">${escapeHtml(headerText)}</div>` : ''}
+    <header class="agreement-header"><div class="agreement-brand"><div class="agreement-logo">${logo}</div><div><p class="agreement-company-name">${escapeHtml(companyName)}</p>${compactLines([companyAddress, companyTax, companyContact]).map((line) => `<p class="agreement-line">${escapeHtml(line)}</p>`).join('')}</div></div><div class="agreement-title"><h1>${escapeHtml(data.title)}</h1>${documentMeta.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}</div></header>
+    <section class="agreement-parties">${renderPartyBlock('Wypożyczający', companyLines)}${renderPartyBlock('Biorący', clientLines)}</section>
+    <section class="agreement-section"><h2>Wypożyczony sprzęt</h2><table class="agreement-equipment-table"><thead><tr>${equipmentHeader}</tr></thead><tbody>${equipmentRows || `<tr><td colspan="${data.columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></section>
+    <section class="agreement-section"><h2>Warunki umowy</h2><ol class="agreement-terms">${terms}</ol></section>
+    <section class="agreement-signatures"><div class="agreement-signature"><strong>Wypożyczający</strong><span>podpis</span></div><div class="agreement-signature"><strong>Biorący</strong><span>podpis</span></div></section>
+    ${companyFooter ? `<footer class="agreement-footer">${escapeHtml(companyFooter)}</footer>` : ''}
+  </main>${autoPrint ? '<script>window.onload=function(){window.focus();window.print();};</script>' : ''}</body></html>`;
+}
+
+function openRentalAgreementPrint(rental) {
+  if (!canCreateRentalAgreement(rental)) {
+    alert('Umowa wymaga wybranego klienta i przynajmniej jednej pozycji sprzętu.');
+    return;
+  }
+  printHtmlInIframe(buildRentalAgreementHtml(rental, { preview: true }));
+}
+
 function normalizeScannerCode(value) {
   return String(value ?? '')
     .normalize('NFD')
@@ -2905,6 +3067,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRental, setEditingRental] = useState(null);
   const [returningRental, setReturningRental] = useState(null);
+  const [agreementRental, setAgreementRental] = useState(null);
   const [returnedCollapsed, setReturnedCollapsed] = useState(true);
   const [rentalSettings, setRentalSettings] = useState(getRentalNumberingSettings);
   const [rentalTypes, setRentalTypes] = useState(() => getActiveConfigDictionaryNames('rentalTypes'));
@@ -2989,6 +3152,15 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     await loadRentals();
     await loadRentalDictionaries();
     setEditorOpen(false);
+    if (canCreateRentalAgreement(result.data)) {
+      setAgreementRental({
+        ...result.data,
+        rental_items: (result.data.rental_items ?? []).map((item) => ({
+          ...item,
+          equipment: item.equipment ?? equipmentById.get(String(item.equipment_id)) ?? null
+        }))
+      });
+    }
   };
 
   const handleDelete = async (row) => {
@@ -3085,7 +3257,8 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       brands_summary: summarizeDistinctValues(baseItems.map(getRentalItemBrand)),
       models_summary: summarizeDistinctValues(baseItems.map(getRentalItemModel)),
       status: overdueDays ? 'Przeterminowane' : formatRentalStatus(rental.status),
-      planned_return_date: overdueDays ? `${rental.planned_return_date} · po terminie ${overdueDays} ${overdueDays === 1 ? 'dzień' : 'dni'}` : rental.planned_return_date ?? '—'
+      planned_return_date: overdueDays ? `${rental.planned_return_date} · po terminie ${overdueDays} ${overdueDays === 1 ? 'dzień' : 'dni'}` : rental.planned_return_date ?? '—',
+      actual_return_date: rental.actual_return_date ?? '—'
     };
   });
   const matchesRentalFilters = (row) => {
@@ -3094,7 +3267,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     if ((filters.status ?? 'all') !== 'all' && rental?.status !== filters.status) return false;
     if ((filters.type ?? 'all') !== 'all' && (rental?.rental_type ?? '') !== filters.type) return false;
     if (query) {
-      const searchable = [row.rental_number, row.client, row.items_summary, row.brands_summary, row.models_summary, row.status, row.rental_type, row.start_date, row.planned_return_date].filter(Boolean).join(' ').toLocaleLowerCase('pl');
+      const searchable = [row.rental_number, row.client, row.items_summary, row.brands_summary, row.models_summary, row.status, row.rental_type, row.start_date, row.planned_return_date, row.actual_return_date].filter(Boolean).join(' ').toLocaleLowerCase('pl');
       if (!searchable.includes(query)) return false;
     }
     return true;
@@ -3112,6 +3285,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     const rental = row._rental ?? row;
     return rental?.status !== 'returned' && getRentalBaseItems(rental).length > 0;
   };
+  const canOpenAgreement = (row) => canCreateRentalAgreement(row._rental ?? row);
 
   const renderRentalItems = (row) => {
     const rental = row._rental ?? row;
@@ -3121,7 +3295,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       <div className="expanded-set-header"><strong>Pozycje wypożyczenia</strong><span>{items.length} pozycji</span></div>
       <table className="expanded-set-table">
         <thead><tr><th>Typ</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th></tr></thead>
-        <tbody>{items.map((item, index) => <tr key={`${item.id ?? item.equipment_id}-${index}`}><td>{item.item_type === 'set' ? 'Zestaw' : item.item_type === 'set_component' ? 'Składnik' : 'Sprzęt'}</td><td><strong>{item.name_snapshot}</strong></td><td>{getRentalItemBrand(item) || '—'}</td><td>{getRentalItemModel(item) || '—'}</td><td>{item.serial_snapshot || '—'}</td><td>{item.barcode_snapshot || item.inventory_number_snapshot || '—'}</td><td><StatusPill value={item.status} /></td></tr>)}</tbody>
+        <tbody>{items.map((item, index) => <tr key={`${item.id ?? item.equipment_id}-${index}`}><td>{item.item_type === 'set' ? 'Zestaw' : item.item_type === 'set_component' ? 'Składnik' : 'Sprzęt'}</td><td><strong>{item.name_snapshot}</strong></td><td>{getRentalItemBrand(item) || '—'}</td><td>{getRentalItemModel(item) || '—'}</td><td>{item.serial_snapshot || '—'}</td><td>{item.barcode_snapshot || item.inventory_number_snapshot || '—'}</td><td><StatusPill value={formatRentalItemStatus(item.status)} /></td></tr>)}</tbody>
       </table>
     </div>;
   };
@@ -3152,7 +3326,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
         </div>
         <span>{activeRows.length} pozycji</span>
       </div>
-      <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={activeRows} onOpen={(row) => openRentalEditor(row._rental)} onEdit={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'return', label: 'Zarejestruj zwrot', icon: CheckCircle2, visible: canRegisterReturn, onClick: (row) => setReturningRental(row._rental ?? row) }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
+      <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={activeRows} onOpen={(row) => openRentalEditor(row._rental)} onEdit={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'return', label: 'Zarejestruj zwrot', icon: CheckCircle2, visible: canRegisterReturn, onClick: (row) => setReturningRental(row._rental ?? row) }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
     </section>
     <section className="panel rentals-table-panel rentals-records-section returned-rentals-section">
       <div className="rentals-section-heading">
@@ -3166,10 +3340,11 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
           <ButtonSecondary onClick={() => setReturnedCollapsed((value) => !value)}>{returnedCollapsed ? 'Rozwiń' : 'Zwiń'} · {returnedRows.length}</ButtonSecondary>
         </div>
       </div>
-      {!returnedCollapsed && <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />}
+      {!returnedCollapsed && <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />}
     </section>
-    {editorOpen && <RentalEditor rental={editingRental} nextRentalNumber={generateNextRentalNumber(rows)} clients={clients} equipmentRows={equipmentRows} rentalTypes={rentalTypes} rentalSettings={rentalSettings} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+    {editorOpen && <RentalEditor rental={editingRental} nextRentalNumber={generateNextRentalNumber(rows)} clients={clients} equipmentRows={equipmentRows} rentalTypes={rentalTypes} rentalSettings={rentalSettings} onClose={() => setEditorOpen(false)} onSave={handleSave} onAgreement={(rentalRecord) => setAgreementRental(rentalRecord)} />}
     {returningRental && <RentalReturnModal rental={returningRental} returnConditions={returnConditions} onClose={() => setReturningRental(null)} onConfirm={handleRegisterReturn} />}
+    {agreementRental && <RentalAgreementModal rental={agreementRental} onClose={() => setAgreementRental(null)} />}
   </div>;
 }
 
@@ -3310,7 +3485,60 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
   </ResizableModalFrame>;
 }
 
-function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, rentalTypes = getActiveConfigDictionaryNames('rentalTypes'), rentalSettings = getRentalNumberingSettings(), onClose, onSave }) {
+function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose }) {
+  return <ResizableModalFrame
+    className="document-preview-modal"
+    storageKey="fixer-document-preview-modal"
+    defaultSize={{ width: 960, height: 860 }}
+    minSize={{ width: 760, height: 560 }}
+    eyebrow="Podgląd"
+    title={title}
+    onClose={onClose}
+    footer={<>
+      <ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary>
+      <ButtonPrimary onClick={() => printHtmlInIframe(html)}><Printer size={16} />Drukuj / PDF</ButtonPrimary>
+    </>}
+  >
+    <div className="rental-agreement-preview-frame">
+      <iframe title={title} srcDoc={html} />
+    </div>
+  </ResizableModalFrame>;
+}
+
+function RentalAgreementModal({ rental, onClose }) {
+  const [documentSettings, setDocumentSettings] = useState(getDocumentSettings);
+  const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
+  const previewHtml = useMemo(() => buildRentalAgreementHtml(rental, { preview: true }), [rental, documentSettings]);
+
+  useEffect(() => {
+    const refresh = () => setDocumentSettings(getDocumentSettings());
+    window.addEventListener('storage', refresh);
+    return () => window.removeEventListener('storage', refresh);
+  }, []);
+
+  const disabled = !canCreateRentalAgreement(rental);
+  return <>
+    <ResizableModalFrame
+      className="rental-agreement-modal"
+      storageKey="fixer-rental-agreement-modal"
+      defaultSize={{ width: 1040, height: 760 }}
+      minSize={{ width: 760, height: 560 }}
+      eyebrow="Dokument"
+      title="Umowa wypożyczenia sprzętu"
+      onClose={onClose}
+      footer={<><ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary><ButtonSecondary onClick={() => setFullPreviewOpen(true)} disabled={disabled}><FileText size={16} />Podgląd w oknie</ButtonSecondary><ButtonPrimary onClick={() => printHtmlInIframe(previewHtml)} disabled={disabled}><Printer size={16} />Drukuj / PDF</ButtonPrimary></>}
+    >
+      {disabled
+        ? <EmptyState title="Nie można przygotować umowy" description="Umowa wymaga wybranego klienta i przynajmniej jednej pozycji sprzętu." />
+        : <div className="rental-agreement-preview-frame">
+          <iframe title="Podgląd umowy wypożyczenia" srcDoc={previewHtml} />
+        </div>}
+    </ResizableModalFrame>
+    {fullPreviewOpen && <DocumentPreviewModal html={previewHtml} title="Umowa wypożyczenia sprzętu" onClose={() => setFullPreviewOpen(false)} />}
+  </>;
+}
+
+function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, rentalTypes = getActiveConfigDictionaryNames('rentalTypes'), rentalSettings = getRentalNumberingSettings(), onClose, onSave, onAgreement }) {
   const selectedBaseItems = getRentalBaseItems(rental);
   const initialClient = clients.find((client) => client.id === rental?.client_id) ?? null;
   const defaultStartDate = new Date().toISOString().slice(0, 10);
@@ -3551,7 +3779,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       eyebrow="Wypożyczenia"
       title={rental ? 'Kartoteka wypożyczenia' : 'Nowe wypożyczenie'}
       onClose={onClose}
-      footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onSave({ rental: form, selectedEquipmentIds })}><Save size={17} />Zapisz dokument</ButtonPrimary></>}
+      footer={<>{rental && <ButtonSecondary onClick={() => onAgreement?.(rental)} disabled={!canCreateRentalAgreement(rental)}><FileText size={16} />Umowa</ButtonSecondary>}<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onSave({ rental: form, selectedEquipmentIds })}><Save size={17} />Zapisz dokument</ButtonPrimary></>}
     >
       <div className="rental-record-layout">
         <SectionPanel className="rental-record-section rental-record-header-section" title="Dokument">
@@ -3571,6 +3799,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
               </FormField>
               <FormField className="rental-date-field rental-issue-date-field" label="Wydanie"><AppInput type="date" value={form.start_date} onChange={(event) => update('start_date', event.target.value)} /></FormField>
               <FormField className="rental-date-field rental-return-date-field" label="Termin zwrotu"><AppInput type="date" value={form.planned_return_date} onChange={(event) => update('planned_return_date', event.target.value)} /></FormField>
+              <FormField className="rental-date-field rental-actual-return-date-field" label="Faktyczny zwrot"><AppInput type="date" value={form.actual_return_date || ''} disabled /></FormField>
             </div>
           </div>
         </SectionPanel>
@@ -4573,7 +4802,7 @@ const CALENDAR_SOURCES_STORAGE_KEY = 'fixer-calendar-sources';
 const CALENDAR_ACTIVE_SOURCES_STORAGE_KEY = 'fixer.calendar.activeSources';
 const CALENDAR_SOURCE_SETTINGS_STORAGE_KEY = 'fixer.calendar.sourceSettings';
 const CALENDAR_SOURCES = [
-  { id: 'organizer', label: 'Organizer' },
+  { id: 'organizer', label: 'Zadania' },
   { id: 'projects', label: 'Projekty' },
   { id: 'rentals', label: 'Wypożyczenia' },
   { id: 'service', label: 'Serwis' },
@@ -4726,7 +4955,7 @@ function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTask
       source: 'organizer',
       sourceId: recordId,
       sourceRecord: task,
-      sourceLabel: 'Organizer',
+      sourceLabel: 'Zadania i projekty',
       title: task.title,
       subtitle: task.category || task.priority || '',
       start: task.due_date,
@@ -4738,7 +4967,7 @@ function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTask
       source: 'organizer',
       sourceId: recordId,
       sourceRecord: task,
-      sourceLabel: 'Organizer',
+      sourceLabel: 'Zadania i projekty',
       title: `Przypomnienie: ${task.title}`,
       subtitle: task.category || task.priority || '',
       start: task.reminder_at,
@@ -4955,7 +5184,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     setProjectRows(projectsResult.data ?? []);
     setProjectTaskRows(projectTasksResult.data ?? []);
     setManualRows(manualResult.data ?? []);
-    const errors = [organizerResult.error ? 'Organizer' : '', rentalsResult.error ? 'Wypożyczenia' : '', serviceResult.error ? 'Serwis' : '', projectsResult.error ? 'Projekty' : '', manualResult.error ? 'Kalendarz' : ''].filter(Boolean);
+    const errors = [organizerResult.error ? 'Zadania' : '', rentalsResult.error ? 'Wypożyczenia' : '', serviceResult.error ? 'Serwis' : '', projectsResult.error ? 'Projekty' : '', manualResult.error ? 'Kalendarz' : ''].filter(Boolean);
     setNotice(errors.length ? `Nie udało się pobrać danych: ${errors.join(', ')}.` : '');
     setLoading(false);
   };
@@ -5039,7 +5268,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
 
   const openEvent = (event) => {
     if (event.source === 'manual') { setEditingManualEvent(event.sourceRecord); return; }
-    if (event.source === 'organizer') onNavigate('organizer', { type: 'organizer', taskId: event.sourceId });
+    if (event.source === 'organizer') onNavigate('projects', { type: 'projects', taskId: event.sourceId });
     if (event.source === 'rentals') onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: event.sourceId });
     if (event.source === 'service') onNavigate('service', { type: 'service', serviceOrderId: event.sourceId });
     if (event.source === 'projects') onNavigate('projects', { type: 'projects', projectId: event.sourceId });
@@ -6111,6 +6340,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [editingSimpleTask, setEditingSimpleTask] = useState(null);
   const [categories, setCategories] = useState(DEFAULT_ORGANIZER_CATEGORIES);
   const [pendingOpenProjectId, setPendingOpenProjectId] = useState(null);
+  const [pendingOpenSimpleTaskId, setPendingOpenSimpleTaskId] = useState(null);
   const [selectedProjectKey, setSelectedProjectKey] = useState(() => localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY));
   const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedProjectDetailsCollapsed);
   const [detailsWidth, setDetailsWidth] = useState(getSavedProjectDetailsWidth);
@@ -6139,17 +6369,29 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   }, [selectedProjectKey]);
 
   useEffect(() => {
-    if (dashboardIntent?.type !== 'projects') return;
+    if (!['projects', 'organizer'].includes(dashboardIntent?.type)) return;
     if (dashboardIntent.projectId) setPendingOpenProjectId(dashboardIntent.projectId);
+    if (dashboardIntent.taskId) setPendingOpenSimpleTaskId(dashboardIntent.taskId);
+    if (dashboardIntent.filter === 'tasks') setFilters((current) => ({ ...current, type: 'task' }));
     onConsumeDashboardIntent?.();
   }, [dashboardIntent, onConsumeDashboardIntent]);
 
   useEffect(() => {
     if (!pendingOpenProjectId || !rows.length) return;
     const project = rows.find((r) => String(r.id ?? r.localId) === String(pendingOpenProjectId));
-    if (project) setSelectedProjectKey(String(project.id ?? project.localId));
+    if (project) setSelectedProjectKey(`project:${project.id ?? project.localId}`);
     setPendingOpenProjectId(null);
   }, [pendingOpenProjectId, rows]);
+
+  useEffect(() => {
+    if (!pendingOpenSimpleTaskId || !organizerRows.length) return;
+    const task = organizerRows.find((r) => String(r.id ?? r.localId) === String(pendingOpenSimpleTaskId));
+    if (task) {
+      setSelectedProjectKey(`task:${task.id ?? task.localId}`);
+      setFilters((current) => ({ ...current, type: 'task' }));
+    }
+    setPendingOpenSimpleTaskId(null);
+  }, [pendingOpenSimpleTaskId, organizerRows]);
 
   const activeRows = rows.filter((r) => !r.archived);
   const historyRows = rows.filter((r) => r.archived);
@@ -6424,7 +6666,7 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
     storageKey="fixer-organizer-task-modal"
     defaultSize={{ width: 760, height: 560 }}
     minSize={{ width: 560, height: 420 }}
-    eyebrow="Organizer"
+    eyebrow="Zadania i projekty"
     title={form.title || 'Nowe zadanie'}
     onClose={onClose}
     footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
@@ -6449,208 +6691,6 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
   </ResizableModalFrame>;
 }
 
-function OrganizerModule({ dashboardIntent, onConsumeDashboardIntent }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [filters, setFilters] = useStoredState('fixer-organizer-filters', { search: '', status: 'all', priority: 'all', category: 'all' });
-  const [historyCollapsed, setHistoryCollapsed] = useState(true);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState(null);
-  const [categories, setCategories] = useState(DEFAULT_ORGANIZER_CATEGORIES);
-  const [pendingOpenTaskId, setPendingOpenTaskId] = useState(null);
-
-  const loadData = async () => {
-    setLoading(true);
-    const [tasksResult, catsResult] = await Promise.all([fetchOrganizerTasks(), fetchOrganizerCategories()]);
-    setRows(tasksResult.data ?? []);
-    setCategories((catsResult.data ?? []).map((c) => c.name).filter(Boolean));
-    if (tasksResult.error) setNotice(`Nie udało się pobrać zadań z Supabase: ${tasksResult.error.message}. Uruchom migrację supabase/010_organizer_schema.sql.`);
-    else setNotice('');
-    setLoading(false);
-  };
-
-  useEffect(() => { loadData(); }, []);
-
-  useEffect(() => {
-    if (dashboardIntent?.type !== 'organizer') return;
-    if (dashboardIntent.taskId) setPendingOpenTaskId(dashboardIntent.taskId);
-    onConsumeDashboardIntent?.();
-  }, [dashboardIntent, onConsumeDashboardIntent]);
-
-  useEffect(() => {
-    if (!pendingOpenTaskId || !rows.length) return;
-    const task = rows.find((r) => String(r.id ?? r.localId) === String(pendingOpenTaskId));
-    if (task) { setEditingTask(task); setEditorOpen(true); }
-    setPendingOpenTaskId(null);
-  }, [pendingOpenTaskId, rows]);
-
-  const today = getLocalIsoDate();
-
-  const activeRows = rows.filter((r) => !r.archived);
-  const historyRows = rows.filter((r) => r.archived);
-
-  const formatReminderDisplay = (value) => {
-    if (!value) return '—';
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return String(value);
-    return d.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
-
-  const toTableRow = (task) => ({
-    ...task,
-    _task: task,
-    due_date_display: formatDashboardDate(task.due_date),
-    reminder_display: formatReminderDisplay(task.reminder_at),
-    created_display: formatDashboardDate(task.created_at),
-    completed_display: formatDashboardDate(task.completed_date),
-    _overdue: task.due_date && String(task.due_date).slice(0, 10) < today
-  });
-
-  const activeTableRows = useMemo(() => activeRows.map(toTableRow), [activeRows, today]);
-  const historyTableRows = useMemo(() => historyRows.map(toTableRow), [historyRows]);
-
-  const filteredRows = useMemo(() => {
-    const query = String(filters.search ?? '').trim().toLocaleLowerCase('pl');
-    return activeTableRows.filter((row) => {
-      if ((filters.status ?? 'all') !== 'all' && row.status !== filters.status) return false;
-      if ((filters.priority ?? 'all') !== 'all' && row.priority !== filters.priority) return false;
-      if ((filters.category ?? 'all') !== 'all' && (row.category ?? '') !== filters.category) return false;
-      if (query) {
-        const searchable = [row.title, row.description, row.status, row.priority, row.category, row.linked_label].filter(Boolean).join(' ').toLocaleLowerCase('pl');
-        if (!searchable.includes(query)) return false;
-      }
-      return true;
-    });
-  }, [activeTableRows, filters]);
-
-  const saveTask = async (task) => {
-    if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
-    const result = task.id || task.localId
-      ? await updateOrganizerTask(task.id ?? task.localId, task)
-      : await createOrganizerTask(task);
-    if (result.error) { alert(humanizeError(result.error, 'organizer')); return; }
-    setEditorOpen(false);
-    await loadData();
-  };
-
-  const deleteTask = async (task) => {
-    if (!confirm(`Usunąć zadanie: „${task.title}"?`)) return;
-    const { error, local } = await deleteOrganizerTask(task.id ?? task.localId, task);
-    if (error) { alert(humanizeError(error, 'organizer')); return; }
-    await loadData();
-  };
-
-  const setTaskStatus = async (task, newStatus) => {
-    if (newStatus === task.status) return;
-    if (ORGANIZER_TERMINAL_STATUSES.includes(newStatus) && !confirm(`Przenieść zadanie „${task.title}" do historii?`)) return;
-    await saveTask({
-      ...task,
-      status: newStatus,
-      archived: ORGANIZER_TERMINAL_STATUSES.includes(newStatus),
-      completed_date: ORGANIZER_TERMINAL_STATUSES.includes(newStatus) ? today : task.completed_date
-    });
-  };
-
-  const handleRestoreTask = async (task) => {
-    if (!confirm(`Przywrócić zadanie „${task.title}" jako aktywne?`)) return;
-    await saveTask({ ...task, status: ORGANIZER_TASK_STATUSES[0], archived: false, completed_date: null });
-  };
-
-  const handleDeleteHistoryTask = async (task) => {
-    if (task.archived !== true) return;
-    if (!confirm(`Usunąć zadanie „${task.title}" z historii?`)) return;
-    const { error, local } = await deleteOrganizerTask(task.id ?? task.localId, task);
-    if (error) { alert(humanizeError(error, 'organizer')); return; }
-    await loadData();
-  };
-
-  const clearFilters = () => setFilters({ search: '', status: 'all', priority: 'all', category: 'all' });
-
-  const organizerColumns = [
-    { key: 'title', label: 'Tytuł' },
-    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={ORGANIZER_TASK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} /> },
-    { key: 'priority', label: 'Priorytet' },
-    { key: 'due_date_display', label: 'Termin' },
-    { key: 'category', label: 'Kategoria' },
-    { key: 'reminder_display', label: 'Przypomnienie' }
-  ];
-
-  const organizerHistoryColumns = [
-    { key: 'title', label: 'Tytuł' },
-    { key: 'status', label: 'Status' },
-    { key: 'priority', label: 'Priorytet' },
-    { key: 'due_date_display', label: 'Termin' },
-    { key: 'category', label: 'Kategoria' },
-    { key: 'completed_display', label: 'Zakończono' }
-  ];
-
-  return <div className="module-page organizer-module-page">
-    <section className="panel hero-panel organizer-hero-panel">
-      <div className="module-actions">
-        <AppButton variant="primary" className="module-action-button" onClick={() => { setEditingTask(null); setEditorOpen(true); }}><Plus size={18} />Nowe zadanie</AppButton>
-        <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
-        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(ORGANIZER_TABLE_KEY, organizerColumns, filteredRows)} disabled={!filteredRows.length}><Download size={16} />CSV</AppButton>
-        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania aktywne', ORGANIZER_TABLE_KEY, organizerColumns, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />PDF</AppButton>
-      </div>
-      {notice && <div className="notice">{notice}</div>}
-    </section>
-
-    <section className="panel service-list-panel rentals-records-section">
-      <div className="rentals-section-heading">
-        <div><p className="eyebrow">Aktywne</p><h3>Zadania aktywne</h3></div>
-        <span>{activeRows.length} pozycji</span>
-      </div>
-      <div className="client-filter-bar organizer-filter-bar">
-        <label>Szukaj<AppInput value={filters.search ?? ''} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} placeholder="Tytuł, opis, kategoria..." /></label>
-        <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(e) => setFilters((current) => ({ ...current, status: e.target.value }))}><option value="all">Wszystkie</option>{ORGANIZER_TASK_STATUSES.filter((s) => !ORGANIZER_TERMINAL_STATUSES.includes(s)).map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></label>
-        <label>Priorytet<AppSelect value={filters.priority ?? 'all'} onChange={(e) => setFilters((current) => ({ ...current, priority: e.target.value }))}><option value="all">Wszystkie</option>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></label>
-        <label>Kategoria<AppSelect value={filters.category ?? 'all'} onChange={(e) => setFilters((current) => ({ ...current, category: e.target.value }))}><option value="all">Wszystkie</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></label>
-        <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść</AppButton>
-        <span className="filter-count">{filteredRows.length} / {activeRows.length}</span>
-      </div>
-      <DataTable
-        storageKey={ORGANIZER_TABLE_KEY}
-        loading={loading}
-        columns={organizerColumns}
-        rows={filteredRows}
-        onOpen={(row) => { setEditingTask(row._task); setEditorOpen(true); }}
-        onEdit={(row) => { setEditingTask(row._task); setEditorOpen(true); }}
-        onDelete={(row) => deleteTask(row._task)}
-        openLabel="Otwórz zadanie"
-        editLabel="Edytuj zadanie"
-        deleteLabel="Usuń zadanie"
-        customRowActions={[
-          { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCircle2, visible: (row) => !ORGANIZER_TERMINAL_STATUSES.includes(row.status), onClick: (row) => setTaskStatus(row._task, 'Zrobione') }
-        ]}
-      />
-    </section>
-
-    <section className="panel service-list-panel rentals-records-section service-completed-section">
-      <div className="rentals-section-heading">
-        <div><p className="eyebrow">Historia</p><h3>Zadania zakończone</h3></div>
-        <div className="section-export-actions">
-          <ButtonSecondary onClick={() => exportTableToCsv(ORGANIZER_HISTORY_TABLE_KEY, organizerHistoryColumns, historyTableRows)} disabled={!historyTableRows.length}><Download size={15} />CSV</ButtonSecondary>
-          <ButtonSecondary onClick={() => exportTableToPdf('Historia zadań', ORGANIZER_HISTORY_TABLE_KEY, organizerHistoryColumns, historyTableRows)} disabled={!historyTableRows.length}><FileText size={15} />PDF</ButtonSecondary>
-          <ButtonSecondary onClick={() => setHistoryCollapsed((v) => !v)}>{historyCollapsed ? 'Rozwiń' : 'Zwiń'} · {historyRows.length}</ButtonSecondary>
-        </div>
-      </div>
-      {!historyCollapsed && <DataTable
-        storageKey={ORGANIZER_HISTORY_TABLE_KEY}
-        loading={loading}
-        columns={organizerHistoryColumns}
-        rows={historyTableRows}
-        onOpen={(row) => { setEditingTask(row._task); setEditorOpen(true); }}
-        onDelete={(row) => handleDeleteHistoryTask(row._task)}
-        openLabel="Podgląd zadania"
-        deleteLabel="Usuń z historii"
-        customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => handleRestoreTask(row._task) }]}
-      />}
-    </section>
-
-    {editorOpen && <OrganizerTaskEditor task={editingTask} categories={categories} onClose={() => setEditorOpen(false)} onSave={saveTask} />}
-  </div>;
-}
 function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange }) {
   return <div className="module-page settings-module-page compact-settings-page">
     <SettingsGrid dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} />
@@ -6711,6 +6751,36 @@ function saveCompanyProfile(profile) {
 
 const DOCUMENT_SETTINGS_STORAGE_KEY = 'fixer-document-settings';
 const DOCUMENT_TEMPLATE_OPTIONS = ['Standardowy'];
+const RENTAL_AGREEMENT_TEMPLATE_KEY = 'rentalAgreement';
+const DEFAULT_RENTAL_AGREEMENT_COLUMNS = [
+  { key: 'lp', label: 'LP', enabled: true },
+  { key: 'name', label: 'Nazwa sprzętu', enabled: true },
+  { key: 'brand', label: 'Marka', enabled: true },
+  { key: 'model', label: 'Model', enabled: true },
+  { key: 'serial', label: 'Numer seryjny', enabled: true },
+  { key: 'barcode', label: 'Kod kreskowy', enabled: false },
+  { key: 'inventory', label: 'Numer ewidencyjny', enabled: true },
+  { key: 'quantity', label: 'Ilość', enabled: true },
+  { key: 'conditionOut', label: 'Stan przy wydaniu', enabled: true },
+  { key: 'notes', label: 'Uwagi', enabled: true }
+];
+const DEFAULT_RENTAL_AGREEMENT_TERMS = [
+  'Wypożyczający przekazuje sprzęt sprawny technicznie.',
+  'Biorący potwierdza odbiór sprzętu.',
+  'Biorący odpowiada za uszkodzenia i utratę sprzętu.',
+  'Sprzęt powinien zostać zwrócony w ustalonym terminie.',
+  'Zwrot po terminie może skutkować dodatkowymi opłatami.',
+  'Wszelkie uszkodzenia należy zgłosić niezwłocznie.',
+  'Zwrot sprzętu zostaje potwierdzony po przyjęciu przez firmę.'
+];
+const DEFAULT_DOCUMENT_TEMPLATES = {
+  [RENTAL_AGREEMENT_TEMPLATE_KEY]: {
+    name: 'Umowa wypożyczenia',
+    documentTitle: 'Umowa wypożyczenia sprzętu',
+    columns: DEFAULT_RENTAL_AGREEMENT_COLUMNS,
+    terms: DEFAULT_RENTAL_AGREEMENT_TERMS
+  }
+};
 const DEFAULT_DOCUMENT_NUMBERING = {
   rentals: { prefix: 'WYP', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
   returns: { prefix: 'ZW', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
@@ -6726,8 +6796,44 @@ const DEFAULT_DOCUMENT_SETTINGS = {
     estimates: 'Standardowy',
     tableExport: 'Standardowy'
   },
+  documentTemplates: DEFAULT_DOCUMENT_TEMPLATES,
   numbering: DEFAULT_DOCUMENT_NUMBERING
 };
+
+function normalizeRentalAgreementTemplate(template = {}) {
+  const incomingColumns = Array.isArray(template.columns) ? template.columns : [];
+  const fallbackMap = new Map(DEFAULT_RENTAL_AGREEMENT_COLUMNS.map((column) => [column.key, column]));
+  const incomingKeys = new Set();
+  const columns = incomingColumns
+    .map((column) => {
+      const fallback = fallbackMap.get(column?.key);
+      if (!fallback) return null;
+      incomingKeys.add(fallback.key);
+      return {
+        key: fallback.key,
+        label: fallback.label,
+        enabled: column.enabled !== false
+      };
+    })
+    .filter(Boolean);
+  DEFAULT_RENTAL_AGREEMENT_COLUMNS.forEach((fallback) => {
+    if (incomingKeys.has(fallback.key)) return;
+    columns.push({
+      key: fallback.key,
+      label: fallback.label,
+      enabled: fallback.enabled !== false
+    });
+  });
+  const terms = Array.isArray(template.terms)
+    ? template.terms.map((term) => String(term ?? '').trim()).filter(Boolean)
+    : DEFAULT_RENTAL_AGREEMENT_TERMS;
+  return {
+    name: String(template.name ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].name),
+    documentTitle: String(template.documentTitle ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].documentTitle),
+    columns: columns.length ? columns : DEFAULT_RENTAL_AGREEMENT_COLUMNS,
+    terms: terms.length ? terms : DEFAULT_RENTAL_AGREEMENT_TERMS
+  };
+}
 
 function normalizeDocumentNumbering(value, fallback) {
   return {
@@ -6744,6 +6850,11 @@ function normalizeDocumentSettings(settings) {
   });
   return {
     templates,
+    documentTemplates: {
+      ...DEFAULT_DOCUMENT_TEMPLATES,
+      ...(settings?.documentTemplates ?? {}),
+      [RENTAL_AGREEMENT_TEMPLATE_KEY]: normalizeRentalAgreementTemplate(settings?.documentTemplates?.[RENTAL_AGREEMENT_TEMPLATE_KEY])
+    },
     numbering: Object.fromEntries(Object.entries(DEFAULT_DOCUMENT_NUMBERING).map(([key, fallback]) => [
       key,
       normalizeDocumentNumbering(settings?.numbering?.[key], fallback)
@@ -7267,7 +7378,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
           <colgroup>{hasSelectionActions && <col className="selection-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
           <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
             const alignment = getColumnAlignment(column, columnAlignments);
-            return <th key={column.key} draggable aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${sortKey === column.key ? 'sorted' : ''} table-align-${alignment}`.trim()}><span><GripVertical size={14} />{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>;
+            return <th key={column.key} draggable aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${sortKey === column.key ? 'sorted' : ''} table-align-${alignment}`.trim()}><span>{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>;
           })}</tr></thead>
           <tbody>{sortedRows.map((row, index) => {
             const rowKey = getRowKey(row, index);
@@ -7360,12 +7471,35 @@ const DEFAULT_STATUS_COLORS = {
   'w naprawie': '#8b5cf6', 'gotowe do odbioru': '#22c55e', 'wydane': '#14b8a6',
   'dostępny': '#22c55e', 'wypożyczony': '#3b82f6', 'rezerwacja': '#f97316',
   'serwis': '#6366f1', 'uszkodzony': '#ef4444', 'wycofany': '#64748b', 'składnik zestawu': '#94a3b8',
-  'aktywne': '#3b82f6', 'częściowo zwrócone': '#f97316', 'zwrócone': '#22c55e', 'po terminie': '#ef4444',
+  'aktywne': '#3b82f6', 'częściowo zwrócone': '#f97316', 'zwrócone': '#22c55e', 'zwrócony': '#22c55e', 'wydany': '#3b82f6', 'zagubiony': '#ef4444', 'wymaga serwisu': '#f97316', 'po terminie': '#ef4444',
   'do zrobienia': '#3b82f6', 'w trakcie': '#8b5cf6', 'oczekuje': '#f97316', 'zrobione': '#22c55e',
   'anulowane': '#ef4444',
   'stały': '#22c55e', 'nowy': '#3b82f6', 'vip': '#eab308', 'problematyczny': '#ef4444', 'pracownik': '#6366f1',
   'planowany': '#6366f1', 'wstrzymany': '#f97316', 'zakończony': '#22c55e'
 };
+
+const SYSTEM_STATUS_LABELS = {
+  active: 'Aktywne',
+  partially_returned: 'Częściowo zwrócone',
+  returned: 'Zwrócone',
+  issued: 'Wydany',
+  damaged: 'Uszkodzony',
+  lost: 'Zagubiony',
+  service_required: 'Wymaga serwisu',
+  available: 'Dostępny',
+  unavailable: 'Niedostępny',
+  pending: 'Oczekuje',
+  completed: 'Zakończone',
+  complete: 'Zakończone',
+  cancelled: 'Anulowane',
+  canceled: 'Anulowane'
+};
+
+function formatSystemStatusLabel(value) {
+  const text = String(value ?? '');
+  const key = text.trim().toLowerCase();
+  return SYSTEM_STATUS_LABELS[key] ?? text;
+}
 
 function getStatusColors() {
   try {
@@ -7400,13 +7534,13 @@ function injectStatusColorStyles(colorMap) {
 }
 
 function StatusPill({ value }) {
-  const text = String(value ?? '');
+  const text = formatSystemStatusLabel(value);
   const cssClass = statusToCssClass(text);
   const lower = text.toLowerCase();
-  const tone = lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('uszk') ? 'danger'
+  const tone = lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('zagub') || lower.includes('uszk') ? 'danger'
     : lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly') ? 'success'
     : lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') ? 'warning'
-    : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') ? 'info'
+    : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') || lower.includes('wydany') ? 'info'
     : 'neutral';
   return <span className={`status-pill ${cssClass} ${tone}`}>{text}</span>;
 }
@@ -7521,8 +7655,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     { id: 'equipment', label: 'Sprzęt', icon: Package, description: 'Kategorie, marki, lokalizacje i statusy sprzętu.' },
     { id: 'service', label: 'Serwis', icon: Wrench, description: 'Statusy serwisowe, priorytety i typy zgłoszeń.' },
     { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList, description: 'Statusy wypożyczeń, zwrotów i domyślne okresy.' },
-    { id: 'organizer', label: 'Organizer', icon: CheckCircle2, description: 'Kategorie zadań i konfiguracja Organizera.' },
-    { id: 'projects', label: 'Projekty', icon: Briefcase, description: 'Kolory statusów projektów i numeracja.' },
+    { id: 'projects', label: 'Zadania i projekty', icon: Briefcase, description: 'Kategorie zadań, statusy, priorytety, kolory i numeracja projektów.' },
     { id: 'calendar', label: 'Kalendarz', icon: CalendarDays, description: 'Domyślna widoczność i kolory źródeł kalendarza.' },
     { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony PDF, numeracja, stopki i nagłówki.' },
     { id: 'backups', label: 'Kopie bezpieczeństwa', icon: Download, description: 'Pełny backup danych i eksporty CSV.' },
@@ -7569,6 +7702,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
   const [rentalNumberingNotice, setRentalNumberingNotice] = useState('');
   const [documentSettings, setDocumentSettings] = useState(getDocumentSettings);
   const [documentSettingsNotice, setDocumentSettingsNotice] = useState('');
+  const templateImportInputRef = useRef(null);
   const [backupNotice, setBackupNotice] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreCandidate, setRestoreCandidate] = useState(null);
@@ -7579,6 +7713,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
   const [editingOrganizerCategory, setEditingOrganizerCategory] = useState(null);
   const [editingOrganizerCategoryValue, setEditingOrganizerCategoryValue] = useState('');
   const [calendarSourceSettings, setCalendarSourceSettings] = useState(getCalendarSourceSettings);
+  const [docFullPreviewHtml, setDocFullPreviewHtml] = useState(null);
 
   const loadOrganizerSettings = async () => {
     const result = await fetchOrganizerCategories();
@@ -7727,6 +7862,101 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
       }
     }));
     setDocumentSettingsNotice('');
+  };
+
+  const updateRentalAgreementTemplate = (updater) => {
+    setDocumentSettings((current) => {
+      const currentTemplate = getRentalAgreementTemplate(current);
+      const nextTemplate = normalizeRentalAgreementTemplate(typeof updater === 'function' ? updater(currentTemplate) : updater);
+      return {
+        ...current,
+        documentTemplates: {
+          ...current.documentTemplates,
+          [RENTAL_AGREEMENT_TEMPLATE_KEY]: nextTemplate
+        }
+      };
+    });
+    setDocumentSettingsNotice('');
+  };
+
+  const toggleRentalAgreementColumn = (key) => {
+    updateRentalAgreementTemplate((template) => ({
+      ...template,
+      columns: template.columns.map((column) => column.key === key ? { ...column, enabled: !column.enabled } : column)
+    }));
+  };
+
+  const moveRentalAgreementColumn = (key, direction) => {
+    updateRentalAgreementTemplate((template) => {
+      const columns = [...template.columns];
+      const index = columns.findIndex((column) => column.key === key);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= columns.length) return template;
+      const [item] = columns.splice(index, 1);
+      columns.splice(nextIndex, 0, item);
+      return { ...template, columns };
+    });
+  };
+
+  const resetRentalAgreementColumns = () => {
+    updateRentalAgreementTemplate((template) => ({ ...template, columns: DEFAULT_RENTAL_AGREEMENT_COLUMNS }));
+    setDocumentSettingsNotice('Przywrócono domyślne kolumny umowy.');
+  };
+
+  const updateRentalAgreementTerm = (index, value) => {
+    updateRentalAgreementTemplate((template) => ({
+      ...template,
+      terms: template.terms.map((term, termIndex) => termIndex === index ? value : term)
+    }));
+  };
+
+  const addRentalAgreementTerm = () => {
+    updateRentalAgreementTemplate((template) => ({ ...template, terms: [...template.terms, 'Nowy punkt umowy.'] }));
+  };
+
+  const removeRentalAgreementTerm = (index) => {
+    updateRentalAgreementTemplate((template) => ({ ...template, terms: template.terms.filter((_, termIndex) => termIndex !== index) }));
+  };
+
+  const moveRentalAgreementTerm = (index, direction) => {
+    updateRentalAgreementTemplate((template) => {
+      const terms = [...template.terms];
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= terms.length) return template;
+      const [item] = terms.splice(index, 1);
+      terms.splice(nextIndex, 0, item);
+      return { ...template, terms };
+    });
+  };
+
+  const resetRentalAgreementTerms = () => {
+    updateRentalAgreementTemplate((template) => ({ ...template, terms: DEFAULT_RENTAL_AGREEMENT_TERMS }));
+    setDocumentSettingsNotice('Przywrócono domyślne warunki umowy.');
+  };
+
+  const exportRentalAgreementTemplate = () => {
+    const template = getRentalAgreementTemplate(documentSettings);
+    downloadTextFile(`fixer-szablon-umowy-wypozyczenia-${getLocalIsoDate()}.json`, JSON.stringify({ type: RENTAL_AGREEMENT_TEMPLATE_KEY, version: 1, template }, null, 2), 'application/json;charset=utf-8');
+    setDocumentSettingsNotice('Wyeksportowano konfigurację szablonu umowy.');
+  };
+
+  const importRentalAgreementTemplate = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(String(reader.result ?? ''));
+        const template = payload.template ?? payload;
+        updateRentalAgreementTemplate(template);
+        setDocumentSettingsNotice('Zaimportowano konfigurację szablonu. Zapisz ustawienia, aby utrwalić zmianę.');
+      } catch (error) {
+        console.error('Rental agreement template import failed', error);
+        setDocumentSettingsNotice('Nie udało się zaimportować konfiguracji szablonu.');
+      }
+    };
+    reader.readAsText(file);
   };
 
   const saveDocumentSettingsState = () => {
@@ -7946,7 +8176,8 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
 
   useEffect(() => {
     if (dashboardIntent?.type !== 'settings') return;
-    if (dashboardIntent.section && sections.some((section) => section.id === dashboardIntent.section)) setActiveSection(dashboardIntent.section);
+    const requestedSection = dashboardIntent.section === 'organizer' ? 'projects' : dashboardIntent.section;
+    if (requestedSection && sections.some((section) => section.id === requestedSection)) setActiveSection(requestedSection);
     onConsumeDashboardIntent?.();
   }, [dashboardIntent, onConsumeDashboardIntent, sections]);
 
@@ -8342,6 +8573,29 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     { key: 'estimates', label: 'Kosztorysy', value: documentSettings.numbering.estimates, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.estimates, 1, new Date('2026-06-03T12:00:00')) },
     { key: 'projects', label: 'Projekty', value: documentSettings.numbering.projects, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.projects, 1, new Date('2026-06-03T12:00:00')) }
   ];
+  const rentalAgreementTemplate = getRentalAgreementTemplate(documentSettings);
+  const rentalAgreementPreviewRental = {
+    rental_number: formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00')),
+    client_id: 'preview-client',
+    clients: {
+      type: 'Firma',
+      name: 'Przykładowy klient Sp. z o.o.',
+      nip: '1234567890',
+      street: 'Testowa',
+      building_number: '12',
+      postal_code: '00-001',
+      city: 'Warszawa',
+      phone: '+48 000 000 000',
+      email: 'kontakt@example.com'
+    },
+    start_date: '2026-06-03',
+    planned_return_date: '2026-06-10',
+    rental_items: [
+      { id: 'preview-1', name_snapshot: 'Kamera Sony PXW-Z190', brand_snapshot: 'Sony', model_snapshot: 'PXW-Z190', serial_snapshot: 'SN-001', barcode_snapshot: '590000000001', inventory_number_snapshot: 'EQ/001', condition_out: 'Dobry' },
+      { id: 'preview-2', name_snapshot: 'Statyw Manfrotto', brand_snapshot: 'Manfrotto', model_snapshot: '504HD', serial_snapshot: 'SN-002', barcode_snapshot: '590000000002', inventory_number_snapshot: 'EQ/002', condition_out: 'Bardzo dobry' }
+    ]
+  };
+  const rentalAgreementPreviewHtml = buildRentalAgreementHtml(rentalAgreementPreviewRental, { preview: true, settings: documentSettings, company: companyProfile });
 
 
   return <div className="settings-tabs-layout">
@@ -8580,6 +8834,71 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
             </div>
           </section>
 
+          <section className="settings-card compact-admin-card firm-card documents-card document-template-builder-card">
+            <div className="documents-card-header-row">
+              <div>
+                <p className="eyebrow">Szablony dokumentów</p>
+                <h3>Umowa wypożyczenia</h3>
+              </div>
+              <div className="settings-action-row">
+                <AppButton variant="secondary" size="sm" onClick={exportRentalAgreementTemplate}><Download size={14} />Eksport</AppButton>
+                <AppButton variant="secondary" size="sm" onClick={() => templateImportInputRef.current?.click()}><FolderOpen size={14} />Import</AppButton>
+                <input ref={templateImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTemplate} className="backup-file-input" />
+              </div>
+            </div>
+            <label className="firm-field">Tytuł dokumentu<AppInput value={rentalAgreementTemplate.documentTitle} onChange={(event) => updateRentalAgreementTemplate((template) => ({ ...template, documentTitle: event.target.value }))} /></label>
+            <div className="document-template-management-grid">
+              <div className="document-template-control-panel">
+                <div className="documents-subheader">
+                  <strong>Kolumny tabeli sprzętu</strong>
+                  <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementColumns}><RotateCcw size={13} />Reset</AppButton>
+                </div>
+                <div className="document-column-list">
+                  {rentalAgreementTemplate.columns.map((column, index) => <div key={column.key} className="document-column-row">
+                    <label className="settings-check"><input type="checkbox" checked={column.enabled} onChange={() => toggleRentalAgreementColumn(column.key)} />{column.label}</label>
+                    <div className="dictionary-row-actions dictionary-icon-actions">
+                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, -1)} disabled={index === 0} aria-label="Przenieś wyżej" title="Przenieś wyżej"><ArrowUp size={14} /></button>
+                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, 1)} disabled={index === rentalAgreementTemplate.columns.length - 1} aria-label="Przenieś niżej" title="Przenieś niżej"><ArrowDown size={14} /></button>
+                    </div>
+                  </div>)}
+                </div>
+              </div>
+              <div className="document-template-control-panel">
+                <div className="documents-subheader">
+                  <strong>Warunki umowy</strong>
+                  <div className="settings-action-row">
+                    <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementTerms}><RotateCcw size={13} />Reset</AppButton>
+                    <AppButton variant="secondary" size="sm" onClick={addRentalAgreementTerm}><Plus size={13} />Dodaj</AppButton>
+                  </div>
+                </div>
+                <div className="document-terms-list">
+                  {rentalAgreementTemplate.terms.map((term, index) => <div key={`${index}-${term.slice(0, 12)}`} className="document-term-row">
+                    <span>{index + 1}</span>
+                    <AppTextarea value={term} onChange={(event) => updateRentalAgreementTerm(index, event.target.value)} />
+                    <div className="dictionary-row-actions dictionary-icon-actions">
+                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, -1)} disabled={index === 0} aria-label="Przenieś wyżej" title="Przenieś wyżej"><ArrowUp size={14} /></button>
+                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, 1)} disabled={index === rentalAgreementTemplate.terms.length - 1} aria-label="Przenieś niżej" title="Przenieś niżej"><ArrowDown size={14} /></button>
+                      <button type="button" className="dictionary-icon-button remove" onClick={() => removeRentalAgreementTerm(index)} disabled={rentalAgreementTemplate.terms.length <= 1} aria-label="Usuń punkt" title="Usuń punkt"><Trash2 size={14} /></button>
+                    </div>
+                  </div>)}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="settings-card compact-admin-card firm-card documents-card document-preview-card">
+            <div className="documents-card-header-row">
+              <div>
+                <p className="eyebrow">Podgląd</p>
+                <h3>Układ umowy</h3>
+              </div>
+              <AppButton variant="secondary" size="sm" onClick={() => setDocFullPreviewHtml(rentalAgreementPreviewHtml)}><FileText size={14} />Pełny podgląd</AppButton>
+            </div>
+            <div className="document-template-preview-frame">
+              <iframe title="Podgląd szablonu umowy wypożyczenia" srcDoc={rentalAgreementPreviewHtml} />
+            </div>
+          </section>
+
           <section className="settings-card compact-admin-card firm-card documents-card documents-header-card">
             <h3>Nagłówki dokumentów</h3>
             <label className="firm-field firm-field-footer">Tekst nagłówka PDF<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} placeholder="np. Dokument wygenerowany przez FIXER WEB" /></label>
@@ -8650,14 +8969,14 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('equipment')} disabled={backupBusy}>Sprzęt CSV</AppButton>
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('rentals')} disabled={backupBusy}>Wypożyczenia CSV</AppButton>
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('service')} disabled={backupBusy}>Serwis CSV</AppButton>
-              <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('organizer')} disabled={backupBusy}>Organizer CSV</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('organizer')} disabled={backupBusy}>Zadania CSV</AppButton>
             </div>
           </section>
 
           <section className="settings-card compact-admin-card firm-card backup-card backup-scope-card">
             <h3>Zakres backupu</h3>
             <div className="backup-scope-list">
-              {BACKUP_INCLUDED_TABLES.map((table) => <span key={table}>{table}</span>)}
+              {BACKUP_INCLUDED_TABLES.map((table) => <span key={table}>{formatBackupTableLabel(table)}</span>)}
             </div>
           </section>
         </div>
@@ -8703,7 +9022,48 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
       {activeSection === 'projects' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
         <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
           <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div><h3>Kolory statusów projektów</h3><p className="muted">Kolor widoczny przy statusach w module Projekty.</p></div>
+            <div>
+              <h3>Kategorie zadań</h3>
+              <p className="muted">Lista kategorii / tagów widoczna przy prostych zadaniach w module Zadania i projekty.</p>
+            </div>
+            <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={resetOrganizerCategoryItems}>Domyślne</AppButton>
+          </div>
+          <div className="dictionary-add-compact">
+            <AppInput value={newOrganizerCategory} onChange={(e) => setNewOrganizerCategory(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addOrganizerCategoryItem(); }} placeholder="np. Finanse" />
+            <button type="button" className="dictionary-icon-button add" onClick={addOrganizerCategoryItem} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
+          </div>
+          <div className="dictionary-list dictionary-list-compact">
+            {organizerCategoryItems.map((item) => {
+              const isEditing = editingOrganizerCategory?.id === item.id;
+              return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
+                {isEditing
+                  ? <input value={editingOrganizerCategoryValue} onChange={(e) => setEditingOrganizerCategoryValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveOrganizerCategoryItem(); if (e.key === 'Escape') { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); } }} autoFocus />
+                  : <button type="button" className="dictionary-name-button" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} title="Edytuj">{item.name}</button>}
+                <div className="dictionary-row-actions dictionary-icon-actions">
+                  {isEditing
+                    ? <><button type="button" className="dictionary-icon-button save" onClick={saveOrganizerCategoryItem} aria-label="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={() => { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); }} aria-label="Anuluj"><X size={15} /></button></>
+                    : <><button type="button" className="dictionary-icon-button edit" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} aria-label="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => deleteOrganizerCategoryItem(item)} aria-label="Usuń">−</button></>}
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div><h3>Kolory statusów zadań</h3><p className="muted">Kolor widoczny przy statusach prostych zadań w module Zadania i projekty.</p></div>
+          </div>
+          <div className="dictionary-list dictionary-list-compact">
+            {ORGANIZER_TASK_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
+              <span className="dictionary-name-static">{status}</span>
+              <div className="dictionary-row-actions dictionary-icon-actions">
+                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
+              </div>
+            </div>)}
+          </div>
+        </div>
+        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
+          <div className="settings-card-header compact-card-header dictionary-card-header">
+            <div><h3>Kolory statusów projektów</h3><p className="muted">Kolor widoczny przy statusach projektów w module Zadania i projekty.</p></div>
           </div>
           <div className="dictionary-list dictionary-list-compact">
             {PROJECT_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
@@ -8716,7 +9076,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
         </div>
         <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
           <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div><h3>Kolory statusów zadań projektów</h3><p className="muted">Kolor widoczny przy statusach zadań projektu.</p></div>
+            <div><h3>Kolory statusów zadań projektów</h3><p className="muted">Kolor widoczny przy statusach zadań wewnątrz projektów.</p></div>
           </div>
           <div className="dictionary-list dictionary-list-compact">
             {PROJECT_TASK_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
@@ -8768,54 +9128,6 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
         </div>
       </div>}
 
-      {activeSection === 'organizer' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div>
-              <h3>Kategorie zadań</h3>
-              <p className="muted">Lista kategorii / tagów zadań w Organizerze.</p>
-            </div>
-            <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={resetOrganizerCategoryItems}>Domyślne</AppButton>
-          </div>
-          <div className="dictionary-add-compact">
-            <AppInput value={newOrganizerCategory} onChange={(e) => setNewOrganizerCategory(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addOrganizerCategoryItem(); }} placeholder="np. Finanse" />
-            <button type="button" className="dictionary-icon-button add" onClick={addOrganizerCategoryItem} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
-          </div>
-          <div className="dictionary-list dictionary-list-compact">
-            {organizerCategoryItems.map((item) => {
-              const isEditing = editingOrganizerCategory?.id === item.id;
-              return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
-                {isEditing
-                  ? <input value={editingOrganizerCategoryValue} onChange={(e) => setEditingOrganizerCategoryValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveOrganizerCategoryItem(); if (e.key === 'Escape') { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); } }} autoFocus />
-                  : <button type="button" className="dictionary-name-button" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} title="Edytuj">{item.name}</button>}
-                <div className="dictionary-row-actions dictionary-icon-actions">
-                  {isEditing
-                    ? <><button type="button" className="dictionary-icon-button save" onClick={saveOrganizerCategoryItem} aria-label="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={() => { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); }} aria-label="Anuluj"><X size={15} /></button></>
-                    : <><button type="button" className="dictionary-icon-button edit" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} aria-label="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => deleteOrganizerCategoryItem(item)} aria-label="Usuń">−</button></>}
-                </div>
-              </div>;
-            })}
-          </div>
-        </div>
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div><h3>Kolory statusów zadań</h3><p className="muted">Kolor widoczny przy statusach w Organizerze i całym programie.</p></div>
-          </div>
-          <div className="dictionary-list dictionary-list-compact">
-            {ORGANIZER_TASK_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
-              <span className="dictionary-name-static">{status}</span>
-              <div className="dictionary-row-actions dictionary-icon-actions">
-                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
-              </div>
-            </div>)}
-          </div>
-        </div>
-        <div className="settings-card compact-admin-card">
-          <h3>Informacje</h3>
-          <p className="muted">Układ tabeli, ukrywanie kolumn i menu kontekstowe działają globalnie tak jak w module Serwis.</p>
-        </div>
-      </div>}
-
       {restoreCandidate && <ModalFrame
         className="backup-restore-modal"
         eyebrow="Kopie bezpieczeństwa"
@@ -8835,6 +9147,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
       </ModalFrame>}
 
     </section>
+    {docFullPreviewHtml && <DocumentPreviewModal html={docFullPreviewHtml} title="Podgląd szablonu umowy" onClose={() => setDocFullPreviewHtml(null)} />}
   </div>;
 }
 

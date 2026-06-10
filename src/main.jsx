@@ -5712,7 +5712,7 @@ function SimpleTaskComments({ task, onChanged }) {
     onChanged?.();
   };
 
-  return <div className="simple-task-comments">
+  return <div className={`simple-task-comments ${comments.length > 0 ? 'has-comments' : ''}`}>
     <div className="simple-task-comments-title">Komentarze / postęp <span>({comments.length})</span></div>
     {notice && <div className="notice">{notice}</div>}
     <div className="project-comments-add">
@@ -5875,6 +5875,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   const renderTask = (task) => {
     const taskKey = String(task.id ?? task.localId);
     const comments = commentCounts[taskKey] ?? 0;
+    const hasComments = comments > 0;
     const done = task.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(task.status);
     const expanded = expandedTasks.has(taskKey);
     return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''}`} key={taskKey}>
@@ -5886,9 +5887,9 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
           <strong>{task.title}</strong>
           <span>{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
         </button>
-        <button type="button" className="project-detail-task-comments" onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
+        <button type="button" className={`project-detail-task-comments ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
         <div className="project-detail-task-actions">
-          <button type="button" className="project-icon-action" onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Komentarze" title="Komentarze / postęp"><MessageSquare size={14} /></button>
+          <button type="button" className={`project-icon-action comment-action ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Komentarze" title="Komentarze / postęp"><MessageSquare size={14} /></button>
           <button type="button" className="project-icon-action" onClick={(event) => { event.stopPropagation(); setEditingTask(task); setTaskEditorOpen(true); }} aria-label="Edytuj zadanie" title="Edytuj">✎</button>
         </div>
       </div>
@@ -6161,7 +6162,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   const activeColumns = [
     { key: 'type_label', label: 'Typ', align: 'center', renderCell: (row) => <span className={`work-type-pill ${row._workType}`}>{row.type_label}</span> },
-    { key: 'displayTitle', label: 'Nazwa', renderCell: (row) => <span className={row._workType === 'task' && row._source?.archived ? 'work-title-done' : ''}>{row.displayTitle}</span> },
+    { key: 'displayTitle', label: 'Nazwa', renderCell: (row) => <span className={`${row._workType === 'project' ? 'work-title-project' : ''} ${row._workType === 'task' && row._source?.archived ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span> },
     { key: 'client_name', label: 'Klient / powiązanie' },
     { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={row._workType === 'project' ? PROJECT_STATUSES : ORGANIZER_TASK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> },
     { key: 'priority', label: 'Priorytet', renderCell: (row) => <ServiceStatusCell value={row.priority} statuses={row._workType === 'project' ? PROJECT_PRIORITIES : ORGANIZER_TASK_PRIORITIES} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> },
@@ -6281,6 +6282,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
           </div>
           {notice && <div className="notice">{notice}</div>}
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
+            getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
             onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
         </AppSection>
 
@@ -6793,7 +6795,7 @@ function formatCompanyContact(profile) {
   return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true, getRowClassName = null }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -7177,7 +7179,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
             const expandable = hasExpandableRows && isRowExpandable?.(row);
             const expanded = expandable && expandedRowKeys.has(rowKey);
             const rowToneClass = row._rowTone ? `row-tone-${row._rowTone}` : '';
-            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${rowToneClass}`.trim();
+            const customRowClass = typeof getRowClassName === 'function' ? getRowClassName(row) : '';
+            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${rowToneClass} ${customRowClass}`.trim();
             const rowTitle = expandable
               ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.'
               : hasActions

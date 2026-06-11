@@ -388,3 +388,36 @@
   background: rgba(255, 255, 255, .96);
   color: var(--fw-color-text-strong);
 }
+
+/* ── AppNotice ── */
+.app-notice {
+  border-radius: var(--fw-radius-md);
+  padding: var(--fw-space-4) var(--fw-space-5);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.app-notice-info {
+  border: 1px solid var(--fw-color-primary-border);
+  background: var(--fw-color-primary-soft);
+  color: #bfdbfe;
+}
+.app-notice-success {
+  border: 1px solid rgba(34, 197, 94, .32);
+  background: var(--fw-color-success-bg);
+  color: var(--fw-color-success-text);
+}
+.app-notice-warning {
+  border: 1px solid rgba(245, 158, 11, .32);
+  background: var(--fw-color-warning-bg);
+  color: var(--fw-color-warning-text);
+}
+.app-notice-error {
+  border: 1px solid rgba(239, 68, 68, .38);
+  background: var(--fw-color-danger-bg);
+  color: var(--fw-color-danger-text);
+}
+.app-shell.theme-light .app-notice-info    { color: #1e40af; }
+.app-shell.theme-light .app-notice-success { color: #14532d; }
+.app-shell.theme-light .app-notice-warning { color: #92400e; }
+.app-shell.theme-light .app-notice-error   { color: #991b1b; }

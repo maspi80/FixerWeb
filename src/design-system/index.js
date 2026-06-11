@@ -19,5 +19,6 @@ export {
   ModalFrame,
   FormField,
   StatusPill,
-  EmptyState
+  EmptyState,
+  AppNotice
 } from './components.jsx';

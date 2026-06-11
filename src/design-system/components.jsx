@@ -155,3 +155,7 @@ export function EmptyState({ className = '', title, description, action = null }
     {action}
   </div>;
 }
+
+export function AppNotice({ variant = 'info', className = '', children }) {
+  return <div className={joinClassNames('app-notice', `app-notice-${variant}`, className)} role="alert">{children}</div>;
+}

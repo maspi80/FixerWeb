@@ -22,7 +22,8 @@ import {
   FormField,
   SectionPanel,
   StatusPill as DSStatusPill,
-  EmptyState
+  EmptyState,
+  AppNotice
 } from './design-system';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -4035,6 +4036,34 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
 }
 const SERVICE_TABLE_KEY = 'service-orders-table';
 
+function ConfirmDialog({ title, message, confirmLabel = 'Tak', cancelLabel = 'Anuluj', variant = 'danger', onConfirm, onCancel }) {
+  return <ModalFrame
+    className="confirm-dialog"
+    title={title}
+    onClose={onCancel}
+    footer={<><ButtonSecondary onClick={onCancel}>{cancelLabel}</ButtonSecondary><AppButton variant={variant} onClick={onConfirm}>{confirmLabel}</AppButton></>}
+  >
+    {message && <p className="confirm-dialog-message">{message}</p>}
+  </ModalFrame>;
+}
+
+function SelectStatusDialog({ order, statuses, onConfirm, onCancel }) {
+  const [selected, setSelected] = useState(order?.status ?? '');
+  return <ModalFrame
+    className="select-status-dialog"
+    eyebrow="Serwis"
+    title="Zmień status zlecenia"
+    onClose={onCancel}
+    footer={<><ButtonSecondary onClick={onCancel}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onConfirm(selected)} disabled={selected === order?.status}>Zmień status</ButtonPrimary></>}
+  >
+    <FormField label="Nowy status">
+      <AppSelect value={selected} onChange={(event) => setSelected(event.target.value)}>
+        {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+      </AppSelect>
+    </FormField>
+  </ModalFrame>;
+}
+
 function formatServiceMoney(value) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? `${number.toFixed(2).replace('.', ',')} zł` : '0,00 zł';
@@ -4087,6 +4116,8 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [equipmentRows, setEquipmentRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [selectStatusDialog, setSelectStatusDialog] = useState(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [filters, setFilters] = useStoredState('fixer-service-filters', { search: '', status: 'all', priority: 'all', category: 'all' });
@@ -4211,59 +4242,47 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   };
 
   const saveServiceOrder = async (order) => {
-    if (!String(order.service_number ?? '').trim()) {
-      alert('Numer zlecenia jest wymagany.');
-      return;
-    }
-    if (!String(order.customer_device_name ?? '').trim() && !order.equipment_id) {
-      alert('Podaj nazwę serwisowanego urządzenia albo wybierz powiązany sprzęt z bazy.');
-      return;
-    }
-    if (!String(order.fault_description ?? '').trim()) {
-      alert('Opis usterki jest wymagany.');
-      return;
-    }
     const result = order.id || order.localId
       ? await updateServiceOrderRecord(order.id ?? order.localId, order)
       : await createServiceOrderRecord(order);
     if (result.error) {
-      alert(humanizeError(result.error, 'service'));
-      return;
+      return { error: result.error };
     }
     if (order.status === 'Wydane') setServiceHistoryCollapsed(false);
     setEditorOpen(false);
     await loadServiceData();
+    return { error: null };
   };
 
-  const deleteServiceOrder = async (order) => {
+  const deleteServiceOrder = (order) => {
     if (order.status === 'Wydane') {
-      alert('Nie można usunąć zlecenia wydanego.');
+      setNotice('Nie można usunąć zlecenia wydanego. Zlecenia wydane znajdują się w historii.');
       return;
     }
-    if (!confirm(`Usunąć zlecenie ${order.service_number}?`)) return;
-    const { error, local } = await deleteServiceOrderRecord(order.id ?? order.localId, order);
-    if (error) {
-      alert(humanizeError(error, 'service'));
-      return;
-    }
-    await loadServiceData();
+    setConfirmDialog({
+      title: 'Usuń zlecenie serwisowe',
+      message: `Usunąć zlecenie ${order.service_number}? Operacja jest nieodwracalna.`,
+      confirmLabel: 'Usuń zlecenie',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const { error } = await deleteServiceOrderRecord(order.id ?? order.localId, order);
+        if (error) { setNotice(humanizeError(error, 'service')); return; }
+        await loadServiceData();
+      }
+    });
   };
 
-  const changeServiceStatus = async (order) => {
-    const nextStatus = prompt(`Nowy status:\n${serviceStatuses.join('\n')}`, order.status);
-    if (!nextStatus) return;
-    const normalized = serviceStatuses.find((status) => status.toLocaleLowerCase('pl') === nextStatus.trim().toLocaleLowerCase('pl'));
-    if (!normalized) {
-      alert('Wybierz jeden ze statusów serwisu dostępnych w Ustawieniach.');
-      return;
-    }
-    await saveServiceOrder({ ...order, status: normalized, completed_date: normalized === 'Wydane' ? (order.completed_date || getLocalIsoDate()) : order.completed_date });
+  const changeServiceStatus = (order) => {
+    setSelectStatusDialog({ order });
   };
 
   const handleRestoreServiceOrder = async (order) => {
     if (!confirm(`Przywrócić zlecenie ${order.service_number} jako aktywne?`)) return;
     const restoredStatus = serviceStatuses.find((s) => s !== 'Wydane') ?? 'Przyjęte';
-    await saveServiceOrder({ ...order, status: restoredStatus, completed_date: null });
+    const result = await saveServiceOrder({ ...order, status: restoredStatus, completed_date: null });
+    if (result?.error) setNotice(humanizeError(result.error, 'service'));
   };
 
   const handleDeleteCompletedServiceOrder = async (order) => {
@@ -4287,8 +4306,23 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   const setServiceOrderStatus = async (order, newStatus) => {
     if (newStatus === order.status) return;
-    if (newStatus === 'Wydane' && !confirm(`Zamknąć zlecenie ${order.service_number || 'serwisowe'} i przenieść do historii?`)) return;
-    await saveServiceOrder({ ...order, status: newStatus, completed_date: newStatus === 'Wydane' ? (order.completed_date || getLocalIsoDate()) : order.completed_date });
+    if (newStatus === 'Wydane') {
+      setConfirmDialog({
+        title: 'Zamknij zlecenie serwisowe',
+        message: `Zamknąć zlecenie ${order.service_number || 'serwisowe'} i przenieść do historii?`,
+        confirmLabel: 'Zamknij zlecenie',
+        cancelLabel: 'Anuluj',
+        variant: 'primary',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          const result = await saveServiceOrder({ ...order, status: newStatus, completed_date: order.completed_date || getLocalIsoDate() });
+          if (result?.error) setNotice(humanizeError(result.error, 'service'));
+        }
+      });
+      return;
+    }
+    const result = await saveServiceOrder({ ...order, status: newStatus, completed_date: order.completed_date ?? null });
+    if (result?.error) setNotice(humanizeError(result.error, 'service'));
   };
 
   const serviceColumns = [
@@ -4389,6 +4423,29 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
       />}
     </section>
     {editorOpen && <ServiceOrderEditor order={editingOrder} clients={clients} equipmentRows={equipmentRows} existingRows={rows} serviceStatuses={serviceStatuses} servicePriorities={servicePriorities} serviceDeviceCategories={serviceDeviceCategories} serviceIntakeConditions={serviceIntakeConditions} serviceExternalServices={serviceExternalServices} serviceProgressTemplates={serviceProgressTemplates} onClose={() => setEditorOpen(false)} onSave={saveServiceOrder} />}
+    {confirmDialog && <ConfirmDialog
+      title={confirmDialog.title}
+      message={confirmDialog.message}
+      confirmLabel={confirmDialog.confirmLabel}
+      cancelLabel={confirmDialog.cancelLabel}
+      variant={confirmDialog.variant}
+      onConfirm={confirmDialog.onConfirm}
+      onCancel={() => setConfirmDialog(null)}
+    />}
+    {selectStatusDialog && <SelectStatusDialog
+      order={selectStatusDialog.order}
+      statuses={serviceStatuses}
+      onConfirm={async (newStatus) => {
+        setSelectStatusDialog(null);
+        const result = await saveServiceOrder({
+          ...selectStatusDialog.order,
+          status: newStatus,
+          completed_date: newStatus === 'Wydane' ? (selectStatusDialog.order.completed_date || getLocalIsoDate()) : selectStatusDialog.order.completed_date
+        });
+        if (result?.error) setNotice(humanizeError(result.error, 'service'));
+      }}
+      onCancel={() => setSelectStatusDialog(null)}
+    />}
   </div>;
 }
 
@@ -4477,6 +4534,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
   const [newAttachmentType, setNewAttachmentType] = useState('Zdjęcie');
   const [newEstimateItemName, setNewEstimateItemName] = useState('');
   const [newEstimateItemAmount, setNewEstimateItemAmount] = useState('');
+  const [formError, setFormError] = useState('');
 
   const orderId = form.id ?? form.localId;
   const selectedClient = localClients.find((client) => client.id === form.client_id) ?? order?.clients ?? null;
@@ -4591,8 +4649,24 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
 
   const clearEquipmentLink = () => update('equipment_id', '');
 
-  const submit = () => {
-    onSave({ ...order, ...form, total_cost: calculatedTotal.toFixed(2) });
+  const submit = async () => {
+    setFormError('');
+    if (!String(form.service_number ?? '').trim()) {
+      setFormError('Numer zlecenia jest wymagany.');
+      return;
+    }
+    if (!String(form.customer_device_name ?? '').trim() && !form.equipment_id) {
+      setFormError('Podaj nazwę serwisowanego urządzenia albo wybierz powiązany sprzęt z bazy.');
+      return;
+    }
+    if (!String(form.fault_description ?? '').trim()) {
+      setFormError('Opis usterki jest wymagany.');
+      return;
+    }
+    const result = await onSave({ ...order, ...form, total_cost: calculatedTotal.toFixed(2) });
+    if (result?.error) {
+      setFormError(humanizeError(result.error, 'service'));
+    }
   };
 
   const addProgress = async () => {
@@ -4690,6 +4764,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
     onClose={onClose}
     footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
   >
+    {formError && <AppNotice variant="error" className="service-form-notice">{formError}</AppNotice>}
     <div className="service-document-strip">
       <FormField label="Numer zlecenia"><AppInput value={form.service_number} onChange={(event) => update('service_number', event.target.value)} /></FormField>
       <FormField label="Typ zgłoszenia"><AppSelect value={form.claim_type} onChange={(event) => update('claim_type', event.target.value)}><option>Gwarancyjna</option><option>Pogwarancyjna</option></AppSelect></FormField>

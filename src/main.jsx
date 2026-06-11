@@ -3044,10 +3044,7 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
 }
 
 function openRentalAgreementPrint(rental) {
-  if (!canCreateRentalAgreement(rental)) {
-    alert('Umowa wymaga wybranego klienta i przynajmniej jednej pozycji sprzętu.');
-    return;
-  }
+  if (!canCreateRentalAgreement(rental)) return;
   printHtmlInIframe(buildRentalAgreementHtml(rental, { preview: true }));
 }
 
@@ -3093,6 +3090,9 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [dashboardRentalFilter, setDashboardRentalFilter] = useState('all');
   const [pendingOpenRentalId, setPendingOpenRentalId] = useState(null);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [rentalReturnPending, setRentalReturnPending] = useState(null);
+  const [returnModalNotice, setReturnModalNotice] = useState('');
 
   const loadRentals = async () => {
     setLoading(true);
@@ -3145,15 +3145,9 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   };
 
   const handleSave = async ({ rental, selectedEquipmentIds }) => {
-    if (!rental.client_id) {
-      alert('Wybierz klienta.');
-      return;
-    }
     const selectedEquipment = equipmentRows.filter((item) => selectedEquipmentIds.includes(item.id));
-    if (!selectedEquipment.length) {
-      alert('Wybierz przynajmniej jedną pozycję sprzętu.');
-      return;
-    }
+    if (!rental.client_id) return { error: new Error('Wybierz klienta.') };
+    if (!selectedEquipment.length) return { error: new Error('Wybierz przynajmniej jedną pozycję sprzętu.') };
     const items = buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows);
     const rentalToSave = {
       ...rental,
@@ -3162,10 +3156,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     const result = rental.id
       ? await updateRentalRecord(rental.id, rentalToSave, items)
       : await createRentalRecord(rentalToSave, items);
-    if (result.error) {
-      alert(humanizeError(result.error, 'rental'));
-      return;
-    }
+    if (result.error) return { error: result.error };
     await loadRentals();
     await loadRentalDictionaries();
     setEditorOpen(false);
@@ -3178,76 +3169,104 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
         }))
       });
     }
+    return { error: null };
   };
 
-  const handleDelete = async (row) => {
+  const handleDelete = (row) => {
     const rental = row._rental ?? row;
-    if (!confirm(`Usunąć wypożyczenie: ${rental.rental_number}? Sprzęt wróci do statusu „Dostępny".`)) return;
-    const { error } = await deleteRentalRecord(rental.id);
-    if (error) {
-      alert(humanizeError(error, 'rental'));
-      return;
-    }
-    await loadRentals();
-    await loadRentalDictionaries();
-  };
-
-  const handleBulkDelete = async (items) => {
-    if (!items.length) return;
-    if (!confirm(`Usunąć zaznaczone wypożyczenia: ${items.length}? Sprzęt wróci do statusu „Dostępny".`)) return;
-    for (const row of items) {
-      const rental = row._rental ?? row;
-      const { error } = await deleteRentalRecord(rental.id);
-      if (error) {
-        alert(`Nie udało się usunąć wypożyczenia ${rental.rental_number}: ${humanizeError(error, 'rental')}`);
-        return;
+    setConfirmDialog({
+      title: 'Usuń wypożyczenie',
+      message: `Usunąć wypożyczenie ${rental.rental_number}? Sprzęt wróci do statusu „Dostępny".`,
+      confirmLabel: 'Usuń wypożyczenie',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const { error } = await deleteRentalRecord(rental.id);
+        if (error) { setNotice(humanizeError(error, 'rental')); return; }
+        await loadRentals();
+        await loadRentalDictionaries();
       }
-    }
-    await loadRentals();
-    await loadRentalDictionaries();
+    });
   };
 
-  const handleRegisterReturn = async (rental, returnedItemIds, returnedCount, totalCount) => {
-    if (!returnedItemIds.length && returnedCount < totalCount) {
-      alert('Zaznacz przynajmniej jedną pozycję do zwrotu.');
-      return;
-    }
-    const shouldClose = confirm('Czy zamknąć wypożyczenie?');
-    if (!returnedItemIds.length && !shouldClose) return;
-    if (shouldClose && returnedCount < totalCount) {
-      alert('Nie wszystkie pozycje są oznaczone jako zwrócone. Wypożyczenie pozostanie aktywne jako częściowo zwrócone.');
-    }
+  const handleBulkDelete = (items) => {
+    if (!items.length) return;
+    setConfirmDialog({
+      title: 'Usuń zaznaczone wypożyczenia',
+      message: `Usunąć zaznaczone wypożyczenia: ${items.length}? Sprzęt wróci do statusu „Dostępny".`,
+      confirmLabel: `Usuń ${items.length} ${items.length === 1 ? 'wypożyczenie' : 'wypożyczeń'}`,
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        for (const row of items) {
+          const rental = row._rental ?? row;
+          const { error } = await deleteRentalRecord(rental.id);
+          if (error) {
+            setNotice(`Nie udało się usunąć wypożyczenia ${rental.rental_number}: ${humanizeError(error, 'rental')}`);
+            break;
+          }
+        }
+        await loadRentals();
+        await loadRentalDictionaries();
+      }
+    });
+  };
+
+  const executeReturn = async (pendingData, shouldClose) => {
+    setRentalReturnPending(null);
+    const { rental, returnedItemIds } = pendingData;
     const result = await registerRentalReturn(rental.id, returnedItemIds, shouldClose);
-    if (result.error) {
-      alert(humanizeError(result.error, 'rental'));
-      return;
-    }
+    if (result.error) { setNotice(humanizeError(result.error, 'rental')); return; }
     await loadRentals();
     await loadRentalDictionaries();
     setReturningRental(null);
+    setReturnModalNotice('');
     if (result.data?._return_closed) setReturnedCollapsed(false);
   };
-  const handleRestoreReturnedRental = async (row) => {
-    const rental = row._rental ?? row;
-    if (!confirm(`Przywrócić wypożyczenie ${rental.rental_number} jako aktywne?`)) return;
-    const result = await restoreRentalAsActive(rental.id);
-    if (result.error) {
-      alert(humanizeError(result.error, 'rental'));
+
+  const handleRegisterReturn = (rental, returnedItemIds, returnedCount, totalCount) => {
+    if (!returnedItemIds.length && returnedCount < totalCount) {
+      setReturnModalNotice('Zaznacz przynajmniej jedną pozycję do zwrotu.');
       return;
     }
-    await loadRentals();
-    await loadRentalDictionaries();
+    setReturnModalNotice('');
+    setRentalReturnPending({ rental, returnedItemIds, returnedCount, totalCount });
   };
-  const handleDeleteReturnedRental = async (row) => {
+  const handleRestoreReturnedRental = (row) => {
     const rental = row._rental ?? row;
-    if (!confirm(`Usunąć wypożyczenie ${rental.rental_number} z historii?`)) return;
-    const { error } = await deleteRentalRecord(rental.id);
-    if (error) {
-      alert(humanizeError(error, 'rental'));
-      return;
-    }
-    await loadRentals();
-    await loadRentalDictionaries();
+    setConfirmDialog({
+      title: 'Przywróć wypożyczenie',
+      message: `Przywrócić wypożyczenie ${rental.rental_number} jako aktywne?`,
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'secondary',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const result = await restoreRentalAsActive(rental.id);
+        if (result.error) { setNotice(humanizeError(result.error, 'rental')); return; }
+        await loadRentals();
+        await loadRentalDictionaries();
+      }
+    });
+  };
+  const handleDeleteReturnedRental = (row) => {
+    const rental = row._rental ?? row;
+    setConfirmDialog({
+      title: 'Usuń wypożyczenie z historii',
+      message: `Usunąć wypożyczenie ${rental.rental_number} z historii?`,
+      confirmLabel: 'Usuń z historii',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const { error } = await deleteRentalRecord(rental.id);
+        if (error) { setNotice(humanizeError(error, 'rental')); return; }
+        await loadRentals();
+        await loadRentalDictionaries();
+      }
+    });
   };
 
   const equipmentById = useMemo(() => new Map(equipmentRows.map((item) => [String(item.id), item])), [equipmentRows]);
@@ -3360,12 +3379,30 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       {!returnedCollapsed && <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />}
     </section>
     {editorOpen && <RentalEditor rental={editingRental} nextRentalNumber={generateNextRentalNumber(rows)} clients={clients} equipmentRows={equipmentRows} rentalTypes={rentalTypes} rentalSettings={rentalSettings} onClose={() => setEditorOpen(false)} onSave={handleSave} onAgreement={(rentalRecord) => setAgreementRental(rentalRecord)} />}
-    {returningRental && <RentalReturnModal rental={returningRental} returnConditions={returnConditions} onClose={() => setReturningRental(null)} onConfirm={handleRegisterReturn} />}
+    {returningRental && <RentalReturnModal rental={returningRental} returnConditions={returnConditions} onClose={() => { setReturningRental(null); setReturnModalNotice(''); }} onConfirm={handleRegisterReturn} notice={returnModalNotice} />}
     {agreementRental && <RentalAgreementModal rental={agreementRental} onClose={() => setAgreementRental(null)} />}
+    {confirmDialog && <ConfirmDialog
+      title={confirmDialog.title}
+      message={confirmDialog.message}
+      confirmLabel={confirmDialog.confirmLabel}
+      cancelLabel={confirmDialog.cancelLabel}
+      variant={confirmDialog.variant}
+      onConfirm={confirmDialog.onConfirm}
+      onCancel={() => setConfirmDialog(null)}
+    />}
+    {rentalReturnPending && <ModalFrame
+      className="confirm-dialog"
+      title="Rejestracja zwrotu"
+      onClose={() => setRentalReturnPending(null)}
+      footer={<><ButtonSecondary onClick={() => executeReturn(rentalReturnPending, false)}>Zarejestruj zwrot</ButtonSecondary><ButtonPrimary onClick={() => executeReturn(rentalReturnPending, true)}>Zamknij wypożyczenie</ButtonPrimary></>}
+    >
+      <p className="confirm-dialog-message">Czy zamknąć wypożyczenie <strong>{rentalReturnPending.rental.rental_number}</strong> i przenieść je do historii?</p>
+      {rentalReturnPending.returnedCount < rentalReturnPending.totalCount && <AppNotice variant="warning" className="service-form-notice">Nie wszystkie pozycje są oznaczone jako zwrócone. Przy zamknięciu wypożyczenie zostanie oznaczone jako częściowo zwrócone.</AppNotice>}
+    </ModalFrame>}
   </div>;
 }
 
-function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionaryNames('returnConditions'), onClose, onConfirm }) {
+function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionaryNames('returnConditions'), onClose, onConfirm, notice = '' }) {
   const returnConditionOptions = returnConditions.length ? returnConditions : DEFAULT_CONFIG_DICTIONARIES.returnConditions;
   const warningConditions = new Set(['Uszkodzony', 'Wymaga kontroli', 'Serwis']);
   const baseItems = getRentalBaseItems(rental);
@@ -3459,6 +3496,7 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
   }, []);
 
   return <ResizableModalFrame className="rental-return-modal" storageKey="fixer-rental-return-modal" defaultSize={{ width: 820, height: 620 }} minSize={{ width: 680, height: 460 }} eyebrow="Zwrot" title="Rejestracja zwrotu" onClose={onClose} footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={confirmReturn} disabled={!hasIssuedSelection && !allReturned}><CheckCircle2 size={16} />Zatwierdź zwrot</ButtonPrimary></>}>
+    {notice && <AppNotice variant="error" className="service-form-notice">{notice}</AppNotice>}
     <div className="rental-return-summary">
       <strong>{rental.rental_number}</strong>
       <span>{rental.clients?.name ?? '—'}</span>
@@ -3582,6 +3620,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const [rentalItemContextMenu, setRentalItemContextMenu] = useState(null);
   const [previewEquipment, setPreviewEquipment] = useState(null);
   const issueScannerRef = useRef(null);
+  const [editorError, setEditorError] = useState('');
 
   const availableEquipment = equipmentRows.filter((item) => {
     if (!item.id) return false;
@@ -3744,6 +3783,22 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     if (action === 'removeSelected') removeSelectedEquipment();
   };
 
+  const submit = async () => {
+    setEditorError('');
+    if (!form.client_id) {
+      setEditorError('Wybierz klienta.');
+      return;
+    }
+    if (!selectedEquipmentIds.length) {
+      setEditorError('Wybierz przynajmniej jedną pozycję sprzętu.');
+      return;
+    }
+    const result = await onSave({ rental: form, selectedEquipmentIds });
+    if (result?.error) {
+      setEditorError(humanizeError(result.error, 'rental'));
+    }
+  };
+
   useEffect(() => {
     setSelectedRentalItemIds((current) => new Set([...current].filter((id) => selectedEquipmentIds.includes(id))));
   }, [selectedEquipmentIds]);
@@ -3792,8 +3847,9 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       eyebrow="Wypożyczenia"
       title={rental ? 'Kartoteka wypożyczenia' : 'Nowe wypożyczenie'}
       onClose={onClose}
-      footer={<>{rental && <ButtonSecondary onClick={() => onAgreement?.(rental)} disabled={!canCreateRentalAgreement(rental)}><FileText size={16} />Umowa</ButtonSecondary>}<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onSave({ rental: form, selectedEquipmentIds })}><Save size={17} />Zapisz dokument</ButtonPrimary></>}
+      footer={<>{rental && <ButtonSecondary onClick={() => onAgreement?.(rental)} disabled={!canCreateRentalAgreement(rental)}><FileText size={16} />Umowa</ButtonSecondary>}<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={17} />Zapisz dokument</ButtonPrimary></>}
     >
+      {editorError && <AppNotice variant="error" className="service-form-notice">{editorError}</AppNotice>}
       <div className="rental-record-layout">
         <SectionPanel className="rental-record-section rental-record-header-section" title="Dokument">
           <div className="rental-document-grid">

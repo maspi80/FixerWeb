@@ -1497,6 +1497,7 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [editingClient, setEditingClient] = useState(null);
   const [editorInitialTab, setEditorInitialTab] = useState('data');
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [filters, setFilters] = useStoredState('fixer-clients-filters', { search: '', type: 'all', kind: 'all' });
   const [pendingOpenClientId, setPendingOpenClientId] = useState(null);
 
@@ -1583,56 +1584,63 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       regon: client.type === 'Firma' ? client.regon : '',
       notes: client.notes
     };
-    if (!client.name.trim()) {
-      alert('Nazwa klienta jest wymagana.');
-      return;
-    }
-    if (!isSupabaseConfigured) {
-      alert('Brak konfiguracji bazy danych Supabase. Dane klientów nie mogą zostać zapisane.');
-      return;
-    }
+    if (!client.name.trim()) return { error: new Error('Nazwa klienta jest wymagana.') };
+    if (!isSupabaseConfigured) return { error: new Error('Brak konfiguracji bazy danych Supabase. Dane klientów nie mogą zostać zapisane.') };
     const result = client.id ? await updateClientRecord(client.id, payload) : await createClientRecord(payload);
-    if (result.error) {
-      alert(humanizeError(result.error, 'client'));
-      return;
-    }
+    if (result.error) return { error: result.error };
     await loadClients();
     setEditorOpen(false);
+    return { error: null };
   };
 
   const handleDelete = async (client) => {
-    if (!confirm(`Usunąć klienta: ${client.name}?`)) return;
-    if (!client.id || !isSupabaseConfigured) {
-      alert('Brak konfiguracji bazy danych Supabase. Nie można usunąć klienta.');
-      return;
-    }
-    const { error } = await deleteClientRecord(client.id);
-    if (error) {
-      alert(humanizeError(error, 'client'));
-      return;
-    }
-    await loadClients();
+    setConfirmDialog({
+      title: 'Usuń klienta',
+      message: `Usunąć klienta: ${client.name}?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        if (!client.id || !isSupabaseConfigured) {
+          setNotice('Brak konfiguracji bazy danych Supabase. Nie można usunąć klienta.');
+          return;
+        }
+        const { error } = await deleteClientRecord(client.id);
+        if (error) { setNotice(humanizeError(error, 'client')); return; }
+        await loadClients();
+      }
+    });
   };
 
   const handleBulkDelete = async (clients) => {
     const selected = clients.filter((client) => client?.id);
     if (!selected.length) {
-      alert('Zaznaczone pozycje nie mają identyfikatorów w bazie.');
+      setNotice('Zaznaczone pozycje nie mają identyfikatorów w bazie.');
       return;
     }
-    if (!confirm(`Usunąć zaznaczone pozycje: ${selected.length}?`)) return;
-    if (!isSupabaseConfigured) {
-      alert('Brak konfiguracji bazy danych Supabase. Nie można usunąć klientów.');
-      return;
-    }
-    for (const client of selected) {
-      const { error } = await deleteClientRecord(client.id);
-      if (error) {
-        alert(`Nie udało się usunąć klienta ${client.name}: ${humanizeError(error, 'client')}`);
-        return;
+    setConfirmDialog({
+      title: 'Usuń klientów',
+      message: `Usunąć zaznaczone pozycje: ${selected.length}?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        if (!isSupabaseConfigured) {
+          setNotice('Brak konfiguracji bazy danych Supabase. Nie można usunąć klientów.');
+          return;
+        }
+        for (const client of selected) {
+          const { error } = await deleteClientRecord(client.id);
+          if (error) {
+            setNotice(`Nie udało się usunąć klienta ${client.name}: ${humanizeError(error, 'client')}`);
+            return;
+          }
+        }
+        await loadClients();
       }
-    }
-    await loadClients();
+    });
   };
 
 
@@ -1675,6 +1683,7 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
       {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     </div>
   );
 }
@@ -1684,6 +1693,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
   const [errors, setErrors] = useState({});
+  const [saveError, setSaveError] = useState('');
   const [form, setForm] = useState(() => ({
     id: client?.id ?? null,
     localId: client?.localId ?? null,
@@ -1708,11 +1718,13 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
 
-  const saveClient = () => {
+  const saveClient = async () => {
+    setSaveError('');
     const nextErrors = validateClientForm(form);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
-    onSave(form);
+    const result = await onSave(form);
+    if (result?.error) setSaveError(result.error.message ?? humanizeError(result.error, 'client'));
   };
 
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
@@ -1743,6 +1755,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
       onClose={onClose}
       footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveClient}><Save size={18} />Zapisz</AppButton></>}
     >
+      {saveError && <AppNotice variant="error" className="service-form-notice">{saveError}</AppNotice>}
       <div className="record-tabs" role="tablist">
         <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
         <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
@@ -1883,6 +1896,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState(null);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [equipmentCategories, setEquipmentCategories] = useState(() => getLocalEquipmentDictionaryNames('category'));
   const [equipmentStatuses, setEquipmentStatuses] = useState(() => getLocalEquipmentDictionaryNames('status'));
   const [equipmentLocations, setEquipmentLocations] = useState(() => getLocalEquipmentDictionaryNames('location'));
@@ -1930,7 +1944,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
 
   const openEquipmentEditor = (item = null, options = {}) => {
     if (item && isEquipmentSetComponent(item) && !options.force) {
-      alert('Ten sprzęt jest składnikiem zestawu. Najpierw usuń go z zestawu, żeby można było go edytować.');
+      setNotice('Ten sprzęt jest składnikiem zestawu. Najpierw usuń go z zestawu, żeby można było go edytować.');
       return;
     }
     setEditingEquipment(item);
@@ -1951,7 +1965,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
 
   const duplicateEquipment = (item) => {
     if (isEquipmentSetComponent(item)) {
-      alert('Nie można duplikować składnika zestawu.');
+      setNotice('Nie można duplikować składnika zestawu.');
       return;
     }
     const copy = {
@@ -2032,15 +2046,8 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
   };
 
   const handleSave = async (item) => {
-    if (!item.name.trim()) {
-      alert('Nazwa sprzętu jest wymagana.');
-      return;
-    }
-
-    if (isEquipmentSetComponent(item)) {
-      alert('Ten sprzęt jest składnikiem zestawu i nie może być edytowany bez usunięcia go z zestawu.');
-      return;
-    }
+    if (!item.name.trim()) return { error: new Error('Nazwa sprzętu jest wymagana.') };
+    if (isEquipmentSetComponent(item)) return { error: new Error('Ten sprzęt jest składnikiem zestawu i nie może być edytowany bez usunięcia go z zestawu.') };
 
     const previousSetItems = editingEquipment?.set_items ?? [];
     const nextSetItems = item.category === EQUIPMENT_SET_CATEGORY ? item.set_items ?? [] : [];
@@ -2049,10 +2056,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
     try {
       if (isSupabaseConfigured) {
         const result = item.id ? await updateEquipmentRecord(item.id, payload) : await createEquipmentRecord(payload);
-        if (result.error) {
-          alert(humanizeError(result.error, 'equipment'));
-          return;
-        }
+        if (result.error) return { error: result.error };
         await updateSetComponentStatuses(previousSetItems, nextSetItems, result.data ?? item);
         await loadEquipment();
       } else {
@@ -2065,78 +2069,109 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
         await updateSetComponentStatuses(previousSetItems, nextSetItems, savedItem);
       }
       setEditorOpen(false);
+      return { error: null };
     } catch (error) {
-      alert(humanizeError(error, 'equipment'));
+      return { error };
     }
   };
 
   const handleDelete = async (item) => {
     if (isEquipmentSetComponent(item)) {
-      alert('Nie można usunąć składnika zestawu. Najpierw usuń go z zestawu.');
+      setNotice('Nie można usunąć składnika zestawu. Najpierw usuń go z zestawu.');
       return;
     }
-    if (!confirm(`Usunąć sprzęt: ${item.name}?`)) return;
-    try {
-      if (isEquipmentSet(item)) await updateSetComponentStatuses(item.set_items ?? [], [], item);
-    } catch (error) {
-      alert('Nie udało się zwolnić składników zestawu.');
-      return;
-    }
-    if (item.id && isSupabaseConfigured) {
-      const { error } = await deleteEquipmentRecord(item.id);
-      if (error) {
-        if (isForeignKeyError(error)) {
-          if (confirm('Nie można usunąć sprzętu, ponieważ posiada on historię wypożyczeń, serwisów lub innych dokumentów.\n\nCzy zmienić status na „Wycofany"?')) {
-            await updateEquipmentRecord(item.id, { ...item, status: 'Wycofany' });
-            await loadEquipment();
-          }
-        } else {
-          alert(humanizeError(error, 'equipment'));
+    setConfirmDialog({
+      title: 'Usuń sprzęt',
+      message: `Usunąć sprzęt: ${item.name}?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          if (isEquipmentSet(item)) await updateSetComponentStatuses(item.set_items ?? [], [], item);
+        } catch {
+          setNotice('Nie udało się zwolnić składników zestawu.');
+          return;
         }
-        return;
+        if (item.id && isSupabaseConfigured) {
+          const { error } = await deleteEquipmentRecord(item.id);
+          if (error) {
+            if (isForeignKeyError(error)) {
+              setConfirmDialog({
+                title: 'Nie można usunąć sprzętu',
+                message: 'Sprzęt posiada historię wypożyczeń, serwisów lub innych dokumentów i nie może być usunięty.\n\nCzy zmienić status na „Wycofany"?',
+                confirmLabel: 'Wycofaj sprzęt',
+                cancelLabel: 'Anuluj',
+                variant: 'danger',
+                onConfirm: async () => {
+                  setConfirmDialog(null);
+                  await updateEquipmentRecord(item.id, { ...item, status: 'Wycofany' });
+                  await loadEquipment();
+                }
+              });
+            } else {
+              setNotice(humanizeError(error, 'equipment'));
+            }
+            return;
+          }
+          await loadEquipment();
+        } else {
+          setRows((current) => current.filter((row) => row !== item));
+        }
       }
-      await loadEquipment();
-    } else {
-      setRows((current) => current.filter((row) => row !== item));
-    }
+    });
   };
 
   const handleBulkDelete = async (items) => {
     const locked = items.filter(isEquipmentSetComponent);
-    if (locked.length) {
-      alert(`Pominięto składniki zestawu, których nie można usunąć: ${locked.length}.`);
-    }
     const selected = items.filter((item) => !isEquipmentSetComponent(item) && (item?.id || item?.localId || item?.name || item?.serial));
-    if (!selected.length) return;
-    if (!confirm(`Usunąć zaznaczone pozycje sprzętu: ${selected.length}?`)) return;
-
-    if (isSupabaseConfigured) {
-      for (const item of selected) {
-        if (isEquipmentSet(item)) {
-          try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch { alert('Nie udało się zwolnić składników zestawu.'); return; }
-        }
-      }
-      for (const item of selected) {
-        if (!item.id) continue;
-        const { error } = await deleteEquipmentRecord(item.id);
-        if (error) {
-          if (isForeignKeyError(error)) {
-            alert(`Nie można usunąć „${item.name}", ponieważ posiada historię w systemie. Pomijam tę pozycję.`);
-          } else {
-            alert(humanizeError(error, 'equipment'));
-          }
-        }
-      }
-      await loadEquipment();
+    if (!selected.length) {
+      if (locked.length) setNotice(`Nie można usunąć składników zestawu (${locked.length}). Najpierw usuń je z zestawu.`);
       return;
     }
+    if (locked.length) setNotice(`Pominięto składniki zestawu, których nie można usunąć: ${locked.length}.`);
+    setConfirmDialog({
+      title: 'Usuń sprzęt',
+      message: `Usunąć zaznaczone pozycje sprzętu: ${selected.length}?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        if (isSupabaseConfigured) {
+          for (const item of selected) {
+            if (isEquipmentSet(item)) {
+              try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch { setNotice('Nie udało się zwolnić składników zestawu.'); return; }
+            }
+          }
+          const skipped = [];
+          for (const item of selected) {
+            if (!item.id) continue;
+            const { error } = await deleteEquipmentRecord(item.id);
+            if (error) {
+              if (isForeignKeyError(error)) {
+                skipped.push(item.name);
+              } else {
+                setNotice(humanizeError(error, 'equipment'));
+                await loadEquipment();
+                return;
+              }
+            }
+          }
+          if (skipped.length) setNotice(`Nie można usunąć pozycji z historią w systemie (pominięto): ${skipped.join(', ')}.`);
+          await loadEquipment();
+          return;
+        }
 
-    for (const item of selected) {
-      if (isEquipmentSet(item)) {
-        try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch { alert('Nie udało się zwolnić składników zestawu.'); return; }
+        for (const item of selected) {
+          if (isEquipmentSet(item)) {
+            try { await updateSetComponentStatuses(item.set_items ?? [], [], item); } catch { setNotice('Nie udało się zwolnić składników zestawu.'); return; }
+          }
+        }
+        setRows((current) => current.filter((row) => !selected.includes(row)));
       }
-    }
-    setRows((current) => current.filter((row) => !selected.includes(row)));
+    });
   };
 
 
@@ -2215,6 +2250,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
         <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} conditions={equipmentConditions} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     </div>
   );
 }
@@ -2283,6 +2319,8 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   const isInitialSetCard = equipment?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(equipment?.set_items) && equipment.set_items.length > 0;
   const [activeTab, setActiveTab] = useState('basic');
   const [errors, setErrors] = useState({});
+  const [saveError, setSaveError] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [newGalleryItem, setNewGalleryItem] = useState('');
   const [newAttachmentName, setNewAttachmentName] = useState('');
   const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
@@ -2370,11 +2408,21 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
   const removeSetItem = (index) => {
     const item = form.set_items[index];
     const itemName = item?.name || 'wybrany składnik';
-    if (!confirm(`Usunąć składnik „${itemName}" z zestawu? Po zapisaniu sprzęt wróci do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}".`)) return;
-    update('set_items', form.set_items.filter((_, itemIndex) => itemIndex !== index));
+    setConfirmDialog({
+      title: 'Usuń składnik z zestawu',
+      message: `Usunąć składnik „${itemName}" z zestawu? Po zapisaniu sprzęt wróci do magazynu ze statusem „${EQUIPMENT_AVAILABLE_STATUS}".`,
+      confirmLabel: 'Usuń składnik',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        update('set_items', form.set_items.filter((_, itemIndex) => itemIndex !== index));
+      }
+    });
   };
 
-  const saveEquipment = () => {
+  const saveEquipment = async () => {
+    setSaveError('');
     const nextErrors = {};
     if (!form.name.trim()) nextErrors.name = isSetCard ? 'Nazwa zestawu jest wymagana.' : 'Nazwa sprzętu jest wymagana.';
     setErrors(nextErrors);
@@ -2383,7 +2431,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
       return;
     }
 
-    onSave({
+    const result = await onSave({
       id: form.id,
       localId: form.localId,
       name: form.name.trim(),
@@ -2423,6 +2471,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
       service_notes: isSetCard ? '' : form.service_notes,
       history_notes: isSetCard ? '' : form.history_notes
     });
+    if (result?.error) setSaveError(result.error.message ?? humanizeError(result.error, 'equipment'));
   };
 
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
@@ -2448,6 +2497,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
         onClose={onClose}
         footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz zestaw</AppButton></>}
       >
+        {saveError && <AppNotice variant="error" className="service-form-notice">{saveError}</AppNotice>}
         <div className="set-card-content">
           <div className="equipment-section-panel set-details-panel">
             <div className="section-title">Dane zestawu</div>
@@ -2480,6 +2530,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
           </div>
         </div>
         {setPickerOpen && <EquipmentSetPicker availableItems={availableSetComponents} onClose={() => setSetPickerOpen(false)} onConfirm={(items) => { addSetItems(items); setSetPickerOpen(false); }} />}
+        {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
       </ResizableModalFrame>
     );
   }
@@ -2493,8 +2544,9 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
       eyebrow="Sprzęt"
       title="Karta sprzętu"
       onClose={onClose}
-      footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</AppButton></>}
-    >
+        footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</AppButton></>}
+      >
+      {saveError && <AppNotice variant="error" className="service-form-notice">{saveError}</AppNotice>}
       <div className="record-tabs" role="tablist" aria-label="Sekcje karty sprzętu">
         {tabs.map((tab) => (
           <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
@@ -2544,6 +2596,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
           <div className="notice">Ten ekran służy do sprzętu pojedynczego. Zestawy tworzy się przez przycisk „Dodaj zestaw" w module Sprzęt.</div>
         </div>}
       </div>
+      {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     </ResizableModalFrame>
   );
 }

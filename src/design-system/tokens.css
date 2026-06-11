@@ -12,16 +12,21 @@
   --fw-color-text-strong: #f8fbff;
   --fw-color-text-muted: #95a0b5;
   --fw-color-text-soft: #cbd5e1;
+  --fw-color-table-bg: transparent;
 
   --fw-color-primary: #2563eb;
   --fw-color-primary-2: #4f46e5;
+  --fw-color-button-primary: #2563eb;
+  --fw-color-menu-active: #a5b4fc;
   --fw-color-primary-soft: rgba(96, 165, 250, .12);
   --fw-color-primary-border: rgba(96, 165, 250, .45);
   --fw-color-selection: rgba(59, 130, 246, .16);
   --fw-color-selection-bar: rgba(96, 165, 250, .75);
 
+  --fw-color-success: #22c55e;
   --fw-color-success-bg: rgba(34, 197, 94, .16);
   --fw-color-success-text: #bbf7d0;
+  --fw-color-warning: #f59e0b;
   --fw-color-warning-bg: rgba(245, 158, 11, .16);
   --fw-color-warning-text: #fde68a;
   --fw-color-danger-bg: rgba(239, 68, 68, .16);
@@ -88,10 +93,16 @@
   --fw-color-text-strong: #0f172a;
   --fw-color-text-muted: #64748b;
   --fw-color-text-soft: #334155;
+  --fw-color-table-bg: transparent;
+  --fw-color-button-primary: #2563eb;
+  --fw-color-menu-active: #1d4ed8;
   --fw-color-primary-soft: rgba(37, 99, 235, .10);
   --fw-color-primary-border: rgba(37, 99, 235, .28);
   --fw-color-selection: rgba(37, 99, 235, .10);
   --fw-color-selection-bar: rgba(37, 99, 235, .55);
+  --fw-color-success: #16a34a;
+  --fw-color-warning: #d97706;
+  --fw-color-danger: #dc2626;
   --fw-shadow-panel: 0 18px 50px rgba(15, 23, 42, .09);
   --fw-shadow-modal: 0 24px 70px rgba(15, 23, 42, .18);
   --fw-shadow-menu: 0 24px 70px rgba(15, 23, 42, .18);

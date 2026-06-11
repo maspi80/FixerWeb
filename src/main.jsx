@@ -781,6 +781,12 @@ function App() {
   const [colorTheme, setColorTheme] = useState(() => localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark');
   const [moduleIntent, setModuleIntent] = useState(null);
   const [statusColors, setStatusColors] = useState(getStatusColors);
+  const [activeUiTheme, setActiveUiTheme] = useState(() => getStoredActiveUiTheme(colorTheme === 'light' ? 'default-light' : 'default-dark'));
+  const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens), [activeUiTheme.tokens]);
+
+  useEffect(() => {
+    saveActiveUiTheme(activeUiTheme);
+  }, [activeUiTheme]);
 
   useEffect(() => { injectStatusColorStyles(statusColors); }, [statusColors]);
 
@@ -829,7 +835,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}`}>
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}`} style={uiThemeCssVariables}>
       <Sidebar
         activeModule={activeModule}
         setActiveModule={(moduleId) => navigateToModule(moduleId)}
@@ -869,7 +875,7 @@ function App() {
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} />}
+          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} />}
         </section>
       </main>
     </div>
@@ -1710,7 +1716,7 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
             </AppSelect>
           </label>
           <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearClientFilters}>Wyczyść filtry</AppButton>
-          <span className="filter-count">{filteredRows.length} / {rows.length}</span>
+          {rows.length > 0 && filteredRows.length < rows.length && <span className="filter-count">Wyświetlono {filteredRows.length} z {rows.length}</span>}
         </div>
         <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
@@ -2288,7 +2294,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
           <label>Producent<AppSelect value={filters.brand ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, brand: event.target.value }))}><option value="all">Wszyscy</option>{equipmentFilterOptions.brands.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
           <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option><option value="Sprzęt">Sprzęt</option><option value="Zestaw">Zestaw</option></AppSelect></label>
           <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearEquipmentFilters}>Wyczyść</AppButton>
-          <span className="filter-count">{displayRows.length} / {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>
+          {rows.filter((item) => !isEquipmentSetComponent(item)).length > 0 && displayRows.length < rows.filter((item) => !isEquipmentSetComponent(item)).length && <span className="filter-count">Wyświetlono {displayRows.length} z {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>}
         </div>
         <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
@@ -3020,7 +3026,10 @@ function getRentalEquipmentCode(item) {
 }
 
 function getRentalAgreementTemplate(settings = getDocumentSettings()) {
-  return normalizeRentalAgreementTemplate(settings?.documentTemplates?.[RENTAL_AGREEMENT_TEMPLATE_KEY]);
+  const fallback = normalizeRentalAgreementTemplate(settings?.documentTemplates?.[RENTAL_AGREEMENT_TEMPLATE_KEY]);
+  const sharedLibrary = getDocumentTemplateLibrary();
+  const sharedRental = sharedLibrary.rentalAgreement;
+  return sharedRental ? mapSharedTemplateToRentalAgreementTemplate(sharedRental, fallback) : fallback;
 }
 
 function formatAgreementDate(value) {
@@ -3086,6 +3095,37 @@ function renderPartyBlock(title, lines) {
   return `<div class="agreement-party"><h2>${escapeHtml(title)}</h2>${safeLines.length ? safeLines.map((line) => `<p>${escapeHtml(line)}</p>`).join('') : '<p>Brak danych.</p>'}</div>`;
 }
 
+function applyTemplateVariables(text, context = {}) {
+  let output = String(text ?? '');
+  Object.entries(context).forEach(([key, value]) => {
+    output = output.replaceAll(`{{${key}}}`, String(value ?? ''));
+  });
+  return output;
+}
+
+function renderTemplateMultiline(text) {
+  return String(text ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<p class="ag-party-line">${escapeHtml(line)}</p>`)
+    .join('');
+}
+
+function renderTermsFromTemplate(text, fallbackTerms = []) {
+  const lines = String(text ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    return fallbackTerms.map((term, index) => `<li><span class="n">${index + 1}.</span>${escapeHtml(term)}</li>`).join('');
+  }
+  return lines.map((line) => {
+    const normalized = line.replace(/^[-*]\s*/, '');
+    return `<li>${escapeHtml(normalized)}</li>`;
+  }).join('');
+}
+
 function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, settings = getDocumentSettings(), company = getCompanyProfile() } = {}) {
   const data = getRentalAgreementData(rental, settings, company);
   const companyName = company.legalName || company.name || 'FIXER WEB';
@@ -3099,7 +3139,6 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
   const companyFooter = String(company.documentFooter ?? '').trim();
   const equipmentHeader = data.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
   const equipmentRows = data.items.map((item, index) => `<tr>${data.columns.map((column) => `<td>${escapeHtml(getRentalAgreementColumnValue(column.key, item, index) || '—')}</td>`).join('')}</tr>`).join('');
-  const terms = data.template.terms.map((term, index) => `<li><span class="n">${index + 1}.</span>${escapeHtml(term)}</li>`).join('');
   const companyLines = [
     companyName,
     formatCompanyAddress(company),
@@ -3117,6 +3156,41 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
   const returnDate = data.rental?.planned_return_date ? formatAgreementDate(data.rental.planned_return_date) : null;
   const docNumber = data.documentNumber || data.rental?.rental_number || '';
   const introCity = company.documentCity || company.city || '';
+  const templateContext = {
+    documentNumber: docNumber,
+    issueDate,
+    returnDate: returnDate || '',
+    clientName: client.name || '',
+    clientAddress,
+    companyName,
+    companyAddress: formatCompanyAddress(company),
+    companyTaxData: companyTax,
+    companyContact,
+    clientContact: compactLines([contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']).join('\n'),
+    notes: compactLines(data.items.map((item) => getRentalAgreementColumnValue('notes', item, 0))).join(', '),
+    equipmentTable: '[tabela sprzętu]',
+    documentFooter: companyFooter,
+    documentCityClause: introCity ? ` w ${introCity}` : ''
+  };
+  const introText = applyTemplateVariables(data.template.introText, templateContext);
+  const issuerText = applyTemplateVariables(data.template.issuerText, templateContext);
+  const borrowerText = applyTemplateVariables(data.template.borrowerText, templateContext);
+  const termsText = applyTemplateVariables(data.template.termsText, templateContext);
+  const footerText = applyTemplateVariables(data.template.footerText, templateContext).trim();
+  const visibility = data.template.sectionVisibility ?? DEFAULT_RENTAL_AGREEMENT_SECTION_VISIBILITY;
+  const sectionBlocks = {
+    intro: `<p class="ag-intro">${escapeHtml(introText)}</p>`,
+    period: (startDate || returnDate) ? `<div class="ag-section"><h2 class="ag-section-heading">Okres wypożyczenia</h2><div class="ag-period">${startDate ? `<div><span class="ag-period-label">Data wydania</span><span class="ag-period-value">${escapeHtml(startDate)}</span></div>` : ''}${returnDate ? `<div><span class="ag-period-label">Planowany zwrot</span><span class="ag-period-value">${escapeHtml(returnDate)}</span></div>` : ''}</div></div>` : '',
+    equipment: `<div class="ag-section"><h2 class="ag-section-heading">Przedmiot umowy - przekazany sprzęt</h2><div class="ag-table-wrap"><table class="ag-table${manyColumns ? ' many-cols' : ''}"><thead><tr>${equipmentHeader}</tr></thead><tbody>${equipmentRows || `<tr><td colspan="${data.columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></div></div>`,
+    terms: `<div class="ag-section"><h2 class="ag-section-heading">Warunki umowy</h2><ul class="ag-terms">${renderTermsFromTemplate(termsText, data.template.terms)}</ul></div>`,
+    signatures: `<div class="ag-signatures"><div class="ag-sig-grid"><div><span class="ag-sig-label">Wypożyczający</span><div class="ag-sig-line">miejscowość, data i podpis</div></div><div><span class="ag-sig-label">Biorący</span><div class="ag-sig-line">miejscowość, data i podpis</div></div></div></div>`,
+    footer: footerText ? `<footer class="ag-footer">${escapeHtml(footerText)}</footer>` : ''
+  };
+  const orderedSections = (data.template.sectionOrder ?? DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER)
+    .filter((id) => visibility[id] !== false)
+    .map((id) => sectionBlocks[id])
+    .filter(Boolean)
+    .join('');
   const coStreet = compactLines([company.street, company.buildingNumber, company.apartmentNumber ? `/${company.apartmentNumber}` : '']).join(' ');
   const coCity = compactLines([company.postalCode, company.city]).join(' ');
   const coHeaderLines = compactLines([coStreet, coCity, companyTax, companyContact]);
@@ -3125,23 +3199,53 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
       ? `<img class="ag-logo-img" src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>`
       : `<div class="ag-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`
     : '';
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(data.title)}</title><style>@page{size:A4;margin:14mm 15mm}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{max-width:210mm;margin:0 auto;background:#fff}.ag-top{margin-bottom:9px;padding-bottom:8px;border-bottom:1.2px solid #1e3a5f}.ag-logo-img{max-width:96px;max-height:72px;object-fit:contain;display:block;margin-bottom:7px}.ag-logo-fallback{width:58px;height:58px;display:flex;align-items:center;justify-content:center;border:1.2px solid #c0ccdb;border-radius:7px;font-size:20px;font-weight:800;color:#1e3a5f;margin-bottom:7px}.ag-co-name{font-size:12.5px;font-weight:800;color:#0f1e35;margin:0 0 2px}.ag-co-info{font-size:8.8px;color:#444;margin:0 0 1px;line-height:1.35}.ag-title-block{text-align:center;margin:10px 0 8px}.ag-doc-title{font-size:16.5px;font-weight:900;color:#0f1e35;text-transform:uppercase;letter-spacing:.035em;margin:0 0 5px}.ag-doc-meta{font-size:9.5px;color:#444;margin:0 0 1px}.ag-divider{border:none;border-top:1px solid #c8d4e0;margin:7px 0}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:7.8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-party-name{font-size:10.2px;font-weight:800;color:#0f1e35;margin:0 0 1px}.ag-party-line{font-size:9.2px;color:#333;margin:0 0 1px}.ag-core{display:grid;grid-template-columns:34% minmax(0,1fr);gap:13px;align-items:start;margin-bottom:8px}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700;word-break:break-word}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px;word-break:break-word;hyphens:auto}.ag-table tbody tr:last-child td{border-bottom:none}.ag-table.many-cols th,.ag-table.many-cols td{font-size:7.4px;padding:2.6px 3.5px}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px;break-inside:avoid}.ag-terms li .n{font-weight:800;color:#1e3a5f;min-width:15px;flex-shrink:0}.ag-signatures{margin-top:14px;break-inside:avoid}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}.ag-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:7px 12px;background:#fff;border-bottom:1px solid #dde3ed;box-shadow:0 2px 4px rgba(0,0,0,.06)}.ag-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{.ag-toolbar{display:none}.ag-doc{max-width:none}}@media(max-width:760px){.ag-parties,.ag-sig-grid,.ag-core{grid-template-columns:1fr}}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc">
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(data.title)}</title><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:22mm 20mm;box-sizing:border-box}.ag-top{margin-bottom:9px;padding-bottom:8px;border-bottom:1.2px solid #1e3a5f}.ag-logo-img{max-width:96px;max-height:72px;object-fit:contain;display:block;margin-bottom:7px}.ag-logo-fallback{width:58px;height:58px;display:flex;align-items:center;justify-content:center;border:1.2px solid #c0ccdb;border-radius:7px;font-size:20px;font-weight:800;color:#1e3a5f;margin-bottom:7px}.ag-co-name{font-size:12.5px;font-weight:800;color:#0f1e35;margin:0 0 2px}.ag-co-info{font-size:8.8px;color:#444;margin:0 0 1px;line-height:1.35}.ag-title-block{text-align:center;margin:10px 0 8px}.ag-doc-title{font-size:16.5px;font-weight:900;color:#0f1e35;text-transform:uppercase;letter-spacing:.035em;margin:0 0 5px}.ag-doc-meta{font-size:9.5px;color:#444;margin:0 0 1px}.ag-divider{border:none;border-top:1px solid #c8d4e0;margin:7px 0}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:7.8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-party-name{font-size:10.2px;font-weight:800;color:#0f1e35;margin:0 0 1px}.ag-party-line{font-size:9.2px;color:#333;margin:0 0 1px}.ag-core{display:grid;grid-template-columns:34% minmax(0,1fr);gap:13px;align-items:start;margin-bottom:8px}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700;word-break:break-word}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px;word-break:break-word;hyphens:auto}.ag-table tbody tr:last-child td{border-bottom:none}.ag-table.many-cols th,.ag-table.many-cols td{font-size:7.4px;padding:2.6px 3.5px}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px;break-inside:avoid}.ag-terms li .n{font-weight:800;color:#1e3a5f;min-width:15px;flex-shrink:0}.ag-signatures{margin-top:14px;break-inside:avoid}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}.ag-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:7px 12px;background:#fff;border-bottom:1px solid #dde3ed;box-shadow:0 2px 4px rgba(0,0,0,.06)}.ag-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{.ag-toolbar{display:none}.ag-doc{margin:0 auto}}@media(max-width:760px){.ag-doc{width:100%;min-height:auto;padding:16px}.ag-parties,.ag-sig-grid,.ag-core{grid-template-columns:1fr}}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc">
     ${headerText ? `<div class="ag-custom-header">${escapeHtml(headerText)}</div>` : ''}
     <div class="ag-top">${logoHtml}<p class="ag-co-name">${escapeHtml(companyName)}</p>${coHeaderLines.map((line) => `<p class="ag-co-info">${escapeHtml(line)}</p>`).join('')}</div>
     <div class="ag-title-block"><h1 class="ag-doc-title">${escapeHtml(data.title)}</h1>${docNumber ? `<p class="ag-doc-meta">Nr: <strong>${escapeHtml(docNumber)}</strong></p>` : ''}<p class="ag-doc-meta">Data wystawienia: <strong>${escapeHtml(issueDate)}</strong></p></div>
     <hr class="ag-divider"/>
-    <p class="ag-intro">Umowa została zawarta${introCity ? ` w <strong>${escapeHtml(introCity)}</strong>` : ''} dnia <strong>${escapeHtml(issueDate)}</strong> pomiędzy:</p>
-    <div class="ag-parties"><div><span class="ag-party-label">Wypożyczający</span>${compactLines(companyLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div><div><span class="ag-party-label">Biorący</span>${compactLines(clientLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div></div>
-    <div class="ag-core">${(startDate || returnDate) ? `<div class="ag-section"><h2 class="ag-section-heading">Okres wypożyczenia</h2><div class="ag-period">${startDate ? `<div><span class="ag-period-label">Data wydania</span><span class="ag-period-value">${escapeHtml(startDate)}</span></div>` : ''}${returnDate ? `<div><span class="ag-period-label">Planowany zwrot</span><span class="ag-period-value">${escapeHtml(returnDate)}</span></div>` : ''}</div></div>` : '<div></div>'}<div class="ag-section"><h2 class="ag-section-heading">Przedmiot umowy - przekazany sprzęt</h2><div class="ag-table-wrap"><table class="ag-table${manyColumns ? ' many-cols' : ''}"><thead><tr>${equipmentHeader}</tr></thead><tbody>${equipmentRows || `<tr><td colspan="${data.columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></div></div></div>
-    <div class="ag-section"><h2 class="ag-section-heading">Warunki umowy</h2><ul class="ag-terms">${terms}</ul></div>
-    <div class="ag-signatures"><div class="ag-sig-grid"><div><span class="ag-sig-label">Wypożyczający</span><div class="ag-sig-line">miejscowość, data i podpis</div></div><div><span class="ag-sig-label">Biorący</span><div class="ag-sig-line">miejscowość, data i podpis</div></div></div></div>
-    ${companyFooter ? `<footer class="ag-footer">${escapeHtml(companyFooter)}</footer>` : ''}
+    <div class="ag-parties"><div><span class="ag-party-label">Wypożyczający</span>${issuerText.trim() ? renderTemplateMultiline(issuerText) : compactLines(companyLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div><div><span class="ag-party-label">Biorący</span>${borrowerText.trim() ? renderTemplateMultiline(borrowerText) : compactLines(clientLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div></div>
+    ${orderedSections}
   </main>${autoPrint ? '<script>window.onload=function(){window.focus();window.print();};</script>' : ''}</body></html>`;
 }
 
 function openRentalAgreementPrint(rental) {
   if (!canCreateRentalAgreement(rental)) return;
   printHtmlInIframe(buildRentalAgreementHtml(rental, { preview: true }));
+}
+
+function buildGenericDocumentTemplateHtml(documentType, template, context = {}, { preview = true } = {}) {
+  const normalized = normalizeSharedDocumentTemplate(template, documentType?.defaultTemplate ?? {});
+  const apply = (value) => applyTemplateVariables(value, context);
+  const sectionVisibility = normalized.sectionVisibility ?? DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY;
+  const sectionOrder = normalized.sectionOrder?.length ? normalized.sectionOrder : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER;
+  const enabledColumns = (normalized.columns ?? []).filter((column) => column.enabled !== false);
+  const columns = enabledColumns.length ? enabledColumns : DEFAULT_GENERIC_TEMPLATE_COLUMNS.filter((column) => column.enabled);
+  const tableRows = Array.isArray(context.equipmentRows) && context.equipmentRows.length ? context.equipmentRows : [
+    { lp: '1', name: 'Przykładowa pozycja', details: 'Model / numer seryjny', status: 'OK', notes: '—' }
+  ];
+  const tableHeader = columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
+  const tableBody = tableRows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
+  const sectionMap = {
+    header: apply(normalized.headerText).trim() ? `<div class="ag-custom-header">${renderTemplateMultiline(apply(normalized.headerText))}</div>` : '',
+    intro: apply(normalized.introText).trim() ? `<p class="ag-intro">${escapeHtml(apply(normalized.introText))}</p>` : '',
+    issuer: apply(normalized.issuerText).trim() ? `<div><span class="ag-party-label">${escapeHtml(normalized.signatureIssuer || 'Wystawiający')}</span>${renderTemplateMultiline(apply(normalized.issuerText))}</div>` : '',
+    borrower: apply(normalized.borrowerText).trim() ? `<div><span class="ag-party-label">${escapeHtml(normalized.signatureBorrower || 'Odbiorca')}</span>${renderTemplateMultiline(apply(normalized.borrowerText))}</div>` : '',
+    period: `<div class="ag-section"><h2 class="ag-section-heading">Okres</h2><div class="ag-period"><div><span class="ag-period-label">Data dokumentu</span><span class="ag-period-value">${escapeHtml(context.issueDate || getLocalIsoDate())}</span></div></div></div>`,
+    equipment: `<div class="ag-section"><h2 class="ag-section-heading">Tabela pozycji</h2><div class="ag-table-wrap"><table class="ag-table"><thead><tr>${tableHeader}</tr></thead><tbody>${tableBody}</tbody></table></div></div>`,
+    terms: apply(normalized.termsText).trim() ? `<div class="ag-section"><h2 class="ag-section-heading">Treść</h2><ul class="ag-terms">${renderTermsFromTemplate(apply(normalized.termsText), [])}</ul></div>` : '',
+    signatures: `<div class="ag-signatures"><div class="ag-sig-grid"><div><span class="ag-sig-label">${escapeHtml(normalized.signatureIssuer || 'Wystawiający')}</span><div class="ag-sig-line">podpis</div></div><div><span class="ag-sig-label">${escapeHtml(normalized.signatureBorrower || 'Odbiorca')}</span><div class="ag-sig-line">podpis</div></div></div></div>`,
+    footer: apply(normalized.footerText).trim() ? `<footer class="ag-footer">${escapeHtml(apply(normalized.footerText))}</footer>` : ''
+  };
+  const partyBlocks = [sectionMap.issuer, sectionMap.borrower].filter(Boolean);
+  const ordered = sectionOrder
+    .filter((sectionId) => sectionVisibility[sectionId] !== false)
+    .filter((sectionId) => !['issuer', 'borrower'].includes(sectionId))
+    .map((sectionId) => sectionMap[sectionId])
+    .filter(Boolean)
+    .join('');
+
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(normalized.title || documentType?.label || 'Dokument')}</title><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:22mm 20mm;box-sizing:border-box}.ag-title-block{text-align:center;margin:8px 0 8px}.ag-doc-title{font-size:16px;font-weight:900;color:#0f1e35;margin:0 0 4px}.ag-doc-meta{font-size:9px;color:#475569;margin:0}.ag-custom-header p,.ag-party-line{margin:0 0 1px}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px}.ag-table tbody tr:last-child td{border-bottom:none}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px}.ag-signatures{margin-top:14px}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}@media(max-width:760px){.ag-doc{width:100%;min-height:auto;padding:16px}.ag-parties,.ag-sig-grid{grid-template-columns:1fr}}</style></head><body><main class="ag-doc"><div class="ag-title-block"><h1 class="ag-doc-title">${escapeHtml(apply(normalized.title || documentType?.label || 'Dokument'))}</h1><p class="ag-doc-meta">Podgląd szablonu: ${escapeHtml(documentType?.label || '')}</p></div>${partyBlocks.length ? `<div class="ag-parties">${partyBlocks.join('')}</div>` : ''}${ordered}</main></body></html>`;
 }
 
 function normalizeScannerCode(value) {
@@ -3449,7 +3553,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option><option value="active">Aktywne</option><option value="partially_returned">Częściowo zwrócone</option><option value="returned">Zwrócone</option></AppSelect></label>
         <label>Typ wypożyczenia<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{rentalTypes.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
         <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearRentalFilters}>Wyczyść</AppButton>
-        <span className="filter-count">{activeRows.length + returnedRows.length} / {displayRows.length}</span>
+        {displayRows.length > 0 && activeRows.length + returnedRows.length < displayRows.length && <span className="filter-count">Wyświetlono {activeRows.length + returnedRows.length} z {displayRows.length}</span>}
       </div>
       <div className="rentals-section-heading">
         <div>
@@ -3636,22 +3740,72 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
   </ResizableModalFrame>;
 }
 
-function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose }) {
+function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose, onPrint = null, onDownload = null, onGeneratePdf = null }) {
+  const [zoomMode, setZoomMode] = useState('fit');
+  const [fitScale, setFitScale] = useState(1);
+  const viewportRef = useRef(null);
+  const BASE_A4_WIDTH = 794;
+  const BASE_A4_HEIGHT = 1123;
+
+  useEffect(() => {
+    const computeFit = () => {
+      const node = viewportRef.current;
+      if (!node) return;
+      const w = Math.max(320, node.clientWidth - 24);
+      const h = Math.max(320, node.clientHeight - 24);
+      const scale = Math.min(w / BASE_A4_WIDTH, h / BASE_A4_HEIGHT);
+      setFitScale(Math.max(0.3, Math.min(1, scale)));
+    };
+    computeFit();
+    const observer = new ResizeObserver(computeFit);
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    window.addEventListener('resize', computeFit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', computeFit);
+    };
+  }, []);
+
+  const activeScale = zoomMode === 'fit'
+    ? fitScale
+    : zoomMode === '50'
+      ? 0.5
+      : zoomMode === '75'
+        ? 0.75
+        : 1;
+
+  const runPrint = () => (onPrint ?? (() => printHtmlInIframe(html)))();
+  const runDownload = () => (onDownload ?? (() => printHtmlInIframe(html)))();
+  const runGeneratePdf = () => (onGeneratePdf ?? (() => printHtmlInIframe(html)))();
+
   return <ResizableModalFrame
     className="document-preview-modal"
-    storageKey="fixer-document-preview-modal"
-    defaultSize={{ width: 960, height: 860 }}
-    minSize={{ width: 760, height: 560 }}
+    storageKey="fixer-document-preview-modal-v2"
+    defaultSize={{ width: 1280, height: 900 }}
+    minSize={{ width: 940, height: 680 }}
     eyebrow="Podgląd"
     title={title}
     onClose={onClose}
     footer={<>
       <ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary>
-      <ButtonPrimary onClick={() => printHtmlInIframe(html)}><Printer size={16} />Drukuj / PDF</ButtonPrimary>
+      <ButtonSecondary onClick={runGeneratePdf}><FileText size={16} />Generuj PDF</ButtonSecondary>
+      <ButtonSecondary onClick={runPrint}><Printer size={16} />Drukuj</ButtonSecondary>
+      <ButtonPrimary onClick={runDownload}><Download size={16} />Pobierz PDF</ButtonPrimary>
     </>}
   >
-    <div className="rental-agreement-preview-frame">
-      <iframe title={title} srcDoc={html} />
+    <div className="document-preview-toolbar">
+      <span>Zoom</span>
+      {[
+        ['50', '50%'],
+        ['75', '75%'],
+        ['100', '100%'],
+        ['fit', 'Dopasuj']
+      ].map(([id, label]) => <button key={id} type="button" className={zoomMode === id ? 'active' : ''} onClick={() => setZoomMode(id)}>{label}</button>)}
+    </div>
+    <div ref={viewportRef} className="document-preview-canvas">
+      <div className="document-preview-paper" style={{ width: `${BASE_A4_WIDTH * activeScale}px`, height: `${BASE_A4_HEIGHT * activeScale}px` }}>
+        <iframe title={title} srcDoc={html} style={{ width: `${BASE_A4_WIDTH}px`, height: `${BASE_A4_HEIGHT}px`, transform: `scale(${activeScale})`, transformOrigin: 'top left' }} />
+      </div>
     </div>
   </ResizableModalFrame>;
 }
@@ -4179,7 +4333,7 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
         <FormField label="Sortuj"><AppSelect value={filters.sort ?? 'name'} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}><option value="name">Nazwa</option><option value="category">Kategoria</option><option value="status">Status</option><option value="location">Lokalizacja</option></AppSelect></FormField>
         <ButtonGhost className="compact-table-button" onClick={clearFilters}>Wyczyść</ButtonGhost>
       </div>
-      <div className="set-picker-summary"><strong>{selectedItems.length} zaznaczono</strong><span>{filteredItems.length} / {availableItems.length} dostępnych pozycji</span></div>
+      <div className="set-picker-summary"><strong>{selectedItems.length} zaznaczono</strong><span>{filteredItems.length} z {availableItems.length} dostępnych pozycji</span></div>
       <div className="shared-picker-table-shell" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' && selectedItems.length) onConfirm(selectedItems); }}>
         <div className="picker-visible-toggle"><label><input type="checkbox" checked={visibleAllSelected} onChange={toggleVisible} />Zaznacz widoczne</label></div>
         {pickerRows.length ? <DataTable storageKey="equipment-picker-table" columns={pickerColumns} rows={pickerRows} onOpen={toggleItem} openLabel="Zaznacz / odznacz" enableSelectionActions={false} /> : <EmptyState title="Brak pozycji spełniających aktualne filtry." />}
@@ -4559,7 +4713,6 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <label>Priorytet<AppSelect value={filters.priority ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, priority: event.target.value }))}><option value="all">Wszystkie</option>{servicePriorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></label>
         <label>Kategoria<AppSelect value={filters.category ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}><option value="all">Wszystkie</option>{serviceCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</AppSelect></label>
         <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść filtry</AppButton>
-        <span className="filter-count">{filteredRows.length} / {activeTableRows.length}</span>
       </div>
       <DataTable
         storageKey={SERVICE_TABLE_KEY}
@@ -5429,7 +5582,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   const [anchorDate, setAnchorDate] = useState(getLocalIsoDate());
   const [sources, setSources] = useState(settings.sources);
   const [sourceSettings, setSourceSettings] = useState(settings.sourceSettings);
-  const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const [filters, setFilters] = useStoredState('fixer-calendar-filters', { type: 'all', status: 'all' });
   const [organizerRows, setOrganizerRows] = useState([]);
   const [rentalsRows, setRentalsRows] = useState([]);
@@ -5480,10 +5633,10 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   }, []);
 
   useEffect(() => {
-    if (!sourceDropdownOpen) return undefined;
+    if (!filterPopoverOpen) return undefined;
     const close = (event) => {
       if (event.type === 'keydown' && event.key !== 'Escape') return;
-      setSourceDropdownOpen(false);
+      setFilterPopoverOpen(false);
     };
     window.addEventListener('click', close);
     window.addEventListener('keydown', close);
@@ -5491,7 +5644,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
       window.removeEventListener('click', close);
       window.removeEventListener('keydown', close);
     };
-  }, [sourceDropdownOpen]);
+  }, [filterPopoverOpen]);
 
   useEffect(() => {
     if (dashboardIntent?.type !== 'calendar') return;
@@ -5616,7 +5769,16 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   </div>;
 
   const activeSourceCount = CALENDAR_SOURCES.filter((source) => sources[source.id] !== false).length;
-  const sourceSummary = activeSourceCount === CALENDAR_SOURCES.length ? 'Źródła: wszystkie' : `Źródła: ${activeSourceCount}/${CALENDAR_SOURCES.length}`;
+  const sourceSummary = activeSourceCount === CALENDAR_SOURCES.length ? 'Wszystkie' : `${activeSourceCount}/${CALENDAR_SOURCES.length}`;
+  const activeFilterCount = (activeSourceCount !== CALENDAR_SOURCES.length ? 1 : 0)
+    + ((filters.type ?? 'all') !== 'all' ? 1 : 0)
+    + ((filters.status ?? 'all') !== 'all' ? 1 : 0);
+  const clearCalendarFilters = () => {
+    const nextSources = Object.fromEntries(CALENDAR_SOURCES.map((source) => [source.id, true]));
+    setSources(nextSources);
+    localStorage.setItem(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY, JSON.stringify(nextSources));
+    setFilters({ type: 'all', status: 'all' });
+  };
 
   return <div className="calendar-page">
     <section className="panel calendar-toolbar-panel">
@@ -5639,21 +5801,28 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
           })}</div>
         </div>
         <div className="calendar-toolbar-right">
-          <div className="calendar-source-dropdown" onClick={(event) => event.stopPropagation()}>
-            <button type="button" className={`calendar-source-trigger ${sourceDropdownOpen ? 'active' : ''}`} onClick={() => setSourceDropdownOpen((value) => !value)} aria-expanded={sourceDropdownOpen}>
-              {sourceSummary}<ChevronDown size={14} />
-            </button>
-            {sourceDropdownOpen && <div className="calendar-source-menu">
-              {CALENDAR_SOURCES.map((source) => <label key={source.id}>
-                <input type="checkbox" checked={sources[source.id] !== false} onChange={() => toggleSource(source.id)} />
-                <span className="calendar-source-dot" style={{ background: sourceSettings[source.id]?.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] }} />
-                {source.label}
-              </label>)}
+          <div className="calendar-filter-popover-shell" onClick={(event) => event.stopPropagation()}>
+            <ButtonSecondary className={`calendar-filter-button ${filterPopoverOpen ? 'active' : ''}`} onClick={() => setFilterPopoverOpen((value) => !value)} aria-expanded={filterPopoverOpen}>
+              Filtry{activeFilterCount > 0 ? ` • ${activeFilterCount}` : ''}<ChevronDown size={14} />
+            </ButtonSecondary>
+            {filterPopoverOpen && <div className="calendar-filter-popover">
+              <label className="calendar-filter-popover-field">
+                <span>Źródła</span>
+                <div className="calendar-source-menu-list">
+                  {CALENDAR_SOURCES.map((source) => <label key={source.id}>
+                    <input type="checkbox" checked={sources[source.id] !== false} onChange={() => toggleSource(source.id)} />
+                    <span className="calendar-source-dot" style={{ background: sourceSettings[source.id]?.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] }} />
+                    {source.label}
+                  </label>)}
+                </div>
+                <small>Aktywne: {sourceSummary}</small>
+              </label>
+              <label className="calendar-filter-popover-field"><span>Typ</span><AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.types.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
+              <label className="calendar-filter-popover-field"><span>Status</span><AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
+              <div className="calendar-filter-popover-actions">
+                <AppButton variant="secondary" size="sm" onClick={clearCalendarFilters}>Wyczyść filtry</AppButton>
+              </div>
             </div>}
-          </div>
-          <div className="calendar-event-filters">
-            <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.types.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
-            <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
           </div>
           <div className="calendar-export-actions">
             <ButtonSecondary onClick={() => exportTableToCsv(CALENDAR_EXPORT_TABLE_KEY, CALENDAR_EXPORT_COLUMNS, visibleEventRows)} disabled={!visibleEventRows.length}><Download size={15} />CSV</ButtonSecondary>
@@ -6995,16 +7164,33 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     document.addEventListener('mouseup', onMouseUp);
   };
 
+  const listSubtitle = (filters.type ?? 'all') === 'task'
+    ? 'Lista zadań'
+    : (filters.type ?? 'all') === 'project'
+      ? 'Lista projektów'
+      : 'Lista zadań i projektów';
+
   return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''}`}>
     <div className="projects-workspace">
       <div className="projects-list-pane">
-        <AppSection title="Zadania i projekty">
+        <section className="panel hero-panel projects-actions-panel">
           <div className="module-actions">
             <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Proste zadanie</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania i projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
+          </div>
+          {notice && <div className="notice">{notice}</div>}
+        </section>
+
+        <section className="panel service-list-panel rentals-records-section projects-list-panel">
+          <div className="rentals-section-heading">
+            <div>
+              <p className="eyebrow">Zadania i projekty</p>
+              <h3>{listSubtitle}</h3>
+            </div>
+            <span>{activeTableRows.length} pozycji</span>
           </div>
           <div className="module-filters project-filter-bar">
             <div className="work-type-switch" role="group" aria-label="Typ wpisu">
@@ -7023,11 +7209,10 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
               {[...new Set([...PROJECT_PRIORITIES, ...ORGANIZER_TASK_PRIORITIES])].map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
           </div>
-          {notice && <div className="notice">{notice}</div>}
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
             getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
             onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
-        </AppSection>
+        </section>
 
         <AppSection title={<button type="button" className="history-toggle-button" onClick={() => setHistoryCollapsed((v) => !v)}>
           Historia projektów {historyCollapsed ? '▸' : '▾'} <span className="history-count">({historyRows.length})</span>
@@ -7097,9 +7282,9 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
   </ResizableModalFrame>;
 }
 
-function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange }) {
+function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsV2 dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} />
+    <SettingsV2 dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} />
   </div>;
 }
 function getStoredJson(key, fallback) {
@@ -7121,6 +7306,447 @@ function useStoredState(key, fallback) {
     });
   };
   return [value, updateValue];
+}
+
+const UI_THEME_PRESETS_STORAGE_KEY = 'fixer:ui-theme-presets';
+const UI_THEME_ACTIVE_STORAGE_KEY = 'fixer:active-ui-theme';
+
+const UI_THEME_TOKEN_DEFINITIONS = [
+  { key: 'appBg', cssVar: '--fw-color-app-bg', label: 'Tło aplikacji', description: 'Główne tło całego interfejsu.' },
+  { key: 'panelBg', cssVar: '--fw-color-surface', label: 'Tło paneli / kart', description: 'Powierzchnia kart, paneli i sekcji.' },
+  { key: 'tableBg', cssVar: '--fw-color-table-bg', label: 'Tło tabel', description: 'Tło obszaru tabel i list.' },
+  { key: 'border', cssVar: '--fw-color-border', label: 'Obramowania', description: 'Kolor granic i separatorów.' },
+  { key: 'textMain', cssVar: '--fw-color-text', label: 'Tekst główny', description: 'Podstawowy kolor tekstu.' },
+  { key: 'textMuted', cssVar: '--fw-color-text-muted', label: 'Tekst drugorzędny', description: 'Opisy, metadane i mniej ważne treści.' },
+  { key: 'accent', cssVar: '--fw-color-primary', label: 'Kolor akcentu', description: 'Akcje i wyróżnienia interfejsu.' },
+  { key: 'menuActive', cssVar: '--fw-color-menu-active', label: 'Aktywna pozycja menu', description: 'Kolor aktywnego elementu nawigacji.' },
+  { key: 'primaryButton', cssVar: '--fw-color-button-primary', label: 'Przycisk główny', description: 'Kolor przycisków typu primary.' },
+  { key: 'success', cssVar: '--fw-color-success', label: 'Sukces', description: 'Kolor komunikatów i akcji pozytywnych.' },
+  { key: 'warning', cssVar: '--fw-color-warning', label: 'Ostrzeżenie', description: 'Kolor ostrzeżeń i uwag.' },
+  { key: 'danger', cssVar: '--fw-color-danger', label: 'Błąd', description: 'Kolor błędów i akcji destrukcyjnych.' }
+];
+
+const BUILTIN_UI_THEME_PRESETS = [
+  {
+    id: 'default-light',
+    name: 'Domyślny jasny',
+    description: 'jasny neutralny',
+    group: 'light',
+    builtIn: true,
+    tokens: {
+      appBg: '#f4f7fb',
+      panelBg: '#ffffff',
+      tableBg: '#ffffff',
+      border: '#cbd5e1',
+      textMain: '#172033',
+      textMuted: '#64748b',
+      accent: '#2563eb',
+      menuActive: '#1d4ed8',
+      primaryButton: '#2563eb',
+      success: '#16a34a',
+      warning: '#d97706',
+      danger: '#dc2626'
+    }
+  },
+  {
+    id: 'clean-white',
+    name: 'Clean White',
+    description: 'jasny czysty',
+    group: 'light',
+    builtIn: true,
+    tokens: {
+      appBg: '#FFFFFF',
+      panelBg: '#FFFFFF',
+      tableBg: '#FFFFFF',
+      border: '#E5E7EB',
+      textMain: '#111827',
+      textMuted: '#6B7280',
+      accent: '#3B82F6',
+      menuActive: '#2563EB',
+      primaryButton: '#2563EB',
+      success: '#16A34A',
+      warning: '#D97706',
+      danger: '#DC2626'
+    }
+  },
+  {
+    id: 'soft-gray',
+    name: 'Soft Gray',
+    description: 'jasny miękki',
+    group: 'light',
+    builtIn: true,
+    tokens: {
+      appBg: '#E9EDF2',
+      panelBg: '#F2F5F8',
+      tableBg: '#F7F9FC',
+      border: '#B6C0CD',
+      textMain: '#202939',
+      textMuted: '#5F6B7D',
+      accent: '#64748B',
+      menuActive: '#475569',
+      primaryButton: '#4B5563',
+      success: '#059669',
+      warning: '#D97706',
+      danger: '#DC2626'
+    }
+  },
+  {
+    id: 'blue-light',
+    name: 'Blue Light',
+    description: 'jasny niebieski',
+    group: 'light',
+    builtIn: true,
+    tokens: {
+      appBg: '#E6F0FF',
+      panelBg: '#F1F7FF',
+      tableBg: '#F8FBFF',
+      border: '#93C5FD',
+      textMain: '#0F2A5F',
+      textMuted: '#36507A',
+      accent: '#1D4ED8',
+      menuActive: '#1E3A8A',
+      primaryButton: '#1E40AF',
+      success: '#16A34A',
+      warning: '#D97706',
+      danger: '#DC2626'
+    }
+  },
+  {
+    id: 'warm-paper',
+    name: 'Warm Paper',
+    description: 'ciepły jasny',
+    group: 'light',
+    builtIn: true,
+    tokens: {
+      appBg: '#F3EBDD',
+      panelBg: '#FAF2E6',
+      tableBg: '#FFF8EE',
+      border: '#CDB79F',
+      textMain: '#3A2D24',
+      textMuted: '#7A6758',
+      accent: '#B45309',
+      menuActive: '#92400E',
+      primaryButton: '#B45309',
+      success: '#3F7D20',
+      warning: '#B45309',
+      danger: '#B91C1C'
+    }
+  },
+  {
+    id: 'studio-light',
+    name: 'Studio Light',
+    description: 'jasny studyjny',
+    group: 'light',
+    builtIn: true,
+    tokens: {
+      appBg: '#E8EEF7',
+      panelBg: '#F1F5FA',
+      tableBg: '#F7FAFD',
+      border: '#AEBED3',
+      textMain: '#1B2433',
+      textMuted: '#5E6B7E',
+      accent: '#2563EB',
+      menuActive: '#1E40AF',
+      primaryButton: '#1D4ED8',
+      success: '#16A34A',
+      warning: '#D97706',
+      danger: '#DC2626'
+    }
+  },
+  {
+    id: 'default-dark',
+    name: 'Domyślny ciemny',
+    description: 'ciemny bazowy',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#080d15',
+      panelBg: '#111827',
+      tableBg: '#0f172a',
+      border: '#334155',
+      textMain: '#e6edf8',
+      textMuted: '#95a0b5',
+      accent: '#2563eb',
+      menuActive: '#a5b4fc',
+      primaryButton: '#2563eb',
+      success: '#22c55e',
+      warning: '#f59e0b',
+      danger: '#fb7185'
+    }
+  },
+  {
+    id: 'graphite-pro',
+    name: 'Graphite Pro',
+    description: 'ciemny grafitowy',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#0C0F14',
+      panelBg: '#141A22',
+      tableBg: '#11171F',
+      border: '#2F3A49',
+      textMain: '#E5E7EB',
+      textMuted: '#9CA3AF',
+      accent: '#6366F1',
+      menuActive: '#A5B4FC',
+      primaryButton: '#4F46E5',
+      success: '#22C55E',
+      warning: '#F59E0B',
+      danger: '#F87171'
+    }
+  },
+  {
+    id: 'slate-pro',
+    name: 'Slate Pro',
+    description: 'ciemny łupkowy',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#0B1220',
+      panelBg: '#162235',
+      tableBg: '#111C2E',
+      border: '#2A3D57',
+      textMain: '#E2E8F0',
+      textMuted: '#94A3B8',
+      accent: '#3B82F6',
+      menuActive: '#93C5FD',
+      primaryButton: '#2563EB',
+      success: '#22C55E',
+      warning: '#F59E0B',
+      danger: '#EF4444'
+    }
+  },
+  {
+    id: 'night-gray',
+    name: 'Night Gray',
+    description: 'ciemny neutralny',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#0f1117',
+      panelBg: '#1a1f29',
+      tableBg: '#151a23',
+      border: '#3a4455',
+      textMain: '#e5e7eb',
+      textMuted: '#9ca3af',
+      accent: '#8b9cf6',
+      menuActive: '#c7d2fe',
+      primaryButton: '#6366f1',
+      success: '#34d399',
+      warning: '#fbbf24',
+      danger: '#f87171'
+    }
+  },
+  {
+    id: 'steel-blue',
+    name: 'Steel Blue',
+    description: 'ciemny stalowy',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#0b1320',
+      panelBg: '#122033',
+      tableBg: '#0f1a2c',
+      border: '#274464',
+      textMain: '#dbeafe',
+      textMuted: '#93c5fd',
+      accent: '#3b82f6',
+      menuActive: '#60a5fa',
+      primaryButton: '#2563eb',
+      success: '#22c55e',
+      warning: '#f59e0b',
+      danger: '#ef4444'
+    }
+  },
+  {
+    id: 'warm-slate',
+    name: 'Warm Slate',
+    description: 'ciemny ciepły',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#1b1714',
+      panelBg: '#241f1b',
+      tableBg: '#201b18',
+      border: '#4b4037',
+      textMain: '#f3e8df',
+      textMuted: '#c4b2a4',
+      accent: '#d97706',
+      menuActive: '#f59e0b',
+      primaryButton: '#ea580c',
+      success: '#65a30d',
+      warning: '#f59e0b',
+      danger: '#ef4444'
+    }
+  },
+  {
+    id: 'broadcast-dark',
+    name: 'Broadcast Dark',
+    description: 'ciemny broadcast',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#05070D',
+      panelBg: '#0D1220',
+      tableBg: '#0A101A',
+      border: '#22304A',
+      textMain: '#E6EDF8',
+      textMuted: '#94A3B8',
+      accent: '#0EA5E9',
+      menuActive: '#38BDF8',
+      primaryButton: '#0284C7',
+      success: '#10B981',
+      warning: '#F59E0B',
+      danger: '#FB7185'
+    }
+  },
+  {
+    id: 'carbon-blue',
+    name: 'Carbon Blue',
+    description: 'ciemny węglowo-niebieski',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#070C15',
+      panelBg: '#111827',
+      tableBg: '#0E1624',
+      border: '#2A3D57',
+      textMain: '#DBEAFE',
+      textMuted: '#93C5FD',
+      accent: '#2563EB',
+      menuActive: '#60A5FA',
+      primaryButton: '#1D4ED8',
+      success: '#22C55E',
+      warning: '#F59E0B',
+      danger: '#EF4444'
+    }
+  },
+  {
+    id: 'soft-dark',
+    name: 'Soft Dark',
+    description: 'ciemny miękki',
+    group: 'dark',
+    builtIn: true,
+    tokens: {
+      appBg: '#131722',
+      panelBg: '#1B2231',
+      tableBg: '#161D2A',
+      border: '#364152',
+      textMain: '#E5E7EB',
+      textMuted: '#A1A1AA',
+      accent: '#7C3AED',
+      menuActive: '#C4B5FD',
+      primaryButton: '#6D28D9',
+      success: '#22C55E',
+      warning: '#F59E0B',
+      danger: '#F87171'
+    }
+  }
+];
+
+const DEFAULT_ACTIVE_THEME_ID = 'default-dark';
+
+function normalizeHexColor(value, fallback = '#000000') {
+  const raw = String(value ?? '').trim();
+  if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return fallback;
+  const hex = raw.slice(1).toUpperCase();
+  return hex.length === 3
+    ? `#${hex.split('').map((part) => `${part}${part}`).join('')}`
+    : `#${hex}`;
+}
+
+function normalizeUiThemeTokens(tokens = {}) {
+  return UI_THEME_TOKEN_DEFINITIONS.reduce((acc, token) => {
+    acc[token.key] = normalizeHexColor(tokens[token.key], '#000000');
+    return acc;
+  }, {});
+}
+
+function getUiThemeCustomPresets() {
+  const raw = getStoredJson(UI_THEME_PRESETS_STORAGE_KEY, []);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => ({
+      id: item?.id || `custom-${Date.now()}`,
+      name: String(item?.name ?? '').trim(),
+      builtIn: false,
+      tokens: normalizeUiThemeTokens(item?.tokens ?? {})
+    }))
+    .filter((item) => item.name);
+}
+
+function saveUiThemeCustomPresets(items) {
+  localStorage.setItem(UI_THEME_PRESETS_STORAGE_KEY, JSON.stringify(items));
+}
+
+function getAllUiThemePresets() {
+  return [...BUILTIN_UI_THEME_PRESETS, ...getUiThemeCustomPresets()];
+}
+
+function getStoredActiveUiTheme(preferredPresetId = DEFAULT_ACTIVE_THEME_ID) {
+  const parsed = getStoredJson(UI_THEME_ACTIVE_STORAGE_KEY, null);
+  if (!parsed || typeof parsed !== 'object') {
+    const fallbackPreset = BUILTIN_UI_THEME_PRESETS.find((item) => item.id === preferredPresetId) ?? BUILTIN_UI_THEME_PRESETS[0];
+    return { presetId: fallbackPreset.id, tokens: normalizeUiThemeTokens(fallbackPreset.tokens) };
+  }
+  const presetId = String(parsed.presetId ?? DEFAULT_ACTIVE_THEME_ID);
+  const preset = getAllUiThemePresets().find((item) => item.id === presetId);
+  const tokens = normalizeUiThemeTokens(parsed.tokens ?? preset?.tokens ?? BUILTIN_UI_THEME_PRESETS[0].tokens);
+  return { presetId: preset ? preset.id : 'custom-live', tokens };
+}
+
+function saveActiveUiTheme(state) {
+  localStorage.setItem(UI_THEME_ACTIVE_STORAGE_KEY, JSON.stringify({
+    presetId: state?.presetId ?? 'custom-live',
+    tokens: normalizeUiThemeTokens(state?.tokens ?? {})
+  }));
+}
+
+function createUiThemeCssVariables(tokens) {
+  const normalized = normalizeUiThemeTokens(tokens);
+  const result = {};
+  UI_THEME_TOKEN_DEFINITIONS.forEach((token) => {
+    result[token.cssVar] = normalized[token.key];
+  });
+  result['--fw-color-primary-2'] = normalized.primaryButton;
+  result['--fw-color-success-text'] = normalized.success;
+  result['--fw-color-warning-text'] = normalized.warning;
+  result['--fw-color-danger-text'] = normalized.danger;
+  result['--fw-color-primary-soft'] = `${normalized.accent}1A`;
+  result['--fw-color-primary-border'] = `${normalized.accent}66`;
+  result['--fw-color-selection'] = `${normalized.accent}1F`;
+  result['--fw-color-selection-bar'] = `${normalized.accent}CC`;
+  return result;
+}
+
+function hexToRgb(hex) {
+  const normalized = normalizeHexColor(hex, '#000000');
+  const value = normalized.slice(1);
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16)
+  };
+}
+
+function channelToLinear(value) {
+  const normalized = value / 255;
+  return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+}
+
+function calculateContrastRatio(bgHex, textHex) {
+  const bg = hexToRgb(bgHex);
+  const text = hexToRgb(textHex);
+  const bgLum = 0.2126 * channelToLinear(bg.r) + 0.7152 * channelToLinear(bg.g) + 0.0722 * channelToLinear(bg.b);
+  const textLum = 0.2126 * channelToLinear(text.r) + 0.7152 * channelToLinear(text.g) + 0.0722 * channelToLinear(text.b);
+  const lighter = Math.max(bgLum, textLum);
+  const darker = Math.min(bgLum, textLum);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function getThemePresetPalette(preset) {
+  const tokens = preset?.tokens ?? {};
+  return [tokens.appBg, tokens.panelBg, tokens.accent, tokens.primaryButton, tokens.menuActive].map((value) => normalizeHexColor(value, '#000000'));
 }
 
 const COMPANY_PROFILE_STORAGE_KEY = 'fixer-company-profile';
@@ -7180,14 +7806,311 @@ const DEFAULT_RENTAL_AGREEMENT_TERMS = [
   'Wszelkie uszkodzenia należy zgłosić niezwłocznie.',
   'Zwrot sprzętu zostaje potwierdzony po przyjęciu przez firmę.'
 ];
+const RENTAL_AGREEMENT_SECTION_IDS = ['intro', 'period', 'equipment', 'terms', 'signatures', 'footer'];
+const DEFAULT_RENTAL_AGREEMENT_SECTION_VISIBILITY = {
+  intro: true,
+  period: true,
+  equipment: true,
+  terms: true,
+  signatures: true,
+  footer: true
+};
+const DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER = [...RENTAL_AGREEMENT_SECTION_IDS];
+const RENTAL_TEMPLATE_VARIABLES = [
+  { key: '{{documentNumber}}', label: 'Numer dokumentu' },
+  { key: '{{issueDate}}', label: 'Data wystawienia' },
+  { key: '{{returnDate}}', label: 'Planowany zwrot' },
+  { key: '{{clientName}}', label: 'Nazwa klienta' },
+  { key: '{{clientAddress}}', label: 'Adres klienta' },
+  { key: '{{companyName}}', label: 'Nazwa firmy' },
+  { key: '{{companyAddress}}', label: 'Adres firmy' },
+  { key: '{{equipmentTable}}', label: 'Tabela sprzętu' },
+  { key: '{{notes}}', label: 'Uwagi' }
+];
 const DEFAULT_DOCUMENT_TEMPLATES = {
   [RENTAL_AGREEMENT_TEMPLATE_KEY]: {
     name: 'Umowa wypożyczenia',
     documentTitle: 'Umowa wypożyczenia sprzętu',
     columns: DEFAULT_RENTAL_AGREEMENT_COLUMNS,
-    terms: DEFAULT_RENTAL_AGREEMENT_TERMS
+    terms: DEFAULT_RENTAL_AGREEMENT_TERMS,
+    introText: 'Umowa została zawarta{{documentCityClause}} dnia {{issueDate}} pomiędzy:',
+    issuerText: '{{companyName}}\n{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}',
+    borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientContact}}',
+    termsText: DEFAULT_RENTAL_AGREEMENT_TERMS.map((item) => `- ${item}`).join('\n'),
+    footerText: '{{documentFooter}}',
+    sectionVisibility: DEFAULT_RENTAL_AGREEMENT_SECTION_VISIBILITY,
+    sectionOrder: DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER
   }
 };
+const DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY = 'fixer:document-templates';
+const SHARED_TEMPLATE_SECTION_IDS = ['header', 'intro', 'issuer', 'borrower', 'period', 'equipment', 'terms', 'signatures', 'footer'];
+const DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY = {
+  header: true,
+  intro: true,
+  issuer: true,
+  borrower: true,
+  period: true,
+  equipment: true,
+  terms: true,
+  signatures: true,
+  footer: true
+};
+const DEFAULT_SHARED_TEMPLATE_SECTION_ORDER = [...SHARED_TEMPLATE_SECTION_IDS];
+const DEFAULT_GENERIC_TEMPLATE_COLUMNS = [
+  { key: 'lp', label: 'LP', enabled: true },
+  { key: 'name', label: 'Nazwa', enabled: true },
+  { key: 'details', label: 'Szczegóły', enabled: true },
+  { key: 'status', label: 'Status', enabled: false },
+  { key: 'notes', label: 'Uwagi', enabled: false }
+];
+const SHARED_DOCUMENT_TEMPLATE_VARIABLES = [
+  { key: '{{documentNumber}}', description: 'Numer dokumentu' },
+  { key: '{{issueDate}}', description: 'Data wystawienia / utworzenia' },
+  { key: '{{companyName}}', description: 'Nazwa firmy' },
+  { key: '{{companyAddress}}', description: 'Adres firmy' },
+  { key: '{{clientName}}', description: 'Nazwa klienta' },
+  { key: '{{clientAddress}}', description: 'Adres klienta' },
+  { key: '{{operatorName}}', description: 'Operator dokumentu' },
+  { key: '{{notes}}', description: 'Uwagi / notatki' }
+];
+
+function withSharedDocumentVariables(variables = []) {
+  const merged = new Map(SHARED_DOCUMENT_TEMPLATE_VARIABLES.map((item) => [item.key, item]));
+  variables.forEach((item) => {
+    if (!item?.key) return;
+    merged.set(item.key, {
+      key: item.key,
+      description: String(item.description ?? merged.get(item.key)?.description ?? '')
+    });
+  });
+  return Array.from(merged.values());
+}
+
+const DOCUMENT_TEMPLATE_TYPES = [
+  {
+    id: 'rentalAgreement',
+    label: 'Umowa wypożyczenia',
+    description: 'Dokument główny wypożyczenia z tabelą sprzętu.',
+    variables: [
+      { key: '{{documentNumber}}', description: 'Numer dokumentu' },
+      { key: '{{issueDate}}', description: 'Data wystawienia' },
+      { key: '{{rentalIssueDate}}', description: 'Data wydania' },
+      { key: '{{plannedReturnDate}}', description: 'Planowany zwrot' },
+      { key: '{{actualReturnDate}}', description: 'Faktyczny zwrot' },
+      { key: '{{clientName}}', description: 'Nazwa klienta' },
+      { key: '{{clientAddress}}', description: 'Adres klienta' },
+      { key: '{{companyName}}', description: 'Nazwa firmy' },
+      { key: '{{companyAddress}}', description: 'Adres firmy' },
+      { key: '{{equipmentTable}}', description: 'Tabela sprzętu' },
+      { key: '{{rentalTotal}}', description: 'Podsumowanie wypożyczenia' },
+      { key: '{{notes}}', description: 'Dodatkowe uwagi' }
+    ],
+    defaultTemplate: {
+      title: 'Umowa wypożyczenia sprzętu',
+      headerText: '{{companyName}}\n{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}',
+      introText: 'Umowa została zawarta{{documentCityClause}} dnia {{issueDate}} pomiędzy:',
+      issuerText: '{{companyName}}\n{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientContact}}',
+      termsText: DEFAULT_RENTAL_AGREEMENT_TERMS.map((item) => `- ${item}`).join('\n'),
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Wypożyczający',
+      signatureBorrower: 'Biorący',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_RENTAL_AGREEMENT_COLUMNS
+    }
+  },
+  {
+    id: 'issueProtocol',
+    label: 'Protokół wydania sprzętu',
+    description: 'Potwierdzenie wydania wyposażenia klientowi.',
+    variables: [
+      { key: '{{documentNumber}}', description: 'Numer protokołu' },
+      { key: '{{issueDate}}', description: 'Data wydania' },
+      { key: '{{clientName}}', description: 'Nazwa klienta' },
+      { key: '{{operatorName}}', description: 'Operator wydania' },
+      { key: '{{equipmentTable}}', description: 'Lista wydanych pozycji' },
+      { key: '{{notes}}', description: 'Uwagi do wydania' }
+    ],
+    defaultTemplate: {
+      title: 'Protokół wydania sprzętu',
+      headerText: '{{companyName}}\n{{companyAddress}}',
+      introText: 'Poniżej potwierdzono wydanie sprzętu dnia {{issueDate}}.',
+      issuerText: '{{companyName}}\nOperator: {{operatorName}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      termsText: '- Sprzęt został wydany kompletny.\n- Klient potwierdza odbiór bez zastrzeżeń.',
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Wydający',
+      signatureBorrower: 'Odbierający',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+    }
+  },
+  {
+    id: 'returnProtocol',
+    label: 'Protokół zwrotu sprzętu',
+    description: 'Potwierdzenie zwrotu i stanu sprzętu.',
+    variables: [
+      { key: '{{documentNumber}}', description: 'Numer protokołu' },
+      { key: '{{issueDate}}', description: 'Data zwrotu' },
+      { key: '{{actualReturnDate}}', description: 'Faktyczny zwrot' },
+      { key: '{{clientName}}', description: 'Nazwa klienta' },
+      { key: '{{equipmentTable}}', description: 'Lista zwracanych pozycji' },
+      { key: '{{notes}}', description: 'Uwagi przy zwrocie' }
+    ],
+    defaultTemplate: {
+      title: 'Protokół zwrotu sprzętu',
+      headerText: '{{companyName}}\n{{companyAddress}}',
+      introText: 'Dokument potwierdza zwrot sprzętu dnia {{actualReturnDate}}.',
+      issuerText: '{{companyName}}\nPrzyjmujący: {{operatorName}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      termsText: '- Zwrot został zweryfikowany przez operatora.\n- Ewentualne uszkodzenia opisano w uwagach.',
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Przyjmujący',
+      signatureBorrower: 'Zwracający',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+    }
+  },
+  {
+    id: 'serviceIntake',
+    label: 'Potwierdzenie przyjęcia do serwisu',
+    description: 'Dokument przyjęcia urządzenia do serwisu.',
+    variables: [
+      { key: '{{serviceNumber}}', description: 'Numer zlecenia serwisowego' },
+      { key: '{{issueDate}}', description: 'Data przyjęcia' },
+      { key: '{{clientName}}', description: 'Nazwa klienta' },
+      { key: '{{deviceName}}', description: 'Nazwa urządzenia' },
+      { key: '{{deviceSerialNumber}}', description: 'Numer seryjny urządzenia' },
+      { key: '{{faultDescription}}', description: 'Opis usterki' }
+    ],
+    defaultTemplate: {
+      title: 'Potwierdzenie przyjęcia do serwisu',
+      headerText: '{{companyName}}\n{{companyAddress}}',
+      introText: 'Potwierdza się przyjęcie urządzenia do serwisu dnia {{issueDate}}.',
+      issuerText: '{{companyName}}\nPrzyjął: {{operatorName}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      termsText: '- Sprzęt przyjęto do diagnozy.\n- Zakres prac zostanie potwierdzony po weryfikacji.',
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Serwis',
+      signatureBorrower: 'Klient',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+    }
+  },
+  {
+    id: 'serviceCompletion',
+    label: 'Potwierdzenie zakończenia serwisu',
+    description: 'Protokół odbioru po zakończeniu naprawy.',
+    variables: [
+      { key: '{{serviceNumber}}', description: 'Numer zlecenia' },
+      { key: '{{issueDate}}', description: 'Data zakończenia' },
+      { key: '{{clientName}}', description: 'Nazwa klienta' },
+      { key: '{{repairDescription}}', description: 'Opis wykonanej naprawy' },
+      { key: '{{serviceCost}}', description: 'Koszt serwisu' }
+    ],
+    defaultTemplate: {
+      title: 'Potwierdzenie zakończenia serwisu',
+      headerText: '{{companyName}}\n{{companyAddress}}',
+      introText: 'Niniejszym potwierdzono zakończenie serwisu dnia {{issueDate}}.',
+      issuerText: '{{companyName}}\nSerwisant: {{operatorName}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      termsText: '- Urządzenie zostało sprawdzone po naprawie.\n- Klient potwierdza odbiór urządzenia.',
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Serwis',
+      signatureBorrower: 'Klient',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+    }
+  },
+  {
+    id: 'serviceReport',
+    label: 'Raport serwisowy',
+    description: 'Szczegółowy raport z diagnozy i naprawy.',
+    variables: [
+      { key: '{{serviceNumber}}', description: 'Numer zlecenia' },
+      { key: '{{deviceName}}', description: 'Urządzenie' },
+      { key: '{{faultDescription}}', description: 'Usterka' },
+      { key: '{{diagnosis}}', description: 'Diagnoza' },
+      { key: '{{repairDescription}}', description: 'Naprawa' },
+      { key: '{{serviceStatus}}', description: 'Status serwisu' },
+      { key: '{{serviceCost}}', description: 'Koszt serwisu' }
+    ],
+    defaultTemplate: {
+      title: 'Raport serwisowy',
+      headerText: '{{companyName}}\n{{companyAddress}}',
+      introText: 'Raport serwisowy dla zlecenia {{serviceNumber}}.',
+      issuerText: '{{companyName}}\nSerwisant: {{operatorName}}',
+      borrowerText: '{{clientName}}',
+      termsText: '- Diagnoza: {{diagnosis}}\n- Zakres naprawy: {{repairDescription}}\n- Status: {{serviceStatus}}',
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Serwisant',
+      signatureBorrower: 'Klient',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+    }
+  },
+  {
+    id: 'rentalConfirmation',
+    label: 'Potwierdzenie wypożyczenia / rezerwacji',
+    description: 'Potwierdzenie rezerwacji lub wydania.',
+    variables: [
+      { key: '{{rentalNumber}}', description: 'Numer wypożyczenia' },
+      { key: '{{issueDate}}', description: 'Data dokumentu' },
+      { key: '{{clientName}}', description: 'Nazwa klienta' },
+      { key: '{{plannedReturnDate}}', description: 'Planowany zwrot' },
+      { key: '{{equipmentTable}}', description: 'Lista sprzętu' }
+    ],
+    defaultTemplate: {
+      title: 'Potwierdzenie wypożyczenia / rezerwacji',
+      headerText: '{{companyName}}\n{{companyAddress}}',
+      introText: 'Dokument potwierdza rezerwację / wypożyczenie sprzętu.',
+      issuerText: '{{companyName}}\nOperator: {{operatorName}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      termsText: '- Termin wydania: {{rentalIssueDate}}\n- Planowany zwrot: {{plannedReturnDate}}',
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Wydający',
+      signatureBorrower: 'Odbiorca',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+    }
+  },
+  {
+    id: 'internalDocument',
+    label: 'Dokument wewnętrzny',
+    description: 'Szablon wewnętrzny organizacyjny.',
+    variables: [
+      { key: '{{documentNumber}}', description: 'Numer dokumentu' },
+      { key: '{{issueDate}}', description: 'Data dokumentu' },
+      { key: '{{companyName}}', description: 'Nazwa firmy' },
+      { key: '{{operatorName}}', description: 'Operator' },
+      { key: '{{notes}}', description: 'Notatki' }
+    ],
+    defaultTemplate: {
+      title: 'Dokument wewnętrzny',
+      headerText: '{{companyName}}',
+      introText: 'Dokument wewnętrzny utworzony dnia {{issueDate}}.',
+      issuerText: '{{companyName}}\n{{operatorName}}',
+      borrowerText: '',
+      termsText: '- Treść dokumentu wewnętrznego.\n- Uzupełnij notatki i decyzje.',
+      footerText: '{{documentFooter}}',
+      signatureIssuer: 'Przygotował',
+      signatureBorrower: 'Zatwierdził',
+      sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+      sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+    }
+  }
+].map((type) => ({
+  ...type,
+  variables: withSharedDocumentVariables(type.variables)
+}));
 const DEFAULT_DOCUMENT_NUMBERING = {
   rentals: { prefix: 'WYP', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
   returns: { prefix: 'ZW', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
@@ -7243,12 +8166,129 @@ function normalizeRentalAgreementTemplate(template = {}) {
   const terms = Array.isArray(template.terms)
     ? template.terms.map((term) => String(term ?? '').trim()).filter(Boolean)
     : DEFAULT_RENTAL_AGREEMENT_TERMS;
+  const termsTextFallback = (terms.length ? terms : DEFAULT_RENTAL_AGREEMENT_TERMS).map((item) => `- ${item}`).join('\n');
+  const normalizedTermsText = String(template.termsText ?? '').trim() || termsTextFallback;
+  const sectionVisibility = {
+    ...DEFAULT_RENTAL_AGREEMENT_SECTION_VISIBILITY,
+    ...(template.sectionVisibility ?? {})
+  };
+  const sectionOrderSource = Array.isArray(template.sectionOrder) ? template.sectionOrder : DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER;
+  const sectionOrder = [...new Set([...sectionOrderSource, ...DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER])]
+    .filter((id) => RENTAL_AGREEMENT_SECTION_IDS.includes(id));
   return {
     name: String(template.name ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].name),
     documentTitle: String(template.documentTitle ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].documentTitle),
     columns: columns.length ? columns : DEFAULT_RENTAL_AGREEMENT_COLUMNS,
-    terms: terms.length ? terms : DEFAULT_RENTAL_AGREEMENT_TERMS
+    terms: terms.length ? terms : DEFAULT_RENTAL_AGREEMENT_TERMS,
+    introText: String(template.introText ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].introText),
+    issuerText: String(template.issuerText ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].issuerText),
+    borrowerText: String(template.borrowerText ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].borrowerText),
+    termsText: normalizedTermsText,
+    footerText: String(template.footerText ?? DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY].footerText),
+    sectionVisibility,
+    sectionOrder: sectionOrder.length ? sectionOrder : DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER
   };
+}
+
+function getDocumentTemplateTypeById(templateTypeId) {
+  return DOCUMENT_TEMPLATE_TYPES.find((item) => item.id === templateTypeId) ?? DOCUMENT_TEMPLATE_TYPES[0];
+}
+
+function normalizeSharedDocumentTemplate(template = {}, fallbackTemplate = {}) {
+  const fallbackColumns = Array.isArray(fallbackTemplate.columns) && fallbackTemplate.columns.length
+    ? fallbackTemplate.columns
+    : DEFAULT_GENERIC_TEMPLATE_COLUMNS;
+  const incomingColumns = Array.isArray(template.columns) && template.columns.length
+    ? template.columns
+    : fallbackColumns;
+  const fallbackColumnMap = new Map(fallbackColumns.map((column) => [column.key, column]));
+  const columns = incomingColumns
+    .map((column) => {
+      const fallback = fallbackColumnMap.get(column?.key) ?? column;
+      if (!fallback?.key) return null;
+      return {
+        key: fallback.key,
+        label: String(column?.label ?? fallback.label ?? fallback.key),
+        enabled: column?.enabled !== false
+      };
+    })
+    .filter(Boolean);
+  const sectionVisibility = {
+    ...DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
+    ...(fallbackTemplate.sectionVisibility ?? {}),
+    ...(template.sectionVisibility ?? {})
+  };
+  const orderSource = Array.isArray(template.sectionOrder) && template.sectionOrder.length
+    ? template.sectionOrder
+    : Array.isArray(fallbackTemplate.sectionOrder) && fallbackTemplate.sectionOrder.length
+      ? fallbackTemplate.sectionOrder
+      : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER;
+  const sectionOrder = [...new Set([...orderSource, ...DEFAULT_SHARED_TEMPLATE_SECTION_ORDER])]
+    .filter((id) => SHARED_TEMPLATE_SECTION_IDS.includes(id));
+  return {
+    title: String(template.title ?? fallbackTemplate.title ?? 'Dokument'),
+    headerText: String(template.headerText ?? fallbackTemplate.headerText ?? ''),
+    introText: String(template.introText ?? fallbackTemplate.introText ?? ''),
+    issuerText: String(template.issuerText ?? fallbackTemplate.issuerText ?? ''),
+    borrowerText: String(template.borrowerText ?? fallbackTemplate.borrowerText ?? ''),
+    termsText: String(template.termsText ?? fallbackTemplate.termsText ?? ''),
+    footerText: String(template.footerText ?? fallbackTemplate.footerText ?? ''),
+    signatureIssuer: String(template.signatureIssuer ?? fallbackTemplate.signatureIssuer ?? 'Wystawiający'),
+    signatureBorrower: String(template.signatureBorrower ?? fallbackTemplate.signatureBorrower ?? 'Odbierający'),
+    sectionVisibility,
+    sectionOrder: sectionOrder.length ? sectionOrder : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
+    columns: columns.length ? columns : fallbackColumns
+  };
+}
+
+function getDefaultDocumentTemplateLibrary() {
+  return Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [type.id, normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate)]));
+}
+
+function getDocumentTemplateLibrary() {
+  const defaults = getDefaultDocumentTemplateLibrary();
+  const raw = getStoredJson(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, {});
+  if (!raw || typeof raw !== 'object') return defaults;
+  const merged = { ...defaults };
+  DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
+    merged[type.id] = normalizeSharedDocumentTemplate(raw[type.id], type.defaultTemplate);
+  });
+  return merged;
+}
+
+function saveDocumentTemplateLibrary(library) {
+  const next = Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [
+    type.id,
+    normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate)
+  ]));
+  localStorage.setItem(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
+function termsTextToArray(value) {
+  const lines = String(value ?? '')
+    .split('\n')
+    .map((line) => line.trim().replace(/^[-*]\s*/, ''))
+    .filter(Boolean);
+  return lines.length ? lines : DEFAULT_RENTAL_AGREEMENT_TERMS;
+}
+
+function mapSharedTemplateToRentalAgreementTemplate(sharedTemplate, fallbackTemplate = getRentalAgreementTemplate()) {
+  const fallback = normalizeRentalAgreementTemplate(fallbackTemplate);
+  const normalized = normalizeSharedDocumentTemplate(sharedTemplate, sharedTemplate);
+  return normalizeRentalAgreementTemplate({
+    ...fallback,
+    documentTitle: normalized.title || fallback.documentTitle,
+    introText: normalized.introText || fallback.introText,
+    issuerText: normalized.issuerText || fallback.issuerText,
+    borrowerText: normalized.borrowerText || fallback.borrowerText,
+    termsText: normalized.termsText || fallback.termsText,
+    footerText: normalized.footerText || fallback.footerText,
+    sectionVisibility: { ...fallback.sectionVisibility, ...normalized.sectionVisibility },
+    sectionOrder: normalized.sectionOrder?.length ? normalized.sectionOrder : fallback.sectionOrder,
+    columns: normalized.columns?.length ? normalized.columns : fallback.columns,
+    terms: termsTextToArray(normalized.termsText || fallback.termsText)
+  });
 }
 
 function normalizeDocumentNumbering(value, fallback) {
@@ -8293,15 +9333,8 @@ function SettingsNavigation({ sections, activeSection, onSelect }) {
   </nav>;
 }
 
-function SettingsSectionShell({ section, subSections = [], activeSub, onSubChange, children }) {
+function SettingsSectionShell({ subSections = [], activeSub, onSubChange, children }) {
   return <section className="panel settings-content settings-main-panel settings-section-shell">
-    <div className="settings-section-heading">
-      <div>
-        <p className="eyebrow">Ustawienia</p>
-        <h2>{section?.label ?? 'Ustawienia'}</h2>
-        {section?.description && <p className="muted">{section.description}</p>}
-      </div>
-    </div>
     {subSections.length > 0 && <div className="settings-sub-tabs-bar">
       {subSections.map((sub) => <button key={sub.id} type="button"
         className={`settings-sub-tab ${activeSub === sub.id ? 'active' : ''}`}
@@ -8320,7 +9353,7 @@ function InterfaceSettingsPanel({ children }) { return children; }
 function IntegrationsSettingsPanel({ children }) { return children; }
 function SystemSettingsPanel({ children }) { return children; }
 
-function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {} }) {
+function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme }) {
   const themeOptions = [
     { id: 'dark', label: 'Ciemny', icon: Moon },
     { id: 'light', label: 'Jasny', icon: Sun }
@@ -8353,8 +9386,9 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   const handleSectionChange = (sectionId) => {
     setActiveSection(sectionId);
   };
-  const [activeDocumentPanel, setActiveDocumentPanel] = useState('profile');
-  const [activeAgreementTab, setActiveAgreementTab] = useState('layout');
+  const [activeDocumentPanel, setActiveDocumentPanel] = useState('agreement');
+  const [activeAgreementTab, setActiveAgreementTab] = useState('content');
+  const [activeDocumentTemplateType, setActiveDocumentTemplateType] = useState('rentalAgreement');
   const [activeIntegrationPanel, setActiveIntegrationPanel] = useState('calendar');
   const [activeSystemPanel, setActiveSystemPanel] = useState('backup');
   const [settingsSearch, setSettingsSearch] = useState('');
@@ -8386,6 +9420,7 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   const [documentSettingsNotice, setDocumentSettingsNotice] = useState('');
   const templateImportInputRef = useRef(null);
   const termsImportInputRef = useRef(null);
+  const documentTemplateImportInputRef = useRef(null);
   const [backupNotice, setBackupNotice] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreCandidate, setRestoreCandidate] = useState(null);
@@ -8393,6 +9428,11 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
   const [organizerCategoryItems, setOrganizerCategoryItems] = useState([]);
   const [calendarSourceSettings, setCalendarSourceSettings] = useState(getCalendarSourceSettings);
+  const [agreementPreviewOpen, setAgreementPreviewOpen] = useState(false);
+  const [copiedTemplateVariable, setCopiedTemplateVariable] = useState('');
+  const [documentTemplateLibrary, setDocumentTemplateLibrary] = useState(getDocumentTemplateLibrary);
+  const [uiThemeNameInput, setUiThemeNameInput] = useState('');
+  const [uiThemeNotice, setUiThemeNotice] = useState('');
 
   const loadOrganizerSettings = async () => {
     const result = await fetchOrganizerCategories();
@@ -8483,6 +9523,128 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       onConfirm: () => {
         setConfirmDialog(null);
         setDashboardSettings(resetDashboardSettings());
+      }
+    });
+  };
+
+  const uiThemeCustomPresets = useMemo(() => getUiThemeCustomPresets(), [activeUiTheme]);
+  const uiThemePresets = useMemo(() => [...BUILTIN_UI_THEME_PRESETS, ...uiThemeCustomPresets], [uiThemeCustomPresets]);
+  const uiThemeLightPresets = useMemo(() => BUILTIN_UI_THEME_PRESETS.filter((item) => item.group === 'light'), []);
+  const uiThemeDarkPresets = useMemo(() => BUILTIN_UI_THEME_PRESETS.filter((item) => item.group === 'dark'), []);
+  const selectedUiThemePreset = useMemo(
+    () => uiThemePresets.find((item) => item.id === activeUiTheme?.presetId) ?? null,
+    [uiThemePresets, activeUiTheme]
+  );
+  const uiThemeLooksCustom = useMemo(() => {
+    if (!selectedUiThemePreset) return true;
+    const current = normalizeUiThemeTokens(activeUiTheme?.tokens ?? {});
+    const preset = normalizeUiThemeTokens(selectedUiThemePreset.tokens ?? {});
+    return UI_THEME_TOKEN_DEFINITIONS.some((token) => current[token.key] !== preset[token.key]);
+  }, [selectedUiThemePreset, activeUiTheme]);
+  const activeThemePreviewPreset = useMemo(() => {
+    if (uiThemeLooksCustom) {
+      return {
+        id: 'custom-live',
+        name: 'Własny',
+        description: 'Aktualne kolory odbiegają od zapisanych presetów.',
+        builtIn: false,
+        group: 'custom',
+        tokens: normalizeUiThemeTokens(activeUiTheme?.tokens ?? {})
+      };
+    }
+    return selectedUiThemePreset ?? {
+      id: 'custom-live',
+      name: 'Własny',
+      description: 'Aktualny zestaw niestandardowy.',
+      builtIn: false,
+      group: 'custom',
+      tokens: normalizeUiThemeTokens(activeUiTheme?.tokens ?? {})
+    };
+  }, [uiThemeLooksCustom, selectedUiThemePreset, activeUiTheme]);
+  const activeThemePreviewPalette = useMemo(() => getThemePresetPalette(activeThemePreviewPreset), [activeThemePreviewPreset]);
+
+  const uiThemeContrastWarnings = useMemo(() => {
+    const tokens = normalizeUiThemeTokens(activeUiTheme?.tokens ?? {});
+    const appContrast = calculateContrastRatio(tokens.appBg, tokens.textMain);
+    const panelContrast = calculateContrastRatio(tokens.panelBg, tokens.textMain);
+    const warningContrast = calculateContrastRatio(tokens.panelBg, tokens.textMuted);
+    const warnings = [];
+    if (appContrast < 4.5) warnings.push(`Niski kontrast tekstu głównego do tła aplikacji (${appContrast.toFixed(2)}:1).`);
+    if (panelContrast < 4.5) warnings.push(`Niski kontrast tekstu głównego do paneli (${panelContrast.toFixed(2)}:1).`);
+    if (warningContrast < 3) warnings.push(`Słaby kontrast tekstu drugorzędnego (${warningContrast.toFixed(2)}:1).`);
+    return warnings;
+  }, [activeUiTheme]);
+
+  const applyUiThemePreset = (presetId) => {
+    const preset = uiThemePresets.find((item) => item.id === presetId);
+    if (!preset) return;
+    onChangeActiveUiTheme({ presetId: preset.id, tokens: normalizeUiThemeTokens(preset.tokens) });
+    setUiThemeNotice('');
+  };
+
+  const updateUiThemeToken = (tokenKey, value) => {
+    const nextValue = normalizeHexColor(value, activeUiTheme?.tokens?.[tokenKey] ?? '#000000');
+    onChangeActiveUiTheme({
+      presetId: activeUiTheme?.presetId ?? 'custom-live',
+      tokens: {
+        ...normalizeUiThemeTokens(activeUiTheme?.tokens ?? {}),
+        [tokenKey]: nextValue
+      }
+    });
+  };
+
+  const saveCustomUiThemePreset = () => {
+    const name = String(uiThemeNameInput ?? '').trim();
+    if (!name) {
+      setUiThemeNotice('Podaj nazwę presetu, aby zapisać własny motyw.');
+      return;
+    }
+    const existing = uiThemeCustomPresets.find((item) => item.name.toLowerCase() === name.toLowerCase());
+    const nextPreset = {
+      id: existing?.id ?? `custom-${Date.now()}`,
+      name,
+      builtIn: false,
+      tokens: normalizeUiThemeTokens(activeUiTheme?.tokens ?? {})
+    };
+    const nextCustom = existing
+      ? uiThemeCustomPresets.map((item) => item.id === existing.id ? nextPreset : item)
+      : [...uiThemeCustomPresets, nextPreset];
+    saveUiThemeCustomPresets(nextCustom);
+    onChangeActiveUiTheme({ presetId: nextPreset.id, tokens: nextPreset.tokens });
+    setUiThemeNameInput('');
+    setUiThemeNotice(existing ? 'Zaktualizowano istniejący preset.' : 'Zapisano nowy preset.');
+  };
+
+  const deleteCustomUiThemePreset = (presetId) => {
+    const target = uiThemeCustomPresets.find((item) => item.id === presetId);
+    if (!target) return;
+    setConfirmDialog({
+      title: 'Usuń preset motywu',
+      message: `Usunąć preset „${target.name}”?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const nextCustom = uiThemeCustomPresets.filter((item) => item.id !== presetId);
+        saveUiThemeCustomPresets(nextCustom);
+        if (activeUiTheme?.presetId === presetId) applyUiThemePreset(DEFAULT_ACTIVE_THEME_ID);
+        setUiThemeNotice('Preset został usunięty.');
+      }
+    });
+  };
+
+  const resetUiThemeToDefaults = () => {
+    setConfirmDialog({
+      title: 'Przywróć domyślne kolory',
+      message: 'Przywrócić domyślny preset kolorów interfejsu?',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        applyUiThemePreset(DEFAULT_ACTIVE_THEME_ID);
+        setUiThemeNotice('Przywrócono domyślne kolory.');
       }
     });
   };
@@ -8584,6 +9746,47 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       terms.splice(nextIndex, 0, item);
       return { ...template, terms };
     });
+  };
+
+  const updateAgreementTemplateField = (field, value) => {
+    updateRentalAgreementTemplate((template) => ({ ...template, [field]: value }));
+  };
+
+  const toggleAgreementSection = (sectionId) => {
+    updateRentalAgreementTemplate((template) => ({
+      ...template,
+      sectionVisibility: {
+        ...template.sectionVisibility,
+        [sectionId]: template.sectionVisibility?.[sectionId] === false
+      }
+    }));
+  };
+
+  const moveAgreementSection = (sectionId, direction) => {
+    updateRentalAgreementTemplate((template) => {
+      const order = [...(template.sectionOrder ?? DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER)];
+      const index = order.indexOf(sectionId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= order.length) return template;
+      const [item] = order.splice(index, 1);
+      order.splice(nextIndex, 0, item);
+      return { ...template, sectionOrder: order };
+    });
+  };
+
+  const resetAgreementTemplateToDefaults = () => {
+    updateRentalAgreementTemplate(DEFAULT_DOCUMENT_TEMPLATES[RENTAL_AGREEMENT_TEMPLATE_KEY]);
+    setDocumentSettingsNotice('Przywrócono domyślny szablon umowy.');
+  };
+
+  const copyAgreementVariable = async (token) => {
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopiedTemplateVariable(token);
+      window.setTimeout(() => setCopiedTemplateVariable(''), 1800);
+    } catch {
+      setDocumentSettingsNotice('Nie udało się skopiować zmiennej do schowka.');
+    }
   };
 
   const resetRentalAgreementTerms = () => {
@@ -9195,6 +10398,70 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
     { key: 'projects', label: 'Projekty', value: documentSettings.numbering.projects, onChange: updateDocumentNumbering, preview: formatDocumentNumber(documentSettings.numbering.projects, 1, new Date('2026-06-03T12:00:00')) }
   ];
   const rentalAgreementTemplate = getRentalAgreementTemplate(documentSettings);
+  const currentTemplateType = getDocumentTemplateTypeById(activeDocumentTemplateType);
+  const currentDocumentTemplate = normalizeSharedDocumentTemplate(documentTemplateLibrary[activeDocumentTemplateType], currentTemplateType.defaultTemplate);
+  const updateCurrentDocumentTemplate = (updater) => {
+    setDocumentTemplateLibrary((current) => {
+      const base = normalizeSharedDocumentTemplate(current[activeDocumentTemplateType], currentTemplateType.defaultTemplate);
+      const nextTemplate = normalizeSharedDocumentTemplate(typeof updater === 'function' ? updater(base) : updater, currentTemplateType.defaultTemplate);
+      const nextState = { ...current, [activeDocumentTemplateType]: nextTemplate };
+      return saveDocumentTemplateLibrary(nextState);
+    });
+  };
+  const resetCurrentDocumentTemplate = () => {
+    setDocumentTemplateLibrary((current) => {
+      const nextState = { ...current, [activeDocumentTemplateType]: normalizeSharedDocumentTemplate(currentTemplateType.defaultTemplate, currentTemplateType.defaultTemplate) };
+      return saveDocumentTemplateLibrary(nextState);
+    });
+    setDocumentSettingsNotice('Przywrócono domyślny szablon bieżącego dokumentu.');
+  };
+  const resetAllDocumentTemplates = () => {
+    setConfirmDialog({
+      title: 'Przywróć wszystkie szablony',
+      message: 'Przywrócić wszystkie domyślne szablony dokumentów?',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const defaults = getDefaultDocumentTemplateLibrary();
+        setDocumentTemplateLibrary(saveDocumentTemplateLibrary(defaults));
+        setDocumentSettingsNotice('Przywrócono wszystkie domyślne szablony dokumentów.');
+      }
+    });
+  };
+  const exportDocumentTemplatesJson = () => {
+    downloadTextFile(`fixer-document-templates-${getLocalIsoDate()}.json`, JSON.stringify(documentTemplateLibrary, null, 2), 'application/json;charset=utf-8');
+    setDocumentSettingsNotice('Wyeksportowano szablony dokumentów.');
+  };
+  const importDocumentTemplatesJson = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setConfirmDialog({
+      title: 'Import szablonów',
+      message: 'Zaimportować szablony dokumentów z pliku JSON? Obecne lokalne szablony zostaną nadpisane.',
+      confirmLabel: 'Importuj',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const payload = JSON.parse(String(reader.result ?? '{}'));
+            const normalized = saveDocumentTemplateLibrary(payload);
+            setDocumentTemplateLibrary(normalized);
+            setDocumentSettingsNotice('Zaimportowano szablony dokumentów.');
+          } catch (error) {
+            console.error('Document template import failed', error);
+            setDocumentSettingsNotice('Nie udało się zaimportować szablonów dokumentów.');
+          }
+        };
+        reader.readAsText(file);
+      }
+    });
+  };
   const rentalAgreementPreviewRental = {
     rental_number: formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00')),
     client_id: 'preview-client',
@@ -9216,13 +10483,60 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       { id: 'preview-2', name_snapshot: 'Statyw Manfrotto', brand_snapshot: 'Manfrotto', model_snapshot: '504HD', serial_snapshot: 'SN-002', barcode_snapshot: '590000000002', inventory_number_snapshot: 'EQ/002', condition_out: 'Bardzo dobry' }
     ]
   };
-  const rentalAgreementPreviewHtml = buildRentalAgreementHtml(rentalAgreementPreviewRental, { preview: true, settings: documentSettings, company: companyProfile });
+  const templatePreviewContext = {
+    documentNumber: 'DOC/2026/06/01',
+    issueDate: formatAgreementDate(getLocalIsoDate()),
+    rentalIssueDate: formatAgreementDate('2026-06-03'),
+    plannedReturnDate: formatAgreementDate('2026-06-10'),
+    actualReturnDate: formatAgreementDate('2026-06-10'),
+    clientName: rentalAgreementPreviewRental.clients.name,
+    clientAddress: formatClientDocumentAddress(rentalAgreementPreviewRental.clients),
+    companyName: companyProfile.legalName || companyProfile.name || 'FIXER WEB',
+    companyAddress: formatCompanyAddress(companyProfile),
+    companyTaxData: formatCompanyTaxData(companyProfile),
+    companyContact: formatCompanyContact(companyProfile),
+    clientContact: compactLines([rentalAgreementPreviewRental.clients.phone ? `Telefon: ${rentalAgreementPreviewRental.clients.phone}` : '', rentalAgreementPreviewRental.clients.email ? `E-mail: ${rentalAgreementPreviewRental.clients.email}` : '']).join('\n'),
+    operatorName: 'Operator FIXER WEB',
+    rentalNumber: rentalAgreementPreviewRental.rental_number,
+    rentalTotal: '1230,00 PLN',
+    serviceNumber: 'SER/2026/06/04',
+    deviceName: 'Kamera Sony PXW-Z190',
+    deviceSerialNumber: 'SN-001',
+    faultDescription: 'Brak obrazu po uruchomieniu',
+    diagnosis: 'Uszkodzenie układu zasilania',
+    repairDescription: 'Wymieniono moduł i wykonano testy',
+    serviceStatus: 'Zakończone',
+    serviceCost: '450,00 PLN',
+    notes: 'Brak dodatkowych uwag',
+    documentFooter: companyProfile.documentFooter || '',
+    documentCityClause: companyProfile.documentCity ? ` w ${companyProfile.documentCity}` : '',
+    equipmentRows: getRentalBaseItems(rentalAgreementPreviewRental).map((item, index) => ({
+      lp: String(index + 1),
+      name: item.name_snapshot,
+      details: `${item.brand_snapshot || ''} ${item.model_snapshot || ''}`.trim(),
+      status: item.status || 'Wydano',
+      notes: item.condition_out || '—'
+    }))
+  };
+  const currentDocumentTemplatePreviewHtml = currentTemplateType.id === 'rentalAgreement'
+    ? buildRentalAgreementHtml(rentalAgreementPreviewRental, {
+      preview: true,
+      settings: {
+        ...documentSettings,
+        documentTemplates: {
+          ...documentSettings.documentTemplates,
+          [RENTAL_AGREEMENT_TEMPLATE_KEY]: mapSharedTemplateToRentalAgreementTemplate(currentDocumentTemplate, rentalAgreementTemplate)
+        }
+      },
+      company: companyProfile
+    })
+    : buildGenericDocumentTemplateHtml(currentTemplateType, currentDocumentTemplate, templatePreviewContext, { preview: true });
   const settingsSearchTargets = [
     { section: 'company', label: 'Firma', keywords: 'firma dane nip regon telefon email www logo adres miejscowosc dokumentow' },
     { section: 'documents', documentPanel: 'header', label: 'Logo i nagłówek dokumentów', keywords: 'logo naglowek pdf miejscowosc dokumenty dokumentow zabrzu' },
     { section: 'documents', documentPanel: 'numbering', label: 'Numeracja dokumentów', keywords: 'numeracja numer dokument wypozyczenia zwrot serwis kosztorys projekty' },
-    { section: 'documents', documentPanel: 'agreement', agreementTab: 'columns', label: 'Kolumny umowy', keywords: 'umowa wypozyczenia kolumny sprzet drukuj serial numer seryjny' },
-    { section: 'documents', documentPanel: 'agreement', agreementTab: 'terms', label: 'Warunki umowy', keywords: 'warunki umowy punkty regulamin' },
+    { section: 'documents', documentPanel: 'agreement', agreementTab: 'sections', label: 'Szablony dokumentów — sekcje', keywords: 'szablony dokumentow sekcje kolejnosc kolumny' },
+    { section: 'documents', documentPanel: 'agreement', agreementTab: 'content', label: 'Szablony dokumentów — treść', keywords: 'szablony dokumentow tresc warunki stopka tekst' },
     { section: 'integrations', integrationPanel: 'calendar', label: 'Kalendarz', keywords: 'kalendarz zrodla kolory filtr roboczy wydarzenia' },
     { section: 'system', systemPanel: 'backup', label: 'Backup', keywords: 'backup kopie bezpieczenstwa pelna kopia json' },
     { section: 'system', systemPanel: 'restore', label: 'Restore', keywords: 'restore przywroc import backup przywracanie' },
@@ -9272,7 +10586,7 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
     </div>
     <div className="settings-sidebar-layout settings-v2-body">
       <SettingsNavigation sections={visibleSections} activeSection={activeSection} onSelect={handleSectionChange} />
-      <SettingsSectionShell section={currentSection} subSections={currentSubSections} activeSub={activeSubsInSection} onSubChange={(subId) => setActiveSubs((prev) => ({ ...prev, [activeSection]: subId }))}>
+      <SettingsSectionShell subSections={currentSubSections} activeSub={activeSubsInSection} onSubChange={(subId) => setActiveSubs((prev) => ({ ...prev, [activeSection]: subId }))}>
 
       {activeSection === 'company' && <CompanySettingsPanel><div className="settings-form-screen company-v2-screen">
         <div className="settings-screen-toolbar">
@@ -9382,6 +10696,86 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
 
         <section className="settings-config-card">
           <div className="settings-config-card-header">
+            <div><p className="eyebrow">Kolory interfejsu</p><h3>Presety i personalizacja</h3><p className="muted">Zmiany są widoczne natychmiast i zapisywane lokalnie.</p></div>
+          </div>
+
+          <div className="ui-theme-toolbar">
+            <label className="firm-field">
+              Preset kolorów
+              <AppSelect
+                value={uiThemeLooksCustom ? 'custom-live' : (activeUiTheme?.presetId ?? DEFAULT_ACTIVE_THEME_ID)}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (next === 'custom-live') {
+                    onChangeActiveUiTheme({
+                      presetId: 'custom-live',
+                      tokens: normalizeUiThemeTokens(activeUiTheme?.tokens ?? {})
+                    });
+                    return;
+                  }
+                  applyUiThemePreset(next);
+                }}
+              >
+                <optgroup label="Jasne">
+                  {uiThemeLightPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </optgroup>
+                <optgroup label="Ciemne">
+                  {uiThemeDarkPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </optgroup>
+                <optgroup label="Własne">
+                  <option value="custom-live">Własny (bieżący)</option>
+                  {uiThemeCustomPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </optgroup>
+              </AppSelect>
+            </label>
+            <div className="ui-theme-toolbar-preview">
+              <div className="ui-theme-preset-palette">{activeThemePreviewPalette.map((color, index) => <span key={`active-palette-${index}`} style={{ background: color }} />)}</div>
+              <small>{activeThemePreviewPreset.description || 'Preset kolorystyczny'}</small>
+            </div>
+          </div>
+
+          <div className="ui-theme-actions-row">
+            <AppButton variant="primary" size="sm" onClick={saveCustomUiThemePreset}><Save size={14} />Zapisz jako preset</AppButton>
+            <AppButton variant="danger" size="sm" onClick={() => selectedUiThemePreset && deleteCustomUiThemePreset(selectedUiThemePreset.id)} disabled={!selectedUiThemePreset || selectedUiThemePreset.builtIn}><Trash2 size={13} />Usuń własny preset</AppButton>
+            <AppButton variant="secondary" size="sm" onClick={resetUiThemeToDefaults}><RotateCcw size={14} />Przywróć domyślne</AppButton>
+          </div>
+
+          {uiThemeContrastWarnings.length > 0 && <AppNotice variant="warning" title="Słaby kontrast">
+            {uiThemeContrastWarnings.map((warning, index) => <div key={`${warning}-${index}`}>{warning}</div>)}
+          </AppNotice>}
+          {uiThemeNotice && <AppNotice variant="info">{uiThemeNotice}</AppNotice>}
+
+          <div className="ui-theme-token-list">
+            {UI_THEME_TOKEN_DEFINITIONS.map((token) => {
+              const tokenValue = activeUiTheme?.tokens?.[token.key] ?? '#000000';
+              return <div key={token.key} className="ui-theme-token-row">
+                <div className="ui-theme-token-meta">
+                  <strong>{token.label}</strong>
+                  <small>{token.description}</small>
+                </div>
+                <input
+                  type="color"
+                  className="ui-theme-color-input"
+                  value={tokenValue}
+                  onChange={(event) => updateUiThemeToken(token.key, event.target.value)}
+                  aria-label={`Wybierz kolor: ${token.label}`}
+                />
+                <AppInput
+                  value={tokenValue}
+                  onChange={(event) => updateUiThemeToken(token.key, event.target.value)}
+                  placeholder="#000000"
+                />
+              </div>;
+            })}
+          </div>
+
+          <div className="ui-theme-save-row">
+            <AppInput value={uiThemeNameInput} onChange={(event) => setUiThemeNameInput(event.target.value)} placeholder="Nazwa nowego presetu (dla przycisku „Zapisz jako preset”)" />
+          </div>
+        </section>
+
+        <section className="settings-config-card">
+          <div className="settings-config-card-header">
             <div><p className="eyebrow">Dashboard</p><h3>Widoczność elementów</h3><p className="muted">Włącz elementy, które mają być widoczne na ekranie głównym.</p></div>
             <AppButton variant="secondary" size="sm" onClick={resetDashboardPreferences}><RotateCcw size={14} />Resetuj</AppButton>
           </div>
@@ -9452,9 +10846,9 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       {activeSection === 'documents' && <DocumentsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace">
         <aside className="documents-nav-panel documents-v2-nav">
           {[
-            ['profile', 'Profil dokumentów', 'Dane firmy i typy dokumentów'],
+            ['agreement', 'Szablony dokumentów', 'Wspólny edytor treści, sekcji, kolumn i podglądu'],
             ['numbering', 'Numeracja', 'Prefiksy, formaty i przykłady'],
-            ['agreement', 'Umowa wypożyczenia', 'Układ, kolumny, warunki i podgląd'],
+            ['profile', 'Profil dokumentów', 'Dane firmy i typy dokumentów'],
             ['header', 'Nagłówek i logo', 'Logo oraz tekst nad dokumentem'],
             ['footer', 'Stopka dokumentów', 'Tekst końcowy na PDF'],
             ['exchange', 'Import / eksport', 'Konfiguracja szablonów']
@@ -9520,79 +10914,160 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
 
           {activeDocumentPanel === 'agreement' && <section className="settings-config-card documents-config-card agreement-settings-card-v2">
             <div className="settings-config-card-header">
-              <div><p className="eyebrow">Szablon</p><h3>Umowa wypożyczenia sprzętu</h3><p className="muted">Konfiguracja układu, kolumn sprzętu, warunków i podglądu umowy.</p></div>
-              <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={14} />Zapisz</AppButton>
+              <div><p className="eyebrow">Szablony dokumentów</p><h3>Wspólny edytor szablonów</h3><p className="muted">Jeden edytor dla wszystkich typów dokumentów i wydruków.</p></div>
+              <div className="settings-action-row">
+                <AppButton variant="secondary" size="sm" onClick={resetCurrentDocumentTemplate}><RotateCcw size={13} />Przywróć domyślny szablon</AppButton>
+                <AppButton variant="secondary" size="sm" onClick={resetAllDocumentTemplates}><RotateCcw size={13} />Przywróć wszystkie domyślne</AppButton>
+                <AppButton variant="secondary" size="sm" onClick={exportDocumentTemplatesJson}><Download size={13} />Eksport JSON</AppButton>
+                <AppButton variant="secondary" size="sm" onClick={() => documentTemplateImportInputRef.current?.click()}><FolderOpen size={13} />Import JSON</AppButton>
+                <input ref={documentTemplateImportInputRef} type="file" accept="application/json,.json" onChange={importDocumentTemplatesJson} className="backup-file-input" />
+              </div>
             </div>
-            <div className="agreement-subtabs">
-              {[
-                ['layout', 'Nagłówek'],
-                ['columns', 'Kolumny sprzętu'],
-                ['terms', 'Warunki'],
-                ['preview', 'Podgląd']
-              ].map(([id, label]) => <button key={id} type="button" className={`agreement-subtab ${activeAgreementTab === id ? 'active' : ''}`} onClick={() => setActiveAgreementTab(id)}>{label}</button>)}
+            <div className="document-template-editor-layout">
+              <div className="document-template-editor-toolbar">
+                <label className="firm-field document-template-type-picker">
+                  Typ dokumentu
+                  <AppSelect value={activeDocumentTemplateType} onChange={(event) => setActiveDocumentTemplateType(event.target.value)}>
+                    {DOCUMENT_TEMPLATE_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+                  </AppSelect>
+                </label>
+                <p className="muted">{currentTemplateType.description}</p>
+              </div>
+
+              <div className="agreement-subtabs">
+                {[
+                  ['content', 'Treść'],
+                  ['sections', 'Sekcje'],
+                  ['columns', 'Kolumny tabel'],
+                  ['variables', 'Zmienne'],
+                  ['preview', 'Podgląd']
+                ].map(([id, label]) => <button key={id} type="button" className={`agreement-subtab ${activeAgreementTab === id ? 'active' : ''}`} onClick={() => setActiveAgreementTab(id)}>{label}</button>)}
+              </div>
+
+              <div className="document-template-editor-scroll">
+                {activeAgreementTab === 'content' && <div className="document-section-content compact-document-form">
+                  <div className="settings-form-section">
+                    <label className="firm-field">Tytuł dokumentu<AppInput value={currentDocumentTemplate.title} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, title: event.target.value }))} /></label>
+                    <label className="firm-field">Nagłówek<AppTextarea value={currentDocumentTemplate.headerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, headerText: event.target.value }))} rows={3} /></label>
+                    <label className="firm-field">Tekst wstępny<AppTextarea value={currentDocumentTemplate.introText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, introText: event.target.value }))} rows={3} /></label>
+                    <label className="firm-field">Sekcja „Wydający”<AppTextarea value={currentDocumentTemplate.issuerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, issuerText: event.target.value }))} rows={4} /></label>
+                    <label className="firm-field">Sekcja „Biorący”<AppTextarea value={currentDocumentTemplate.borrowerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, borrowerText: event.target.value }))} rows={4} /></label>
+                    <label className="firm-field">Treść warunków<AppTextarea value={currentDocumentTemplate.termsText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, termsText: event.target.value }))} rows={6} /></label>
+                    <label className="firm-field">Stopka<AppTextarea value={currentDocumentTemplate.footerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, footerText: event.target.value }))} rows={3} /></label>
+                    <div className="settings-field-grid two-columns">
+                      <label className="firm-field">Podpis lewy<AppInput value={currentDocumentTemplate.signatureIssuer} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, signatureIssuer: event.target.value }))} /></label>
+                      <label className="firm-field">Podpis prawy<AppInput value={currentDocumentTemplate.signatureBorrower} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, signatureBorrower: event.target.value }))} /></label>
+                    </div>
+                  </div>
+                </div>}
+
+                {activeAgreementTab === 'sections' && <div className="document-section-content">
+                  <div className="document-column-list compact-column-list">
+                    {(currentDocumentTemplate.sectionOrder ?? DEFAULT_SHARED_TEMPLATE_SECTION_ORDER).map((sectionId, index) => {
+                      const labels = {
+                        header: 'Nagłówek',
+                        intro: 'Wstęp',
+                        issuer: 'Wydający',
+                        borrower: 'Biorący',
+                        period: 'Okres',
+                        equipment: 'Tabela pozycji',
+                        terms: 'Warunki',
+                        signatures: 'Podpisy',
+                        footer: 'Stopka'
+                      };
+                      const active = currentDocumentTemplate.sectionVisibility?.[sectionId] !== false;
+                      return <div key={sectionId} className="document-column-row compact">
+                        <label className="settings-check"><input type="checkbox" checked={active} onChange={() => updateCurrentDocumentTemplate((template) => ({ ...template, sectionVisibility: { ...template.sectionVisibility, [sectionId]: !active } }))} /><span>{labels[sectionId] ?? sectionId}</span></label>
+                        <div className="dictionary-row-actions dictionary-icon-actions">
+                          <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
+                            const order = [...template.sectionOrder];
+                            const source = order.indexOf(sectionId);
+                            const target = source - 1;
+                            if (source < 0 || target < 0) return template;
+                            const [moved] = order.splice(source, 1);
+                            order.splice(target, 0, moved);
+                            return { ...template, sectionOrder: order };
+                          })} disabled={index === 0} aria-label="Przenieś wyżej"><ArrowUp size={14} /></button>
+                          <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
+                            const order = [...template.sectionOrder];
+                            const source = order.indexOf(sectionId);
+                            const target = source + 1;
+                            if (source < 0 || target >= order.length) return template;
+                            const [moved] = order.splice(source, 1);
+                            order.splice(target, 0, moved);
+                            return { ...template, sectionOrder: order };
+                          })} disabled={index === (currentDocumentTemplate.sectionOrder ?? DEFAULT_SHARED_TEMPLATE_SECTION_ORDER).length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
+                        </div>
+                      </div>;
+                    })}
+                  </div>
+                </div>}
+
+                {activeAgreementTab === 'columns' && <div className="document-section-content">
+                  <div className="documents-subheader">
+                    <strong>Kolumny tabeli</strong>
+                  </div>
+                  <div className="document-column-list compact-column-list">
+                    {(currentDocumentTemplate.columns ?? []).map((column, index) => <div key={column.key} className="document-column-row compact">
+                      <label className="settings-check"><input type="checkbox" checked={column.enabled !== false} onChange={() => updateCurrentDocumentTemplate((template) => ({ ...template, columns: template.columns.map((item) => item.key === column.key ? { ...item, enabled: item.enabled === false } : item) }))} /><span>{column.label}</span></label>
+                      <div className="dictionary-row-actions dictionary-icon-actions">
+                        <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
+                          const list = [...template.columns];
+                          const source = list.findIndex((item) => item.key === column.key);
+                          const target = source - 1;
+                          if (source < 0 || target < 0) return template;
+                          const [moved] = list.splice(source, 1);
+                          list.splice(target, 0, moved);
+                          return { ...template, columns: list };
+                        })} disabled={index === 0} aria-label="Przenieś wyżej"><ArrowUp size={14} /></button>
+                        <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
+                          const list = [...template.columns];
+                          const source = list.findIndex((item) => item.key === column.key);
+                          const target = source + 1;
+                          if (source < 0 || target >= list.length) return template;
+                          const [moved] = list.splice(source, 1);
+                          list.splice(target, 0, moved);
+                          return { ...template, columns: list };
+                        })} disabled={index === currentDocumentTemplate.columns.length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
+                      </div>
+                    </div>)}
+                  </div>
+                </div>}
+
+                {activeAgreementTab === 'variables' && <div className="document-section-content">
+                  <div className="documents-subheader">
+                    <strong>Dostępne zmienne</strong>
+                    {copiedTemplateVariable && <span className="muted">Skopiowano: {copiedTemplateVariable}</span>}
+                  </div>
+                  <div className="document-column-list compact-column-list">
+                    {currentTemplateType.variables.map((variable) => <button key={variable.key} type="button" className="backup-action-button template-variable-button" onClick={() => copyAgreementVariable(variable.key)}>
+                      <span><strong>{variable.key}</strong><small>{variable.description}</small></span>
+                    </button>)}
+                  </div>
+                </div>}
+
+                {activeAgreementTab === 'preview' && <div className="document-section-content document-preview-tab">
+                  <div className="documents-card-header-row">
+                    <div><strong>Podgląd i eksport</strong><p className="muted">Podgląd A4 w osobnym oknie z zoomem i pełną skalą.</p></div>
+                    <div className="settings-action-row">
+                      <AppButton variant="secondary" size="sm" onClick={() => setAgreementPreviewOpen(true)}><FileText size={14} />Podgląd</AppButton>
+                      <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}><FileText size={14} />Generuj PDF</AppButton>
+                      <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}><Printer size={14} />Drukuj</AppButton>
+                      <AppButton variant="primary" size="sm" onClick={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}><Download size={14} />Pobierz</AppButton>
+                    </div>
+                  </div>
+                </div>}
+              </div>
             </div>
 
-            {activeAgreementTab === 'layout' && <div className="document-section-content compact-document-form">
-              <div className="settings-form-section">
-                <div className="settings-section-title"><h4>Dane nagłówka umowy</h4><p className="muted">Dane firmy i logo pochodzą z profilu firmy. Tutaj ustawiasz tekst właściwy dla umowy.</p></div>
-                <label className="firm-field">Tytuł dokumentu<AppInput value={rentalAgreementTemplate.documentTitle} onChange={(event) => updateRentalAgreementTemplate((template) => ({ ...template, documentTitle: event.target.value }))} /></label>
-                <label className="firm-field">Miejscowość dokumentów<AppInput value={companyProfile.documentCity} onChange={(event) => updateCompanyProfile('documentCity', event.target.value)} placeholder="np. Zabrzu" /><small>System nie odmienia automatycznie nazw miejscowości.</small></label>
-              </div>
-            </div>}
-
-            {activeAgreementTab === 'columns' && <div className="document-section-content">
-              <div className="documents-subheader">
-                <strong>Kolumny tabeli sprzętu</strong>
-                <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementColumns}><RotateCcw size={13} />Domyślne</AppButton>
-              </div>
-              <div className="document-column-list compact-column-list">
-                {rentalAgreementTemplate.columns.map((column, index) => <div key={column.key} className="document-column-row compact">
-                  <label className="settings-check"><input type="checkbox" checked={column.enabled} onChange={() => toggleRentalAgreementColumn(column.key)} /><span>{column.label}</span></label>
-                  <div className="dictionary-row-actions dictionary-icon-actions">
-                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, -1)} disabled={index === 0} aria-label="Przenieś wyżej" title="Przenieś wyżej"><ArrowUp size={14} /></button>
-                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, 1)} disabled={index === rentalAgreementTemplate.columns.length - 1} aria-label="Przenieś niżej" title="Przenieś niżej"><ArrowDown size={14} /></button>
-                  </div>
-                </div>)}
-              </div>
-            </div>}
-
-            {activeAgreementTab === 'terms' && <div className="document-section-content">
-              <div className="documents-subheader">
-                <strong>Warunki umowy</strong>
-                <div className="settings-action-row">
-                  <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementTerms}><RotateCcw size={13} />Reset</AppButton>
-                  <AppButton variant="secondary" size="sm" onClick={exportRentalAgreementTerms}><Download size={13} />Eksport</AppButton>
-                  <AppButton variant="secondary" size="sm" onClick={() => termsImportInputRef.current?.click()}><FolderOpen size={13} />Import</AppButton>
-                  <AppButton variant="secondary" size="sm" onClick={addRentalAgreementTerm}><Plus size={13} />Dodaj</AppButton>
-                  <input ref={termsImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTerms} className="backup-file-input" />
-                </div>
-              </div>
-              <div className="document-terms-list compact-terms-list">
-                {rentalAgreementTemplate.terms.map((term, index) => <div key={`${index}-${term.slice(0, 12)}`} className="document-term-row compact">
-                  <span>{index + 1}</span>
-                  <AppTextarea value={term} onChange={(event) => updateRentalAgreementTerm(index, event.target.value)} rows={2} />
-                  <div className="dictionary-row-actions dictionary-icon-actions">
-                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, -1)} disabled={index === 0} aria-label="Przenieś wyżej"><ArrowUp size={14} /></button>
-                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, 1)} disabled={index === rentalAgreementTemplate.terms.length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
-                    <button type="button" className="dictionary-icon-button remove" onClick={() => removeRentalAgreementTerm(index)} disabled={rentalAgreementTemplate.terms.length <= 1} aria-label="Usuń"><Trash2 size={14} /></button>
-                  </div>
-                </div>)}
-              </div>
-            </div>}
-
-            {activeAgreementTab === 'preview' && <div className="document-section-content document-preview-tab">
-              <div className="documents-card-header-row">
-                <div><strong>Podgląd A4</strong><p className="muted">Podgląd używa aktualnych ustawień, także niezapisanych.</p></div>
-                <div className="settings-action-row">
-                  <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(rentalAgreementPreviewHtml)}><FileText size={14} />Generuj PDF</AppButton>
-                  <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(rentalAgreementPreviewHtml)}><Printer size={14} />Drukuj</AppButton>
-                  <AppButton variant="primary" size="sm" onClick={() => printHtmlInIframe(rentalAgreementPreviewHtml)}><Download size={14} />Pobierz</AppButton>
-                </div>
-              </div>
-              <div className="document-a4-preview-frame">
-                <iframe title="Podgląd szablonu umowy wypożyczenia" srcDoc={rentalAgreementPreviewHtml} />
-              </div>
-            </div>}
+            {agreementPreviewOpen && <DocumentPreviewModal
+              title={`Podgląd: ${currentTemplateType.label}`}
+              html={currentDocumentTemplatePreviewHtml}
+              onClose={() => setAgreementPreviewOpen(false)}
+              onGeneratePdf={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}
+              onPrint={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}
+              onDownload={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}
+            />}
           </section>}
 
           {activeDocumentPanel === 'header' && <section className="settings-config-card documents-config-card">

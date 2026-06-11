@@ -4201,18 +4201,38 @@ function formatServiceMoney(value) {
 function generateServiceNumber(existingRows = []) {
   const today = new Date();
   const settings = getDocumentSettings().numbering.service;
-  const format = settings.format || DEFAULT_DOCUMENT_NUMBERING.service.format;
+  const configuredFormat = settings.format || DEFAULT_DOCUMENT_NUMBERING.service.format;
   const prefix = settings.prefix || DEFAULT_DOCUMENT_NUMBERING.service.prefix;
-  const formatParts = format.split('/');
-  const nrIndex = formatParts.indexOf('NR');
-  const prefixIndex = formatParts.indexOf('PREFIX');
+
+  // Detect the actual format used in existing records — handles stale localStorage values.
+  // Tries known formats in order of preference; falls back to configured format.
+  const knownFormats = ['PREFIX/YYYY/MM/NR', 'PREFIX/NR/DD/MM/YYYY', 'PREFIX/YYYY/NR', configuredFormat];
+  let effectiveFormat = configuredFormat;
+  if (existingRows.length) {
+    for (const fmt of knownFormats) {
+      const fmtParts = fmt.split('/');
+      const prefixIdx = fmtParts.indexOf('PREFIX');
+      const nrIdx = fmtParts.indexOf('NR');
+      if (prefixIdx < 0 || nrIdx < 0) continue;
+      const hasMatch = existingRows.some((row) => {
+        const parts = String(row.service_number ?? '').split('/');
+        return parts.length === fmtParts.length && parts[prefixIdx] === prefix && Number(parts[nrIdx]) > 0;
+      });
+      if (hasMatch) { effectiveFormat = fmt; break; }
+    }
+  }
+
+  const effectiveParts = effectiveFormat.split('/');
+  const nrIndex = effectiveParts.indexOf('NR');
+  const prefixIndex = effectiveParts.indexOf('PREFIX');
   const sequence = existingRows.reduce((max, row) => {
     const parts = String(row.service_number ?? '').split('/');
-    if (parts.length !== formatParts.length) return max;
+    if (parts.length !== effectiveParts.length) return max;
     if (prefixIndex < 0 || nrIndex < 0 || parts[prefixIndex] !== prefix) return max;
     return Math.max(max, Number(parts[nrIndex]) || 0);
   }, 0) + 1;
-  return formatDocumentNumber(settings, sequence, today);
+
+  return formatDocumentNumber({ ...settings, format: effectiveFormat }, sequence, today);
 }
 
 function buildServiceDocumentData(order, type) {

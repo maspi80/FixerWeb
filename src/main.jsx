@@ -4201,10 +4201,16 @@ function formatServiceMoney(value) {
 function generateServiceNumber(existingRows = []) {
   const today = new Date();
   const settings = getDocumentSettings().numbering.service;
+  const format = settings.format || DEFAULT_DOCUMENT_NUMBERING.service.format;
   const prefix = settings.prefix || DEFAULT_DOCUMENT_NUMBERING.service.prefix;
+  const formatParts = format.split('/');
+  const nrIndex = formatParts.indexOf('NR');
+  const prefixIndex = formatParts.indexOf('PREFIX');
   const sequence = existingRows.reduce((max, row) => {
-    const match = String(row.service_number ?? '').match(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/(\\d+)`));
-    return Math.max(max, match ? Number(match[1]) : 0);
+    const parts = String(row.service_number ?? '').split('/');
+    if (parts.length !== formatParts.length) return max;
+    if (prefixIndex < 0 || nrIndex < 0 || parts[prefixIndex] !== prefix) return max;
+    return Math.max(max, Number(parts[nrIndex]) || 0);
   }, 0) + 1;
   return formatDocumentNumber(settings, sequence, today);
 }
@@ -7142,7 +7148,7 @@ const DEFAULT_DOCUMENT_TEMPLATES = {
 const DEFAULT_DOCUMENT_NUMBERING = {
   rentals: { prefix: 'WYP', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
   returns: { prefix: 'ZW', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
-  service: { prefix: 'SER', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
+  service: { prefix: 'SER', format: 'PREFIX/YYYY/MM/NR', padding: 2 },
   estimates: { prefix: 'KOS', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 },
   projects: { prefix: 'PRJ', format: 'PREFIX/NR/DD/MM/YYYY', padding: 3 }
 };

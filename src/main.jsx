@@ -4300,6 +4300,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     { key: 'priority', label: 'Priorytet' },
     { key: 'accepted_date_display', label: 'Przyjęcie' },
     { key: 'planned_date_display', label: 'Planowany termin' },
+    { key: 'external_service', label: 'Serwis zewnętrzny', renderCell: (row) => row.external_service || '—' },
     { key: 'total_cost_display', label: 'Suma' }
   ];
 
@@ -4312,6 +4313,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     { key: 'priority', label: 'Priorytet' },
     { key: 'accepted_date_display', label: 'Przyjęcie' },
     { key: 'completed_date_display', label: 'Zakończone' },
+    { key: 'external_service', label: 'Serwis zewnętrzny', renderCell: (row) => row.external_service || '—' },
     { key: 'total_cost_display', label: 'Suma' }
   ];
 
@@ -7047,6 +7049,10 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState(() => new Set());
+  // Ref always reflects the latest columnOrder so effects can distinguish
+  // user-hidden columns (present in columnOrder) from brand-new columns (absent).
+  const columnOrderRef = useRef(initialPreference.columnOrder);
+  columnOrderRef.current = columnOrder;
 
   const persistTablePreference = (nextPreference) => {
     saveTablePreference(storageKey, {
@@ -7064,10 +7070,17 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     fetchTablePreference(storageKey, defaultPreference).then(({ data }) => {
       if (!active || !data) return;
       const availableKeys = columns.map((column) => column.key);
-      const orderedExisting = (data.columnOrder ?? []).filter((key) => availableKeys.includes(key));
+      const savedColumnOrder = data.columnOrder ?? [];
+      const orderedExisting = savedColumnOrder.filter((key) => availableKeys.includes(key));
       const missingOrder = availableKeys.filter((key) => !orderedExisting.includes(key));
       const visibleExisting = (data.visibleColumns ?? []).filter((key) => availableKeys.includes(key));
-      const missingVisible = columns.filter((column) => column.defaultVisible !== false && !visibleExisting.includes(column.key)).map((column) => column.key);
+      // Only auto-show columns that are genuinely new (not in saved columnOrder).
+      // Columns absent from visibleColumns but present in columnOrder were hidden by the user.
+      const missingVisible = columns.filter((column) =>
+        column.defaultVisible !== false &&
+        !visibleExisting.includes(column.key) &&
+        !savedColumnOrder.includes(column.key)
+      ).map((column) => column.key);
       setVisibleColumns(visibleExisting.length ? [...visibleExisting, ...missingVisible] : availableKeys);
       setColumnOrder([...orderedExisting, ...missingOrder]);
       setColumnWidths(data.columnWidths);
@@ -7080,6 +7093,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
 
   useEffect(() => {
     const availableKeys = columns.map((column) => column.key);
+    // Snapshot before setState so we can identify genuinely new columns below.
+    const previousKnownKeys = columnOrderRef.current;
     setColumnOrder((current) => {
       const orderedExisting = current.filter((key) => availableKeys.includes(key));
       const missing = availableKeys.filter((key) => !orderedExisting.includes(key));
@@ -7087,8 +7102,14 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     });
     setVisibleColumns((current) => {
       const next = current.filter((key) => availableKeys.includes(key));
-      const missing = columns.filter((column) => column.defaultVisible !== false && !next.includes(column.key)).map((column) => column.key);
-      return next.length ? [...next, ...missing] : availableKeys;
+      // Only auto-show columns that are genuinely new to the column definition.
+      // Columns absent from visibleColumns but in previousKnownKeys were hidden by the user.
+      const genuinelyNew = columns.filter((column) =>
+        column.defaultVisible !== false &&
+        !next.includes(column.key) &&
+        !previousKnownKeys.includes(column.key)
+      ).map((column) => column.key);
+      return next.length ? [...next, ...genuinelyNew] : availableKeys;
     });
   }, [columnsSignature]);
 

@@ -7049,19 +7049,29 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState(() => new Set());
-  // Ref always reflects the latest columnOrder so effects can distinguish
-  // user-hidden columns (present in columnOrder) from brand-new columns (absent).
+  // Refs always reflect the latest state so event-handler closures (drag, resize)
+  // never read stale values when calling persistTablePreference.
   const columnOrderRef = useRef(initialPreference.columnOrder);
   columnOrderRef.current = columnOrder;
+  const visibleColumnsRef = useRef(initialPreference.visibleColumns);
+  visibleColumnsRef.current = visibleColumns;
+  const columnWidthsRef = useRef(initialPreference.columnWidths);
+  columnWidthsRef.current = columnWidths;
+  const columnAlignmentsRef = useRef(initialPreference.columnAlignments ?? {});
+  columnAlignmentsRef.current = columnAlignments;
+  const sortKeyRef = useRef(initialPreference.sortKey);
+  sortKeyRef.current = sortKey;
+  const sortDirRef = useRef(initialPreference.sortDir ?? 'asc');
+  sortDirRef.current = sortDir;
 
   const persistTablePreference = (nextPreference) => {
     saveTablePreference(storageKey, {
-      visibleColumns: nextPreference.visibleColumns ?? visibleColumns,
-      columnOrder: nextPreference.columnOrder ?? columnOrder,
-      columnWidths: nextPreference.columnWidths ?? columnWidths,
-      columnAlignments: nextPreference.columnAlignments ?? columnAlignments,
-      sortKey: Object.prototype.hasOwnProperty.call(nextPreference, 'sortKey') ? nextPreference.sortKey : sortKey,
-      sortDir: nextPreference.sortDir ?? sortDir
+      visibleColumns: nextPreference.visibleColumns ?? visibleColumnsRef.current,
+      columnOrder: nextPreference.columnOrder ?? columnOrderRef.current,
+      columnWidths: nextPreference.columnWidths ?? columnWidthsRef.current,
+      columnAlignments: nextPreference.columnAlignments ?? columnAlignmentsRef.current,
+      sortKey: Object.prototype.hasOwnProperty.call(nextPreference, 'sortKey') ? nextPreference.sortKey : sortKeyRef.current,
+      sortDir: nextPreference.sortDir ?? sortDirRef.current
     });
   };
 
@@ -7269,12 +7279,10 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const setColumnAlignment = (key, alignment) => {
     const normalized = normalizeColumnAlignment(alignment);
     if (!key || !normalized) return;
-    setColumnAlignments((current) => {
-      const next = { ...current, [key]: normalized };
-      setContextMenu(null);
-      persistTablePreference({ columnAlignments: next });
-      return next;
-    });
+    const next = { ...columnAlignmentsRef.current, [key]: normalized };
+    setColumnAlignments(next);
+    setContextMenu(null);
+    persistTablePreference({ columnAlignments: next });
   };
 
   const openColumnSubmenu = (submenu, event = null) => {
@@ -7302,16 +7310,14 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
 
   const moveColumn = (sourceKey, targetKey) => {
     if (!sourceKey || sourceKey === targetKey) return;
-    setColumnOrder((current) => {
-      const next = [...current];
-      const sourceIndex = next.indexOf(sourceKey);
-      const targetIndex = next.indexOf(targetKey);
-      if (sourceIndex === -1 || targetIndex === -1) return current;
-      next.splice(sourceIndex, 1);
-      next.splice(targetIndex, 0, sourceKey);
-      persistTablePreference({ columnOrder: next });
-      return next;
-    });
+    const next = [...columnOrderRef.current];
+    const sourceIndex = next.indexOf(sourceKey);
+    const targetIndex = next.indexOf(targetKey);
+    if (sourceIndex === -1 || targetIndex === -1) return;
+    next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, sourceKey);
+    setColumnOrder(next);
+    persistTablePreference({ columnOrder: next });
   };
 
   const startResize = (event, key) => {
@@ -7319,21 +7325,19 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     event.stopPropagation();
     const startX = event.clientX;
     const th = event.currentTarget.closest('th');
-    const startWidth = th?.offsetWidth ?? columnWidths[key] ?? 140;
+    const startWidth = th?.offsetWidth ?? columnWidthsRef.current[key] ?? 140;
+    let lastWidth = startWidth;
 
     const onMouseMove = (moveEvent) => {
-      const nextWidth = Math.max(72, startWidth + moveEvent.clientX - startX);
-      setColumnWidths((current) => {
-        const next = { ...current, [key]: nextWidth };
-        persistTablePreference({ columnWidths: next });
-        return next;
-      });
+      lastWidth = Math.max(72, startWidth + moveEvent.clientX - startX);
+      setColumnWidths((current) => ({ ...current, [key]: lastWidth }));
     };
 
     const onMouseUp = () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       document.body.classList.remove('resizing-table-column');
+      persistTablePreference({ columnWidths: { ...columnWidthsRef.current, [key]: lastWidth } });
     };
 
     document.body.classList.add('resizing-table-column');

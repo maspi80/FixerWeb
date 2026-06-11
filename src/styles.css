@@ -9201,7 +9201,7 @@ th.expand-cell{cursor:default}
 
 /* ── Global section & context titles ── */
 .section-title { font-weight: 600; }
-.context-menu-title { font-weight: 700; }
+.context-menu-title { font-weight: 600; }
 
 /* ── Buttons (legacy classes not covered by DS) ── */
 .primary-button { font-weight: 600; }
@@ -9388,3 +9388,31 @@ th.expand-cell{cursor:default}
 .simple-task-details-card dd { font-weight: 400; }
 .work-type-pill { font-weight: 600; }
 .work-title-project { font-weight: 700; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Context Menu Slim — v0.6.1
+   Lighter, more professional context menus consistent with table typography.
+   font-size 13 px / weight 500 across all row & column menus.
+   Destructive actions use the DS danger colour; separator stays.
+───────────────────────────────────────────────────────────────────────────── */
+
+/* Row context menu buttons (record actions) */
+.row-context-menu button {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Column chooser menu labels */
+.column-context-menu label {
+  font-size: 13px;
+}
+
+/* Destructive action colour — danger token, visible on dark background */
+.row-context-menu .danger-action {
+  color: var(--fw-color-danger);
+}
+
+/* Light theme override: stronger red on white */
+.app-shell.theme-light .row-context-menu .danger-action {
+  color: #dc2626;
+}

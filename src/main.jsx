@@ -608,6 +608,7 @@ function NotificationsBell({ onNavigate }) {
   const [readMap, setReadMap] = useState(readNotificationReadMap);
   const [deletedMap, setDeletedMap] = useState(readNotificationDeletedMap);
   const [loadError, setLoadError] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const panelRef = useRef(null);
 
   const loadNotifications = async () => {
@@ -673,23 +674,41 @@ function NotificationsBell({ onNavigate }) {
   const deleteReadNotifications = () => {
     const readIds = activeNotifications.filter((item) => readMap[item.id]).map((item) => item.id);
     if (!readIds.length) return;
-    if (!confirm(`Usunąć przeczytane powiadomienia: ${readIds.length}? Nieprzeczytane pozostaną na liście.`)) return;
-    const timestamp = new Date().toISOString();
-    const nextDeleted = { ...readNotificationDeletedMap() };
-    readIds.forEach((id) => { nextDeleted[id] = timestamp; });
-    const nextRead = { ...readNotificationReadMap() };
-    readIds.forEach((id) => { delete nextRead[id]; });
-    setDeletedMap(saveNotificationDeletedMap(nextDeleted));
-    setReadMap(saveNotificationReadMap(nextRead));
+    setConfirmDialog({
+      title: 'Usuń przeczytane',
+      message: `Usunąć przeczytane powiadomienia: ${readIds.length}? Nieprzeczytane pozostaną na liście.`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const timestamp = new Date().toISOString();
+        const nextDeleted = { ...readNotificationDeletedMap() };
+        readIds.forEach((id) => { nextDeleted[id] = timestamp; });
+        const nextRead = { ...readNotificationReadMap() };
+        readIds.forEach((id) => { delete nextRead[id]; });
+        setDeletedMap(saveNotificationDeletedMap(nextDeleted));
+        setReadMap(saveNotificationReadMap(nextRead));
+      }
+    });
   };
   const clearAllNotifications = () => {
     if (!activeNotifications.length) return;
-    if (!confirm(`Wyczyścić wszystkie powiadomienia: ${activeNotifications.length}? Historia lokalna centrum powiadomień zostanie wyczyszczona.`)) return;
-    const timestamp = new Date().toISOString();
-    const nextDeleted = { ...readNotificationDeletedMap() };
-    activeNotifications.forEach((item) => { nextDeleted[item.id] = timestamp; });
-    setDeletedMap(saveNotificationDeletedMap(nextDeleted));
-    setReadMap(saveNotificationReadMap({}));
+    setConfirmDialog({
+      title: 'Wyczyść powiadomienia',
+      message: `Wyczyścić wszystkie powiadomienia: ${activeNotifications.length}? Historia lokalna centrum powiadomień zostanie wyczyszczona.`,
+      confirmLabel: 'Wyczyść',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const timestamp = new Date().toISOString();
+        const nextDeleted = { ...readNotificationDeletedMap() };
+        activeNotifications.forEach((item) => { nextDeleted[item.id] = timestamp; });
+        setDeletedMap(saveNotificationDeletedMap(nextDeleted));
+        setReadMap(saveNotificationReadMap({}));
+      }
+    });
   };
   const openNotification = (notification) => {
     markRead(notification.id);
@@ -731,6 +750,7 @@ function NotificationsBell({ onNavigate }) {
         })}
       </div>}
     </div>}
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }
 
@@ -5313,9 +5333,11 @@ function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDele
     location: event?.location ?? '',
     color: event?.color ?? '#14b8a6'
   }));
+  const [formError, setFormError] = useState('');
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const submit = () => {
-    if (!form.title.trim()) { alert('Tytuł wydarzenia jest wymagany.'); return; }
+    if (!form.title.trim()) { setFormError('Tytuł wydarzenia jest wymagany.'); return; }
+    setFormError('');
     onSave({ ...event, ...form, start_at: form.start_at ? new Date(form.start_at).toISOString() : null, end_at: form.end_at ? new Date(form.end_at).toISOString() : null });
   };
 
@@ -5330,6 +5352,7 @@ function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDele
     footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary>{event && <ButtonSecondary className="danger-action" onClick={() => onDelete(event)}><Trash2 size={15} />Usuń</ButtonSecondary>}<ButtonPrimary onClick={submit}><Save size={16} />Zapisz</ButtonPrimary></>}
   >
     <div className="calendar-event-form">
+      {formError && <AppNotice variant="error" className="service-form-notice">{formError}</AppNotice>}
       <FormField label="Tytuł *"><AppInput value={form.title} onChange={(event) => update('title', event.target.value)} /></FormField>
       <div className="calendar-event-form-row">
         <FormField label="Start"><AppInput type="datetime-local" value={form.start_at} onChange={(event) => update('start_at', event.target.value)} /></FormField>
@@ -5361,6 +5384,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
   const [manualRows, setManualRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [editingManualEvent, setEditingManualEvent] = useState(null);
   const [newEventDate, setNewEventDate] = useState(null);
   const [pendingOpenCalendarEventId, setPendingOpenCalendarEventId] = useState(null);
@@ -5480,18 +5504,27 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     const result = event.id || event.localId
       ? await updateCalendarManualEvent(event.id ?? event.localId, event)
       : await createCalendarManualEvent(event);
-    if (result.error) { alert(humanizeError(result.error, 'calendar')); return; }
+    if (result.error) { setNotice(humanizeError(result.error, 'calendar')); return; }
     setEditingManualEvent(null);
     setNewEventDate(null);
     await loadCalendar();
   };
 
   const removeManualEvent = async (event) => {
-    if (!confirm(`Usunąć wydarzenie: ${event.title}?`)) return;
-    const { error } = await deleteCalendarManualEvent(event.id ?? event.localId, event);
-    if (error) { alert(humanizeError(error, 'calendar')); return; }
-    setEditingManualEvent(null);
-    await loadCalendar();
+    setConfirmDialog({
+      title: 'Usuń wydarzenie',
+      message: `Usunąć wydarzenie: ${event.title}?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const { error } = await deleteCalendarManualEvent(event.id ?? event.localId, event);
+        if (error) { setNotice(humanizeError(error, 'calendar')); return; }
+        setEditingManualEvent(null);
+        await loadCalendar();
+      }
+    });
   };
 
   const renderEvent = (event) => {
@@ -5580,6 +5613,7 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
       {view === 'agenda' ? renderAgenda() : renderGrid()}
     </section>
     {(editingManualEvent || newEventDate) && <CalendarManualEventEditor event={editingManualEvent} initialDate={newEventDate} onClose={() => { setEditingManualEvent(null); setNewEventDate(null); }} onSave={saveManualEvent} onDelete={removeManualEvent} />}
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }
 /* ══════════════════════════════════════════════════════════════
@@ -8267,6 +8301,7 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   const [serviceProgressTemplatesSettings, setServiceProgressTemplatesSettings] = useState([]);
   const [configDictionaries, setConfigDictionaries] = useState(getConfigDictionaries);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [preferences, setPreferences] = useState(() => getStoredJson('fixer-ui-preferences', {
     rememberWindowSize: true,
     rememberWindowPosition: true,
@@ -8316,10 +8351,19 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   };
 
   const resetOrganizerCategoryItems = async () => {
-    if (!confirm('Przywrócić domyślną listę kategorii?')) return;
-    const { error, local } = await resetOrganizerCategories();
-    if (error) { alert(`Nie udało się przywrócić domyślnych kategorii: ${error.message}`); return; }
-    await loadOrganizerSettings();
+    setConfirmDialog({
+      title: 'Przywróć kategorie zadań',
+      message: 'Przywrócić domyślną listę kategorii?',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const { error } = await resetOrganizerCategories();
+        if (error) { setNotice(`Nie udało się przywrócić domyślnych kategorii: ${error.message}`); return; }
+        await loadOrganizerSettings();
+      }
+    });
   };
 
   useEffect(() => {
@@ -8361,8 +8405,17 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
 
 
   const resetDashboardPreferences = () => {
-    if (!confirm('Przywrócić domyślny układ Dashboardu? Zapisane preferencje widoczności zostaną zastąpione ustawieniami domyślnymi.')) return;
-    setDashboardSettings(resetDashboardSettings());
+    setConfirmDialog({
+      title: 'Przywróć układ Dashboardu',
+      message: 'Przywrócić domyślny układ Dashboardu? Zapisane preferencje widoczności zostaną zastąpione ustawieniami domyślnymi.',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        setDashboardSettings(resetDashboardSettings());
+      }
+    });
   };
 
   const updateCompanyProfile = (key, value) => {
@@ -8485,41 +8538,59 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!confirm('Zaimportować warunki umowy? Obecna lista warunków w formularzu zostanie zastąpiona zawartością pliku.')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const payload = JSON.parse(String(reader.result ?? ''));
-        const terms = Array.isArray(payload.terms) ? payload.terms : Array.isArray(payload) ? payload : [];
-        if (!terms.length) throw new Error('Brak punktów umowy.');
-        updateRentalAgreementTemplate((template) => ({ ...template, terms }));
-        setDocumentSettingsNotice('Zaimportowano warunki umowy. Zapisz ustawienia, aby utrwalić zmianę.');
-      } catch (error) {
-        console.error('Rental agreement terms import failed', error);
-        setDocumentSettingsNotice('Nie udało się zaimportować warunków umowy.');
+    setConfirmDialog({
+      title: 'Import warunków umowy',
+      message: 'Zaimportować warunki umowy? Obecna lista warunków w formularzu zostanie zastąpiona zawartością pliku.',
+      confirmLabel: 'Importuj',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const payload = JSON.parse(String(reader.result ?? ''));
+            const terms = Array.isArray(payload.terms) ? payload.terms : Array.isArray(payload) ? payload : [];
+            if (!terms.length) throw new Error('Brak punktów umowy.');
+            updateRentalAgreementTemplate((template) => ({ ...template, terms }));
+            setDocumentSettingsNotice('Zaimportowano warunki umowy. Zapisz ustawienia, aby utrwalić zmianę.');
+          } catch (error) {
+            console.error('Rental agreement terms import failed', error);
+            setDocumentSettingsNotice('Nie udało się zaimportować warunków umowy.');
+          }
+        };
+        reader.readAsText(file);
       }
-    };
-    reader.readAsText(file);
+    });
   };
 
   const importRentalAgreementTemplate = (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!confirm('Zaimportować szablon umowy? Obecna konfiguracja szablonu w formularzu zostanie zastąpiona zawartością pliku.')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const payload = JSON.parse(String(reader.result ?? ''));
-        const template = payload.template ?? payload;
-        updateRentalAgreementTemplate(template);
-        setDocumentSettingsNotice('Zaimportowano konfigurację szablonu. Zapisz ustawienia, aby utrwalić zmianę.');
-      } catch (error) {
-        console.error('Rental agreement template import failed', error);
-        setDocumentSettingsNotice('Nie udało się zaimportować konfiguracji szablonu.');
+    setConfirmDialog({
+      title: 'Import szablonu umowy',
+      message: 'Zaimportować szablon umowy? Obecna konfiguracja szablonu w formularzu zostanie zastąpiona zawartością pliku.',
+      confirmLabel: 'Importuj',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const payload = JSON.parse(String(reader.result ?? ''));
+            const template = payload.template ?? payload;
+            updateRentalAgreementTemplate(template);
+            setDocumentSettingsNotice('Zaimportowano konfigurację szablonu. Zapisz ustawienia, aby utrwalić zmianę.');
+          } catch (error) {
+            console.error('Rental agreement template import failed', error);
+            setDocumentSettingsNotice('Nie udało się zaimportować konfiguracji szablonu.');
+          }
+        };
+        reader.readAsText(file);
       }
-    };
-    reader.readAsText(file);
+    });
   };
 
   const saveDocumentSettingsState = () => {
@@ -8543,12 +8614,21 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   };
 
   const resetDocumentNumberingState = () => {
-    if (!confirm('Przywrócić domyślną numerację dokumentów?')) return;
-    const savedDocumentSettings = saveDocumentSettings({ ...documentSettings, numbering: DEFAULT_DOCUMENT_SETTINGS.numbering });
-    const savedRentalSettings = saveRentalNumberingSettings(DEFAULT_RENTAL_NUMBERING);
-    setDocumentSettings(savedDocumentSettings);
-    setRentalNumbering(savedRentalSettings);
-    setDocumentSettingsNotice('Przywrócono domyślną numerację dokumentów.');
+    setConfirmDialog({
+      title: 'Przywróć numerację dokumentów',
+      message: 'Przywrócić domyślną numerację dokumentów?',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const savedDocumentSettings = saveDocumentSettings({ ...documentSettings, numbering: DEFAULT_DOCUMENT_SETTINGS.numbering });
+        const savedRentalSettings = saveRentalNumberingSettings(DEFAULT_RENTAL_NUMBERING);
+        setDocumentSettings(savedDocumentSettings);
+        setRentalNumbering(savedRentalSettings);
+        setDocumentSettingsNotice('Przywrócono domyślną numerację dokumentów.');
+      }
+    });
   };
 
   const createBackupFile = async ({ silent = false } = {}) => {
@@ -8635,15 +8715,33 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   };
 
   const resetConfigDictionary = (key) => {
-    if (!confirm('Przywrócić domyślną listę?')) return;
-    saveConfigDictionaryState({ ...configDictionaries, [key]: DEFAULT_CONFIG_DICTIONARIES[key].map((name) => ({ name, active: true })) });
+    setConfirmDialog({
+      title: 'Przywróć listę',
+      message: 'Przywrócić domyślną listę?',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        saveConfigDictionaryState({ ...configDictionaries, [key]: DEFAULT_CONFIG_DICTIONARIES[key].map((name) => ({ name, active: true })) });
+      }
+    });
   };
 
   const resetCompanySettings = () => {
-    if (!confirm('Przywrócić puste dane firmy?')) return;
-    const saved = saveCompanyProfile(DEFAULT_COMPANY_PROFILE);
-    setCompanyProfile(saved);
-    setCompanySaveNotice('Dane firmy zostały wyczyszczone.');
+    setConfirmDialog({
+      title: 'Wyczyść dane firmy',
+      message: 'Przywrócić puste dane firmy?',
+      confirmLabel: 'Wyczyść',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        const saved = saveCompanyProfile(DEFAULT_COMPANY_PROFILE);
+        setCompanyProfile(saved);
+        setCompanySaveNotice('Dane firmy zostały wyczyszczone.');
+      }
+    });
   };
 
   const handleCompanyLogoUpload = (event) => {
@@ -8728,13 +8826,19 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   }, [dashboardIntent, onConsumeDashboardIntent]);
 
   const resetEquipmentDictionary = async (type) => {
-    if (!confirm('Przywrócić domyślną listę?')) return;
-    const { error, local } = await resetEquipmentDictionaryRecords(type);
-    if (error) {
-      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      return;
-    }
-    await loadEquipmentSettings();
+    setConfirmDialog({
+      title: 'Przywróć listę',
+      message: 'Przywrócić domyślną listę?',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const { error } = await resetEquipmentDictionaryRecords(type);
+        if (error) { setNotice('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.'); return; }
+        await loadEquipmentSettings();
+      }
+    });
   };
 
   const serviceDictionaryList = (type) => {
@@ -8780,13 +8884,19 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   useEffect(() => { loadServiceSettings(); }, []);
 
   const resetServiceDictionary = async (type) => {
-    if (!confirm('Przywrócić domyślną listę?')) return;
-    const { error, local } = await resetServiceDictionaryRecords(type);
-    if (error) {
-      alert(`Nie udało się przywrócić domyślnych ustawień Serwisu w Supabase: ${error.message}`);
-      return;
-    }
-    await loadServiceSettings();
+    setConfirmDialog({
+      title: 'Przywróć listę',
+      message: 'Przywrócić domyślną listę?',
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const { error } = await resetServiceDictionaryRecords(type);
+        if (error) { setNotice(`Nie udało się przywrócić domyślnych ustawień Serwisu w Supabase: ${error.message}`); return; }
+        await loadServiceSettings();
+      }
+    });
   };
 
   const renderEquipmentDictionaryEditor = (type, title, description, items, addLabel) => <DictionaryEditor
@@ -8809,10 +8919,19 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
     }}
     onDelete={async (item) => {
       if (items.length <= 1) throw new Error('Musi zostać przynajmniej jedna pozycja.');
-      if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`)) return;
-      const { error } = await deleteEquipmentDictionaryRecord(item.id, type);
-      if (error) throw new Error('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      await loadEquipmentSettings();
+      setConfirmDialog({
+        title: 'Usuń pozycję',
+        message: `Usunąć pozycję: ${item.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`,
+        confirmLabel: 'Usuń',
+        cancelLabel: 'Anuluj',
+        variant: 'danger',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          const { error } = await deleteEquipmentDictionaryRecord(item.id, type);
+          if (error) { setNotice('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.'); return; }
+          await loadEquipmentSettings();
+        }
+      });
     }}
     onReset={() => resetEquipmentDictionary(type)}
   />;
@@ -8839,10 +8958,19 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       }}
       onDelete={async (item) => {
         if (items.length <= 1) throw new Error('Musi zostać przynajmniej jedna pozycja.');
-        if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych zleceniach, lepiej zostawić ją na liście.`)) return;
-        const { error } = await deleteServiceDictionaryRecord(item.id, type);
-        if (error) throw new Error(`Nie udało się usunąć ustawienia Serwisu: ${error.message}`);
-        await loadServiceSettings();
+        setConfirmDialog({
+          title: 'Usuń pozycję',
+          message: `Usunąć pozycję: ${item.name}? Jeśli była używana w starych zleceniach, lepiej zostawić ją na liście.`,
+          confirmLabel: 'Usuń',
+          cancelLabel: 'Anuluj',
+          variant: 'danger',
+          onConfirm: async () => {
+            setConfirmDialog(null);
+            const { error } = await deleteServiceDictionaryRecord(item.id, type);
+            if (error) { setNotice(`Nie udało się usunąć ustawienia Serwisu: ${error.message}`); return; }
+            await loadServiceSettings();
+          }
+        });
       }}
       onMove={async (item, direction) => {
         const index = items.findIndex((row) => row.id === item.id);
@@ -8884,8 +9012,17 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       onDelete={async (raw) => {
         const list = normalizeConfigDictionary(key, configDictionaries[key]);
         if (list.length <= 1) throw new Error('Musi zostać przynajmniej jedna pozycja.');
-        if (!confirm(`Usunąć pozycję: ${list[raw.index].name}? Jeśli była używana w starych rekordach, lepiej ją dezaktywować.`)) return;
-        saveConfigDictionaryState({ ...configDictionaries, [key]: list.filter((_, index) => index !== raw.index) });
+        setConfirmDialog({
+          title: 'Usuń pozycję',
+          message: `Usunąć pozycję: ${list[raw.index].name}? Jeśli była używana w starych rekordach, lepiej ją dezaktywować.`,
+          confirmLabel: 'Usuń',
+          cancelLabel: 'Anuluj',
+          variant: 'danger',
+          onConfirm: () => {
+            setConfirmDialog(null);
+            saveConfigDictionaryState({ ...configDictionaries, [key]: list.filter((_, index) => index !== raw.index) });
+          }
+        });
       }}
       onReset={() => resetConfigDictionary(key)}
     />;
@@ -8957,10 +9094,19 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
     }}
     onDelete={async (item) => {
       if (organizerCategoryItems.length <= 1) throw new Error('Musi zostać przynajmniej jedna kategoria.');
-      if (!confirm(`Usunąć kategorię: ${item.name}?`)) return;
-      const { error } = await deleteOrganizerCategory(item.id);
-      if (error) throw new Error(`Nie udało się usunąć kategorii: ${error.message}`);
-      await loadOrganizerSettings();
+      setConfirmDialog({
+        title: 'Usuń kategorię',
+        message: `Usunąć kategorię: ${item.name}?`,
+        confirmLabel: 'Usuń',
+        cancelLabel: 'Anuluj',
+        variant: 'danger',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          const { error } = await deleteOrganizerCategory(item.id);
+          if (error) { setNotice(`Nie udało się usunąć kategorii: ${error.message}`); return; }
+          await loadOrganizerSettings();
+        }
+      });
     }}
     onReset={() => resetOrganizerCategoryItems()}
   />;
@@ -9590,6 +9736,7 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
 
       </SettingsSectionShell>
     </div>
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }
 

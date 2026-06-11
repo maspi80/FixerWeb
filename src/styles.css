@@ -5220,7 +5220,7 @@ th.expand-cell{cursor:default}
 }
 .dashboard-metrics-grid{
   display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
   gap:6px;
 }
 
@@ -7664,9 +7664,6 @@ th.expand-cell{cursor:default}
   height:58px;
 }
 @media(max-width:1400px){
-  .dashboard-metrics-grid{
-    grid-template-columns:repeat(3,minmax(0,1fr));
-  }
   .service-form-grid-main{
     grid-template-columns:repeat(3,minmax(0,1fr));
   }
@@ -7699,7 +7696,7 @@ th.expand-cell{cursor:default}
 }
 @media(max-width:900px){
   .dashboard-metrics-grid{
-    grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
   }
   .dashboard-panels-grid{
     grid-template-columns:1fr;

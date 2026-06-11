@@ -1363,6 +1363,11 @@ function Dashboard({ onNavigate }) {
 
   const orderedPanels = (dashboardSettings.panelOrder ?? []).map((id) => DASHBOARD_ITEMS.find((item) => item.id === id)).filter(Boolean);
 
+  const colPercent = dashboardSettings.panelLayout?.columnPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.columnPercent;
+  const rowPercent = dashboardSettings.panelLayout?.rowPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.rowPercent;
+  const visiblePanelIds = orderedPanels.filter((p) => isDashboardItemVisible(p.id)).map((p) => p.id);
+  const visiblePanelCount = visiblePanelIds.length;
+
   const attentionItems = [
     ...overdueRentals.map((r) => buildDashboardAttentionItem({ key: `rental:${r.id ?? r.localId ?? r.rental_number}`, source: 'Wypożyczenie', icon: Package, tone: 'rental-danger', title: `${r.rental_number} — ${r.clients?.name ?? '—'}`, dueDate: r.planned_return_date, label: `Zwrot po terminie: ${getRentalOverdueDays(r)} ${getRentalOverdueDays(r) === 1 ? 'dzień' : 'dni'}`, priority: 10, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
     ...overdueServices.map((s) => buildDashboardAttentionItem({ key: `service:${s.id ?? s.localId ?? s.service_number}`, source: 'Serwis', icon: Wrench, tone: 'service-danger', title: `${s.service_number} — ${s.customer_device_name || '—'}`, dueDate: s.planned_date, label: 'Serwis po terminie', priority: 20, onClick: () => onNavigate('service', { type: 'service', serviceOrderId: s.id }) })),
@@ -1464,20 +1469,26 @@ function Dashboard({ onNavigate }) {
       </div>
     </div>
 
-    <div
+    {(visiblePanelCount > 0 || editMode) && <div
       className="dashboard-panels-grid"
       ref={panelsGridRef}
-      style={{
-        '--dashboard-left-column': `${dashboardSettings.panelLayout?.columnPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.columnPercent}%`,
-        '--dashboard-top-row': `${dashboardSettings.panelLayout?.rowPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.rowPercent}%`
-      }}
+      style={
+        editMode || visiblePanelCount === 4
+          ? { '--dashboard-left-column': `${colPercent}%`, '--dashboard-top-row': `${rowPercent}%` }
+          : visiblePanelCount === 3
+            ? { gridTemplateColumns: `minmax(0,${colPercent}%) minmax(0,1fr)`, gridTemplateRows: 'auto auto' }
+            : visiblePanelCount === 2
+              ? { gridTemplateColumns: `minmax(0,${colPercent}%) minmax(0,1fr)`, gridTemplateRows: 'auto' }
+              : { gridTemplateColumns: '1fr', gridTemplateRows: 'auto' }
+      }
     >
       {orderedPanels.map((panel, index) => {
         const isVisible = isDashboardItemVisible(panel.id);
         if (!isVisible && !editMode) return null;
         const navigate = panelActions[panel.id];
         const PanelIcon = panelIcons[panel.id] ?? LayoutDashboard;
-        return <section key={panel.id} className={`panel dashboard-table-panel dashboard-panel--${panel.tone} ${!isVisible ? 'panel-hidden' : ''}`}>
+        const spanFull = !editMode && visiblePanelCount === 3 && isVisible && visiblePanelIds.indexOf(panel.id) === 2;
+        return <section key={panel.id} className={`panel dashboard-table-panel dashboard-panel--${panel.tone} ${!isVisible ? 'panel-hidden' : ''}`} style={spanFull ? { gridColumn: '1 / -1' } : undefined}>
           <div className="dashboard-panel-header-row">
             <h2 className="dashboard-panel-title"><PanelIcon size={15} />{panelTitles[panel.id] ?? panel.label}</h2>
             {editMode
@@ -1495,7 +1506,8 @@ function Dashboard({ onNavigate }) {
         <div className="dashboard-resize-handle dashboard-resize-handle-x" role="separator" aria-orientation="vertical" title="Zmień szerokość sekcji" onMouseDown={(event) => startPanelResize('x', event)} />
         <div className="dashboard-resize-handle dashboard-resize-handle-y" role="separator" aria-orientation="horizontal" title="Zmień wysokość sekcji" onMouseDown={(event) => startPanelResize('y', event)} />
       </>}
-    </div>
+    </div>}
+    {visiblePanelCount === 0 && !editMode && <div className="dashboard-empty-layout" style={{ marginTop: 8 }}>Wszystkie panele są ukryte — użyj „Dostosuj".</div>}
   </div>;
 }
 

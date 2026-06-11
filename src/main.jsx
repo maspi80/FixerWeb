@@ -7415,7 +7415,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     columnWidths: {},
     columnAlignments: {},
     sortKey: null,
-    sortDir: 'asc'
+    sortDir: 'asc',
+    lpVisible: true
   }), [columnsSignature]);
   const initialPreference = getLocalTablePreference(storageKey, defaultPreference);
   const [sortKey, setSortKey] = useState(initialPreference.sortKey);
@@ -7430,6 +7431,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState(() => new Set());
+  const [lpVisible, setLpVisible] = useState(initialPreference.lpVisible !== false);
   // Refs always reflect the latest state so event-handler closures (drag, resize)
   // never read stale values when calling persistTablePreference.
   const columnOrderRef = useRef(initialPreference.columnOrder);
@@ -7444,6 +7446,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   sortKeyRef.current = sortKey;
   const sortDirRef = useRef(initialPreference.sortDir ?? 'asc');
   sortDirRef.current = sortDir;
+  const lpVisibleRef = useRef(initialPreference.lpVisible !== false);
+  lpVisibleRef.current = lpVisible;
 
   const persistTablePreference = (nextPreference) => {
     saveTablePreference(storageKey, {
@@ -7452,7 +7456,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       columnWidths: nextPreference.columnWidths ?? columnWidthsRef.current,
       columnAlignments: nextPreference.columnAlignments ?? columnAlignmentsRef.current,
       sortKey: Object.prototype.hasOwnProperty.call(nextPreference, 'sortKey') ? nextPreference.sortKey : sortKeyRef.current,
-      sortDir: nextPreference.sortDir ?? sortDirRef.current
+      sortDir: nextPreference.sortDir ?? sortDirRef.current,
+      lpVisible: Object.prototype.hasOwnProperty.call(nextPreference, 'lpVisible') ? nextPreference.lpVisible : lpVisibleRef.current
     });
   };
 
@@ -7478,6 +7483,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       setColumnAlignments(data.columnAlignments ?? {});
       setSortKey(data.sortKey ?? null);
       setSortDir(data.sortDir ?? 'asc');
+      setLpVisible(data.lpVisible !== false);
     });
     return () => { active = false; };
   }, [storageKey, defaultPreference]);
@@ -7734,8 +7740,15 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     setColumnAlignments({});
     setSortKey(null);
     setSortDir('asc');
-    persistTablePreference({ visibleColumns: keys, columnOrder: keys, columnWidths: {}, columnAlignments: {}, sortKey: null, sortDir: 'asc' });
+    setLpVisible(true);
+    persistTablePreference({ visibleColumns: keys, columnOrder: keys, columnWidths: {}, columnAlignments: {}, sortKey: null, sortDir: 'asc', lpVisible: true });
     setContextMenu(null);
+  };
+
+  const toggleLpColumn = () => {
+    const next = !lpVisible;
+    setLpVisible(next);
+    persistTablePreference({ lpVisible: next });
   };
 
   const openColumnMenu = (event, columnKey = null) => {
@@ -7803,8 +7816,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       </div>}
       <div className="table-scroll">
         <AppTable>
-          <colgroup>{hasSelectionActions && <col className="selection-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
+          <colgroup>{hasSelectionActions && <col className="selection-col" />}{lpVisible && <col className="lp-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
+          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{lpVisible && <th className="lp-cell lp-header" aria-label="Liczba porządkowa">Lp.</th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
             const alignment = getColumnAlignment(column, columnAlignments);
             return <th key={column.key} draggable aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${sortKey === column.key ? 'sorted' : ''} table-align-${alignment}`.trim()}><span>{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>;
           })}</tr></thead>
@@ -7822,8 +7835,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
                 ? onRowClick ? 'Pojedynczy klik pokazuje szczegóły. Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.'
                 : 'Prawy klik pokazuje operacje tabeli.';
             return <Fragment key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>
-              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
-              {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
+              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{lpVisible && <td className="lp-cell table-align-center">{index + 1}</td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (lpVisible ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>
         </AppTable>
@@ -7862,6 +7875,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
         <div className="column-menu-submenu-row" onMouseEnter={(event) => openColumnSubmenu('columns', event)}>
           <button type="button" className={contextMenu.submenu === 'columns' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'columns' ? null : 'columns', event)}>Kolumny <ChevronRight size={14} /></button>
           {contextMenu.submenu === 'columns' && <div className={`column-submenu column-submenu-columns column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }}>
+            <label key="__lp__"><input type="checkbox" checked={lpVisible} onChange={toggleLpColumn} />Lp.</label>
             {orderedColumns.map((column) => {
               const checked = visibleColumns.includes(column.key);
               const disabled = checked && visibleColumns.length === 1;

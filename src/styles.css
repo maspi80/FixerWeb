@@ -9136,3 +9136,52 @@ th.expand-cell{cursor:default}
 .select-status-dialog { width: min(440px, calc(100vw - 48px)); }
 .confirm-dialog-message { margin: 0; color: var(--fw-color-text-soft); line-height: 1.5; }
 .service-form-notice { margin-bottom: 12px; }
+
+/* ── Settings scroll fix ──────────────────────────────────────────────────
+   v0.5.5 clamped .main-area and .page-content to 100 vh with overflow:hidden
+   to keep table modules from expanding beyond the viewport (tables scroll
+   internally via .table-scroll).  That layout is correct for data-table
+   modules but wrong for Settings, which needs natural document scroll.
+
+   The selectors below undo the height/overflow lock exclusively when the
+   .settings-module-page is present, without touching any other module.
+──────────────────────────────────────────────────────────────────────────── */
+.main-area:has(.settings-module-page) {
+  height: auto !important;
+  min-height: 100vh;
+  overflow: visible !important;
+}
+.page-content:has(.settings-module-page) {
+  height: auto !important;
+  min-height: 0;
+  overflow: visible !important;
+}
+.settings-module-page {
+  height: auto !important;
+  min-height: 0;
+}
+
+/* The main Settings panel clipped content with overflow:hidden (contained
+   border-radius clipping).  Remove clip so dictionary cards below the fold
+   are reachable by page scroll. */
+.settings-section-shell {
+  overflow: visible;
+}
+
+/* Sticky left navigation panels — once the page scrolls, top:0 / top:10px
+   would place them under the topbar (76 px tall in normal, 68 px in compact).
+   Offset by topbar height + small gap so panels stay fully visible. */
+.settings-v2-navigation {
+  top: 86px; /* 76 px topbar + 10 px gap */
+}
+.documents-nav-panel,
+.settings-preview-panel {
+  top: 86px;
+}
+@media (max-width: 9999px) {
+  .compact .settings-v2-navigation,
+  .compact .documents-nav-panel,
+  .compact .settings-preview-panel {
+    top: 78px; /* 68 px compact topbar + 10 px gap */
+  }
+}

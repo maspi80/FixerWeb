@@ -566,6 +566,17 @@ const modules = [
 ];
 
 const BACKUP_TABLE_LABELS = {
+  clients: 'Klienci',
+  equipment: 'Sprzęt',
+  rentals: 'Wypożyczenia',
+  rental_items: 'Pozycje wypożyczeń',
+  service_orders: 'Serwis',
+  service_order_progress: 'Postępy serwisowe',
+  service_order_attachments: 'Załączniki serwisu',
+  equipment_dictionaries: 'Słowniki sprzętu',
+  service_dictionaries: 'Słowniki serwisu',
+  client_types: 'Statusy klientów',
+  calendar_manual_events: 'Wydarzenia kalendarza',
   organizer_categories: 'Kategorie zadań',
   organizer_tasks: 'Zadania',
   organizer_task_comments: 'Komentarze zadań',
@@ -2837,7 +2848,7 @@ async function buildOperatorNotifications() {
     id: `system:backup-failed:${backupFailure.at}`,
     source: 'system',
     targetModule: 'settings',
-    intent: { type: 'settings', section: 'backups' },
+    intent: { type: 'settings', section: 'system', settingsSection: 'backup' },
     title: 'Nieudany backup',
     primary: 'Kopia bezpieczeństwa nie została utworzona',
     secondary: backupFailure.message,
@@ -2941,6 +2952,7 @@ function getRentalAgreementColumnValue(key, item, index) {
     name: item?.name_snapshot || equipment.name || 'Sprzęt',
     brand: getRentalItemBrand(item),
     model: getRentalItemModel(item),
+    brandModel: compactLines([getRentalItemBrand(item), getRentalItemModel(item)]).join(' / '),
     serial: item?.serial_snapshot || equipment.serial || '',
     barcode: item?.barcode_snapshot || equipment.barcode || '',
     inventory: item?.inventory_number_snapshot || equipment.inventory_number || '',
@@ -2980,49 +2992,53 @@ function renderPartyBlock(title, lines) {
 function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, settings = getDocumentSettings(), company = getCompanyProfile() } = {}) {
   const data = getRentalAgreementData(rental, settings, company);
   const companyName = company.legalName || company.name || 'FIXER WEB';
-  const companyAddress = formatCompanyAddress(company);
   const companyTax = formatCompanyTaxData(company);
   const companyContact = formatCompanyContact(company);
   const client = data.client ?? {};
   const clientIsCompany = String(client.type ?? '').toLocaleLowerCase('pl') === 'firma';
   const clientAddress = formatClientDocumentAddress(client);
   const showLogo = company.showLogoOnDocuments !== false;
-  const logo = showLogo
-    ? company.logoDataUrl ? `<img src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>` : `<div class="agreement-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`
-    : '';
   const headerText = String(company.documentHeader ?? '').trim();
   const companyFooter = String(company.documentFooter ?? '').trim();
   const equipmentHeader = data.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
   const equipmentRows = data.items.map((item, index) => `<tr>${data.columns.map((column) => `<td>${escapeHtml(getRentalAgreementColumnValue(column.key, item, index) || '—')}</td>`).join('')}</tr>`).join('');
-  const terms = data.template.terms.map((term, index) => `<li><span>${index + 1}.</span><p>${escapeHtml(term)}</p></li>`).join('');
-  const documentMeta = compactLines([
-    data.documentNumber ? `Numer dokumentu: ${data.documentNumber}` : '',
-    data.rental?.rental_number ? `Numer wypożyczenia: ${data.rental.rental_number}` : '',
-    `Data wystawienia: ${formatAgreementDate(data.issueDate)}`,
-    data.rental?.start_date ? `Data wydania: ${formatAgreementDate(data.rental.start_date)}` : '',
-    data.rental?.planned_return_date ? `Planowany zwrot: ${formatAgreementDate(data.rental.planned_return_date)}` : ''
-  ]);
+  const terms = data.template.terms.map((term, index) => `<li><span class="n">${index + 1}.</span>${escapeHtml(term)}</li>`).join('');
   const companyLines = [
     companyName,
-    companyAddress,
+    formatCompanyAddress(company),
     companyTax,
     companyContact,
     company.bankAccount ? `Konto: ${company.bankAccount}` : ''
   ];
+  const contactPerson = client.contact_person || client.contact_name || client.representative || '';
   const clientLines = clientIsCompany
-    ? [client.name, client.nip ? `NIP: ${client.nip}` : '', clientAddress, client.client_kind ? `Osoba kontaktowa: ${client.client_kind}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']
+    ? [client.name, client.nip ? `NIP: ${client.nip}` : '', clientAddress, contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']
     : [client.name, clientAddress, client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : ''];
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(data.title)}</title><style>
-    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{margin:0;color:#111827;font-family:Arial,sans-serif;background:#fff}.agreement-document{max-width:210mm;margin:0 auto;background:#fff}.agreement-preview-shell{padding:0}.agreement-kicker{margin:0 0 8px;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em}.agreement-custom-header{border:1px solid #dbe3ef;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:12px;color:#334155;font-size:11px}.agreement-header{display:flex;justify-content:space-between;gap:18px;border-bottom:2px solid #dbe3ef;padding-bottom:14px;margin-bottom:16px}.agreement-brand{display:flex;gap:12px;align-items:flex-start}.agreement-logo{width:70px;height:70px;border:1px solid #dbe3ef;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.agreement-logo:empty{display:none}.agreement-logo img{max-width:100%;max-height:100%;object-fit:contain}.agreement-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.agreement-company-name{margin:0 0 4px;font-size:17px;font-weight:800}.agreement-line{margin:0 0 3px;color:#475569;font-size:10.5px}.agreement-title{text-align:right}.agreement-title h1{margin:0 0 6px;font-size:21px;line-height:1.15}.agreement-title p{margin:0 0 3px;color:#475569;font-size:11px}.agreement-parties{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}.agreement-party{border:1px solid #dbe3ef;border-radius:12px;padding:10px 12px;min-height:95px}.agreement-party h2,.agreement-section h2{margin:0 0 7px;color:#0f172a;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.agreement-party p{margin:0 0 4px;color:#334155;font-size:11px}.agreement-section{margin-top:14px}.agreement-equipment-table{width:100%;border-collapse:collapse;font-size:9.2px}.agreement-equipment-table th,.agreement-equipment-table td{border:1px solid #cbd5e1;padding:5px 6px;text-align:left;vertical-align:top}.agreement-equipment-table th{background:#eef2f7;color:#0f172a;font-weight:800}.agreement-equipment-table tr:nth-child(even) td{background:#f8fafc}.agreement-terms{list-style:none;margin:0;padding:0;display:grid;gap:5px}.agreement-terms li{display:grid;grid-template-columns:24px 1fr;gap:6px;font-size:11px;color:#334155}.agreement-terms span{font-weight:800;color:#0f172a}.agreement-terms p{margin:0}.agreement-signatures{display:grid;grid-template-columns:1fr 1fr;gap:36px;margin-top:28px;break-inside:avoid}.agreement-signature{font-size:11px;color:#334155}.agreement-signature strong{display:block;margin-bottom:28px;color:#0f172a}.agreement-signature span{display:block;border-top:1px dotted #475569;padding-top:6px;text-align:center}.agreement-footer{border-top:1px solid #dbe3ef;margin-top:18px;padding-top:8px;color:#64748b;font-size:10px}.agreement-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:10px;background:#fff;border-bottom:1px solid #dbe3ef}.agreement-toolbar button{border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;padding:7px 10px;font-weight:700;cursor:pointer}@media print{.agreement-toolbar{display:none}.agreement-document{max-width:none}}@media(max-width:760px){.agreement-parties,.agreement-signatures{grid-template-columns:1fr}.agreement-header{flex-direction:column}.agreement-title{text-align:left}}
-  </style></head><body>${preview ? '' : '<div class="agreement-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="agreement-document">
-    <p class="agreement-kicker">Szablon: ${escapeHtml(data.template.name)}</p>
-    ${headerText ? `<div class="agreement-custom-header">${escapeHtml(headerText)}</div>` : ''}
-    <header class="agreement-header"><div class="agreement-brand"><div class="agreement-logo">${logo}</div><div><p class="agreement-company-name">${escapeHtml(companyName)}</p>${compactLines([companyAddress, companyTax, companyContact]).map((line) => `<p class="agreement-line">${escapeHtml(line)}</p>`).join('')}</div></div><div class="agreement-title"><h1>${escapeHtml(data.title)}</h1>${documentMeta.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}</div></header>
-    <section class="agreement-parties">${renderPartyBlock('Wypożyczający', companyLines)}${renderPartyBlock('Biorący', clientLines)}</section>
-    <section class="agreement-section"><h2>Wypożyczony sprzęt</h2><table class="agreement-equipment-table"><thead><tr>${equipmentHeader}</tr></thead><tbody>${equipmentRows || `<tr><td colspan="${data.columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></section>
-    <section class="agreement-section"><h2>Warunki umowy</h2><ol class="agreement-terms">${terms}</ol></section>
-    <section class="agreement-signatures"><div class="agreement-signature"><strong>Wypożyczający</strong><span>podpis</span></div><div class="agreement-signature"><strong>Biorący</strong><span>podpis</span></div></section>
-    ${companyFooter ? `<footer class="agreement-footer">${escapeHtml(companyFooter)}</footer>` : ''}
+  const manyColumns = data.columns.length > 6;
+  const issueDate = formatAgreementDate(data.issueDate);
+  const startDate = data.rental?.start_date ? formatAgreementDate(data.rental.start_date) : null;
+  const returnDate = data.rental?.planned_return_date ? formatAgreementDate(data.rental.planned_return_date) : null;
+  const docNumber = data.documentNumber || data.rental?.rental_number || '';
+  const introCity = company.documentCity || company.city || '';
+  const coStreet = compactLines([company.street, company.buildingNumber, company.apartmentNumber ? `/${company.apartmentNumber}` : '']).join(' ');
+  const coCity = compactLines([company.postalCode, company.city]).join(' ');
+  const coHeaderLines = compactLines([coStreet, coCity, companyTax, companyContact]);
+  const logoHtml = showLogo
+    ? company.logoDataUrl
+      ? `<img class="ag-logo-img" src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>`
+      : `<div class="ag-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`
+    : '';
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(data.title)}</title><style>@page{size:A4;margin:14mm 15mm}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{max-width:210mm;margin:0 auto;background:#fff}.ag-top{margin-bottom:9px;padding-bottom:8px;border-bottom:1.2px solid #1e3a5f}.ag-logo-img{max-width:96px;max-height:72px;object-fit:contain;display:block;margin-bottom:7px}.ag-logo-fallback{width:58px;height:58px;display:flex;align-items:center;justify-content:center;border:1.2px solid #c0ccdb;border-radius:7px;font-size:20px;font-weight:800;color:#1e3a5f;margin-bottom:7px}.ag-co-name{font-size:12.5px;font-weight:800;color:#0f1e35;margin:0 0 2px}.ag-co-info{font-size:8.8px;color:#444;margin:0 0 1px;line-height:1.35}.ag-title-block{text-align:center;margin:10px 0 8px}.ag-doc-title{font-size:16.5px;font-weight:900;color:#0f1e35;text-transform:uppercase;letter-spacing:.035em;margin:0 0 5px}.ag-doc-meta{font-size:9.5px;color:#444;margin:0 0 1px}.ag-divider{border:none;border-top:1px solid #c8d4e0;margin:7px 0}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:7.8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-party-name{font-size:10.2px;font-weight:800;color:#0f1e35;margin:0 0 1px}.ag-party-line{font-size:9.2px;color:#333;margin:0 0 1px}.ag-core{display:grid;grid-template-columns:34% minmax(0,1fr);gap:13px;align-items:start;margin-bottom:8px}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700;word-break:break-word}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px;word-break:break-word;hyphens:auto}.ag-table tbody tr:last-child td{border-bottom:none}.ag-table.many-cols th,.ag-table.many-cols td{font-size:7.4px;padding:2.6px 3.5px}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px;break-inside:avoid}.ag-terms li .n{font-weight:800;color:#1e3a5f;min-width:15px;flex-shrink:0}.ag-signatures{margin-top:14px;break-inside:avoid}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}.ag-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:7px 12px;background:#fff;border-bottom:1px solid #dde3ed;box-shadow:0 2px 4px rgba(0,0,0,.06)}.ag-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{.ag-toolbar{display:none}.ag-doc{max-width:none}}@media(max-width:760px){.ag-parties,.ag-sig-grid,.ag-core{grid-template-columns:1fr}}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc">
+    ${headerText ? `<div class="ag-custom-header">${escapeHtml(headerText)}</div>` : ''}
+    <div class="ag-top">${logoHtml}<p class="ag-co-name">${escapeHtml(companyName)}</p>${coHeaderLines.map((line) => `<p class="ag-co-info">${escapeHtml(line)}</p>`).join('')}</div>
+    <div class="ag-title-block"><h1 class="ag-doc-title">${escapeHtml(data.title)}</h1>${docNumber ? `<p class="ag-doc-meta">Nr: <strong>${escapeHtml(docNumber)}</strong></p>` : ''}<p class="ag-doc-meta">Data wystawienia: <strong>${escapeHtml(issueDate)}</strong></p></div>
+    <hr class="ag-divider"/>
+    <p class="ag-intro">Umowa została zawarta${introCity ? ` w <strong>${escapeHtml(introCity)}</strong>` : ''} dnia <strong>${escapeHtml(issueDate)}</strong> pomiędzy:</p>
+    <div class="ag-parties"><div><span class="ag-party-label">Wypożyczający</span>${compactLines(companyLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div><div><span class="ag-party-label">Biorący</span>${compactLines(clientLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div></div>
+    <div class="ag-core">${(startDate || returnDate) ? `<div class="ag-section"><h2 class="ag-section-heading">Okres wypożyczenia</h2><div class="ag-period">${startDate ? `<div><span class="ag-period-label">Data wydania</span><span class="ag-period-value">${escapeHtml(startDate)}</span></div>` : ''}${returnDate ? `<div><span class="ag-period-label">Planowany zwrot</span><span class="ag-period-value">${escapeHtml(returnDate)}</span></div>` : ''}</div></div>` : '<div></div>'}<div class="ag-section"><h2 class="ag-section-heading">Przedmiot umowy - przekazany sprzęt</h2><div class="ag-table-wrap"><table class="ag-table${manyColumns ? ' many-cols' : ''}"><thead><tr>${equipmentHeader}</tr></thead><tbody>${equipmentRows || `<tr><td colspan="${data.columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></div></div></div>
+    <div class="ag-section"><h2 class="ag-section-heading">Warunki umowy</h2><ul class="ag-terms">${terms}</ul></div>
+    <div class="ag-signatures"><div class="ag-sig-grid"><div><span class="ag-sig-label">Wypożyczający</span><div class="ag-sig-line">miejscowość, data i podpis</div></div><div><span class="ag-sig-label">Biorący</span><div class="ag-sig-line">miejscowość, data i podpis</div></div></div></div>
+    ${companyFooter ? `<footer class="ag-footer">${escapeHtml(companyFooter)}</footer>` : ''}
   </main>${autoPrint ? '<script>window.onload=function(){window.focus();window.print();};</script>' : ''}</body></html>`;
 }
 
@@ -3507,7 +3523,6 @@ function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose }) {
 
 function RentalAgreementModal({ rental, onClose }) {
   const [documentSettings, setDocumentSettings] = useState(getDocumentSettings);
-  const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
   const previewHtml = useMemo(() => buildRentalAgreementHtml(rental, { preview: true }), [rental, documentSettings]);
 
   useEffect(() => {
@@ -3517,25 +3532,22 @@ function RentalAgreementModal({ rental, onClose }) {
   }, []);
 
   const disabled = !canCreateRentalAgreement(rental);
-  return <>
-    <ResizableModalFrame
-      className="rental-agreement-modal"
-      storageKey="fixer-rental-agreement-modal"
-      defaultSize={{ width: 1040, height: 760 }}
-      minSize={{ width: 760, height: 560 }}
-      eyebrow="Dokument"
-      title="Umowa wypożyczenia sprzętu"
-      onClose={onClose}
-      footer={<><ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary><ButtonSecondary onClick={() => setFullPreviewOpen(true)} disabled={disabled}><FileText size={16} />Podgląd w oknie</ButtonSecondary><ButtonPrimary onClick={() => printHtmlInIframe(previewHtml)} disabled={disabled}><Printer size={16} />Drukuj / PDF</ButtonPrimary></>}
-    >
-      {disabled
-        ? <EmptyState title="Nie można przygotować umowy" description="Umowa wymaga wybranego klienta i przynajmniej jednej pozycji sprzętu." />
-        : <div className="rental-agreement-preview-frame">
-          <iframe title="Podgląd umowy wypożyczenia" srcDoc={previewHtml} />
-        </div>}
-    </ResizableModalFrame>
-    {fullPreviewOpen && <DocumentPreviewModal html={previewHtml} title="Umowa wypożyczenia sprzętu" onClose={() => setFullPreviewOpen(false)} />}
-  </>;
+  return <ResizableModalFrame
+    className="rental-agreement-modal"
+    storageKey="fixer-rental-agreement-modal"
+    defaultSize={{ width: 1040, height: 760 }}
+    minSize={{ width: 760, height: 560 }}
+    eyebrow="Dokument"
+    title="Umowa wypożyczenia sprzętu"
+    onClose={onClose}
+    footer={<><ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary><ButtonPrimary onClick={() => printHtmlInIframe(previewHtml)} disabled={disabled}><Printer size={16} />Drukuj / PDF</ButtonPrimary></>}
+  >
+    {disabled
+      ? <EmptyState title="Nie można przygotować umowy" description="Umowa wymaga wybranego klienta i przynajmniej jednej pozycji sprzętu." />
+      : <div className="rental-agreement-preview-frame">
+        <iframe title="Podgląd umowy wypożyczenia" srcDoc={previewHtml} />
+      </div>}
+  </ResizableModalFrame>;
 }
 
 function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, rentalTypes = getActiveConfigDictionaryNames('rentalTypes'), rentalSettings = getRentalNumberingSettings(), onClose, onSave, onAgreement }) {
@@ -6693,7 +6705,7 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
 
 function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsGrid dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} />
+    <SettingsV2 dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} />
   </div>;
 }
 function getStoredJson(key, fallback) {
@@ -6723,11 +6735,13 @@ const DEFAULT_COMPANY_PROFILE = {
   legalName: '',
   nip: '',
   regon: '',
+  krs: '',
   street: '',
   buildingNumber: '',
   apartmentNumber: '',
   postalCode: '',
   city: '',
+  documentCity: '',
   country: 'Polska',
   phone: '',
   email: '',
@@ -6755,14 +6769,13 @@ const RENTAL_AGREEMENT_TEMPLATE_KEY = 'rentalAgreement';
 const DEFAULT_RENTAL_AGREEMENT_COLUMNS = [
   { key: 'lp', label: 'LP', enabled: true },
   { key: 'name', label: 'Nazwa sprzętu', enabled: true },
-  { key: 'brand', label: 'Marka', enabled: true },
-  { key: 'model', label: 'Model', enabled: true },
-  { key: 'serial', label: 'Numer seryjny', enabled: true },
-  { key: 'barcode', label: 'Kod kreskowy', enabled: false },
-  { key: 'inventory', label: 'Numer ewidencyjny', enabled: true },
+  { key: 'brandModel', label: 'Marka / Model', enabled: true },
+  { key: 'serial', label: 'Nr seryjny', enabled: true },
   { key: 'quantity', label: 'Ilość', enabled: true },
-  { key: 'conditionOut', label: 'Stan przy wydaniu', enabled: true },
-  { key: 'notes', label: 'Uwagi', enabled: true }
+  { key: 'barcode', label: 'Kod kreskowy', enabled: false },
+  { key: 'inventory', label: 'Numer ewidencyjny', enabled: false },
+  { key: 'conditionOut', label: 'Stan przy wydaniu', enabled: false },
+  { key: 'notes', label: 'Uwagi', enabled: false }
 ];
 const DEFAULT_RENTAL_AGREEMENT_TERMS = [
   'Wypożyczający przekazuje sprzęt sprawny technicznie.',
@@ -6803,8 +6816,17 @@ const DEFAULT_DOCUMENT_SETTINGS = {
 function normalizeRentalAgreementTemplate(template = {}) {
   const incomingColumns = Array.isArray(template.columns) ? template.columns : [];
   const fallbackMap = new Map(DEFAULT_RENTAL_AGREEMENT_COLUMNS.map((column) => [column.key, column]));
+  const legacyBrandColumn = incomingColumns.find((column) => column?.key === 'brand');
+  const legacyModelColumn = incomingColumns.find((column) => column?.key === 'model');
+  const migratedIncomingColumns = incomingColumns.some((column) => column?.key === 'brandModel')
+    ? incomingColumns
+    : incomingColumns.flatMap((column) => {
+      if (column?.key === 'brand') return [{ key: 'brandModel', enabled: legacyBrandColumn?.enabled !== false || legacyModelColumn?.enabled !== false }];
+      if (column?.key === 'model') return [];
+      return [column];
+    });
   const incomingKeys = new Set();
-  const columns = incomingColumns
+  const columns = migratedIncomingColumns
     .map((column) => {
       const fallback = fallbackMap.get(column?.key);
       if (!fallback) return null;
@@ -7586,6 +7608,173 @@ function StatusColorPicker({ statusName, currentHex, onSelect }) {
   </>;
 }
 
+const normalizeDictionaryEditorItem = (item, index, fallbackPrefix = 'item') => {
+  if (typeof item === 'string') return { id: `${fallbackPrefix}-${index}-${item}`, name: item, readonly: true, readonlyLabel: 'Systemowy' };
+  return {
+    id: item?.id ?? item?.key ?? `${fallbackPrefix}-${index}-${item?.name ?? ''}`,
+    name: String(item?.name ?? item?.label ?? ''),
+    active: item?.active,
+    readonly: Boolean(item?.readonly),
+    readonlyLabel: item?.readonlyLabel || (item?.readonly ? 'Tylko odczyt' : ''),
+    raw: item?.raw ?? item
+  };
+};
+
+function DictionaryEditor({
+  title,
+  description,
+  items = [],
+  onAdd,
+  onEdit,
+  onDelete,
+  onMove,
+  onReset,
+  onToggleActive,
+  supportsColor = false,
+  supportsActiveState = false,
+  readonlyItems = [],
+  emptyText = 'Brak pozycji w słowniku.',
+  addLabel = 'Dodaj',
+  nameLabel = 'Nazwa',
+  statusColors = {},
+  onColorChange = () => {}
+}) {
+  const normalizedItems = items.map((item, index) => normalizeDictionaryEditorItem(item, index, title));
+  const normalizedReadonlyItems = readonlyItems.map((item, index) => normalizeDictionaryEditorItem(item, index, `${title}-readonly`));
+  const rows = [...normalizedItems, ...normalizedReadonlyItems];
+  const [newValue, setNewValue] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [error, setError] = useState('');
+  const [busyKey, setBusyKey] = useState('');
+
+  const names = rows.map((row) => row.name.trim().toLocaleLowerCase('pl')).filter(Boolean);
+  const validateName = (value, currentId = null) => {
+    const normalized = value.trim();
+    if (!normalized) return 'Wpisz nazwę pozycji.';
+    const duplicate = rows.some((row) => row.id !== currentId && row.name.trim().toLocaleLowerCase('pl') === normalized.toLocaleLowerCase('pl'));
+    if (duplicate || names.filter((name) => name === normalized.toLocaleLowerCase('pl')).length > (currentId ? 1 : 0)) return 'Taka pozycja już istnieje w tym słowniku.';
+    return '';
+  };
+
+  const runAction = async (action, fallbackMessage) => {
+    try {
+      const result = await action();
+      if (typeof result === 'string' && result) throw new Error(result);
+      if (result?.error) throw new Error(result.error.message || result.error || fallbackMessage);
+      return true;
+    } catch (actionError) {
+      setError(actionError.message || fallbackMessage);
+      return false;
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const addItem = async () => {
+    if (!onAdd) return;
+    const value = newValue.trim();
+    const validation = validateName(value);
+    if (validation) { setError(validation); return; }
+    setBusyKey('add');
+    const ok = await runAction(() => onAdd(value), 'Nie udało się dodać pozycji.');
+    if (ok) {
+      setNewValue('');
+      setError('');
+    }
+  };
+
+  const startEdit = (row) => {
+    if (row.readonly || !onEdit) return;
+    setEditingId(row.id);
+    setEditingValue(row.name);
+    setError('');
+  };
+
+  const saveEdit = async (row) => {
+    if (!onEdit) return;
+    const value = editingValue.trim();
+    const validation = validateName(value, row.id);
+    if (validation) { setError(validation); return; }
+    setBusyKey(`edit-${row.id}`);
+    const ok = await runAction(() => onEdit(row.raw, value, row), 'Nie udało się zapisać pozycji.');
+    if (ok) {
+      setEditingId(null);
+      setEditingValue('');
+      setError('');
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditingValue('');
+    setError('');
+  };
+
+  const deleteItem = async (row) => {
+    if (row.readonly || !onDelete) return;
+    setBusyKey(`delete-${row.id}`);
+    await runAction(() => onDelete(row.raw, row), 'Nie udało się usunąć pozycji.');
+  };
+
+  const moveItem = async (row, direction) => {
+    if (row.readonly || !onMove) return;
+    setBusyKey(`move-${row.id}`);
+    await runAction(() => onMove(row.raw, direction, row), 'Nie udało się zmienić kolejności.');
+  };
+
+  const toggleActive = async (row) => {
+    if (row.readonly || !onToggleActive) return;
+    setBusyKey(`active-${row.id}`);
+    await runAction(() => onToggleActive(row.raw, row), 'Nie udało się zmienić aktywności pozycji.');
+  };
+
+  return <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list dictionary-editor">
+    <div className="settings-card-header compact-card-header dictionary-card-header dictionary-editor-header">
+      <div>
+        <h3>{title}</h3>
+        {description && <p className="muted">{description}</p>}
+      </div>
+      {onReset && <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={onReset}><RotateCcw size={13} />Domyślne</AppButton>}
+    </div>
+    {onAdd && <div className="dictionary-add-compact dictionary-editor-add">
+      <AppInput aria-label={nameLabel} value={newValue} onChange={(event) => { setNewValue(event.target.value); if (error) setError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addItem(); if (event.key === 'Escape') { setNewValue(''); setError(''); } }} placeholder={addLabel} disabled={busyKey === 'add'} />
+      <button type="button" className="dictionary-icon-button add" onClick={addItem} aria-label="Dodaj" title="Dodaj" disabled={busyKey === 'add'}><Plus size={16} /></button>
+    </div>}
+    {error && <p className="dictionary-field-error">{error}</p>}
+    <div className="dictionary-list dictionary-list-compact dictionary-editor-list">
+      {rows.length === 0 && <div className="dictionary-empty-row">{emptyText}</div>}
+      {rows.map((row, index) => {
+        const isEditing = editingId === row.id;
+        const canMove = Boolean(onMove) && !row.readonly && index < normalizedItems.length;
+        return <div className={`dictionary-row dictionary-row-compact dictionary-editor-row ${isEditing ? 'editing' : ''} ${row.active === false ? 'inactive' : ''} ${row.readonly ? 'readonly' : ''}`} key={row.id}>
+          <div className="dictionary-editor-name-cell">
+            {isEditing
+              ? <AppInput value={editingValue} onChange={(event) => { setEditingValue(event.target.value); if (error) setError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') saveEdit(row); if (event.key === 'Escape') cancelEdit(); }} autoFocus disabled={busyKey === `edit-${row.id}`} />
+              : <button type="button" className={`dictionary-name-button ${row.readonly ? 'readonly' : ''}`} onClick={() => startEdit(row)} title={row.readonly ? row.readonlyLabel || 'Tylko do odczytu' : 'Edytuj'} disabled={row.readonly || !onEdit}>{row.name}</button>}
+            {row.readonly && <span className="dictionary-readonly-badge" title="Pozycja systemowa nie może mieć zmienionej nazwy ani zostać usunięta.">{row.readonlyLabel || 'Systemowy'}</span>}
+          </div>
+          <div className="dictionary-row-actions dictionary-icon-actions">
+            {supportsColor && <StatusColorPicker statusName={row.name} currentHex={statusColors[row.name.toLowerCase()]} onSelect={onColorChange} />}
+            {isEditing
+              ? <>
+                <button type="button" className="dictionary-icon-button save" onClick={() => saveEdit(row)} aria-label="Zapisz" title="Zapisz" disabled={busyKey === `edit-${row.id}`}><Save size={15} /></button>
+                <button type="button" className="dictionary-icon-button cancel" onClick={cancelEdit} aria-label="Anuluj" title="Anuluj"><X size={15} /></button>
+              </>
+              : <>
+                {supportsActiveState && <button type="button" className={`dictionary-icon-button ${row.active === false ? 'cancel' : 'save'}`} onClick={() => toggleActive(row)} disabled={row.readonly || !onToggleActive || busyKey === `active-${row.id}`} aria-label={row.active === false ? 'Nieaktywna' : 'Aktywna'} title={row.active === false ? 'Nieaktywna' : 'Aktywna'}>{row.active === false ? '○' : '✓'}</button>}
+                {onMove && <button type="button" className="dictionary-icon-button order" onClick={() => moveItem(row, -1)} disabled={!canMove || index === 0 || busyKey === `move-${row.id}`} aria-label="Przesuń wyżej" title="Przesuń wyżej"><ArrowUp size={14} /></button>}
+                {onMove && <button type="button" className="dictionary-icon-button order" onClick={() => moveItem(row, 1)} disabled={!canMove || index >= normalizedItems.length - 1 || busyKey === `move-${row.id}`} aria-label="Przesuń niżej" title="Przesuń niżej"><ArrowDown size={14} /></button>}
+                {onEdit && <button type="button" className="dictionary-icon-button edit" onClick={() => startEdit(row)} disabled={row.readonly} aria-label="Edytuj" title={row.readonly ? row.readonlyLabel || 'Tylko do odczytu' : 'Edytuj'}>✎</button>}
+                {onDelete && <button type="button" className="dictionary-icon-button remove" onClick={() => deleteItem(row)} disabled={row.readonly || busyKey === `delete-${row.id}`} aria-label="Usuń" title={row.readonly ? row.readonlyLabel || 'Tylko do odczytu' : 'Usuń'}><Trash2 size={14} /></button>}
+              </>}
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 function ServiceStatusCell({ value, statuses, onStatusChange }) {
   const [open, setOpen] = useState(false);
   const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
@@ -7644,49 +7833,111 @@ function ServiceStatusCell({ value, statuses, onStatusChange }) {
   );
 }
 
-function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {} }) {
+function SettingsSearch({ value, onChange, results = [], onOpenResult }) {
+  return <div className="settings-v2-search-wrap">
+    <label className="settings-search-field">
+      <Search size={14} />
+      <AppInput value={value} onChange={(event) => onChange(event.target.value)} placeholder="Szukaj ustawień: status, logo, backup..." />
+    </label>
+    {results.length > 0 && <div className="settings-search-results">
+      {results.map((target) => <button key={`${target.section}-${target.label}`} type="button" onClick={() => onOpenResult(target)}>{target.label}</button>)}
+    </div>}
+  </div>;
+}
+
+function SettingsNavigation({ sections, activeSection, onSelect }) {
+  return <nav className="panel settings-sidebar-panel settings-v2-navigation" aria-label="Sekcje ustawień">
+    <ul className="settings-sidebar-nav-list">
+      {sections.map((section) => {
+        const Icon = section.icon;
+        return <li key={section.id}>
+          <button type="button" className={`settings-sidebar-item ${activeSection === section.id ? 'active' : ''}`} onClick={() => onSelect(section.id)}>
+            <Icon size={16} />
+            <span>{section.label}</span>
+          </button>
+        </li>;
+      })}
+      {!sections.length && <li className="settings-sidebar-empty">Brak wyników.</li>}
+    </ul>
+  </nav>;
+}
+
+function SettingsSectionShell({ section, subSections = [], activeSub, onSubChange, children }) {
+  return <section className="panel settings-content settings-main-panel settings-section-shell">
+    <div className="settings-section-heading">
+      <div>
+        <p className="eyebrow">Ustawienia</p>
+        <h2>{section?.label ?? 'Ustawienia'}</h2>
+        {section?.description && <p className="muted">{section.description}</p>}
+      </div>
+    </div>
+    {subSections.length > 0 && <div className="settings-sub-tabs-bar">
+      {subSections.map((sub) => <button key={sub.id} type="button"
+        className={`settings-sub-tab ${activeSub === sub.id ? 'active' : ''}`}
+        onClick={() => onSubChange(sub.id)}>
+        {sub.label}
+      </button>)}
+    </div>}
+    {children}
+  </section>;
+}
+
+function CompanySettingsPanel({ children }) { return children; }
+function DocumentsSettingsPanel({ children }) { return children; }
+function DictionariesSettingsPanel({ children }) { return children; }
+function InterfaceSettingsPanel({ children }) { return children; }
+function IntegrationsSettingsPanel({ children }) { return children; }
+function SystemSettingsPanel({ children }) { return children; }
+
+function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {} }) {
   const themeOptions = [
     { id: 'dark', label: 'Ciemny', icon: Moon },
     { id: 'light', label: 'Jasny', icon: Sun }
   ];
   const sections = [
     { id: 'company', label: 'Firma', icon: FileText, description: 'Dane firmy, logo i dane do dokumentów.' },
-    { id: 'clients', label: 'Klienci', icon: Users, description: 'Typy klientów, rodzaje klientów i domyślne ustawienia kartoteki.' },
-    { id: 'equipment', label: 'Sprzęt', icon: Package, description: 'Kategorie, marki, lokalizacje i statusy sprzętu.' },
-    { id: 'service', label: 'Serwis', icon: Wrench, description: 'Statusy serwisowe, priorytety i typy zgłoszeń.' },
-    { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList, description: 'Statusy wypożyczeń, zwrotów i domyślne okresy.' },
-    { id: 'projects', label: 'Zadania i projekty', icon: Briefcase, description: 'Kategorie zadań, statusy, priorytety, kolory i numeracja projektów.' },
-    { id: 'calendar', label: 'Kalendarz', icon: CalendarDays, description: 'Domyślna widoczność i kolory źródeł kalendarza.' },
-    { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony PDF, numeracja, stopki i nagłówki.' },
-    { id: 'backups', label: 'Kopie bezpieczeństwa', icon: Download, description: 'Pełny backup danych i eksporty CSV.' },
-    { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, układ tabel, okna i preferencje pracy.' }
+    { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony, umowy, numeracja, nagłówki i stopki.' },
+    { id: 'dictionaries', label: 'Słowniki', icon: List, description: 'Statusy, kategorie, priorytety, lokalizacje i stany w modułach.' },
+    { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, dashboard, tabele, widoki i preferencje pracy.' },
+    { id: 'integrations', label: 'Integracje', icon: CalendarDays, description: 'Kalendarz, powiadomienia, import, eksport i przyszłe połączenia.' },
+    { id: 'system', label: 'System', icon: Settings, description: 'Backup, restore, diagnostyka, migracje i przyszła administracja.' }
   ];
   const [activeSection, setActiveSection] = useState('company');
+  const [activeSubs, setActiveSubs] = useState({});
+  const subSectionsMap = {
+    company: [],
+    dictionaries: [
+      { id: 'clients', label: 'Klienci' },
+      { id: 'equipment', label: 'Sprzęt' },
+      { id: 'service', label: 'Serwis' },
+      { id: 'rentals', label: 'Wypożyczenia' },
+      { id: 'projects', label: 'Zadania i projekty' }
+    ],
+    integrations: [],
+    system: [],
+    documents: [],
+    interface: []
+  };
+  const getActiveSub = (section) => activeSubs[section] || subSectionsMap[section]?.[0]?.id || null;
+  const handleSectionChange = (sectionId) => {
+    setActiveSection(sectionId);
+  };
+  const [activeDocumentPanel, setActiveDocumentPanel] = useState('profile');
+  const [activeAgreementTab, setActiveAgreementTab] = useState('layout');
+  const [activeIntegrationPanel, setActiveIntegrationPanel] = useState('calendar');
+  const [activeSystemPanel, setActiveSystemPanel] = useState('backup');
+  const [settingsSearch, setSettingsSearch] = useState('');
   const [clientTypes, setClientTypes] = useState([]);
-  const [newType, setNewType] = useState('');
-  const [editingClientType, setEditingClientType] = useState(null);
-  const [editingClientTypeValue, setEditingClientTypeValue] = useState('');
   const [equipmentCategories, setEquipmentCategories] = useState([]);
   const [equipmentStatuses, setEquipmentStatuses] = useState([]);
   const [equipmentLocations, setEquipmentLocations] = useState([]);
-  const [newEquipmentCategory, setNewEquipmentCategory] = useState('');
-  const [newEquipmentStatus, setNewEquipmentStatus] = useState('');
-  const [newEquipmentLocation, setNewEquipmentLocation] = useState('');
   const [serviceStatusesSettings, setServiceStatusesSettings] = useState([]);
   const [servicePrioritiesSettings, setServicePrioritiesSettings] = useState([]);
   const [serviceDeviceCategoriesSettings, setServiceDeviceCategoriesSettings] = useState([]);
   const [serviceIntakeConditionsSettings, setServiceIntakeConditionsSettings] = useState([]);
   const [serviceExternalServicesSettings, setServiceExternalServicesSettings] = useState([]);
   const [serviceProgressTemplatesSettings, setServiceProgressTemplatesSettings] = useState([]);
-  const [newServiceDictionaryValues, setNewServiceDictionaryValues] = useState({});
-  const [editingServiceDictionaryItem, setEditingServiceDictionaryItem] = useState(null);
-  const [editingServiceDictionaryValue, setEditingServiceDictionaryValue] = useState('');
-  const [editingDictionaryItem, setEditingDictionaryItem] = useState(null);
-  const [editingDictionaryValue, setEditingDictionaryValue] = useState('');
   const [configDictionaries, setConfigDictionaries] = useState(getConfigDictionaries);
-  const [newConfigValues, setNewConfigValues] = useState({});
-  const [editingConfigItem, setEditingConfigItem] = useState(null);
-  const [editingConfigValue, setEditingConfigValue] = useState('');
   const [notice, setNotice] = useState('');
   const [preferences, setPreferences] = useState(() => getStoredJson('fixer-ui-preferences', {
     rememberWindowSize: true,
@@ -7699,55 +7950,23 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
   const [companyProfile, setCompanyProfile] = useState(getCompanyProfile);
   const [companySaveNotice, setCompanySaveNotice] = useState('');
   const [rentalNumbering, setRentalNumbering] = useState(getRentalNumberingSettings);
-  const [rentalNumberingNotice, setRentalNumberingNotice] = useState('');
   const [documentSettings, setDocumentSettings] = useState(getDocumentSettings);
   const [documentSettingsNotice, setDocumentSettingsNotice] = useState('');
   const templateImportInputRef = useRef(null);
+  const termsImportInputRef = useRef(null);
   const [backupNotice, setBackupNotice] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreCandidate, setRestoreCandidate] = useState(null);
   const restoreInputRef = useRef(null);
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
   const [organizerCategoryItems, setOrganizerCategoryItems] = useState([]);
-  const [newOrganizerCategory, setNewOrganizerCategory] = useState('');
-  const [editingOrganizerCategory, setEditingOrganizerCategory] = useState(null);
-  const [editingOrganizerCategoryValue, setEditingOrganizerCategoryValue] = useState('');
   const [calendarSourceSettings, setCalendarSourceSettings] = useState(getCalendarSourceSettings);
-  const [docFullPreviewHtml, setDocFullPreviewHtml] = useState(null);
 
   const loadOrganizerSettings = async () => {
     const result = await fetchOrganizerCategories();
     setOrganizerCategoryItems(result.data ?? []);
   };
   useEffect(() => { loadOrganizerSettings(); }, []);
-
-  const addOrganizerCategoryItem = async () => {
-    const value = newOrganizerCategory.trim();
-    if (!value) return;
-    if (organizerCategoryItems.some((item) => item.name.toLowerCase() === value.toLowerCase())) { setNewOrganizerCategory(''); return; }
-    const { error, local } = await addOrganizerCategory(value, organizerCategoryItems.length + 1);
-    if (error) { alert(`Nie udało się zapisać kategorii: ${error.message}`); return; }
-    setNewOrganizerCategory('');
-    await loadOrganizerSettings();
-  };
-
-  const saveOrganizerCategoryItem = async () => {
-    const value = editingOrganizerCategoryValue.trim();
-    if (!editingOrganizerCategory || !value) return;
-    const { error, local } = await updateOrganizerCategory(editingOrganizerCategory.id, value);
-    if (error) { alert(`Nie udało się zapisać kategorii: ${error.message}`); return; }
-    setEditingOrganizerCategory(null);
-    setEditingOrganizerCategoryValue('');
-    await loadOrganizerSettings();
-  };
-
-  const deleteOrganizerCategoryItem = async (item) => {
-    if (organizerCategoryItems.length <= 1) { alert('Musi zostać przynajmniej jedna kategoria.'); return; }
-    if (!confirm(`Usunąć kategorię: ${item.name}?`)) return;
-    const { error, local } = await deleteOrganizerCategory(item.id);
-    if (error) { alert(`Nie udało się usunąć kategorii: ${error.message}`); return; }
-    await loadOrganizerSettings();
-  };
 
   const updateCalendarSourceSetting = (sourceId, field, value) => {
     if (field === 'enabledByDefault') localStorage.removeItem(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY);
@@ -7814,6 +8033,7 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
 
 
   const resetDashboardPreferences = () => {
+    if (!confirm('Przywrócić domyślny układ Dashboardu? Zapisane preferencje widoczności zostaną zastąpione ustawieniami domyślnymi.')) return;
     setDashboardSettings(resetDashboardSettings());
   };
 
@@ -7830,19 +8050,6 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
 
   const updateRentalNumbering = (key, value) => {
     setRentalNumbering((current) => ({ ...current, [key]: value }));
-    setRentalNumberingNotice('');
-  };
-
-  const saveRentalNumbering = () => {
-    const saved = saveRentalNumberingSettings(rentalNumbering);
-    setRentalNumbering(saved);
-    setRentalNumberingNotice('Numeracja wypożyczeń zapisana.');
-  };
-
-  const resetRentalNumbering = () => {
-    const saved = saveRentalNumberingSettings(DEFAULT_RENTAL_NUMBERING);
-    setRentalNumbering(saved);
-    setRentalNumberingNotice('Przywrócono domyślną numerację wypożyczeń.');
   };
 
   const updateDocumentTemplate = (key, value) => {
@@ -7940,10 +8147,38 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     setDocumentSettingsNotice('Wyeksportowano konfigurację szablonu umowy.');
   };
 
+  const exportRentalAgreementTerms = () => {
+    const template = getRentalAgreementTemplate(documentSettings);
+    downloadTextFile(`fixer-warunki-umowy-wypozyczenia-${getLocalIsoDate()}.json`, JSON.stringify({ type: 'rentalAgreementTerms', version: 1, terms: template.terms }, null, 2), 'application/json;charset=utf-8');
+    setDocumentSettingsNotice('Wyeksportowano warunki umowy.');
+  };
+
+  const importRentalAgreementTerms = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!confirm('Zaimportować warunki umowy? Obecna lista warunków w formularzu zostanie zastąpiona zawartością pliku.')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(String(reader.result ?? ''));
+        const terms = Array.isArray(payload.terms) ? payload.terms : Array.isArray(payload) ? payload : [];
+        if (!terms.length) throw new Error('Brak punktów umowy.');
+        updateRentalAgreementTemplate((template) => ({ ...template, terms }));
+        setDocumentSettingsNotice('Zaimportowano warunki umowy. Zapisz ustawienia, aby utrwalić zmianę.');
+      } catch (error) {
+        console.error('Rental agreement terms import failed', error);
+        setDocumentSettingsNotice('Nie udało się zaimportować warunków umowy.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const importRentalAgreementTemplate = (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    if (!confirm('Zaimportować szablon umowy? Obecna konfiguracja szablonu w formularzu zostanie zastąpiona zawartością pliku.')) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -7960,6 +8195,16 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
   };
 
   const saveDocumentSettingsState = () => {
+    const numberingRowsToValidate = [
+      { label: 'Wypożyczenia', value: rentalNumbering },
+      ...Object.entries(documentSettings.numbering ?? {}).map(([key, value]) => ({ label: key, value }))
+    ];
+    const invalidNumbering = numberingRowsToValidate.find((row) => !String(row.value?.prefix ?? '').trim() || !String(row.value?.format ?? '').trim());
+    if (invalidNumbering) {
+      setDocumentSettingsNotice('Uzupełnij prefiks i format numeracji przed zapisem dokumentów.');
+      setActiveDocumentPanel('numbering');
+      return;
+    }
     const savedDocumentSettings = saveDocumentSettings(documentSettings);
     const savedCompanyProfile = saveCompanyProfile(companyProfile);
     const savedRentalSettings = saveRentalNumberingSettings(rentalNumbering);
@@ -7969,11 +8214,13 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     setDocumentSettingsNotice('Ustawienia dokumentów zapisane.');
   };
 
-  const resetDocumentSettingsState = () => {
-    if (!confirm('Przywrócić domyślne ustawienia dokumentów?')) return;
-    const saved = saveDocumentSettings(DEFAULT_DOCUMENT_SETTINGS);
-    setDocumentSettings(saved);
-    setDocumentSettingsNotice('Przywrócono domyślne ustawienia dokumentów.');
+  const resetDocumentNumberingState = () => {
+    if (!confirm('Przywrócić domyślną numerację dokumentów?')) return;
+    const savedDocumentSettings = saveDocumentSettings({ ...documentSettings, numbering: DEFAULT_DOCUMENT_SETTINGS.numbering });
+    const savedRentalSettings = saveRentalNumberingSettings(DEFAULT_RENTAL_NUMBERING);
+    setDocumentSettings(savedDocumentSettings);
+    setRentalNumbering(savedRentalSettings);
+    setDocumentSettingsNotice('Przywrócono domyślną numerację dokumentów.');
   };
 
   const createBackupFile = async ({ silent = false } = {}) => {
@@ -8059,57 +8306,6 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     setConfigDictionaries(saved);
   };
 
-  const addConfigDictionaryItem = (key) => {
-    const value = String(newConfigValues[key] ?? '').trim();
-    if (!value) return;
-    const list = normalizeConfigDictionary(key, configDictionaries[key]);
-    if (list.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
-      setNewConfigValues((current) => ({ ...current, [key]: '' }));
-      return;
-    }
-    saveConfigDictionaryState({ ...configDictionaries, [key]: [...list, { name: value, active: true }] });
-    setNewConfigValues((current) => ({ ...current, [key]: '' }));
-  };
-
-  const startEditConfigItem = (key, index, item) => {
-    setEditingConfigItem({ key, index });
-    setEditingConfigValue(item.name);
-  };
-
-  const saveConfigDictionaryItem = () => {
-    if (!editingConfigItem) return;
-    const value = editingConfigValue.trim();
-    if (!value) return;
-    const list = normalizeConfigDictionary(editingConfigItem.key, configDictionaries[editingConfigItem.key]);
-    const next = list.map((item, index) => index === editingConfigItem.index ? { ...item, name: value } : item);
-    saveConfigDictionaryState({ ...configDictionaries, [editingConfigItem.key]: next });
-    setEditingConfigItem(null);
-    setEditingConfigValue('');
-  };
-
-  const toggleConfigDictionaryItem = (key, index) => {
-    const list = normalizeConfigDictionary(key, configDictionaries[key]);
-    const activeCount = list.filter((item) => item.active).length;
-    const item = list[index];
-    if (item.active && activeCount <= 1) {
-      alert('Musi zostać przynajmniej jedna aktywna pozycja.');
-      return;
-    }
-    const next = list.map((row, rowIndex) => rowIndex === index ? { ...row, active: !row.active } : row);
-    saveConfigDictionaryState({ ...configDictionaries, [key]: next });
-  };
-
-  const removeConfigDictionaryItem = (key, index) => {
-    const list = normalizeConfigDictionary(key, configDictionaries[key]);
-    if (list.length <= 1) {
-      alert('Musi zostać przynajmniej jedna pozycja.');
-      return;
-    }
-    if (!confirm(`Usunąć pozycję: ${list[index].name}? Jeśli była używana w starych rekordach, lepiej ją dezaktywować.`)) return;
-    const next = list.filter((_, rowIndex) => rowIndex !== index);
-    saveConfigDictionaryState({ ...configDictionaries, [key]: next });
-  };
-
   const resetConfigDictionary = (key) => {
     if (!confirm('Przywrócić domyślną listę?')) return;
     saveConfigDictionaryState({ ...configDictionaries, [key]: DEFAULT_CONFIG_DICTIONARIES[key].map((name) => ({ name, active: true })) });
@@ -8176,64 +8372,32 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
 
   useEffect(() => {
     if (dashboardIntent?.type !== 'settings') return;
-    const requestedSection = dashboardIntent.section === 'organizer' ? 'projects' : dashboardIntent.section;
-    if (requestedSection && sections.some((section) => section.id === requestedSection)) setActiveSection(requestedSection);
+    const sectionMap = {
+      company: { section: 'company' },
+      documents: { section: 'documents' },
+      interface: { section: 'interface' },
+      clients: { section: 'dictionaries', sub: 'clients' },
+      equipment: { section: 'dictionaries', sub: 'equipment' },
+      service: { section: 'dictionaries', sub: 'service' },
+      rentals: { section: 'dictionaries', sub: 'rentals' },
+      projects: { section: 'dictionaries', sub: 'projects' },
+      organizer: { section: 'dictionaries', sub: 'projects' },
+      calendar: { section: 'integrations', integrationPanel: 'calendar' },
+      integrations: { section: 'integrations', integrationPanel: 'calendar' },
+      backups: { section: 'system', systemPanel: 'backup' },
+      backup: { section: 'system', systemPanel: 'backup' },
+      restore: { section: 'system', systemPanel: 'restore' },
+      system: { section: 'system', systemPanel: 'backup' }
+    };
+    const target = sectionMap[dashboardIntent.section] ?? sectionMap[dashboardIntent.settingsSection];
+    if (target?.section) {
+      setActiveSection(target.section);
+      if (target.sub) setActiveSubs((current) => ({ ...current, [target.section]: target.sub }));
+      if (target.integrationPanel) setActiveIntegrationPanel(target.integrationPanel);
+      if (target.systemPanel) setActiveSystemPanel(target.systemPanel);
+    }
     onConsumeDashboardIntent?.();
-  }, [dashboardIntent, onConsumeDashboardIntent, sections]);
-
-  const startEditDictionaryItem = (type, item) => {
-    setEditingDictionaryItem({ type, id: item.id });
-    setEditingDictionaryValue(item.name);
-  };
-
-  const cancelEditDictionaryItem = () => {
-    setEditingDictionaryItem(null);
-    setEditingDictionaryValue('');
-  };
-
-  const addEquipmentDictionaryItem = async (type) => {
-    const value = (type === 'category' ? newEquipmentCategory : type === 'location' ? newEquipmentLocation : newEquipmentStatus).trim();
-    if (!value) return;
-    const list = type === 'category' ? equipmentCategories : type === 'location' ? equipmentLocations : equipmentStatuses;
-    if (list.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
-      type === 'category' ? setNewEquipmentCategory('') : type === 'location' ? setNewEquipmentLocation('') : setNewEquipmentStatus('');
-      return;
-    }
-    const { error, local } = await addEquipmentDictionaryRecord(type, value, list.length + 1);
-    if (error) {
-      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      return;
-    }
-    type === 'category' ? setNewEquipmentCategory('') : type === 'location' ? setNewEquipmentLocation('') : setNewEquipmentStatus('');
-    await loadEquipmentSettings();
-  };
-
-  const saveEquipmentDictionaryItem = async () => {
-    const value = editingDictionaryValue.trim();
-    if (!editingDictionaryItem || !value) return;
-    const { error, local } = await updateEquipmentDictionaryRecord(editingDictionaryItem.id, editingDictionaryItem.type, value);
-    if (error) {
-      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      return;
-    }
-    cancelEditDictionaryItem();
-    await loadEquipmentSettings();
-  };
-
-  const removeEquipmentDictionaryItem = async (type, item) => {
-    const list = type === 'category' ? equipmentCategories : type === 'location' ? equipmentLocations : equipmentStatuses;
-    if (list.length <= 1) {
-      alert('Musi zostać przynajmniej jedna pozycja.');
-      return;
-    }
-    if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`)) return;
-    const { error, local } = await deleteEquipmentDictionaryRecord(item.id, type);
-    if (error) {
-      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      return;
-    }
-    await loadEquipmentSettings();
-  };
+  }, [dashboardIntent, onConsumeDashboardIntent]);
 
   const resetEquipmentDictionary = async (type) => {
     if (!confirm('Przywrócić domyślną listę?')) return;
@@ -8287,77 +8451,6 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
 
   useEffect(() => { loadServiceSettings(); }, []);
 
-  const startEditServiceDictionaryItem = (type, item) => {
-    setEditingServiceDictionaryItem({ type, id: item.id });
-    setEditingServiceDictionaryValue(item.name);
-  };
-
-  const cancelEditServiceDictionaryItem = () => {
-    setEditingServiceDictionaryItem(null);
-    setEditingServiceDictionaryValue('');
-  };
-
-  const addServiceDictionaryItem = async (type) => {
-    const value = String(newServiceDictionaryValues[type] ?? '').trim();
-    if (!value) return;
-    const list = serviceDictionaryList(type);
-    if (list.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
-      setNewServiceDictionaryValues((current) => ({ ...current, [type]: '' }));
-      return;
-    }
-    const { error, local } = await addServiceDictionaryRecord(type, value, list.length + 1);
-    if (error) {
-      alert(`Nie udało się zapisać ustawienia Serwisu w Supabase: ${error.message}`);
-      return;
-    }
-    setNewServiceDictionaryValues((current) => ({ ...current, [type]: '' }));
-    await loadServiceSettings();
-  };
-
-  const saveServiceDictionaryItem = async () => {
-    const value = editingServiceDictionaryValue.trim();
-    if (!editingServiceDictionaryItem || !value) return;
-    const { error, local } = await updateServiceDictionaryRecord(editingServiceDictionaryItem.id, editingServiceDictionaryItem.type, value);
-    if (error) {
-      alert(`Nie udało się zapisać ustawienia Serwisu w Supabase: ${error.message}`);
-      return;
-    }
-    cancelEditServiceDictionaryItem();
-    await loadServiceSettings();
-  };
-
-  const removeServiceDictionaryItem = async (type, item) => {
-    const list = serviceDictionaryList(type);
-    if (list.length <= 1) {
-      alert('Musi zostać przynajmniej jedna pozycja.');
-      return;
-    }
-    if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych zleceniach, lepiej zostawić ją na liście.`)) return;
-    const { error, local } = await deleteServiceDictionaryRecord(item.id, type);
-    if (error) {
-      alert(`Nie udało się usunąć ustawienia Serwisu w Supabase: ${error.message}`);
-      return;
-    }
-    await loadServiceSettings();
-  };
-
-  const moveServiceDictionaryItem = async (type, item, direction) => {
-    const list = serviceDictionaryList(type);
-    const index = list.findIndex((row) => row.id === item.id);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= list.length) return;
-    const next = [...list];
-    next.splice(index, 1);
-    next.splice(nextIndex, 0, item);
-    setServiceDictionaryList(type, next.map((row, rowIndex) => ({ ...row, sort_order: rowIndex + 1 })));
-    const { error, local } = await reorderServiceDictionaryRecords(type, next);
-    if (error) {
-      alert(`Nie udało się zmienić kolejności w Supabase: ${error.message}`);
-      await loadServiceSettings();
-      return;
-    }
-  };
-
   const resetServiceDictionary = async (type) => {
     if (!confirm('Przywrócić domyślną listę?')) return;
     const { error, local } = await resetServiceDictionaryRecords(type);
@@ -8368,153 +8461,106 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     await loadServiceSettings();
   };
 
-  const renderEquipmentDictionaryCard = (type, title, description, items, value, setValue) => (
-    <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-      <div className="settings-card-header compact-card-header dictionary-card-header">
-        <div>
-          <h3>{title}</h3>
-          <p className="muted">{description}</p>
-        </div>
-        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={() => resetEquipmentDictionary(type)}>Domyślne</AppButton>
-      </div>
-      <div className="dictionary-add-compact">
-        <AppInput value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addEquipmentDictionaryItem(type); }} placeholder={type === 'category' ? 'np. Reżyserka, Statyw, Recorder' : 'np. Do sprawdzenia, Zarezerwowany'} />
-        <button type="button" className="dictionary-icon-button add" onClick={() => addEquipmentDictionaryItem(type)} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
-      </div>
-      <div className="dictionary-list dictionary-list-compact">
-        {items.map((item) => {
-          const isEditing = editingDictionaryItem?.type === type && editingDictionaryItem?.id === item.id;
-          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
-            {isEditing
-              ? <input value={editingDictionaryValue} onChange={(event) => setEditingDictionaryValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveEquipmentDictionaryItem(); if (event.key === 'Escape') cancelEditDictionaryItem(); }} autoFocus />
-              : <button type="button" className="dictionary-name-button" onClick={() => startEditDictionaryItem(type, item)} title="Edytuj">{item.name}</button>}
-            <div className="dictionary-row-actions dictionary-icon-actions">
-              {isEditing
-                ? <><button type="button" className="dictionary-icon-button save" onClick={saveEquipmentDictionaryItem} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditDictionaryItem} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
-                : <>{type === 'status' && <StatusColorPicker statusName={item.name} currentHex={statusColors[item.name.toLowerCase()]} onSelect={onStatusColorChange} />}<button type="button" className="dictionary-icon-button edit" onClick={() => startEditDictionaryItem(type, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeEquipmentDictionaryItem(type, item)} aria-label="Usuń" title="Usuń">−</button></>}
-            </div>
-          </div>;
-        })}
-      </div>
-    </div>
-  );
+  const renderEquipmentDictionaryEditor = (type, title, description, items, addLabel) => <DictionaryEditor
+    title={title}
+    description={description}
+    items={items}
+    addLabel={addLabel}
+    supportsColor={type === 'status'}
+    statusColors={statusColors}
+    onColorChange={onStatusColorChange}
+    onAdd={async (name) => {
+      const { error } = await addEquipmentDictionaryRecord(type, name, items.length + 1);
+      if (error) throw new Error('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
+      await loadEquipmentSettings();
+    }}
+    onEdit={async (item, name) => {
+      const { error } = await updateEquipmentDictionaryRecord(item.id, type, name);
+      if (error) throw new Error('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
+      await loadEquipmentSettings();
+    }}
+    onDelete={async (item) => {
+      if (items.length <= 1) throw new Error('Musi zostać przynajmniej jedna pozycja.');
+      if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`)) return;
+      const { error } = await deleteEquipmentDictionaryRecord(item.id, type);
+      if (error) throw new Error('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
+      await loadEquipmentSettings();
+    }}
+    onReset={() => resetEquipmentDictionary(type)}
+  />;
 
-  const renderServiceDictionaryCard = (type, title, description, placeholder) => {
+  const renderServiceDictionaryEditor = (type, title, description, addLabel) => {
     const items = serviceDictionaryList(type);
-    const value = newServiceDictionaryValues[type] ?? '';
-    return <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-      <div className="settings-card-header compact-card-header dictionary-card-header">
-        <div>
-          <h3>{title}</h3>
-          <p className="muted">{description}</p>
-        </div>
-        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={() => resetServiceDictionary(type)}>Domyślne</AppButton>
-      </div>
-      <div className="dictionary-add-compact">
-        <AppInput value={value} onChange={(event) => setNewServiceDictionaryValues((current) => ({ ...current, [type]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addServiceDictionaryItem(type); }} placeholder={placeholder} />
-        <button type="button" className="dictionary-icon-button add" onClick={() => addServiceDictionaryItem(type)} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
-      </div>
-      <div className="dictionary-list dictionary-list-compact">
-        {items.map((item, index) => {
-          const isEditing = editingServiceDictionaryItem?.type === type && editingServiceDictionaryItem?.id === item.id;
-          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
-            {isEditing
-              ? <input value={editingServiceDictionaryValue} onChange={(event) => setEditingServiceDictionaryValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveServiceDictionaryItem(); if (event.key === 'Escape') cancelEditServiceDictionaryItem(); }} autoFocus />
-              : <button type="button" className="dictionary-name-button" onClick={() => startEditServiceDictionaryItem(type, item)} title="Edytuj">{item.name}</button>}
-            <div className="dictionary-row-actions dictionary-icon-actions">
-              {isEditing
-                ? <><button type="button" className="dictionary-icon-button save" onClick={saveServiceDictionaryItem} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditServiceDictionaryItem} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
-                : <>{type === SERVICE_DICTIONARY_TYPES.status && <StatusColorPicker statusName={item.name} currentHex={statusColors[item.name.toLowerCase()]} onSelect={onStatusColorChange} />}<button type="button" className="dictionary-icon-button order" onClick={() => moveServiceDictionaryItem(type, item, -1)} disabled={index === 0} aria-label="Przesuń wyżej" title="Przesuń wyżej"><ArrowUp size={14} /></button><button type="button" className="dictionary-icon-button order" onClick={() => moveServiceDictionaryItem(type, item, 1)} disabled={index === items.length - 1} aria-label="Przesuń niżej" title="Przesuń niżej"><ArrowDown size={14} /></button><button type="button" className="dictionary-icon-button edit" onClick={() => startEditServiceDictionaryItem(type, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeServiceDictionaryItem(type, item)} aria-label="Usuń" title="Usuń">−</button></>}
-            </div>
-          </div>;
-        })}
-      </div>
-    </div>;
+    return <DictionaryEditor
+      title={title}
+      description={description}
+      items={items}
+      addLabel={addLabel}
+      supportsColor={type === SERVICE_DICTIONARY_TYPES.status}
+      statusColors={statusColors}
+      onColorChange={onStatusColorChange}
+      onAdd={async (name) => {
+        const { error } = await addServiceDictionaryRecord(type, name, items.length + 1);
+        if (error) throw new Error(`Nie udało się zapisać ustawienia Serwisu: ${error.message}`);
+        await loadServiceSettings();
+      }}
+      onEdit={async (item, name) => {
+        const { error } = await updateServiceDictionaryRecord(item.id, type, name);
+        if (error) throw new Error(`Nie udało się zapisać ustawienia Serwisu: ${error.message}`);
+        await loadServiceSettings();
+      }}
+      onDelete={async (item) => {
+        if (items.length <= 1) throw new Error('Musi zostać przynajmniej jedna pozycja.');
+        if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych zleceniach, lepiej zostawić ją na liście.`)) return;
+        const { error } = await deleteServiceDictionaryRecord(item.id, type);
+        if (error) throw new Error(`Nie udało się usunąć ustawienia Serwisu: ${error.message}`);
+        await loadServiceSettings();
+      }}
+      onMove={async (item, direction) => {
+        const index = items.findIndex((row) => row.id === item.id);
+        const nextIndex = index + direction;
+        if (index < 0 || nextIndex < 0 || nextIndex >= items.length) return;
+        const next = [...items];
+        next.splice(index, 1);
+        next.splice(nextIndex, 0, item);
+        setServiceDictionaryList(type, next.map((row, rowIndex) => ({ ...row, sort_order: rowIndex + 1 })));
+        const { error } = await reorderServiceDictionaryRecords(type, next);
+        if (error) {
+          await loadServiceSettings();
+          throw new Error(`Nie udało się zmienić kolejności: ${error.message}`);
+        }
+      }}
+      onReset={() => resetServiceDictionary(type)}
+    />;
   };
 
-  const renderConfigDictionaryCard = (key, title, description) => {
-    const items = normalizeConfigDictionary(key, configDictionaries[key]);
-    return <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-      <div className="settings-card-header compact-card-header dictionary-card-header">
-        <div>
-          <h3>{title}</h3>
-          <p className="muted">{description}</p>
-        </div>
-        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={() => resetConfigDictionary(key)}>Domyślne</AppButton>
-      </div>
-      <div className="dictionary-add-compact">
-        <AppInput value={newConfigValues[key] ?? ''} onChange={(event) => setNewConfigValues((current) => ({ ...current, [key]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addConfigDictionaryItem(key); }} placeholder="Nowa pozycja" />
-        <button type="button" className="dictionary-icon-button add" onClick={() => addConfigDictionaryItem(key)} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
-      </div>
-      <div className="dictionary-list dictionary-list-compact">
-        {items.map((item, index) => {
-          const isEditing = editingConfigItem?.key === key && editingConfigItem?.index === index;
-          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''} ${item.active ? '' : 'inactive'}`} key={`${key}-${item.name}-${index}`}>
-            {isEditing
-              ? <input value={editingConfigValue} onChange={(event) => setEditingConfigValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveConfigDictionaryItem(); if (event.key === 'Escape') { setEditingConfigItem(null); setEditingConfigValue(''); } }} autoFocus />
-              : <button type="button" className="dictionary-name-button" onClick={() => startEditConfigItem(key, index, item)} title="Edytuj">{item.name}</button>}
-            <div className="dictionary-row-actions dictionary-icon-actions">
-              {isEditing
-                ? <><button type="button" className="dictionary-icon-button save" onClick={saveConfigDictionaryItem} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={() => { setEditingConfigItem(null); setEditingConfigValue(''); }} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
-                : <><button type="button" className={`dictionary-icon-button ${item.active ? 'save' : 'cancel'}`} onClick={() => toggleConfigDictionaryItem(key, index)} aria-label={item.active ? 'Aktywna' : 'Nieaktywna'} title={item.active ? 'Aktywna' : 'Nieaktywna'}>{item.active ? '✓' : '○'}</button><button type="button" className="dictionary-icon-button edit" onClick={() => startEditConfigItem(key, index, item)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeConfigDictionaryItem(key, index)} aria-label="Usuń" title="Usuń">−</button></>}
-            </div>
-          </div>;
-        })}
-      </div>
-    </div>;
-  };
-
-
-  const addType = async () => {
-    const value = newType.trim();
-    if (!value) return;
-    if (clientTypes.some((item) => item.name.toLowerCase() === value.toLowerCase())) {
-      setNewType('');
-      return;
-    }
-    const { error, local } = await addClientTypeRecord(value, clientTypes.length + 1);
-    if (error) {
-      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      return;
-    }
-    setNewType('');
-    await loadTypes();
-  };
-
-  const startEditClientType = (type) => {
-    setEditingClientType(type.id);
-    setEditingClientTypeValue(type.name);
-  };
-
-  const cancelEditClientType = () => {
-    setEditingClientType(null);
-    setEditingClientTypeValue('');
-  };
-
-  const saveClientType = async () => {
-    const value = editingClientTypeValue.trim();
-    if (!editingClientType || !value) return;
-    const { error, local } = await updateClientTypeRecord(editingClientType, value);
-    if (error) {
-      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      return;
-    }
-    cancelEditClientType();
-    await loadTypes();
-  };
-
-  const removeType = async (type) => {
-    if (clientTypes.length <= 1) {
-      alert('Musi zostać przynajmniej jeden rodzaj klienta.');
-      return;
-    }
-    if (!confirm(`Usunąć pozycję: ${type.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`)) return;
-    const { error, local } = await deleteClientTypeRecord(type.id);
-    if (error) {
-      alert('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
-      return;
-    }
-    await loadTypes();
+  const renderConfigDictionaryEditor = (key, title, description) => {
+    const items = normalizeConfigDictionary(key, configDictionaries[key]).map((item, index) => ({ ...item, id: `${key}-${index}`, raw: { index, item } }));
+    return <DictionaryEditor
+      title={title}
+      description={description}
+      items={items}
+      supportsActiveState
+      onAdd={async (name) => saveConfigDictionaryState({ ...configDictionaries, [key]: [...normalizeConfigDictionary(key, configDictionaries[key]), { name, active: true }] })}
+      onEdit={async (raw, name) => {
+        const list = normalizeConfigDictionary(key, configDictionaries[key]);
+        saveConfigDictionaryState({ ...configDictionaries, [key]: list.map((item, index) => index === raw.index ? { ...item, name } : item) });
+      }}
+      onToggleActive={async (raw) => {
+        const list = normalizeConfigDictionary(key, configDictionaries[key]);
+        const activeCount = list.filter((item) => item.active).length;
+        const item = list[raw.index];
+        if (item.active && activeCount <= 1) throw new Error('Musi zostać przynajmniej jedna aktywna pozycja.');
+        saveConfigDictionaryState({ ...configDictionaries, [key]: list.map((row, index) => index === raw.index ? { ...row, active: !row.active } : row) });
+      }}
+      onDelete={async (raw) => {
+        const list = normalizeConfigDictionary(key, configDictionaries[key]);
+        if (list.length <= 1) throw new Error('Musi zostać przynajmniej jedna pozycja.');
+        if (!confirm(`Usunąć pozycję: ${list[raw.index].name}? Jeśli była używana w starych rekordach, lepiej ją dezaktywować.`)) return;
+        saveConfigDictionaryState({ ...configDictionaries, [key]: list.filter((_, index) => index !== raw.index) });
+      }}
+      onReset={() => resetConfigDictionary(key)}
+    />;
   };
 
   const resetTypes = async () => {
@@ -8527,37 +8573,69 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     await loadTypes();
   };
 
-  const renderClientTypesDictionaryCard = () => (
-    <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-      <div className="settings-card-header compact-card-header dictionary-card-header">
-        <div>
-          <h3>Statusy klientów</h3>
-          <p className="muted">Lista wartości widoczna w kartotece klienta.</p>
-        </div>
-        <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={resetTypes}>Domyślne</AppButton>
-      </div>
-      {notice && <div className="notice">{notice}</div>}
-      <div className="dictionary-add-compact">
-        <AppInput value={newType} onChange={(event) => setNewType(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addType(); }} placeholder="np. Partner, VIP, Problemowy" />
-        <button type="button" className="dictionary-icon-button add" onClick={addType} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
-      </div>
-      <div className="dictionary-list dictionary-list-compact">
-        {clientTypes.map((type) => {
-          const isEditing = editingClientType === type.id;
-          return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={type.id}>
-            {isEditing
-              ? <input value={editingClientTypeValue} onChange={(event) => setEditingClientTypeValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveClientType(); if (event.key === 'Escape') cancelEditClientType(); }} autoFocus />
-              : <button type="button" className="dictionary-name-button" onClick={() => startEditClientType(type)} title="Edytuj">{type.name}</button>}
-            <div className="dictionary-row-actions dictionary-icon-actions">
-              {isEditing
-                ? <><button type="button" className="dictionary-icon-button save" onClick={saveClientType} aria-label="Zapisz" title="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={cancelEditClientType} aria-label="Anuluj" title="Anuluj"><X size={15} /></button></>
-                : <><StatusColorPicker statusName={type.name} currentHex={statusColors[type.name.toLowerCase()]} onSelect={onStatusColorChange} /><button type="button" className="dictionary-icon-button edit" onClick={() => startEditClientType(type)} aria-label="Edytuj" title="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => removeType(type)} aria-label="Usuń" title="Usuń">−</button></>}
-            </div>
-          </div>;
-        })}
-      </div>
-    </div>
-  );
+  const renderClientTypesDictionaryEditor = () => <DictionaryEditor
+    title="Statusy klientów"
+    description="Lista wartości widoczna w kartotece klienta."
+    items={clientTypes}
+    addLabel="np. Partner, VIP, Problemowy"
+    supportsColor
+    statusColors={statusColors}
+    onColorChange={onStatusColorChange}
+    onAdd={async (name) => {
+      const { error } = await addClientTypeRecord(name, clientTypes.length + 1);
+      if (error) throw new Error('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
+      await loadTypes();
+    }}
+    onEdit={async (item, name) => {
+      const { error } = await updateClientTypeRecord(item.id, name);
+      if (error) throw new Error('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
+      await loadTypes();
+    }}
+    onDelete={async (item) => {
+      if (clientTypes.length <= 1) throw new Error('Musi zostać przynajmniej jeden status klienta.');
+      if (!confirm(`Usunąć pozycję: ${item.name}? Jeśli była używana w starych rekordach, lepiej zostawić ją na liście.`)) return;
+      const { error } = await deleteClientTypeRecord(item.id);
+      if (error) throw new Error('Nie udało się zapisać ustawienia. Program zachowa lokalną listę zapasową.');
+      await loadTypes();
+    }}
+    onReset={() => resetTypes()}
+    emptyText="Brak statusów klientów."
+  />;
+
+  const renderReadonlyDictionaryEditor = (title, description, values, { supportsColor = false } = {}) => <DictionaryEditor
+    title={title}
+    description={description}
+    items={values.map((name) => ({ id: name, name, readonly: true, readonlyLabel: 'Systemowy' }))}
+    supportsColor={supportsColor}
+    statusColors={statusColors}
+    onColorChange={onStatusColorChange}
+    emptyText="Brak pozycji systemowych."
+  />;
+
+  const renderOrganizerCategoryDictionaryEditor = () => <DictionaryEditor
+    title="Kategorie zadań"
+    description="Lista kategorii / tagów widoczna przy prostych zadaniach w module Zadania i projekty."
+    items={organizerCategoryItems}
+    addLabel="np. Finanse"
+    onAdd={async (name) => {
+      const { error } = await addOrganizerCategory(name, organizerCategoryItems.length + 1);
+      if (error) throw new Error(`Nie udało się zapisać kategorii: ${error.message}`);
+      await loadOrganizerSettings();
+    }}
+    onEdit={async (item, name) => {
+      const { error } = await updateOrganizerCategory(item.id, name);
+      if (error) throw new Error(`Nie udało się zapisać kategorii: ${error.message}`);
+      await loadOrganizerSettings();
+    }}
+    onDelete={async (item) => {
+      if (organizerCategoryItems.length <= 1) throw new Error('Musi zostać przynajmniej jedna kategoria.');
+      if (!confirm(`Usunąć kategorię: ${item.name}?`)) return;
+      const { error } = await deleteOrganizerCategory(item.id);
+      if (error) throw new Error(`Nie udało się usunąć kategorii: ${error.message}`);
+      await loadOrganizerSettings();
+    }}
+    onReset={() => resetOrganizerCategoryItems()}
+  />;
 
   const documentTemplateRows = [
     ['rentals', 'Wypożyczenie'],
@@ -8596,537 +8674,573 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
     ]
   };
   const rentalAgreementPreviewHtml = buildRentalAgreementHtml(rentalAgreementPreviewRental, { preview: true, settings: documentSettings, company: companyProfile });
+  const settingsSearchTargets = [
+    { section: 'company', label: 'Firma', keywords: 'firma dane nip regon telefon email www logo adres miejscowosc dokumentow' },
+    { section: 'documents', documentPanel: 'header', label: 'Logo i nagłówek dokumentów', keywords: 'logo naglowek pdf miejscowosc dokumenty dokumentow zabrzu' },
+    { section: 'documents', documentPanel: 'numbering', label: 'Numeracja dokumentów', keywords: 'numeracja numer dokument wypozyczenia zwrot serwis kosztorys projekty' },
+    { section: 'documents', documentPanel: 'agreement', agreementTab: 'columns', label: 'Kolumny umowy', keywords: 'umowa wypozyczenia kolumny sprzet drukuj serial numer seryjny' },
+    { section: 'documents', documentPanel: 'agreement', agreementTab: 'terms', label: 'Warunki umowy', keywords: 'warunki umowy punkty regulamin' },
+    { section: 'integrations', integrationPanel: 'calendar', label: 'Kalendarz', keywords: 'kalendarz zrodla kolory filtr roboczy wydarzenia' },
+    { section: 'system', systemPanel: 'backup', label: 'Backup', keywords: 'backup kopie bezpieczenstwa pelna kopia json' },
+    { section: 'system', systemPanel: 'restore', label: 'Restore', keywords: 'restore przywroc import backup przywracanie' },
+    { section: 'system', systemPanel: 'csv', label: 'Eksport CSV', keywords: 'csv eksport klienci sprzet wypozyczenia serwis zadania' },
+    { section: 'system', systemPanel: 'diagnostics', label: 'Diagnostyka', keywords: 'diagnostyka zakres kopii status konfiguracja' },
+    { section: 'dictionaries', sub: 'service', label: 'Statusy serwisu', keywords: 'status statusy serwis zlecenia priorytet priorytety' },
+    { section: 'dictionaries', sub: 'equipment', label: 'Statusy i kategorie sprzętu', keywords: 'status statusy sprzet kategorie lokalizacje stany' },
+    { section: 'dictionaries', sub: 'rentals', label: 'Wypożyczenia', keywords: 'wypozyczenia zwroty termin waluta numeracja typy stany' },
+    { section: 'dictionaries', sub: 'projects', label: 'Zadania i projekty', keywords: 'zadania projekty organizer kategorie status priorytet' },
+    { section: 'dictionaries', sub: 'clients', label: 'Klienci', keywords: 'klienci statusy typy rodzaje' }
+  ];
+  const normalizedSettingsSearch = settingsSearch.trim().toLocaleLowerCase('pl');
+  const searchMatchesTarget = (target) => {
+    if (!normalizedSettingsSearch) return true;
+    return `${target.label} ${target.keywords}`.toLocaleLowerCase('pl').includes(normalizedSettingsSearch);
+  };
+  const visibleSections = normalizedSettingsSearch
+    ? sections.filter((section) => settingsSearchTargets.some((target) => target.section === section.id && searchMatchesTarget(target)))
+    : sections;
+  const settingsSearchResults = normalizedSettingsSearch ? settingsSearchTargets.filter(searchMatchesTarget).slice(0, 6) : [];
+  const openSettingsSearchTarget = (target) => {
+    setActiveSection(target.section);
+    if (target.sub) setActiveSubs((current) => ({ ...current, [target.section]: target.sub }));
+    if (target.documentPanel) setActiveDocumentPanel(target.documentPanel);
+    if (target.agreementTab) setActiveAgreementTab(target.agreementTab);
+    if (target.integrationPanel) setActiveIntegrationPanel(target.integrationPanel);
+    if (target.systemPanel) setActiveSystemPanel(target.systemPanel);
+  };
 
 
-  return <div className="settings-tabs-layout">
-    <section className="panel settings-content settings-tabs-panel">
-      <div className="settings-compact-header">
-        <div>
-          <p className="eyebrow">Moduł</p>
-          <h2>Ustawienia</h2>
-        </div>
-        <div className="settings-top-tabs" role="tablist" aria-label="Sekcje ustawień programu">
-        {sections.map((section) => {
-          const Icon = section.icon;
-          return <button key={section.id} type="button" role="tab" aria-selected={activeSection === section.id} className={`settings-top-tab ${activeSection === section.id ? 'active' : ''}`} onClick={() => setActiveSection(section.id)}>
-            <Icon size={17} />{section.label}
-          </button>;
-        })}
-        </div>
+  const activeSubsInSection = getActiveSub(activeSection);
+  const currentSubSections = subSectionsMap[activeSection] || [];
+  const currentSection = sections.find((section) => section.id === activeSection) ?? sections[0];
+  const companyFieldErrors = {
+    email: companyProfile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyProfile.email) ? 'Sprawdź format adresu e-mail.' : '',
+    website: companyProfile.website && !/^(https?:\/\/)?[\w.-]+\.[a-z]{2,}/i.test(companyProfile.website) ? 'Sprawdź format adresu WWW.' : ''
+  };
+
+  return <div className="settings-v2-layout">
+    <div className="settings-v2-header">
+      <div>
+        <p className="eyebrow">Panel administracyjny</p>
+        <h2>Ustawienia</h2>
+        <p className="muted">Centralne miejsce konfiguracji FIXER WEB, słowników, dokumentów, integracji i systemu.</p>
       </div>
+      <SettingsSearch value={settingsSearch} onChange={setSettingsSearch} results={settingsSearchResults} onOpenResult={openSettingsSearchTarget} />
+    </div>
+    <div className="settings-sidebar-layout settings-v2-body">
+      <SettingsNavigation sections={visibleSections} activeSection={activeSection} onSelect={handleSectionChange} />
+      <SettingsSectionShell section={currentSection} subSections={currentSubSections} activeSub={activeSubsInSection} onSubChange={(subId) => setActiveSubs((prev) => ({ ...prev, [activeSection]: subId }))}>
 
-      {activeSection === 'company' && <div className="firm-settings-pane">
-        <div className="firm-settings-header">
+      {activeSection === 'company' && <CompanySettingsPanel><div className="settings-form-screen company-v2-screen">
+        <div className="settings-screen-toolbar">
           <div>
-            <h3>Dane firmy</h3>
-            <p className="muted">Dane używane na dokumentach, wydrukach i w systemie.</p>
+            <h3>Profil firmy</h3>
+            <p className="muted">Dane używane w aplikacji, na wydrukach i dokumentach PDF.</p>
           </div>
           <div className="settings-action-row">
             <AppButton variant="secondary" size="sm" onClick={resetCompanySettings}>Wyczyść</AppButton>
             <AppButton variant="primary" size="sm" onClick={saveCompanySettings}><Save size={15} />Zapisz</AppButton>
           </div>
         </div>
-        {companySaveNotice && <div className="notice firm-save-notice">{companySaveNotice}</div>}
+        {companySaveNotice && <div className="notice firm-save-notice settings-inline-notice">{companySaveNotice}</div>}
 
-        <div className="firm-settings-grid">
-          <div className="firm-settings-main">
-            <section className="settings-card compact-admin-card firm-card">
-              <h3>Podstawowe</h3>
-              <div className="firm-form-grid firm-basic-grid">
-                <label className="firm-field firm-field-wide">Nazwa firmy<AppInput value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
-                <label className="firm-field firm-field-wide">Nazwa na dokumentach<AppInput value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
-                <label className="firm-field firm-field-nip">NIP<AppInput value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
-                <label className="firm-field firm-field-regon">REGON<AppInput value={companyProfile.regon} onChange={(event) => updateCompanyProfile('regon', event.target.value)} /></label>
+        <div className="settings-form-layout">
+          <div className="settings-form-main">
+            <section className="settings-form-section">
+              <div className="settings-section-title"><h4>Dane firmy</h4><p className="muted">Nazwa i identyfikatory widoczne w kartotece oraz dokumentach.</p></div>
+              <div className="settings-field-grid two-columns">
+                <label className="firm-field field-wide">Nazwa firmy<AppInput value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} placeholder="np. BMX Media" /></label>
+                <label className="firm-field field-wide">Nazwa na dokumentach<AppInput value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} placeholder="np. BMX Media Sp. z o.o." /></label>
+                <label className="firm-field">NIP<AppInput value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} placeholder="0000000000" /></label>
+                <label className="firm-field">REGON<AppInput value={companyProfile.regon} onChange={(event) => updateCompanyProfile('regon', event.target.value)} /></label>
+                <label className="firm-field">KRS<AppInput value={companyProfile.krs || ''} onChange={(event) => updateCompanyProfile('krs', event.target.value)} /></label>
               </div>
             </section>
 
-            <section className="settings-card compact-admin-card firm-card">
-              <h3>Adres</h3>
-              <div className="firm-form-grid firm-address-grid">
-                <label className="firm-field firm-field-street">Ulica<AppInput value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
-                <label className="firm-field firm-field-building">Nr budynku<AppInput value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
-                <label className="firm-field firm-field-apartment">Nr lokalu<AppInput value={companyProfile.apartmentNumber} onChange={(event) => updateCompanyProfile('apartmentNumber', event.target.value)} /></label>
-                <label className="firm-field firm-field-postal">Kod pocztowy<AppInput value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} placeholder="00-000" /></label>
-                <label className="firm-field firm-field-city">Miasto<AppInput value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
-                <label className="firm-field firm-field-country">Kraj<AppInput value={companyProfile.country} onChange={(event) => updateCompanyProfile('country', event.target.value)} /></label>
+            <section className="settings-form-section">
+              <div className="settings-section-title"><h4>Adres</h4><p className="muted">Adres firmy oraz miejscowość używana w treści dokumentów.</p></div>
+              <div className="settings-field-grid address-grid-v2">
+                <label className="firm-field field-street">Ulica<AppInput value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
+                <label className="firm-field">Nr budynku<AppInput value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
+                <label className="firm-field">Nr lokalu<AppInput value={companyProfile.apartmentNumber} onChange={(event) => updateCompanyProfile('apartmentNumber', event.target.value)} /></label>
+                <label className="firm-field">Kod pocztowy<AppInput value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} placeholder="00-000" /></label>
+                <label className="firm-field">Miasto<AppInput value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
+                <label className="firm-field">Kraj<AppInput value={companyProfile.country} onChange={(event) => updateCompanyProfile('country', event.target.value)} /></label>
+                <label className="firm-field field-wide">Miejscowość dokumentów<AppInput value={companyProfile.documentCity} onChange={(event) => updateCompanyProfile('documentCity', event.target.value)} placeholder="np. Zabrzu" /><small>Forma używana w zdaniu „Umowa została zawarta w ...”.</small></label>
               </div>
             </section>
 
-            <section className="settings-card compact-admin-card firm-card">
-              <h3>Kontakt</h3>
-              <div className="firm-form-grid firm-contact-grid">
-                <label className="firm-field firm-field-phone">Telefon<AppInput value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
-                <label className="firm-field firm-field-email">Email<AppInput value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} /></label>
-                <label className="firm-field firm-field-www">Strona WWW<AppInput value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} placeholder="https://..." /></label>
+            <section className="settings-form-section">
+              <div className="settings-section-title"><h4>Kontakt</h4><p className="muted">Dane kontaktowe drukowane na dokumentach, jeśli są uzupełnione.</p></div>
+              <div className="settings-field-grid three-columns">
+                <label className="firm-field">Telefon<AppInput value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
+                <label className="firm-field">E-mail<AppInput value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} />{companyFieldErrors.email && <small className="settings-field-error">{companyFieldErrors.email}</small>}</label>
+                <label className="firm-field">Strona WWW<AppInput value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} placeholder="https://..." />{companyFieldErrors.website && <small className="settings-field-error">{companyFieldErrors.website}</small>}</label>
               </div>
             </section>
-          </div>
 
-          <div className="firm-settings-side">
-            <section className="settings-card compact-admin-card firm-card firm-logo-card">
-              <h3>Logo</h3>
-              <div className="firm-logo-layout">
-                <div className="firm-logo-preview">
+            <section className="settings-form-section">
+              <div className="settings-section-title"><h4>Logo</h4><p className="muted">Logo jest zapisywane lokalnie w profilu firmy i używane na dokumentach.</p></div>
+              <div className="company-logo-row-v2">
+                <div className="firm-logo-preview compact">
                   {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Logo</span>}
                 </div>
                 <div className="firm-logo-actions">
-                  <label className="app-button app-button-secondary app-button-sm file-button"><FolderOpen size={14} />Wczytaj logo<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
-                  <AppButton variant="secondary" size="sm" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń logo</AppButton>
+                  <label className="app-button app-button-secondary app-button-sm file-button"><FolderOpen size={14} />Dodaj / zmień<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
+                  <AppButton variant="secondary" size="sm" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń</AppButton>
+                  <label className="settings-check compact-check"><input type="checkbox" checked={companyProfile.showLogoOnDocuments !== false} onChange={(event) => updateCompanyProfile('showLogoOnDocuments', event.target.checked)} />Pokazuj na dokumentach</label>
                 </div>
               </div>
             </section>
 
-            <section className="settings-card compact-admin-card firm-card">
-              <h3>Rozliczenia</h3>
-              <div className="firm-form-grid firm-billing-grid">
-                <label className="firm-field firm-field-account">Numer konta<AppInput value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
-                <label className="firm-field firm-field-currency">Waluta<AppInput value={rentalNumbering.currency || 'zł'} disabled /></label>
-              </div>
-            </section>
-
-            <section className="settings-card compact-admin-card firm-card">
-              <h3>Dokumenty</h3>
-              <label className="firm-field firm-field-footer">Stopka dokumentów<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę." /></label>
-            </section>
-
-            <section className="settings-card compact-admin-card firm-card firm-preview-card">
-              <h3>Podgląd</h3>
-              <div className="firm-preview">
-                <strong>{companyProfile.legalName || companyProfile.name || 'Nazwa na dokumentach'}</strong>
-                <span>{formatCompanyAddress(companyProfile) || 'Adres firmy'}</span>
-                <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON'}</span>
-                <span>{formatCompanyContact(companyProfile) || 'Telefon / email / WWW'}</span>
-                <span>{companyProfile.bankAccount ? `Konto: ${companyProfile.bankAccount}` : 'Numer konta'}</span>
+            <section className="settings-form-section">
+              <div className="settings-section-title"><h4>Dane dokumentów</h4><p className="muted">Dodatkowe informacje wykorzystywane przy generowaniu dokumentów.</p></div>
+              <div className="settings-field-grid two-columns">
+                <label className="firm-field field-wide">Numer konta<AppInput value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
+                <label className="firm-field">Waluta<AppInput value={rentalNumbering.currency || 'zł'} disabled /></label>
+                <label className="firm-field field-wide">Nagłówek dokumentów<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} rows={2} /></label>
+                <label className="firm-field field-wide">Stopka dokumentów<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} rows={2} placeholder="np. Dziękujemy za współpracę." /></label>
               </div>
             </section>
           </div>
-        </div>
-      </div>}
 
-      {activeSection === 'interface' && <div className="interface-settings-pane">
-        <div className="settings-card compact-admin-card interface-card interface-theme-card">
-          <div className="interface-card-header interface-theme-header">
-            <div>
-              <p className="eyebrow">Wygląd</p>
-              <h3>Motyw aplikacji</h3>
-              <p className="muted">Motyw jest zapamiętywany w przeglądarce. Jasny i ciemny wariant mają osobną kolorystykę.</p>
+          <aside className="settings-preview-panel company-preview-panel">
+            <div className="settings-section-title"><h4>Podgląd na dokumentach</h4><p className="muted">Tak dane firmy będą prezentowane w dokumentach.</p></div>
+            <div className="firm-document-preview">
+              {companyProfile.logoDataUrl && companyProfile.showLogoOnDocuments !== false && <img src={companyProfile.logoDataUrl} alt="Logo firmy" />}
+              <strong>{companyProfile.legalName || companyProfile.name || 'Nazwa na dokumentach'}</strong>
+              <span>{[companyProfile.street, companyProfile.buildingNumber, companyProfile.apartmentNumber ? `/${companyProfile.apartmentNumber}` : ''].filter(Boolean).join('') || 'Ulica i numer'}</span>
+              <span>{[companyProfile.postalCode, companyProfile.city].filter(Boolean).join(' ') || 'Kod pocztowy i miasto'}</span>
+              <dl>
+                <dt>NIP</dt><dd>{companyProfile.nip || '—'}</dd>
+                <dt>REGON</dt><dd>{companyProfile.regon || '—'}</dd>
+                <dt>KRS</dt><dd>{companyProfile.krs || '—'}</dd>
+                <dt>Telefon</dt><dd>{companyProfile.phone || '—'}</dd>
+                <dt>Email</dt><dd>{companyProfile.email || '—'}</dd>
+                <dt>WWW</dt><dd>{companyProfile.website || '—'}</dd>
+              </dl>
             </div>
-            <div className="theme-choice-row interface-theme-switch">
-              {themeOptions.map((option) => {
-                const Icon = option.icon;
-                return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={16} /><span>{option.label}</span></button>;
-              })}
-            </div>
-          </div>
+          </aside>
         </div>
-        <div className="settings-card compact-admin-card interface-card interface-dashboard-card">
-          <div className="interface-card-header">
-            <div>
-              <p className="eyebrow">Dashboard</p>
-              <h3>Widoczność elementów</h3>
-              <p className="muted">Ustawienia są zapisywane lokalnie. Kolejność i widoczność można zmieniać też bezpośrednio na Dashboardzie.</p>
-            </div>
+      </div></CompanySettingsPanel>}
+
+      {activeSection === 'interface' && <InterfaceSettingsPanel><div className="settings-config-screen interface-v2-screen">
+        <section className="settings-config-card">
+          <div className="settings-config-card-header">
+            <div><p className="eyebrow">Wygląd</p><h3>Motyw aplikacji</h3><p className="muted">Motyw jest zapamiętywany lokalnie w przeglądarce.</p></div>
+          </div>
+          <div className="theme-choice-row interface-theme-switch">
+            {themeOptions.map((option) => {
+              const Icon = option.icon;
+              return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={16} /><span>{option.label}</span></button>;
+            })}
+          </div>
+        </section>
+
+        <section className="settings-config-card">
+          <div className="settings-config-card-header">
+            <div><p className="eyebrow">Dashboard</p><h3>Widoczność elementów</h3><p className="muted">Włącz elementy, które mają być widoczne na ekranie głównym.</p></div>
             <AppButton variant="secondary" size="sm" onClick={resetDashboardPreferences}><RotateCcw size={14} />Resetuj</AppButton>
           </div>
-          <div className="dashboard-settings-list interface-dashboard-grid">
-            {DASHBOARD_ITEMS.map((item) => <label className="settings-check dashboard-settings-toggle interface-dashboard-item" key={item.id}>
+          <div className="settings-toggle-grid">
+            {DASHBOARD_ITEMS.map((item) => <label className="settings-option-row" key={item.id}>
               <input type="checkbox" checked={dashboardSettings.visible[item.id] !== false} onChange={() => toggleDashboardItem(item.id)} />
-              <span>{item.label}</span>
+              <span><strong>{item.label}</strong><small>Widoczność sekcji na Dashboardzie.</small></span>
             </label>)}
           </div>
-        </div>
-        <div className="settings-card compact-admin-card interface-card">
-          <div className="interface-card-header interface-card-header-compact">
-            <div>
-              <p className="eyebrow">Praca</p>
-              <h3>Zachowanie aplikacji</h3>
-            </div>
-          </div>
-          <div className="interface-check-grid">
-            <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowSize} onChange={(event) => updatePreference('rememberWindowSize', event.target.checked)} />Zapamiętuj rozmiary okien</label>
-            <label className="settings-check"><input type="checkbox" checked={preferences.rememberWindowPosition} onChange={(event) => updatePreference('rememberWindowPosition', event.target.checked)} />Zapamiętuj pozycje okien</label>
-            <label className="settings-check"><input type="checkbox" checked={preferences.confirmDelete} onChange={(event) => updatePreference('confirmDelete', event.target.checked)} />Pokazuj potwierdzenie usunięcia</label>
-          </div>
-        </div>
-        <div className="settings-card compact-admin-card interface-card">
-          <div className="interface-card-header interface-card-header-compact">
-            <div>
-              <p className="eyebrow">Tabele</p>
-              <h3>Układ danych</h3>
-            </div>
-          </div>
-          <div className="interface-table-controls">
-            <div className="interface-check-grid">
-              <label className="settings-check"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} />Zapamiętuj układ kolumn</label>
-              <label className="settings-check"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} />Zapamiętuj filtry tabel</label>
-            </div>
-            <label className="settings-field interface-rows-field">Domyślna liczba wierszy<AppSelect value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></AppSelect></label>
-          </div>
-        </div>
-      </div>}
+        </section>
 
-      {activeSection === 'clients' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
-        {renderClientTypesDictionaryCard()}
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div>
-              <h3>Typy klientów</h3>
-              <p className="muted">Wartości systemowe używane w kartotece klienta.</p>
-            </div>
+        <section className="settings-config-card">
+          <div className="settings-config-card-header">
+            <div><p className="eyebrow">Tabele</p><h3>Układ danych</h3><p className="muted">Preferencje pracy z tabelami w modułach FIXER WEB.</p></div>
           </div>
-          <div className="dictionary-list dictionary-list-compact readonly-dictionary-list">
-            {['Firma', 'Osoba prywatna'].map((type) => <div className="dictionary-row dictionary-row-compact readonly" key={type}>
-              <span className="dictionary-name-button readonly">{type}</span>
-              <span className="dictionary-readonly-badge">Systemowe</span>
-            </div>)}
+          <div className="settings-toggle-grid two-columns">
+            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} /><span><strong>Zapamiętuj układ kolumn</strong><small>Szerokości, kolejność i widoczność kolumn zostają zapisane lokalnie.</small></span></label>
+            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} /><span><strong>Zapamiętuj filtry tabel</strong><small>Filtry zostają przywrócone po powrocie do modułu.</small></span></label>
+            <label className="firm-field settings-select-row">Domyślna liczba wierszy<AppSelect value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></AppSelect></label>
           </div>
-        </div>
+        </section>
+
+        <section className="settings-config-card">
+          <div className="settings-config-card-header">
+            <div><p className="eyebrow">Okna i panele</p><h3>Zachowanie okien</h3><p className="muted">Ustawienia ergonomii pracy z modalami i panelami roboczymi.</p></div>
+          </div>
+          <div className="settings-toggle-grid two-columns">
+            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberWindowSize} onChange={(event) => updatePreference('rememberWindowSize', event.target.checked)} /><span><strong>Zapamiętuj rozmiary okien</strong><small>Modalne okna otwierają się w ostatnio użytym rozmiarze.</small></span></label>
+            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberWindowPosition} onChange={(event) => updatePreference('rememberWindowPosition', event.target.checked)} /><span><strong>Zapamiętuj pozycje okien</strong><small>Pozycje okien są zapisywane lokalnie dla wygodniejszej pracy.</small></span></label>
+          </div>
+        </section>
+
+        <section className="settings-config-card">
+          <div className="settings-config-card-header">
+            <div><p className="eyebrow">Preferencje pracy</p><h3>Bezpieczeństwo operacji</h3><p className="muted">Domyślne zachowania programu przy czynnościach wymagających uwagi.</p></div>
+          </div>
+          <div className="settings-toggle-grid">
+            <label className="settings-option-row"><input type="checkbox" checked={preferences.confirmDelete} onChange={(event) => updatePreference('confirmDelete', event.target.checked)} /><span><strong>Pokazuj potwierdzenie usunięcia</strong><small>Program poprosi o potwierdzenie przed usunięciem danych.</small></span></label>
+          </div>
+        </section>
+      </div></InterfaceSettingsPanel>}
+
+      {activeSection === 'dictionaries' && activeSubsInSection === 'clients' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        {renderClientTypesDictionaryEditor()}
+        {renderReadonlyDictionaryEditor('Typy klientów', 'Wartości systemowe używane w kartotece klienta.', ['Firma', 'Osoba prywatna'])}
         <div className="settings-card compact-admin-card">
           <h3>Widok klientów</h3>
           <p className="muted">Domyślne filtry, kolumny i pola dodatkowe będą konfigurowane w tej sekcji.</p>
         </div>
-      </div>}
+      </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'equipment' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid equipment-settings-grid">
-        {renderEquipmentDictionaryCard('category', 'Kategorie sprzętu', 'Lista kategorii widoczna w karcie sprzętu.', equipmentCategories, newEquipmentCategory, setNewEquipmentCategory)}
-        {renderEquipmentDictionaryCard('status', 'Statusy sprzętu', 'Lista statusów widoczna w karcie sprzętu i tabelach.', equipmentStatuses, newEquipmentStatus, setNewEquipmentStatus)}
-        {renderEquipmentDictionaryCard('location', 'Lokalizacje sprzętu', 'Lista lokalizacji widoczna w karcie sprzętu i wyborze sprzętu.', equipmentLocations, newEquipmentLocation, setNewEquipmentLocation)}
-        {renderConfigDictionaryCard('equipmentConditions', 'Stany techniczne sprzętu', 'Lista stanów technicznych widoczna w karcie sprzętu.')}
-        <div className="settings-card compact-admin-card settings-dictionary-card">
-          <h3>Widok sprzętu</h3>
-          <p className="muted">Układ tabeli, ukrywanie kolumn i menu kontekstowe działają globalnie tak jak w module Klienci.</p>
-          <div className="tag-list"><span className="config-tag">Tabela</span><span className="config-tag">Kartoteka</span><span className="config-tag">Zestawy</span></div>
-        </div>
-      </div>}
+      {activeSection === 'dictionaries' && activeSubsInSection === 'equipment' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        {renderEquipmentDictionaryEditor('category', 'Kategorie sprzętu', 'Lista kategorii widoczna w karcie sprzętu.', equipmentCategories, 'np. Reżyserka, Statyw, Recorder')}
+        {renderEquipmentDictionaryEditor('status', 'Statusy sprzętu', 'Lista statusów widoczna w karcie sprzętu i tabelach.', equipmentStatuses, 'np. Do sprawdzenia, Zarezerwowany')}
+        {renderEquipmentDictionaryEditor('location', 'Lokalizacje sprzętu', 'Lista lokalizacji widoczna w karcie sprzętu i wyborze sprzętu.', equipmentLocations, 'np. Magazyn A')}
+        {renderConfigDictionaryEditor('equipmentConditions', 'Stany techniczne sprzętu', 'Lista stanów technicznych widoczna w karcie sprzętu.')}
+      </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'service' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid service-settings-grid">
-        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.status, 'Statusy zleceń', 'Lista statusów widoczna w module Serwis, filtrach i kartotece.', 'np. Czeka na klienta')}
-        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.priority, 'Priorytety', 'Lista priorytetów widoczna w kartotece zlecenia.', 'np. Ekspresowy')}
-        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.customerDeviceCategory, 'Kategorie sprzętu klienta', 'Kategorie używane przy sprzęcie przyjmowanym do serwisu.', 'np. Monitor, Rekorder')}
-        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.intakeCondition, 'Stany przyjęcia', 'Lista stanów sprzętu klienta przy przyjęciu.', 'np. Zalany')}
-        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.externalService, 'Serwisy zewnętrzne', 'Lista serwisów, do których może zostać przekazany sprzęt klienta.', 'np. Sony Polska')}
-        {renderServiceDictionaryCard(SERVICE_DICTIONARY_TYPES.progressTemplate, 'Szablony postępów', 'Szybkie wpisy dodawane w historii zgłoszenia.', 'np. Klient poinformowany')}
-      </div>}
+      {activeSection === 'dictionaries' && activeSubsInSection === 'service' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.status, 'Statusy zleceń', 'Lista statusów widoczna w module Serwis, filtrach i kartotece.', 'np. Czeka na klienta')}
+        {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.priority, 'Priorytety', 'Lista priorytetów widoczna w kartotece zlecenia.', 'np. Ekspresowy')}
+        {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.customerDeviceCategory, 'Kategorie sprzętu klienta', 'Kategorie używane przy sprzęcie przyjmowanym do serwisu.', 'np. Monitor, Rekorder')}
+        {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.intakeCondition, 'Stany przyjęcia', 'Lista stanów sprzętu klienta przy przyjęciu do serwisu.', 'np. Porysowany')}
+        {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.externalService, 'Serwisy zewnętrzne', 'Lista serwisów, do których może zostać przekazany sprzęt klienta.', 'np. Sony Polska')}
+        {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.progressTemplate, 'Szablony postępów', 'Szybkie wpisy dodawane w historii zgłoszenia.', 'np. Klient poinformowany')}
+      </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'documents' && <div className="documents-settings-pane">
-        <div className="firm-settings-header documents-settings-header">
-          <div>
-            <h3>Dokumenty PDF</h3>
-            <p className="muted">Ustawienia używane przez eksport PDF oraz numerację nowych dokumentów.</p>
-          </div>
-          <div className="settings-action-row">
-            <AppButton variant="secondary" size="sm" onClick={resetDocumentSettingsState}><RotateCcw size={14} />Domyślne</AppButton>
-            <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={15} />Zapisz</AppButton>
-          </div>
-        </div>
-        {documentSettingsNotice && <div className="notice firm-save-notice">{documentSettingsNotice}</div>}
+      {activeSection === 'documents' && <DocumentsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace">
+        <aside className="documents-nav-panel documents-v2-nav">
+          {[
+            ['profile', 'Profil dokumentów', 'Dane firmy i typy dokumentów'],
+            ['numbering', 'Numeracja', 'Prefiksy, formaty i przykłady'],
+            ['agreement', 'Umowa wypożyczenia', 'Układ, kolumny, warunki i podgląd'],
+            ['header', 'Nagłówek i logo', 'Logo oraz tekst nad dokumentem'],
+            ['footer', 'Stopka dokumentów', 'Tekst końcowy na PDF'],
+            ['exchange', 'Import / eksport', 'Konfiguracja szablonów']
+          ].map(([id, label, description]) => <button key={id} type="button" className={`documents-nav-item ${activeDocumentPanel === id ? 'active' : ''}`} onClick={() => setActiveDocumentPanel(id)}>
+            <strong>{label}</strong><small>{description}</small>
+          </button>)}
+        </aside>
+        <div className="documents-detail-panel documents-v2-detail">
+          {documentSettingsNotice && <div className="notice firm-save-notice settings-inline-notice">{documentSettingsNotice}</div>}
 
-        <div className="documents-settings-grid">
-          <section className="settings-card compact-admin-card firm-card documents-card documents-templates-card">
-            <h3>Szablony PDF</h3>
-            <div className="document-template-list">
-              {documentTemplateRows.map(([key, label]) => <label className="firm-field document-template-row" key={key}>
-                {label}
-                <AppSelect value={documentSettings.templates[key] ?? 'Standardowy'} onChange={(event) => updateDocumentTemplate(key, event.target.value)}>
-                  {DOCUMENT_TEMPLATE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                </AppSelect>
-              </label>)}
+          {activeDocumentPanel === 'profile' && <section className="settings-config-card documents-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">Dokumenty</p><h3>Profil dokumentów</h3><p className="muted">Wspólne ustawienia używane przez dokumenty. Dane firmy są zarządzane w sekcji Firma.</p></div>
+              <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={14} />Zapisz</AppButton>
             </div>
-          </section>
-
-          <section className="settings-card compact-admin-card firm-card documents-card document-template-builder-card">
-            <div className="documents-card-header-row">
-              <div>
-                <p className="eyebrow">Szablony dokumentów</p>
-                <h3>Umowa wypożyczenia</h3>
+            <div className="documents-profile-grid">
+              <div className="settings-form-section">
+                <div className="settings-section-title"><h4>Dane firmy na dokumentach</h4><p className="muted">To jest podgląd profilu firmy, bez drugiego niezależnego formularza.</p></div>
+                <div className="firm-document-preview compact-document-preview">
+                  {companyProfile.logoDataUrl && companyProfile.showLogoOnDocuments !== false && <img src={companyProfile.logoDataUrl} alt="Logo firmy" />}
+                  <strong>{companyProfile.legalName || companyProfile.name || 'Dane firmy'}</strong>
+                  <span>{formatCompanyAddress(companyProfile) || 'Adres pobierany z sekcji Firma'}</span>
+                  <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON / KRS'}</span>
+                  <span>{formatCompanyContact(companyProfile) || 'Kontakt pobierany z sekcji Firma'}</span>
+                </div>
               </div>
+              <div className="settings-form-section">
+                <div className="settings-section-title"><h4>Szablony dokumentów</h4><p className="muted">Wybór obecnie obsługiwanych wariantów szablonów.</p></div>
+                <div className="document-template-list">
+                  {documentTemplateRows.map(([key, label]) => <label className="firm-field document-template-row" key={key}>
+                    {label}
+                    <AppSelect value={documentSettings.templates[key] ?? 'Standardowy'} onChange={(event) => updateDocumentTemplate(key, event.target.value)}>
+                      {DOCUMENT_TEMPLATE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </AppSelect>
+                  </label>)}
+                </div>
+              </div>
+            </div>
+          </section>}
+
+          {activeDocumentPanel === 'numbering' && <section className="settings-config-card documents-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">Dokumenty</p><h3>Numeracja</h3><p className="muted">Aktualny mechanizm generowania numerów pozostaje bez zmian. Puste prefiksy i formaty nie zostaną zapisane.</p></div>
               <div className="settings-action-row">
-                <AppButton variant="secondary" size="sm" onClick={exportRentalAgreementTemplate}><Download size={14} />Eksport</AppButton>
-                <AppButton variant="secondary" size="sm" onClick={() => templateImportInputRef.current?.click()}><FolderOpen size={14} />Import</AppButton>
-                <input ref={templateImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTemplate} className="backup-file-input" />
+                <AppButton variant="secondary" size="sm" onClick={resetDocumentNumberingState}><RotateCcw size={14} />Domyślne</AppButton>
+                <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={14} />Zapisz</AppButton>
               </div>
             </div>
-            <label className="firm-field">Tytuł dokumentu<AppInput value={rentalAgreementTemplate.documentTitle} onChange={(event) => updateRentalAgreementTemplate((template) => ({ ...template, documentTitle: event.target.value }))} /></label>
-            <div className="document-template-management-grid">
-              <div className="document-template-control-panel">
-                <div className="documents-subheader">
-                  <strong>Kolumny tabeli sprzętu</strong>
-                  <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementColumns}><RotateCcw size={13} />Reset</AppButton>
-                </div>
-                <div className="document-column-list">
-                  {rentalAgreementTemplate.columns.map((column, index) => <div key={column.key} className="document-column-row">
-                    <label className="settings-check"><input type="checkbox" checked={column.enabled} onChange={() => toggleRentalAgreementColumn(column.key)} />{column.label}</label>
-                    <div className="dictionary-row-actions dictionary-icon-actions">
-                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, -1)} disabled={index === 0} aria-label="Przenieś wyżej" title="Przenieś wyżej"><ArrowUp size={14} /></button>
-                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, 1)} disabled={index === rentalAgreementTemplate.columns.length - 1} aria-label="Przenieś niżej" title="Przenieś niżej"><ArrowDown size={14} /></button>
-                    </div>
-                  </div>)}
-                </div>
+            <div className="document-numbering-list documents-numbering-v2">
+              {documentNumberingRows.map((row) => {
+                const prefixEmpty = !String(row.value.prefix ?? '').trim();
+                const formatEmpty = !String(row.value.format ?? '').trim();
+                return <div className={`document-numbering-row ${prefixEmpty || formatEmpty ? 'invalid' : ''}`} key={row.key}>
+                  <strong>{row.label}</strong>
+                  <label className="firm-field">Prefiks<AppInput value={row.value.prefix} onChange={(event) => row.onChange(row.key, 'prefix', event.target.value)} />{prefixEmpty && <small className="settings-field-error">Prefiks jest wymagany.</small>}</label>
+                  <label className="firm-field">Format<AppSelect value={row.value.format} onChange={(event) => row.onChange(row.key, 'format', event.target.value)}>{RENTAL_NUMBER_FORMATS.map((format) => <option key={format.value} value={format.value}>{format.label}</option>)}</AppSelect>{formatEmpty && <small className="settings-field-error">Format jest wymagany.</small>}</label>
+                  <label className="firm-field">Cyfry<AppInput type="number" min="1" value={row.value.padding ?? 3} onChange={(event) => row.onChange(row.key, 'padding', event.target.value)} /></label>
+                  <span className="document-number-preview"><small>Przykład</small>{row.preview}</span>
+                </div>;
+              })}
+            </div>
+          </section>}
+
+          {activeDocumentPanel === 'agreement' && <section className="settings-config-card documents-config-card agreement-settings-card-v2">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">Szablon</p><h3>Umowa wypożyczenia sprzętu</h3><p className="muted">Konfiguracja układu, kolumn sprzętu, warunków i podglądu umowy.</p></div>
+              <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={14} />Zapisz</AppButton>
+            </div>
+            <div className="agreement-subtabs">
+              {[
+                ['layout', 'Nagłówek'],
+                ['columns', 'Kolumny sprzętu'],
+                ['terms', 'Warunki'],
+                ['preview', 'Podgląd']
+              ].map(([id, label]) => <button key={id} type="button" className={`agreement-subtab ${activeAgreementTab === id ? 'active' : ''}`} onClick={() => setActiveAgreementTab(id)}>{label}</button>)}
+            </div>
+
+            {activeAgreementTab === 'layout' && <div className="document-section-content compact-document-form">
+              <div className="settings-form-section">
+                <div className="settings-section-title"><h4>Dane nagłówka umowy</h4><p className="muted">Dane firmy i logo pochodzą z profilu firmy. Tutaj ustawiasz tekst właściwy dla umowy.</p></div>
+                <label className="firm-field">Tytuł dokumentu<AppInput value={rentalAgreementTemplate.documentTitle} onChange={(event) => updateRentalAgreementTemplate((template) => ({ ...template, documentTitle: event.target.value }))} /></label>
+                <label className="firm-field">Miejscowość dokumentów<AppInput value={companyProfile.documentCity} onChange={(event) => updateCompanyProfile('documentCity', event.target.value)} placeholder="np. Zabrzu" /><small>System nie odmienia automatycznie nazw miejscowości.</small></label>
               </div>
-              <div className="document-template-control-panel">
-                <div className="documents-subheader">
-                  <strong>Warunki umowy</strong>
-                  <div className="settings-action-row">
-                    <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementTerms}><RotateCcw size={13} />Reset</AppButton>
-                    <AppButton variant="secondary" size="sm" onClick={addRentalAgreementTerm}><Plus size={13} />Dodaj</AppButton>
+            </div>}
+
+            {activeAgreementTab === 'columns' && <div className="document-section-content">
+              <div className="documents-subheader">
+                <strong>Kolumny tabeli sprzętu</strong>
+                <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementColumns}><RotateCcw size={13} />Domyślne</AppButton>
+              </div>
+              <div className="document-column-list compact-column-list">
+                {rentalAgreementTemplate.columns.map((column, index) => <div key={column.key} className="document-column-row compact">
+                  <label className="settings-check"><input type="checkbox" checked={column.enabled} onChange={() => toggleRentalAgreementColumn(column.key)} /><span>{column.label}</span></label>
+                  <div className="dictionary-row-actions dictionary-icon-actions">
+                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, -1)} disabled={index === 0} aria-label="Przenieś wyżej" title="Przenieś wyżej"><ArrowUp size={14} /></button>
+                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementColumn(column.key, 1)} disabled={index === rentalAgreementTemplate.columns.length - 1} aria-label="Przenieś niżej" title="Przenieś niżej"><ArrowDown size={14} /></button>
                   </div>
+                </div>)}
+              </div>
+            </div>}
+
+            {activeAgreementTab === 'terms' && <div className="document-section-content">
+              <div className="documents-subheader">
+                <strong>Warunki umowy</strong>
+                <div className="settings-action-row">
+                  <AppButton variant="secondary" size="sm" onClick={resetRentalAgreementTerms}><RotateCcw size={13} />Reset</AppButton>
+                  <AppButton variant="secondary" size="sm" onClick={exportRentalAgreementTerms}><Download size={13} />Eksport</AppButton>
+                  <AppButton variant="secondary" size="sm" onClick={() => termsImportInputRef.current?.click()}><FolderOpen size={13} />Import</AppButton>
+                  <AppButton variant="secondary" size="sm" onClick={addRentalAgreementTerm}><Plus size={13} />Dodaj</AppButton>
+                  <input ref={termsImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTerms} className="backup-file-input" />
                 </div>
-                <div className="document-terms-list">
-                  {rentalAgreementTemplate.terms.map((term, index) => <div key={`${index}-${term.slice(0, 12)}`} className="document-term-row">
-                    <span>{index + 1}</span>
-                    <AppTextarea value={term} onChange={(event) => updateRentalAgreementTerm(index, event.target.value)} />
-                    <div className="dictionary-row-actions dictionary-icon-actions">
-                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, -1)} disabled={index === 0} aria-label="Przenieś wyżej" title="Przenieś wyżej"><ArrowUp size={14} /></button>
-                      <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, 1)} disabled={index === rentalAgreementTemplate.terms.length - 1} aria-label="Przenieś niżej" title="Przenieś niżej"><ArrowDown size={14} /></button>
-                      <button type="button" className="dictionary-icon-button remove" onClick={() => removeRentalAgreementTerm(index)} disabled={rentalAgreementTemplate.terms.length <= 1} aria-label="Usuń punkt" title="Usuń punkt"><Trash2 size={14} /></button>
-                    </div>
-                  </div>)}
+              </div>
+              <div className="document-terms-list compact-terms-list">
+                {rentalAgreementTemplate.terms.map((term, index) => <div key={`${index}-${term.slice(0, 12)}`} className="document-term-row compact">
+                  <span>{index + 1}</span>
+                  <AppTextarea value={term} onChange={(event) => updateRentalAgreementTerm(index, event.target.value)} rows={2} />
+                  <div className="dictionary-row-actions dictionary-icon-actions">
+                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, -1)} disabled={index === 0} aria-label="Przenieś wyżej"><ArrowUp size={14} /></button>
+                    <button type="button" className="dictionary-icon-button" onClick={() => moveRentalAgreementTerm(index, 1)} disabled={index === rentalAgreementTemplate.terms.length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
+                    <button type="button" className="dictionary-icon-button remove" onClick={() => removeRentalAgreementTerm(index)} disabled={rentalAgreementTemplate.terms.length <= 1} aria-label="Usuń"><Trash2 size={14} /></button>
+                  </div>
+                </div>)}
+              </div>
+            </div>}
+
+            {activeAgreementTab === 'preview' && <div className="document-section-content document-preview-tab">
+              <div className="documents-card-header-row">
+                <div><strong>Podgląd A4</strong><p className="muted">Podgląd używa aktualnych ustawień, także niezapisanych.</p></div>
+                <div className="settings-action-row">
+                  <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(rentalAgreementPreviewHtml)}><FileText size={14} />Generuj PDF</AppButton>
+                  <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(rentalAgreementPreviewHtml)}><Printer size={14} />Drukuj</AppButton>
+                  <AppButton variant="primary" size="sm" onClick={() => printHtmlInIframe(rentalAgreementPreviewHtml)}><Download size={14} />Pobierz</AppButton>
+                </div>
+              </div>
+              <div className="document-a4-preview-frame">
+                <iframe title="Podgląd szablonu umowy wypożyczenia" srcDoc={rentalAgreementPreviewHtml} />
+              </div>
+            </div>}
+          </section>}
+
+          {activeDocumentPanel === 'header' && <section className="settings-config-card documents-config-card">
+            <div className="settings-config-card-header"><div><p className="eyebrow">Dokumenty</p><h3>Nagłówek i logo</h3><p className="muted">Logo jest zarządzane w sekcji Firma. Tutaj decydujesz, czy pojawia się na dokumentach i jaki tekst nagłówka ma być użyty.</p></div><AppButton variant="primary" size="sm" onClick={saveCompanySettings}><Save size={14} />Zapisz</AppButton></div>
+            <div className="documents-header-layout">
+              <div className="settings-form-section">
+                <label className="firm-field firm-field-footer">Tekst nagłówka PDF<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} rows={3} /></label>
+                <label className="settings-option-row"><input type="checkbox" checked={companyProfile.showLogoOnDocuments !== false} onChange={(event) => updateCompanyProfile('showLogoOnDocuments', event.target.checked)} /><span><strong>Pokazuj logo firmy na PDF</strong><small>Logo pochodzi z profilu firmy i nie jest przesyłane osobno w Dokumentach.</small></span></label>
+              </div>
+              <div className="settings-form-section">
+                <div className="settings-section-title"><h4>Podgląd danych firmy</h4><p className="muted">Źródłem danych jest sekcja Firma.</p></div>
+                <div className="firm-document-preview compact-document-preview">
+                  {companyProfile.logoDataUrl && companyProfile.showLogoOnDocuments !== false && <img src={companyProfile.logoDataUrl} alt="Logo firmy" />}
+                  <strong>{companyProfile.legalName || companyProfile.name || 'Dane firmy'}</strong>
+                  <span>{formatCompanyAddress(companyProfile) || 'Adres pobierany z zakładki Firma'}</span>
+                  <span>{formatCompanyContact(companyProfile) || 'Kontakt pobierany z zakładki Firma'}</span>
                 </div>
               </div>
             </div>
-          </section>
+          </section>}
 
-          <section className="settings-card compact-admin-card firm-card documents-card document-preview-card">
-            <div className="documents-card-header-row">
-              <div>
-                <p className="eyebrow">Podgląd</p>
-                <h3>Układ umowy</h3>
-              </div>
-              <AppButton variant="secondary" size="sm" onClick={() => setDocFullPreviewHtml(rentalAgreementPreviewHtml)}><FileText size={14} />Pełny podgląd</AppButton>
-            </div>
-            <div className="document-template-preview-frame">
-              <iframe title="Podgląd szablonu umowy wypożyczenia" srcDoc={rentalAgreementPreviewHtml} />
-            </div>
-          </section>
+          {activeDocumentPanel === 'footer' && <section className="settings-config-card documents-config-card">
+            <div className="settings-config-card-header"><div><p className="eyebrow">Dokumenty</p><h3>Stopka dokumentów</h3><p className="muted">Tekst widoczny na generowanych dokumentach, gdy szablon go wykorzystuje.</p></div><AppButton variant="primary" size="sm" onClick={saveCompanySettings}><Save size={14} />Zapisz</AppButton></div>
+            <label className="firm-field firm-field-footer">Tekst stopki PDF<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} rows={4} /></label>
+            <div className="firm-preview document-footer-preview"><span>{companyProfile.documentFooter?.trim() || 'Stopka pojawi się na dokumentach po zapisaniu tekstu.'}</span></div>
+          </section>}
 
-          <section className="settings-card compact-admin-card firm-card documents-card documents-header-card">
-            <h3>Nagłówki dokumentów</h3>
-            <label className="firm-field firm-field-footer">Tekst nagłówka PDF<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} placeholder="np. Dokument wygenerowany przez FIXER WEB" /></label>
-            <label className="settings-check"><input type="checkbox" checked={companyProfile.showLogoOnDocuments !== false} onChange={(event) => updateCompanyProfile('showLogoOnDocuments', event.target.checked)} />Pokazuj logo firmy na PDF</label>
-            <div className="firm-preview document-company-source">
-              <strong>{companyProfile.legalName || companyProfile.name || 'Dane firmy'}</strong>
-              <span>{formatCompanyAddress(companyProfile) || 'Adres pobierany z zakładki Firma'}</span>
-              <span>{formatCompanyContact(companyProfile) || 'Kontakt pobierany z zakładki Firma'}</span>
+          {activeDocumentPanel === 'exchange' && <section className="settings-config-card documents-config-card">
+            <div className="settings-config-card-header"><div><p className="eyebrow">Konfiguracja</p><h3>Import / eksport</h3><p className="muted">Format eksportu pozostaje zgodny z dotychczasową konfiguracją szablonu umowy.</p></div></div>
+            <div className="document-exchange-grid">
+              <button type="button" className="backup-action-button" onClick={exportRentalAgreementTemplate}><Download size={18} /><span><strong>Eksportuj szablon umowy</strong><small>Kolumny, kolejność i warunki umowy.</small></span></button>
+              <button type="button" className="backup-action-button" onClick={() => templateImportInputRef.current?.click()}><FolderOpen size={18} /><span><strong>Importuj szablon umowy</strong><small>Nadpisze bieżącą konfigurację w formularzu po potwierdzeniu.</small></span></button>
+              <button type="button" className="backup-action-button" onClick={exportRentalAgreementTerms}><Download size={18} /><span><strong>Eksportuj warunki</strong><small>Same punkty umowy, bez układu kolumn.</small></span></button>
+              <button type="button" className="backup-action-button" onClick={() => termsImportInputRef.current?.click()}><FolderOpen size={18} /><span><strong>Importuj warunki</strong><small>Podmieni listę punktów po potwierdzeniu.</small></span></button>
+              <input ref={templateImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTemplate} className="backup-file-input" />
+              <input ref={termsImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTerms} className="backup-file-input" />
             </div>
-          </section>
-
-          <section className="settings-card compact-admin-card firm-card documents-card documents-footer-card">
-            <h3>Stopki dokumentów</h3>
-            <label className="firm-field firm-field-footer">Tekst stopki PDF<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} placeholder="np. Dziękujemy za współpracę. W razie pytań prosimy o kontakt." /></label>
-            <div className="firm-preview document-footer-preview">
-              <span>{companyProfile.documentFooter?.trim() || 'Stopka pojawi się na eksportowanych dokumentach PDF po zapisaniu tekstu.'}</span>
-            </div>
-          </section>
-
-          <section className="settings-card compact-admin-card firm-card documents-card documents-numbering-card">
-            <h3>Numeracja dokumentów</h3>
-            <div className="document-numbering-list">
-              {documentNumberingRows.map((row) => <div className="document-numbering-row" key={row.key}>
-                <strong>{row.label}</strong>
-                <label className="firm-field">Prefiks<AppInput value={row.value.prefix} onChange={(event) => row.onChange(row.key, 'prefix', event.target.value)} /></label>
-                <label className="firm-field">Format<AppSelect value={row.value.format} onChange={(event) => row.onChange(row.key, 'format', event.target.value)}>{RENTAL_NUMBER_FORMATS.map((format) => <option key={format.value} value={format.value}>{format.label}</option>)}</AppSelect></label>
-                <label className="firm-field">Cyfry<AppInput type="number" min="1" value={row.value.padding ?? 3} onChange={(event) => row.onChange(row.key, 'padding', event.target.value)} /></label>
-                <span className="document-number-preview">{row.preview}</span>
-              </div>)}
-            </div>
-          </section>
+          </section>}
         </div>
-      </div>}
+      </div></DocumentsSettingsPanel>}
 
-      {activeSection === 'backups' && <div className="backup-settings-pane">
-        <div className="firm-settings-header backup-settings-header">
-          <div>
-            <h3>Kopie bezpieczeństwa</h3>
-            <p className="muted">Eksport pełnego stanu programu do jednego pliku JSON oraz szybkie eksporty CSV.</p>
-          </div>
-          <div className="settings-action-row">
-            <AppButton variant="primary" size="sm" onClick={() => createBackupFile()} disabled={backupBusy}><Download size={15} />Utwórz backup</AppButton>
-            <AppButton variant="secondary" size="sm" onClick={() => restoreInputRef.current?.click()} disabled={backupBusy}><FolderOpen size={15} />Przywróć backup</AppButton>
-            <input ref={restoreInputRef} type="file" accept="application/json,.json" onChange={handleRestoreFile} className="backup-file-input" />
-          </div>
-        </div>
-        {backupNotice && <div className="notice firm-save-notice">{backupNotice}</div>}
+      {activeSection === 'system' && <SystemSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace settings-subsystem-workspace">
+        <aside className="documents-nav-panel documents-v2-nav settings-subsystem-nav">
+          {[
+            ['backup', 'Backup', 'Pełna kopia danych'],
+            ['restore', 'Restore', 'Przywracanie z pliku'],
+            ['csv', 'Eksport CSV', 'Szybkie eksporty tabel'],
+            ['diagnostics', 'Diagnostyka', 'Czytelny stan systemu']
+          ].map(([id, label, description]) => <button key={id} type="button" className={`documents-nav-item ${activeSystemPanel === id ? 'active' : ''}`} onClick={() => setActiveSystemPanel(id)}>
+            <strong>{label}</strong><small>{description}</small>
+          </button>)}
+        </aside>
+        <div className="documents-detail-panel documents-v2-detail settings-subsystem-detail">
+          {backupNotice && <div className="notice firm-save-notice settings-inline-notice">{backupNotice}</div>}
+          <input ref={restoreInputRef} type="file" accept="application/json,.json" onChange={handleRestoreFile} className="backup-file-input" />
 
-        <div className="backup-settings-grid">
-          <section className="settings-card compact-admin-card firm-card backup-card backup-primary-card">
-            <h3>Pełny backup</h3>
-            <div className="backup-action-grid">
+          {activeSystemPanel === 'backup' && <section className="settings-config-card system-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">System</p><h3>Backup</h3><p className="muted">Pełna kopia danych, relacji i ustawień programu do jednego pliku JSON.</p></div>
+              <AppButton variant="primary" size="sm" onClick={() => createBackupFile()} disabled={backupBusy}><Download size={15} />Utwórz backup</AppButton>
+            </div>
+            <div className="system-action-grid">
               <button type="button" className="backup-action-button primary" onClick={() => createBackupFile()} disabled={backupBusy}>
                 <Download size={18} />
-                <span><strong>Utwórz backup</strong><small>Jeden plik JSON z danymi, relacjami i ustawieniami.</small></span>
+                <span><strong>Utwórz pełną kopię</strong><small>Plik obejmuje dane aplikacji, relacje oraz ustawienia lokalne.</small></span>
               </button>
+              <div className="system-info-panel">
+                <strong>Zakres kopii</strong>
+                <p className="muted">Backup obejmuje wszystkie aktualnie obsługiwane obszary danych w FIXER WEB.</p>
+                <div className="backup-scope-list compact-scope-list">
+                  {BACKUP_INCLUDED_TABLES.map((table) => <span key={table}>{formatBackupTableLabel(table)}</span>)}
+                </div>
+              </div>
+            </div>
+          </section>}
+
+          {activeSystemPanel === 'restore' && <section className="settings-config-card system-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">System</p><h3>Restore</h3><p className="muted">Przywracanie danych z pliku backupu. Przed nadpisaniem danych pojawi się potwierdzenie.</p></div>
+              <AppButton variant="secondary" size="sm" onClick={() => restoreInputRef.current?.click()} disabled={backupBusy}><FolderOpen size={15} />Wybierz plik</AppButton>
+            </div>
+            <div className="system-action-grid one-column">
               <button type="button" className="backup-action-button" onClick={() => restoreInputRef.current?.click()} disabled={backupBusy}>
                 <FolderOpen size={18} />
-                <span><strong>Przywróć backup</strong><small>Przed importem wybierzesz, czy wykonać kopię obecnych danych.</small></span>
+                <span><strong>Przywróć z backupu</strong><small>Po wybraniu pliku system pokaże podsumowanie i poprosi o potwierdzenie importu.</small></span>
               </button>
+              <div className="system-warning-panel">
+                <strong>Bezpieczny import</strong>
+                <p>Restore może zastąpić obecne dane. Istniejący modal potwierdzenia pozostaje bez zmian i blokuje przypadkowe nadpisanie.</p>
+              </div>
             </div>
-          </section>
+          </section>}
 
-          <section className="settings-card compact-admin-card firm-card backup-card">
-            <h3>Eksport CSV</h3>
-            <div className="backup-csv-grid">
+          {activeSystemPanel === 'csv' && <section className="settings-config-card system-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">System</p><h3>Eksport CSV</h3><p className="muted">Szybki eksport danych operacyjnych do arkuszy. Format eksportu pozostaje bez zmian.</p></div>
+            </div>
+            <div className="backup-csv-grid system-csv-grid">
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('clients')} disabled={backupBusy}>Klienci CSV</AppButton>
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('equipment')} disabled={backupBusy}>Sprzęt CSV</AppButton>
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('rentals')} disabled={backupBusy}>Wypożyczenia CSV</AppButton>
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('service')} disabled={backupBusy}>Serwis CSV</AppButton>
               <AppButton variant="secondary" size="sm" onClick={() => exportBackupCsv('organizer')} disabled={backupBusy}>Zadania CSV</AppButton>
             </div>
-          </section>
+          </section>}
 
-          <section className="settings-card compact-admin-card firm-card backup-card backup-scope-card">
-            <h3>Zakres backupu</h3>
-            <div className="backup-scope-list">
-              {BACKUP_INCLUDED_TABLES.map((table) => <span key={table}>{formatBackupTableLabel(table)}</span>)}
+          {activeSystemPanel === 'diagnostics' && <section className="settings-config-card system-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">System</p><h3>Diagnostyka</h3><p className="muted">Krótki, użytkowy przegląd konfiguracji administracyjnej bez technicznych tabel.</p></div>
             </div>
-          </section>
+            <div className="system-diagnostics-grid">
+              <div className="system-diagnostic-row"><strong>Backup</strong><span>{BACKUP_INCLUDED_TABLES.length} obszarów danych w pełnej kopii</span></div>
+              <div className="system-diagnostic-row"><strong>Eksport CSV</strong><span>Klienci, Sprzęt, Wypożyczenia, Serwis i Zadania</span></div>
+              <div className="system-diagnostic-row"><strong>Kalendarz</strong><span>{CALENDAR_SOURCES.length} źródeł skonfigurowanych w Integracjach</span></div>
+              <div className="system-diagnostic-row"><strong>Ustawienia lokalne</strong><span>Preferencje interfejsu i dokumentów są przechowywane lokalnie zgodnie z dotychczasowym mechanizmem.</span></div>
+            </div>
+          </section>}
         </div>
-      </div>}
+      </div></SystemSettingsPanel>}
 
-      {activeSection === 'rentals' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid rental-settings-grid">
-        <div className="settings-card wide-settings-card rental-numbering-card compact-admin-card">
-          <div>
-            <p className="eyebrow">Numeracja</p>
-            <h3>Numeracja wypożyczeń</h3>
-            <p className="muted">Nowe dokumenty użyją wybranego prefiksu i formatu. Istniejące wypożyczenia pozostają bez zmian.</p>
-          </div>
-          <div className="rental-numbering-form">
-            <label className="settings-field">Prefiks<AppInput value={rentalNumbering.prefix} onChange={(event) => updateRentalNumbering('prefix', event.target.value)} placeholder="WYP" /></label>
-            <label className="settings-field">Format<AppSelect value={rentalNumbering.format} onChange={(event) => updateRentalNumbering('format', event.target.value)}>{RENTAL_NUMBER_FORMATS.map((format) => <option key={format.value} value={format.value}>{format.label}</option>)}</AppSelect></label>
-            <label className="settings-field">Termin zwrotu<AppInput type="number" min="0" value={rentalNumbering.defaultReturnDays} onChange={(event) => updateRentalNumbering('defaultReturnDays', event.target.value)} /></label>
-            <label className="settings-field">Waluta<AppInput value={rentalNumbering.currency} onChange={(event) => updateRentalNumbering('currency', event.target.value)} /></label>
-            <div className="rental-number-preview"><span>Przykład</span><strong>{formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00'))}</strong></div>
-            <div className="settings-action-row rental-numbering-actions">
-              <AppButton variant="secondary" size="sm" onClick={resetRentalNumbering}>Domyślne</AppButton>
-              <AppButton variant="primary" size="sm" onClick={saveRentalNumbering}><Save size={15} />Zapisz</AppButton>
-            </div>
-          </div>
-          {rentalNumberingNotice && <div className="notice">{rentalNumberingNotice}</div>}
-        </div>
-        {renderConfigDictionaryCard('rentalTypes', 'Typy wypożyczeń', 'Lista typów widoczna w kartotece wypożyczenia.')}
-        {renderConfigDictionaryCard('returnConditions', 'Stany zwrotu', 'Lista stanów widoczna w oknie rejestracji zwrotu.')}
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div><h3>Kolory statusów wypożyczeń</h3><p className="muted">Statusy systemowe widoczne w tabelach i na Dashboardzie.</p></div>
-          </div>
-          <div className="dictionary-list dictionary-list-compact">
-            {['Aktywne', 'Częściowo zwrócone', 'Zwrócone', 'Po terminie'].map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
-              <span className="dictionary-name-static">{status}</span>
-              <div className="dictionary-row-actions dictionary-icon-actions">
-                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
-              </div>
-            </div>)}
-          </div>
-        </div>
-      </div>}
+      {activeSection === 'dictionaries' && activeSubsInSection === 'rentals' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        {renderConfigDictionaryEditor('rentalTypes', 'Typy wypożyczeń', 'Lista typów widoczna w kartotece wypożyczenia.')}
+        {renderConfigDictionaryEditor('returnConditions', 'Stany zwrotu', 'Lista stanów widoczna w oknie rejestracji zwrotu.')}
+        {renderReadonlyDictionaryEditor('Statusy wypożyczeń', 'Statusy systemowe widoczne w tabelach i na Dashboardzie.', ['Aktywne', 'Częściowo zwrócone', 'Zwrócone', 'Po terminie'], { supportsColor: true })}
+      </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'projects' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div>
-              <h3>Kategorie zadań</h3>
-              <p className="muted">Lista kategorii / tagów widoczna przy prostych zadaniach w module Zadania i projekty.</p>
-            </div>
-            <AppButton variant="secondary" size="sm" className="dictionary-reset-button" onClick={resetOrganizerCategoryItems}>Domyślne</AppButton>
-          </div>
-          <div className="dictionary-add-compact">
-            <AppInput value={newOrganizerCategory} onChange={(e) => setNewOrganizerCategory(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addOrganizerCategoryItem(); }} placeholder="np. Finanse" />
-            <button type="button" className="dictionary-icon-button add" onClick={addOrganizerCategoryItem} aria-label="Dodaj" title="Dodaj"><Plus size={16} /></button>
-          </div>
-          <div className="dictionary-list dictionary-list-compact">
-            {organizerCategoryItems.map((item) => {
-              const isEditing = editingOrganizerCategory?.id === item.id;
-              return <div className={`dictionary-row dictionary-row-compact ${isEditing ? 'editing' : ''}`} key={item.id}>
-                {isEditing
-                  ? <input value={editingOrganizerCategoryValue} onChange={(e) => setEditingOrganizerCategoryValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveOrganizerCategoryItem(); if (e.key === 'Escape') { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); } }} autoFocus />
-                  : <button type="button" className="dictionary-name-button" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} title="Edytuj">{item.name}</button>}
-                <div className="dictionary-row-actions dictionary-icon-actions">
-                  {isEditing
-                    ? <><button type="button" className="dictionary-icon-button save" onClick={saveOrganizerCategoryItem} aria-label="Zapisz"><Save size={15} /></button><button type="button" className="dictionary-icon-button cancel" onClick={() => { setEditingOrganizerCategory(null); setEditingOrganizerCategoryValue(''); }} aria-label="Anuluj"><X size={15} /></button></>
-                    : <><button type="button" className="dictionary-icon-button edit" onClick={() => { setEditingOrganizerCategory(item); setEditingOrganizerCategoryValue(item.name); }} aria-label="Edytuj">✎</button><button type="button" className="dictionary-icon-button remove" onClick={() => deleteOrganizerCategoryItem(item)} aria-label="Usuń">−</button></>}
-                </div>
-              </div>;
-            })}
-          </div>
-        </div>
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div><h3>Kolory statusów zadań</h3><p className="muted">Kolor widoczny przy statusach prostych zadań w module Zadania i projekty.</p></div>
-          </div>
-          <div className="dictionary-list dictionary-list-compact">
-            {ORGANIZER_TASK_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
-              <span className="dictionary-name-static">{status}</span>
-              <div className="dictionary-row-actions dictionary-icon-actions">
-                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
-              </div>
-            </div>)}
-          </div>
-        </div>
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div><h3>Kolory statusów projektów</h3><p className="muted">Kolor widoczny przy statusach projektów w module Zadania i projekty.</p></div>
-          </div>
-          <div className="dictionary-list dictionary-list-compact">
-            {PROJECT_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
-              <span className="dictionary-name-static">{status}</span>
-              <div className="dictionary-row-actions dictionary-icon-actions">
-                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
-              </div>
-            </div>)}
-          </div>
-        </div>
-        <div className="settings-card compact-admin-card settings-dictionary-card dictionary-card-compact-list">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div><h3>Kolory statusów zadań projektów</h3><p className="muted">Kolor widoczny przy statusach zadań wewnątrz projektów.</p></div>
-          </div>
-          <div className="dictionary-list dictionary-list-compact">
-            {PROJECT_TASK_STATUSES.map((status) => <div key={status} className="dictionary-row dictionary-row-compact">
-              <span className="dictionary-name-static">{status}</span>
-              <div className="dictionary-row-actions dictionary-icon-actions">
-                <StatusColorPicker statusName={status} currentHex={statusColors[status.toLowerCase()]} onSelect={onStatusColorChange} />
-              </div>
-            </div>)}
-          </div>
-        </div>
+      {activeSection === 'dictionaries' && activeSubsInSection === 'projects' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
+        {renderOrganizerCategoryDictionaryEditor()}
+        {renderReadonlyDictionaryEditor('Statusy zadań', 'Statusy systemowe prostych zadań w module Zadania i projekty.', ORGANIZER_TASK_STATUSES, { supportsColor: true })}
+        {renderReadonlyDictionaryEditor('Priorytety zadań i projektów', 'Priorytety systemowe używane przy zadaniach prostych, projektach i zadaniach projektowych.', [...new Set([...ORGANIZER_TASK_PRIORITIES, ...PROJECT_PRIORITIES, ...PROJECT_TASK_PRIORITIES])])}
+        {renderReadonlyDictionaryEditor('Statusy projektów', 'Statusy systemowe projektów w module Zadania i projekty.', PROJECT_STATUSES, { supportsColor: true })}
+        {renderReadonlyDictionaryEditor('Statusy zadań projektów', 'Statusy systemowe zadań wewnątrz projektów.', PROJECT_TASK_STATUSES, { supportsColor: true })}
         <div className="settings-card compact-admin-card">
           <h3>Numeracja projektów</h3>
           <p className="muted">Numerację projektów można skonfigurować w sekcji <strong>Dokumenty → Numeracja</strong>.</p>
         </div>
-      </div>}
+      </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'calendar' && <div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid calendar-settings-grid">
-        <div className="settings-card compact-admin-card settings-dictionary-card calendar-source-settings-card">
-          <div className="settings-card-header compact-card-header dictionary-card-header">
-            <div>
-              <h3>Źródła kalendarza</h3>
-              <p className="muted">Ustaw domyślną widoczność źródeł. To nie wyłącza powiadomień.</p>
+      {activeSection === 'integrations' && <IntegrationsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace settings-subsystem-workspace">
+        <aside className="documents-nav-panel documents-v2-nav settings-subsystem-nav">
+          {[
+            ['calendar', 'Kalendarz', 'Źródła, kolory i widoczność']
+          ].map(([id, label, description]) => <button key={id} type="button" className={`documents-nav-item ${activeIntegrationPanel === id ? 'active' : ''}`} onClick={() => setActiveIntegrationPanel(id)}>
+            <strong>{label}</strong><small>{description}</small>
+          </button>)}
+        </aside>
+        <div className="documents-detail-panel documents-v2-detail settings-subsystem-detail">
+          {activeIntegrationPanel === 'calendar' && <section className="settings-config-card integration-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">Integracje</p><h3>Kalendarz</h3><p className="muted">Domyślna widoczność i kolor każdego źródła kalendarza. Ustawienia są zapisywane dotychczasowym mechanizmem.</p></div>
+              <AppButton variant="secondary" size="sm" onClick={resetCalendarSourceSettings}><RotateCcw size={14} />Domyślne</AppButton>
             </div>
-            <AppButton variant="secondary" size="sm" onClick={resetCalendarSourceSettings}><RotateCcw size={14} />Domyślne</AppButton>
-          </div>
-          <div className="calendar-source-settings-list">
-            {CALENDAR_SOURCES.map((source) => {
-              const settings = calendarSourceSettings[source.id] ?? {};
-              return <div className="calendar-source-settings-row" key={source.id}>
-                <div className="calendar-source-settings-name">
-                  <span className="calendar-source-dot" style={{ background: settings.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] }} />
-                  <strong>{source.label}</strong>
-                </div>
-                <label className="settings-check calendar-source-default-toggle">
-                  <input type="checkbox" checked={settings.enabledByDefault !== false} onChange={(event) => updateCalendarSourceSetting(source.id, 'enabledByDefault', event.target.checked)} />
-                  Widoczne domyślnie
-                </label>
-                <label className="calendar-source-color-field">
-                  Kolor
-                  <AppInput type="color" value={settings.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id]} onChange={(event) => updateCalendarSourceSetting(source.id, 'color', event.target.value)} />
-                </label>
-              </div>;
-            })}
-          </div>
+            <div className="calendar-source-settings-grid integrations-calendar-grid">
+              {CALENDAR_SOURCES.map((source) => {
+                const settings = calendarSourceSettings[source.id] ?? {};
+                const color = settings.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id];
+                return <div className="calendar-source-settings-card-item integration-source-card" key={source.id}>
+                  <div className="calendar-source-preview" style={{ borderColor: color }}>
+                    <span style={{ background: color }} />
+                    <strong>{source.label}</strong>
+                  </div>
+                  <label className="settings-check calendar-source-default-toggle">
+                    <input type="checkbox" checked={settings.enabledByDefault !== false} onChange={(event) => updateCalendarSourceSetting(source.id, 'enabledByDefault', event.target.checked)} />
+                    Widoczne domyślnie
+                  </label>
+                  <label className="calendar-source-color-field">
+                    Kolor źródła
+                    <AppInput type="color" value={color} onChange={(event) => updateCalendarSourceSetting(source.id, 'color', event.target.value)} />
+                  </label>
+                </div>;
+              })}
+            </div>
+            <div className="calendar-work-filter-card integration-filter-summary">
+              <div>
+                <p className="eyebrow">Podgląd startowy</p>
+                <h4>Źródła widoczne po resecie widoku kalendarza</h4>
+                <p className="muted">Bieżący filtr roboczy kalendarza może być tymczasowo inny, ale poniższa lista definiuje stan domyślny.</p>
+              </div>
+              <div className="calendar-work-filter-preview">
+                {CALENDAR_SOURCES.map((source) => {
+                  const settings = calendarSourceSettings[source.id] ?? {};
+                  return <span key={source.id} className={settings.enabledByDefault === false ? 'disabled' : ''}>
+                    <i style={{ background: settings.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] }} />
+                    {source.label}
+                  </span>;
+                })}
+              </div>
+            </div>
+          </section>}
         </div>
-        <div className="settings-card compact-admin-card">
-          <h3>Filtr roboczy</h3>
-          <p className="muted">Dropdown „Źródła” w Kalendarzu jest filtrem bieżącej pracy. Domyślne źródła z tej sekcji zostaną użyte, gdy nie ma zapisanego roboczego wyboru.</p>
-        </div>
-      </div>}
+      </div></IntegrationsSettingsPanel>}
 
       {restoreCandidate && <ModalFrame
         className="backup-restore-modal"
@@ -9146,8 +9260,8 @@ function SettingsGrid({ dashboardIntent, onConsumeDashboardIntent, colorTheme, o
         </div>
       </ModalFrame>}
 
-    </section>
-    {docFullPreviewHtml && <DocumentPreviewModal html={docFullPreviewHtml} title="Podgląd szablonu umowy" onClose={() => setDocFullPreviewHtml(null)} />}
+      </SettingsSectionShell>
+    </div>
   </div>;
 }
 

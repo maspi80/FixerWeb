@@ -221,7 +221,7 @@ th.sorted em{color:#93c5fd}
 .client-modal .modal-header{margin-bottom:6px;align-items:center}
 .client-modal .modal-header .eyebrow{font-size:11px;margin-bottom:4px}
 .client-modal .modal-header h2{font-size:20px;line-height:1.1}
-.client-modal .modal-header .icon-button{width:40px;height:40px;border-radius:14px}
+.client-modal .modal-header .icon-button{width:36px;height:36px;border-radius:12px}
 .client-modal .tabs{gap:8px;margin-bottom:8px;padding-bottom:8px}
 .client-modal .tabs button{font-size:14px;min-height:32px;padding:5px 11px;border-radius:11px}
 .client-form-compact{gap:8px}
@@ -1697,7 +1697,7 @@ th.selection-cell{cursor:default}
 
 /* FIXER global button standard and compact company settings without regressions */
 :root{
-  --fixer-button-height:40px;
+  --fixer-button-height:36px;
   --fixer-button-min-width:124px;
   --fixer-button-radius:12px;
   --fixer-button-gap:8px;
@@ -1712,7 +1712,7 @@ th.selection-cell{cursor:default}
   border-radius:var(--fixer-button-radius);
   justify-content:center;
   padding:0 14px;
-  font-weight:800;
+  font-weight:500;
   line-height:1;
   gap:var(--fixer-button-gap);
 }
@@ -1736,7 +1736,7 @@ th.selection-cell{cursor:default}
   min-height:var(--fixer-button-height);
   border-radius:var(--fixer-button-radius);
   padding:0 14px;
-  font-weight:800;
+  font-weight:500;
 }
 
 .settings-compact-header{
@@ -9203,10 +9203,14 @@ th.expand-cell{cursor:default}
 .section-title { font-weight: 600; }
 .context-menu-title { font-weight: 600; }
 
-/* ── Buttons (legacy classes not covered by DS) ── */
-.primary-button { font-weight: 600; }
-.secondary-button { font-weight: 600; }
-.file-button { font-weight: 600; }
+/* ── Buttons — weight 500, consistent sizes ── */
+.primary-button { font-weight: 500; }
+.secondary-button { font-weight: 500; }
+.file-button { font-weight: 500; }
+/* Hardcoded 40 px heights → align with --fixer-button-height (36 px) */
+.module-actions .module-action-button { min-height: 36px; }
+.theme-choice-button { min-height: 36px; }
+.compact-settings-form .primary-button { min-height: 36px; }
 
 /* ── Status pills (keep slightly heavier for legibility at 12 px) ── */
 .status-pill { font-weight: 700; }

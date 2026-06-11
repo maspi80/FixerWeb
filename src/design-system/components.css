@@ -11,7 +11,7 @@
   padding: 0 var(--fw-space-6);
   color: var(--fw-color-text-soft);
   font: inherit;
-  font-weight: var(--fw-weight-semibold);
+  font-weight: var(--fw-weight-medium);
   cursor: pointer;
 }
 

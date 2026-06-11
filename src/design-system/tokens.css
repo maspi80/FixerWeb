@@ -67,6 +67,13 @@
   --fw-control-height-md: 36px;
   --fw-control-height-lg: 36px;
   --fw-icon-button-size: 40px;
+
+  /* Typographic weight scale */
+  --fw-weight-body:        400; /* body text, helper descriptions, inputs */
+  --fw-weight-medium:      500; /* form labels, inactive tabs, nav items */
+  --fw-weight-semibold:    600; /* section titles, active tabs, buttons */
+  --fw-weight-bold:        700; /* page/panel titles, strong values */
+  --fw-weight-extrabold:   800; /* brand mark, avatar, hero numbers */
 }
 
 .app-shell.theme-light {

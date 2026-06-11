@@ -9182,3 +9182,209 @@ th.expand-cell{cursor:default}
     top: 78px; /* 68 px compact topbar + 10 px gap */
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Typography Slim — v0.6.1
+   Unified font-weight hierarchy across all modules.
+   These rules appear last and override hard-coded weights set per-module above.
+   Hierarchy:
+     body / inputs / hints / empty states  → 400
+     labels / inactive tabs / nav items    → 500
+     section titles / active tabs / badges → 600
+     panel / page titles / strong values   → 700
+     brand mark / avatar / metric heroes   → 800  (unchanged)
+     table sort indicator (th em)          → 900  (unchanged)
+───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Legacy form labels (non-DS modules) ── */
+.login-form label,.form-grid label { font-weight: 500; }
+
+/* ── Global section & context titles ── */
+.section-title { font-weight: 600; }
+.context-menu-title { font-weight: 700; }
+
+/* ── Buttons (legacy classes not covered by DS) ── */
+.primary-button { font-weight: 600; }
+.secondary-button { font-weight: 600; }
+.file-button { font-weight: 600; }
+
+/* ── Status pills (keep slightly heavier for legibility at 12 px) ── */
+.status-pill { font-weight: 700; }
+
+/* ── Tabs — inactive 500, active 600 ── */
+.tabs button { font-weight: 500; }
+.tabs button.active { font-weight: 600; }
+.settings-top-tab,.settings-inner-tab { font-weight: 500; }
+.settings-top-tab.active,.settings-inner-tab.active { font-weight: 600; }
+.settings-sub-tab { font-weight: 500; }
+.settings-sub-tab.active { font-weight: 600; }
+.equipment-tabs button { font-weight: 500; }
+.equipment-tabs button.active { font-weight: 600; }
+.record-tabs button,.service-order-tabs button { font-weight: 500; }
+.record-tabs button.active,.service-order-tabs button.active { font-weight: 600; }
+.calendar-view-switch button { font-weight: 500; }
+.work-type-switch button { font-weight: 500; }
+
+/* ── Sidebar & settings navigation ── */
+.settings-sidebar-item { font-weight: 500; }
+.settings-search-results button,.settings-sidebar-empty { font-weight: 500; }
+.documents-nav-item { font-weight: 500; }
+.documents-nav-item.active { font-weight: 600; }
+.documents-v2-nav .documents-nav-item small { font-weight: 400; }
+.agreement-subtab { font-weight: 500; }
+.agreement-subtab.active { font-weight: 600; }
+
+/* ── Table toolbar / filter bars ── */
+.table-tool-label { font-weight: 500; }
+.column-menu-desktop button,.column-submenu button,.column-submenu label { font-weight: 500; }
+.picker-visible-toggle label { font-weight: 500; }
+.client-filter-bar label { font-weight: 500; }
+.client-filter-bar input,.client-filter-bar select { font-weight: 400; }
+
+/* ── Settings forms ── */
+.settings-field,.settings-check { font-weight: 500; }
+.settings-option-row { font-weight: 400; }
+.settings-option-row small { font-weight: 400; }
+.settings-field-error { font-weight: 400; }
+.theme-choice-button { font-weight: 600; }
+.status-color-picker-label { font-weight: 500; }
+.status-color-reset-btn { font-weight: 500; }
+
+/* ── Company / firm fields ── */
+.company-field { font-weight: 500; }
+.company-field input,.company-field textarea { font-weight: 400; }
+.firm-field { font-weight: 500; }
+.firm-field .app-input,.firm-field .app-textarea { font-weight: 400; }
+.firm-field small { font-weight: 400; }
+.firm-logo-preview { font-weight: 700; }
+.firm-document-preview dt { font-weight: 600; }
+
+/* ── Client modal labels ── */
+.client-modal .notes-label { font-weight: 500; }
+.client-modal label small { font-weight: 400; }
+
+/* ── Equipment modal labels ── */
+.equipment-basic-grid label,.equipment-section-panel label { font-weight: 500; }
+.field-hint { font-weight: 400; }
+
+/* ── Set builder labels ── */
+.set-basic-grid label { font-weight: 500; }
+.set-picker-filters label { font-weight: 500; }
+.set-location-modal label { font-weight: 500; }
+.set-builder-note { font-weight: 400; }
+.empty-set-box { font-weight: 400; }
+.readonly-input { font-weight: 500; }
+.row-expand-button { font-weight: 600; }
+.expanded-set-header span { font-weight: 600; }
+.expanded-set-empty { font-weight: 400; }
+
+/* ── Rental labels & picker toolbars ── */
+.rental-top-grid .ds-form-field,.rental-money-grid .ds-form-field,.rental-client-field { font-weight: 500; }
+.rental-status-field { font-weight: 500; }
+.shared-picker-toolbar label,.equipment-picker-toolbar label { font-weight: 500; }
+.rental-choice-button small { font-weight: 400; }
+.rental-choice-button.ds-button { font-weight: 600; }
+.rental-items-meta { font-weight: 400; }
+.rental-item-name-cell strong { font-weight: 600; }
+.rental-item-name-cell small { font-weight: 400; }
+.rental-item-code-cell { font-weight: 500; }
+.rental-equipment-preview-table td { font-weight: 400; }
+.rentals-section-heading > span { font-weight: 600; }
+.rental-return-summary span { font-weight: 600; }
+.rental-return-summary em { font-weight: 700; }
+.rental-return-name strong { font-weight: 600; }
+.rental-return-name small { font-weight: 400; }
+.rental-return-condition,.rental-return-notes { font-weight: 500; }
+.rental-scanner-field { font-weight: 600; }
+.rental-scanner-notice { font-weight: 600; }
+
+/* ── Document numbering & terms ── */
+.document-term-row > span { font-weight: 600; }
+.document-number-preview { font-weight: 700; }
+.document-number-preview small { font-weight: 500; }
+
+/* ── Dictionary rows ── */
+.dictionary-row span { font-weight: 500; }
+.dictionary-row input { font-weight: 400; }
+.dictionary-add-row input { font-weight: 400; }
+.dictionary-add-compact input,.dictionary-row-compact input { font-weight: 400; }
+.dictionary-field-error { font-weight: 400; }
+.dictionary-empty-row { font-weight: 400; }
+.dictionary-name-button { font-weight: 500; }
+.dictionary-readonly-badge { font-weight: 600; }
+.dictionary-icon-button { font-weight: 600; }
+
+/* ── Misc form helpers ── */
+.money-input span { font-weight: 600; }
+.backup-scope-list span { font-weight: 500; }
+.inline-notice-button { font-weight: 700; }
+
+/* ── Dashboard ── */
+.dashboard-metrics-label { font-weight: 700; }
+.dashboard-loading { font-weight: 400; }
+.dashboard-metric-card span { font-weight: 500; }
+/* .dashboard-metric-card strong intentionally left at 900 (hero number) */
+.dashboard-panel-title { font-weight: 700; }
+.dashboard-panel-goto { font-weight: 500; }
+.dashboard-attention-source { font-weight: 600; }
+.dashboard-attention-item-text { font-weight: 500; }
+.dashboard-attention-item-date { font-weight: 600; }
+.dashboard-attention-item-sub { font-weight: 400; }
+.dashboard-empty-layout { font-weight: 400; }
+.dashboard-empty-state { font-weight: 400; }
+.dashboard-settings-area-badge { font-weight: 600; }
+
+/* ── Service module ── */
+.service-linked-equipment-box span { font-weight: 500; }
+.service-link-card span,.service-link-card small { font-weight: 500; }
+.service-link-card em { font-weight: 600; }
+.service-progress-meta span { font-weight: 500; }
+.service-estimate-item-amount { font-weight: 600; }
+.service-total-box span { font-weight: 600; }
+.client-choice-card span,.client-choice-card small { font-weight: 500; }
+.client-choice-card em { font-weight: 700; }
+
+/* ── Calendar ── */
+.calendar-source-trigger { font-weight: 600; }
+.calendar-source-menu label { font-weight: 500; }
+.calendar-event-filters label { font-weight: 600; }
+.calendar-event-filters select { font-weight: 400; }
+.calendar-day-head span { font-weight: 600; }
+.calendar-event span { font-weight: 600; }
+.calendar-event small { font-weight: 500; }
+.calendar-more-events { font-weight: 600; }
+.calendar-empty-slot { font-weight: 400; }
+.calendar-work-filter-preview span { font-weight: 500; }
+.calendar-source-color-field { font-weight: 600; }
+
+/* ── Notifications ── */
+.notifications-header span { font-weight: 500; }
+.notification-marker { font-weight: 700; }
+.notification-copy em { font-weight: 500; }
+.notifications-state,.notifications-empty { font-weight: 400; }
+
+/* ── Global search ── */
+.global-search-state { font-weight: 400; }
+.global-search-group-title { font-weight: 600; }
+.global-search-type { font-weight: 600; }
+.global-search-title { font-weight: 600; }
+.global-search-result small { font-weight: 400; }
+
+/* ── Projects & Organizer ── */
+.project-section-name { font-weight: 600; }
+.history-toggle { font-weight: 500; }
+.project-icon-action { font-weight: 600; }
+.project-details-collapsed button { font-weight: 600; }
+.project-details-header span { font-weight: 600; }
+.project-details-type { font-weight: 600 !important; }
+.project-detail-section-toggle em { font-weight: 600; }
+.project-detail-task-main span { font-weight: 500; }
+.project-detail-task-comments { font-weight: 600; }
+.project-detail-empty { font-weight: 400; }
+.project-comment-row span { font-weight: 500; }
+.simple-task-comments-title { font-weight: 600; }
+.simple-task-comments.has-comments .simple-task-comments-title span { font-weight: 700; }
+.simple-task-details-card dt { font-weight: 600; }
+.simple-task-details-card dd { font-weight: 400; }
+.work-type-pill { font-weight: 600; }
+.work-title-project { font-weight: 700; }

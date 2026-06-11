@@ -11,7 +11,7 @@
   padding: 0 var(--fw-space-6);
   color: var(--fw-color-text-soft);
   font: inherit;
-  font-weight: 800;
+  font-weight: var(--fw-weight-semibold);
   cursor: pointer;
 }
 
@@ -114,7 +114,7 @@
   letter-spacing: .14em;
   text-transform: uppercase;
   color: var(--fw-color-text-muted);
-  font-weight: 900;
+  font-weight: var(--fw-weight-semibold);
 }
 
 .app-section-actions,
@@ -194,7 +194,7 @@
   margin: 0 0 var(--fw-space-1);
   color: var(--fw-color-text-muted);
   font-size: var(--fw-font-size-eyebrow);
-  font-weight: 800;
+  font-weight: var(--fw-weight-semibold);
   letter-spacing: .18em;
   text-transform: uppercase;
 }
@@ -213,7 +213,7 @@
   min-width: 0;
   color: var(--fw-color-text-soft);
   font-size: var(--fw-font-size-label);
-  font-weight: 800;
+  font-weight: var(--fw-weight-medium);
 }
 
 .app-input,
@@ -268,7 +268,7 @@
 .ds-field-hint {
   font-size: 11px;
   line-height: 1.2;
-  font-weight: 700;
+  font-weight: var(--fw-weight-body);
 }
 
 .ds-error-message {
@@ -286,7 +286,7 @@
   border-radius: 999px;
   padding: 5px 9px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--fw-weight-semibold);
   background: var(--fw-color-section-soft);
   color: var(--fw-color-text-soft);
 }
@@ -394,7 +394,7 @@
   border-radius: var(--fw-radius-md);
   padding: var(--fw-space-4) var(--fw-space-5);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--fw-weight-medium);
   line-height: 1.45;
 }
 .app-notice-info {

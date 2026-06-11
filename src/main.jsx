@@ -1846,7 +1846,7 @@ const EQUIPMENT_AVAILABLE_STATUS = 'Dostępny';
 const EQUIPMENT_TABLE_KEY = 'equipment-table';
 const EQUIPMENT_TABLE_COLUMNS = [
   { key: 'item_type', label: 'Typ' },
-  { key: 'name', label: 'Nazwa' },
+  { key: 'name', label: 'Nazwa', renderCell: (row) => renderEquipmentNameWithBadge(row) },
   { key: 'category', label: 'Kategoria' },
   { key: 'brand', label: 'Marka' },
   { key: 'model', label: 'Model' },
@@ -1873,6 +1873,17 @@ function isEquipmentSet(item) {
 
 function isEquipmentSetComponent(item) {
   return item?.status === EQUIPMENT_SET_COMPONENT_STATUS;
+}
+
+function renderEquipmentNameWithBadge(row) {
+  const isSet = isEquipmentSet(row) || row.item_type === 'set' || row.item_type === 'Zestaw' || row.item_type_display === 'Zestaw';
+  if (!isSet) return row.name || '—';
+  return (
+    <span className="equipment-name-cell">
+      <span className="equipment-set-badge">ZESTAW</span>
+      {row.name || '—'}
+    </span>
+  );
 }
 
 function normalizeSetItemFromEquipment(item) {
@@ -2669,7 +2680,7 @@ const RENTALS_TABLE_COLUMNS = [
 ];
 
 const RENTAL_SELECTED_EQUIPMENT_COLUMNS = [
-  { key: 'name', label: 'Nazwa' },
+  { key: 'name', label: 'Nazwa', renderCell: (row) => renderEquipmentNameWithBadge(row) },
   { key: 'item_type_display', label: 'Typ' },
   { key: 'brand', label: 'Marka' },
   { key: 'model', label: 'Model' },
@@ -4115,7 +4126,7 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
   }));
   const pickerColumns = [
     { key: 'picker_selected', label: 'Wybierz', renderCell: (item) => <input type="checkbox" checked={selectedKeys.has(String(getEquipmentKey(item)))} onChange={() => toggleItem(item)} onClick={(event) => event.stopPropagation()} aria-label="Wybierz sprzęt" /> },
-    { key: 'name', label: 'Nazwa' },
+    { key: 'name', label: 'Nazwa', renderCell: (row) => renderEquipmentNameWithBadge(row) },
     { key: 'item_type_display', label: 'Kategoria' },
     { key: 'brand', label: 'Marka' },
     { key: 'model', label: 'Model' },

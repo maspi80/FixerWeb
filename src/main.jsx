@@ -5625,6 +5625,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
   const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -5665,9 +5666,18 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
   };
 
   const removeComment = async (comment) => {
-    if (!window.confirm('Usunąć komentarz?')) return;
-    await deleteTaskComment(comment.id ?? comment.localId, comment);
-    await loadComments();
+    setConfirmDialog({
+      title: 'Usuń komentarz',
+      message: 'Usunąć komentarz?',
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await deleteTaskComment(comment.id ?? comment.localId, comment);
+        await loadComments();
+      }
+    });
   };
 
   const tabs = [
@@ -5752,6 +5762,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
         {!commentsLoading && !comments.length && <EmptyState title={task ? 'Brak komentarzy.' : 'Zapisz zadanie, aby dodać komentarze.'} />}
       </div>
     </div>}
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </ResizableModalFrame>;
 }
 
@@ -5782,6 +5793,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   const [taskEditorOpen, setTaskEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [localClients, setLocalClients] = useState(() => Array.isArray(clients) ? clients : []);
@@ -5878,17 +5890,41 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   const setTaskStatus = async (task, newStatus) => {
     if (newStatus === task.status) return;
     const isTerminal = PROJECT_TASK_TERMINAL_STATUSES.includes(newStatus);
-    if (isTerminal && !window.confirm(`Przenieść zadanie do historii?`)) return;
+    if (isTerminal) {
+      setConfirmDialog({
+        title: 'Przenieś zadanie do historii',
+        message: 'Przenieść zadanie do historii?',
+        confirmLabel: 'Przenieś do historii',
+        cancelLabel: 'Anuluj',
+        variant: 'secondary',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          const tid = task.id ?? task.localId;
+          await updateProjectTask(tid, { ...task, status: newStatus, archived: true, completed_at: new Date().toISOString() });
+          await loadTasks();
+        }
+      });
+      return;
+    }
     const tid = task.id ?? task.localId;
-    await updateProjectTask(tid, { ...task, status: newStatus, archived: isTerminal, completed_at: isTerminal ? new Date().toISOString() : task.completed_at });
+    await updateProjectTask(tid, { ...task, status: newStatus, archived: false, completed_at: task.completed_at });
     await loadTasks();
   };
 
   const deleteTask = async (row) => {
     const task = row._task ?? row;
-    if (!window.confirm(`Usunąć zadanie "${task.title}"?`)) return;
-    await deleteProjectTask(task.id ?? task.localId, task);
-    await loadTasks();
+    setConfirmDialog({
+      title: 'Usuń zadanie',
+      message: `Usunąć zadanie "${task.title}"?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await deleteProjectTask(task.id ?? task.localId, task);
+        await loadTasks();
+      }
+    });
   };
 
   const openSectionModal = () => {
@@ -5926,10 +5962,19 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   const removeSection = async (section) => {
     const sid = section.id ?? section.localId;
     const hasTasks = tasks.some((t) => !t.archived && String(t.section_id) === String(sid));
-    if (hasTasks && !window.confirm('Sekcja zawiera zadania. Usunięcie odłączy je od sekcji. Kontynuować?')) return;
-    setSectionMenu(null);
-    await deleteProjectSection(sid);
-    await loadTasks();
+    setConfirmDialog({
+      title: 'Usuń sekcję',
+      message: hasTasks ? 'Sekcja zawiera zadania. Usunięcie odłączy je od sekcji. Kontynuować?' : `Usunąć sekcję "${section.name}"?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setSectionMenu(null);
+        await deleteProjectSection(sid);
+        await loadTasks();
+      }
+    });
   };
 
   const toggleSectionCollapse = (sid) => {
@@ -6126,6 +6171,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
         <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
       </FormField>
     </ModalFrame>}
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </>;
 }
 
@@ -6150,6 +6196,7 @@ function ProjectTaskInlineComments({ task, onChanged }) {
   const [newComment, setNewComment] = useState('');
   const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -6172,11 +6219,20 @@ function ProjectTaskInlineComments({ task, onChanged }) {
   };
 
   const removeComment = async (comment) => {
-    if (!window.confirm('Czy na pewno usunąć ten komentarz/postęp?')) return;
-    const result = await deleteTaskComment(comment.id ?? comment.localId, comment);
-    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
-    await loadComments();
-    onChanged?.();
+    setConfirmDialog({
+      title: 'Usuń komentarz',
+      message: 'Czy na pewno usunąć ten komentarz/postęp?',
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const result = await deleteTaskComment(comment.id ?? comment.localId, comment);
+        if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+        await loadComments();
+        onChanged?.();
+      }
+    });
   };
 
   return <div className="project-task-inline-comments">
@@ -6195,6 +6251,7 @@ function ProjectTaskInlineComments({ task, onChanged }) {
       </div>)}
       {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
     </div>
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }
 
@@ -6205,6 +6262,7 @@ function SimpleTaskComments({ task, onChanged }) {
   const [newComment, setNewComment] = useState('');
   const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -6228,11 +6286,20 @@ function SimpleTaskComments({ task, onChanged }) {
   };
 
   const removeComment = async (comment) => {
-    if (!window.confirm('Czy na pewno usunąć ten komentarz/postęp?')) return;
-    const result = await deleteOrganizerTaskComment(comment.id ?? comment.localId, comment);
-    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
-    await loadComments();
-    onChanged?.();
+    setConfirmDialog({
+      title: 'Usuń komentarz',
+      message: 'Czy na pewno usunąć ten komentarz/postęp?',
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const result = await deleteOrganizerTaskComment(comment.id ?? comment.localId, comment);
+        if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+        await loadComments();
+        onChanged?.();
+      }
+    });
   };
 
   return <div className={`simple-task-comments ${comments.length > 0 ? 'has-comments' : ''}`}>
@@ -6252,6 +6319,7 @@ function SimpleTaskComments({ task, onChanged }) {
       </div>)}
       {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
     </div>
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }
 
@@ -6265,6 +6333,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   const [collapsedSections, setCollapsedSections] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [taskEditorOpen, setTaskEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [sectionModalOpen, setSectionModalOpen] = useState(false);
@@ -6357,32 +6426,41 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const message = hasTasks
       ? 'Sekcja zawiera zadania. Usunięcie sekcji usunie również przypisane zadania i ich komentarze/postępy. Czy kontynuować?'
       : `Czy na pewno usunąć sekcję "${section.name}"?`;
-    if (!window.confirm(message)) return;
-    setNotice('');
-    for (const task of sectionTasks) {
-      const result = await deleteProjectTask(task.id ?? task.localId, task);
-      if (result.error) {
-        setNotice(humanizeError(result.error, 'Nie udało się usunąć zadań sekcji'));
-        return;
+    setConfirmDialog({
+      title: 'Usuń sekcję',
+      message,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setNotice('');
+        for (const task of sectionTasks) {
+          const result = await deleteProjectTask(task.id ?? task.localId, task);
+          if (result.error) {
+            setNotice(humanizeError(result.error, 'Nie udało się usunąć zadań sekcji'));
+            return;
+          }
+        }
+        const result = await deleteProjectSection(section.id ?? section.localId);
+        if (result.error) {
+          setNotice(humanizeError(result.error, 'Nie udało się usunąć sekcji'));
+          return;
+        }
+        setCollapsedSections((current) => {
+          const next = new Set(current);
+          next.delete(sid);
+          return next;
+        });
+        setExpandedTasks((current) => {
+          const next = new Set(current);
+          sectionTasks.forEach((task) => next.delete(String(task.id ?? task.localId)));
+          return next;
+        });
+        await loadPanelData();
+        onRefreshProject?.();
       }
-    }
-    const result = await deleteProjectSection(section.id ?? section.localId);
-    if (result.error) {
-      setNotice(humanizeError(result.error, 'Nie udało się usunąć sekcji'));
-      return;
-    }
-    setCollapsedSections((current) => {
-      const next = new Set(current);
-      next.delete(sid);
-      return next;
     });
-    setExpandedTasks((current) => {
-      const next = new Set(current);
-      sectionTasks.forEach((task) => next.delete(String(task.id ?? task.localId)));
-      return next;
-    });
-    await loadPanelData();
-    onRefreshProject?.();
   };
 
   const toggleTaskExpanded = (task) => {
@@ -6476,6 +6554,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
       </FormField>
     </ModalFrame>}
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </aside>;
 }
 
@@ -6530,6 +6609,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const [filters, setFilters] = useStoredState('fixer-projects-filters', { search: '', type: 'all', status: '', priority: '' });
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -6597,29 +6677,48 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const saveProject = async (form) => {
     if (!String(form.name ?? '').trim()) { setNotice('Nazwa projektu jest wymagana'); return; }
     const projectId = form.id ?? form.localId;
-    let result;
-    if (projectId) {
-      const isTerminal = PROJECT_TERMINAL_STATUSES.includes(form.status);
-      const wasArchived = editingProject?.archived;
-      if (isTerminal && !wasArchived) {
-        if (!window.confirm('Przenieść projekt do historii?')) { return; }
-        form = { ...form, archived: true, completed_at: form.completed_at || new Date().toISOString() };
-      }
-      result = await updateProject(projectId, form);
-    } else {
-      result = await createProject(form);
+    const isTerminal = projectId && PROJECT_TERMINAL_STATUSES.includes(form.status);
+    const wasArchived = editingProject?.archived;
+
+    const doSave = async (finalForm) => {
+      const result = projectId ? await updateProject(projectId, finalForm) : await createProject(finalForm);
+      if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu projektu')); return; }
+      setEditorOpen(false);
+      setEditingProject(null);
+      await loadData();
+    };
+
+    if (isTerminal && !wasArchived) {
+      setConfirmDialog({
+        title: 'Archiwizacja projektu',
+        message: 'Przenieść projekt do historii?',
+        confirmLabel: 'Przenieś do historii',
+        cancelLabel: 'Anuluj',
+        variant: 'secondary',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          await doSave({ ...form, archived: true, completed_at: form.completed_at || new Date().toISOString() });
+        }
+      });
+      return;
     }
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu projektu')); return; }
-    setEditorOpen(false);
-    setEditingProject(null);
-    await loadData();
+    await doSave(form);
   };
 
   const handleDelete = async (project) => {
-    if (!window.confirm(`Usunąć projekt "${project.name}"?`)) return;
-    const result = await deleteProject(project.id ?? project.localId, project);
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania projektu')); return; }
-    await loadData();
+    setConfirmDialog({
+      title: 'Usuń projekt',
+      message: `Usunąć projekt "${project.name}"?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const result = await deleteProject(project.id ?? project.localId, project);
+        if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania projektu')); return; }
+        await loadData();
+      }
+    });
   };
 
   const handleRestore = async (project) => {
@@ -6632,16 +6731,26 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     if (!project || nextStatus === project.status) return;
     const projectId = project.id ?? project.localId;
     const isTerminal = PROJECT_TERMINAL_STATUSES.includes(nextStatus);
-    if (isTerminal && !project.archived && !window.confirm('Przenieść projekt do historii?')) return;
-    const payload = {
-      ...project,
-      status: nextStatus,
-      archived: isTerminal ? true : project.archived,
-      completed_at: isTerminal ? (project.completed_at || new Date().toISOString()) : project.completed_at
+    const doUpdate = async (payload) => {
+      const result = await updateProject(projectId, payload);
+      if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany statusu projektu')); return; }
+      setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, ...payload, ...(result.data ?? {}) } : row));
     };
-    const result = await updateProject(projectId, payload);
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany statusu projektu')); return; }
-    setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, ...payload, ...(result.data ?? {}) } : row));
+    if (isTerminal && !project.archived) {
+      setConfirmDialog({
+        title: 'Archiwizacja projektu',
+        message: 'Przenieść projekt do historii?',
+        confirmLabel: 'Przenieś do historii',
+        cancelLabel: 'Anuluj',
+        variant: 'secondary',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          await doUpdate({ ...project, status: nextStatus, archived: true, completed_at: project.completed_at || new Date().toISOString() });
+        }
+      });
+      return;
+    }
+    await doUpdate({ ...project, status: nextStatus, archived: isTerminal ? true : project.archived, completed_at: isTerminal ? (project.completed_at || new Date().toISOString()) : project.completed_at });
   };
 
   const setProjectPriority = async (project, nextPriority) => {
@@ -6685,10 +6794,19 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   };
 
   const deleteSimpleTask = async (task) => {
-    if (!window.confirm(`Usunąć zadanie "${task.title}"?`)) return;
-    const result = await deleteOrganizerTask(task.id ?? task.localId, task);
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania zadania')); return; }
-    await loadData();
+    setConfirmDialog({
+      title: 'Usuń zadanie',
+      message: `Usunąć zadanie "${task.title}"?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const result = await deleteOrganizerTask(task.id ?? task.localId, task);
+        if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania zadania')); return; }
+        await loadData();
+      }
+    });
   };
 
   const openNewProject = () => { setEditingProject(null); setEditorOpen(true); };
@@ -6838,6 +6956,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
     {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }
 

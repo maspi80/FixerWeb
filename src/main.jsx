@@ -1827,7 +1827,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
         {activeTab === 'notes' && <div className="notes-panel">
           <div className="form-section notes-section">
             <div className="section-title">Notatki</div>
-            <FormField label="Informacje wewnętrzne o kliencie"><AppTextarea value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField>
+            <FormField label="Informacje wewnętrzne o kliencie"><AppTextarea resizeKey="fixer:textarea:client:notes" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField>
           </div>
         </div>}
         {activeTab === 'history' && <div className="history-panel">
@@ -2540,7 +2540,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
               <FormField label="Status"><AppInput value={calculatedSetStatus} readOnly className="readonly-input" /></FormField>
               <FormField label="Lokalizacja"><AppSelect value={form.location} onChange={(event) => update('location', event.target.value)}>{safeLocations.map((location) => <option key={location} value={location}>{location}</option>)}</AppSelect></FormField>
               <FormField label="Stan techniczny"><AppSelect value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
-              <FormField className="set-description-field" label="Opis zestawu"><AppTextarea value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></FormField>
+              <FormField className="set-description-field" label="Opis zestawu"><AppTextarea resizeKey="fixer:textarea:set:description" value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></FormField>
             </div>
           </div>
           <div className="equipment-section-panel set-builder-panel set-card-components-panel">
@@ -2599,7 +2599,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
           <FormField label="Kaucja"><AppInput value={form.deposit} onChange={(event) => update('deposit', event.target.value)} placeholder="np. 500" /></FormField>
           <FormField label="Cena / dzień"><AppInput value={form.price_day} onChange={(event) => update('price_day', event.target.value)} placeholder="np. 120" /></FormField>
           <FormField label="Cena / tydzień"><AppInput value={form.price_week} onChange={(event) => update('price_week', event.target.value)} placeholder="np. 600" /></FormField>
-          <FormField className="equipment-description-field" label="Opis / zawartość"><AppTextarea value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
+          <FormField className="equipment-description-field" label="Opis / zawartość"><AppTextarea resizeKey="fixer:textarea:equipment:description" value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
         </div>}
         {activeTab === 'gallery' && <div className="equipment-section-panel">
           <div className="section-title">Galeria sprzętu</div>
@@ -2617,11 +2617,11 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
         </div>}
         {activeTab === 'history' && <div className="equipment-section-panel">
           <div className="section-title">Historia sprzętu</div>
-          <AppTextarea className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
+          <AppTextarea resizeKey="fixer:textarea:equipment:history_notes" className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
         </div>}
         {activeTab === 'service' && <div className="equipment-section-panel">
           <div className="section-title">Serwis</div>
-          <AppTextarea className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
+          <AppTextarea resizeKey="fixer:textarea:equipment:service_notes" className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
         </div>}
         {activeTab === 'relations' && <div className="equipment-section-panel">
           <div className="section-title">Powiązania / zestawy</div>
@@ -3990,7 +3990,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
           <div className="rental-terms-grid">
             <FormField className="rental-price-field" label="Cena łączna"><div className="money-input"><AppInput value={form.total_price} onChange={(event) => update('total_price', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 1200'} /><span>{rentalSettings.currency || 'zł'}</span></div></FormField>
             <FormField label="Kaucja"><AppInput value={form.total_deposit} onChange={(event) => update('total_deposit', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 500'} /></FormField>
-            <FormField className="rental-notes-field" label="Notatki"><AppTextarea value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Warunki wydania, uwagi do klienta lub sprzętu." /></FormField>
+            <FormField className="rental-notes-field" label="Notatki"><AppTextarea resizeKey="fixer:textarea:rental:notes" value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Warunki wydania, uwagi do klienta lub sprzętu." /></FormField>
           </div>
         </SectionPanel>
       </div>
@@ -4972,13 +4972,13 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
             </div>
             <div className="service-intake-fields-grid">
               <FormField label="Stan przyjęcia"><AppSelect value={form.intake_condition} onChange={(event) => update('intake_condition', event.target.value)}>{conditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
-              <FormField label="Akcesoria"><AppTextarea value={form.intake_accessories} onChange={(event) => update('intake_accessories', event.target.value)} placeholder="np. zasilacz, futerał, karta pamięci" /></FormField>
-              <FormField label="Opis wizualny / uwagi"><AppTextarea value={form.intake_visual_notes} onChange={(event) => update('intake_visual_notes', event.target.value)} placeholder="np. rysy na obudowie, brak zaślepki, ślady zalania" /></FormField>
+              <FormField label="Akcesoria"><AppTextarea resizeKey="fixer:textarea:service:intake_accessories" value={form.intake_accessories} onChange={(event) => update('intake_accessories', event.target.value)} placeholder="np. zasilacz, futerał, karta pamięci" /></FormField>
+              <FormField label="Opis wizualny / uwagi"><AppTextarea resizeKey="fixer:textarea:service:intake_visual_notes" value={form.intake_visual_notes} onChange={(event) => update('intake_visual_notes', event.target.value)} placeholder="np. rysy na obudowie, brak zaślepki, ślady zalania" /></FormField>
             </div>
           </div>
         </SectionPanel>
         <SectionPanel className="service-record-section service-fault-section" title="Opis usterki">
-          <FormField label="Opis usterki"><AppTextarea value={form.fault_description} onChange={(event) => update('fault_description', event.target.value)} placeholder="Co zgłasza klient / operator?" /></FormField>
+          <FormField label="Opis usterki"><AppTextarea resizeKey="fixer:textarea:service:fault_description" value={form.fault_description} onChange={(event) => update('fault_description', event.target.value)} placeholder="Co zgłasza klient / operator?" /></FormField>
         </SectionPanel>
       </div>}
 
@@ -4990,7 +4990,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
             <FormField label="Data wysłania"><AppInput type="date" value={form.external_sent_date || ''} onChange={(event) => update('external_sent_date', event.target.value)} /></FormField>
             <FormField label="Data powrotu"><AppInput type="date" value={form.external_return_date || ''} onChange={(event) => update('external_return_date', event.target.value)} /></FormField>
             <FormField label="Koszt zewnętrzny"><div className="money-input"><AppInput value={form.external_cost} onChange={(event) => update('external_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
-            <FormField className="service-external-notes-field" label="Uwagi do serwisu zewnętrznego"><AppTextarea value={form.external_notes} onChange={(event) => update('external_notes', event.target.value)} /></FormField>
+            <FormField className="service-external-notes-field" label="Uwagi do serwisu zewnętrznego"><AppTextarea resizeKey="fixer:textarea:service:external_notes" value={form.external_notes} onChange={(event) => update('external_notes', event.target.value)} /></FormField>
           </div>
         </SectionPanel>
       </div>}
@@ -5042,7 +5042,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
 
       {activeTab === 'notes' && <div className="service-tab-content">
         <SectionPanel className="service-record-section" title="Notatki wewnętrzne">
-          <FormField label="Notatki operatora"><AppTextarea className="large-notes" value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} placeholder="Wewnętrzne informacje dla obsługi. Nie mieszać z postępami serwisowymi." /></FormField>
+          <FormField label="Notatki operatora"><AppTextarea resizeKey="fixer:textarea:service:internal_notes" className="large-notes" value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} placeholder="Wewnętrzne informacje dla obsługi. Nie mieszać z postępami serwisowymi." /></FormField>
         </SectionPanel>
         <SectionPanel className="service-record-section" title="Zdjęcia i załączniki">
           <div className="attachment-add-grid service-attachment-add-grid">
@@ -5406,7 +5406,7 @@ function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDele
         <FormField label="Miejsce"><AppInput value={form.location} onChange={(event) => update('location', event.target.value)} /></FormField>
         <FormField label="Kolor"><AppInput type="color" value={form.color} onChange={(event) => update('color', event.target.value)} /></FormField>
       </div>
-      <FormField label="Opis"><AppTextarea value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
+      <FormField label="Opis"><AppTextarea resizeKey="fixer:textarea:calendar:description" value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
       <label className="settings-check calendar-all-day-check"><input type="checkbox" checked={form.all_day} onChange={(event) => update('all_day', event.target.checked)} />Wydarzenie całodniowe</label>
     </div>
   </ResizableModalFrame>;
@@ -6152,7 +6152,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
           </div>
         </FormField>
         <FormField label="Opis">
-          <AppTextarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." />
+          <AppTextarea resizeKey="fixer:textarea:project:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." />
         </FormField>
       </div>}
 
@@ -6233,7 +6233,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
       {activeTab === 'notes' && <div className="service-order-form-body">
         <FormField label="Notatki">
-          <AppTextarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={10} placeholder="Notatki do projektu..." />
+          <AppTextarea resizeKey="fixer:textarea:project:notes" value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={10} placeholder="Notatki do projektu..." />
         </FormField>
       </div>}
     </ResizableModalFrame>
@@ -9316,8 +9316,8 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
               <div className="settings-field-grid two-columns">
                 <label className="firm-field field-wide">Numer konta<AppInput value={companyProfile.bankAccount} onChange={(event) => updateCompanyProfile('bankAccount', event.target.value)} /></label>
                 <label className="firm-field">Waluta<AppInput value={rentalNumbering.currency || 'zł'} disabled /></label>
-                <label className="firm-field field-wide">Nagłówek dokumentów<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} rows={2} /></label>
-                <label className="firm-field field-wide">Stopka dokumentów<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} rows={2} placeholder="np. Dziękujemy za współpracę." /></label>
+                <label className="firm-field field-wide">Nagłówek dokumentów<AppTextarea resizeKey="fixer:textarea:settings:document_header" value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} rows={2} /></label>
+                <label className="firm-field field-wide">Stopka dokumentów<AppTextarea resizeKey="fixer:textarea:settings:document_footer" value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} rows={2} placeholder="np. Dziękujemy za współpracę." /></label>
               </div>
             </section>
           </div>

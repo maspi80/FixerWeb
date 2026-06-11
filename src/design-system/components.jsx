@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 export function joinClassNames(...parts) {
   return parts.filter(Boolean).join(' ');
@@ -16,8 +16,48 @@ export function AppSelect({ className = '', children, ...props }) {
   return <select className={joinClassNames('app-input app-select', className)} {...props}>{children}</select>;
 }
 
-export function AppTextarea({ className = '', ...props }) {
-  return <textarea className={joinClassNames('app-input app-textarea', className)} {...props} />;
+/**
+ * AppTextarea — textarea with optional size persistence.
+ *
+ * Pass resizeKey="fixer:textarea:<module>:<field>" to automatically save and
+ * restore the user-dragged height across sessions via localStorage.
+ * One entry per field-type per module (not per record).
+ * Heights are clamped to [64 px … 65 % of viewport height] for safety.
+ */
+export function AppTextarea({ className = '', resizeKey, ...props }) {
+  const elRef = useRef(null);
+
+  useEffect(() => {
+    if (!resizeKey) return;
+    const el = elRef.current;
+    if (!el) return;
+
+    // Restore persisted height on mount
+    try {
+      const saved = localStorage.getItem(resizeKey);
+      if (saved) {
+        const h = parseInt(saved, 10);
+        if (Number.isFinite(h) && h >= 64) {
+          const safeMax = Math.floor(window.innerHeight * 0.65);
+          el.style.height = `${Math.min(h, safeMax)}px`;
+        }
+      }
+    } catch { /* storage unavailable */ }
+
+    // Persist new height when user finishes resizing (mouseup after height change)
+    let lastH = el.offsetHeight;
+    const onMouseUp = () => {
+      const h = el.offsetHeight;
+      if (h !== lastH && h >= 64) {
+        lastH = h;
+        try { localStorage.setItem(resizeKey, String(h)); } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener('mouseup', onMouseUp);
+    return () => window.removeEventListener('mouseup', onMouseUp);
+  }, [resizeKey]);
+
+  return <textarea ref={elRef} className={joinClassNames('app-input app-textarea', className)} {...props} />;
 }
 
 export function AppTabs({ className = '', children, ...props }) {

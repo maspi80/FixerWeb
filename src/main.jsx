@@ -3139,6 +3139,37 @@ function getRentalAgreementColumnValue(key, item, index) {
   return values[key] ?? '';
 }
 
+function isRentalFreeType(rentalType) {
+  const normalized = String(rentalType ?? '').trim().toLocaleLowerCase('pl');
+  return normalized === 'bezpłatne' || normalized === 'bezplatne' || normalized === 'wewnętrzne' || normalized === 'wewnetrzne';
+}
+
+function formatRentalMoney(value, currency = 'zł') {
+  const raw = String(value ?? '').trim().replace(/\s/g, '').replace(',', '.');
+  if (!raw) return '';
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number <= 0) return '';
+  return `${number.toFixed(2).replace('.', ',')} ${currency}`;
+}
+
+function buildRentalFinancialContext(rental, currency = getRentalNumberingSettings()?.currency || 'zł') {
+  const isFree = isRentalFreeType(rental?.rental_type);
+  const priceFormatted = isFree ? '' : formatRentalMoney(rental?.total_price, currency);
+  const rentalFinancialTerms = isFree
+    ? 'Wypożyczenie bezpłatne.'
+    : priceFormatted
+      ? `Wypożyczenie płatne.\nCena wynajmu: ${priceFormatted}`
+      : 'Wypożyczenie płatne.';
+  return {
+    rentalIsPaid: isFree ? 'nie' : 'tak',
+    rentalPaymentType: isFree ? 'Wypożyczenie bezpłatne.' : 'Wypożyczenie płatne.',
+    rentalPrice: priceFormatted ? priceFormatted.replace(` ${currency}`, '') : '',
+    rentalPriceFormatted: priceFormatted,
+    rentalFinancialTerms,
+    rentalTotal: priceFormatted
+  };
+}
+
 function getRentalAgreementData(rental, settings = getDocumentSettings(), company = getCompanyProfile()) {
   const template = getRentalAgreementTemplate(settings);
   const items = getRentalBaseItems(rental);
@@ -3244,93 +3275,8 @@ function buildBaseDocumentTemplateHtml({
   return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title || 'Dokument')}</title><style>${createDocumentLayoutCss()}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc">${String(headerText ?? '').trim() ? `<div class="ag-custom-header">${renderTemplateMultiline(headerText)}</div>` : ''}<div class="ag-top">${logoHtml}<div><p class="ag-co-name">${escapeHtml(companyName)}</p>${coHeaderLines.map((line) => `<p class="ag-co-info">${escapeHtml(line)}</p>`).join('')}</div></div><div class="ag-title-block"><h1 class="ag-doc-title">${escapeHtml(title || 'Dokument')}</h1>${buildDocumentMetaChips({ documentNumber, issueDate, status })}</div><hr class="ag-divider"/>${partiesHtml}${sectionsHtml}${String(footerText ?? '').trim() ? `<footer class="ag-footer">${escapeHtml(footerText)}</footer>` : ''}<div class="ag-page-footer"><span>${escapeHtml(footerBase)}</span><span>Strona <span class="ag-page-number"></span></span></div></main>${autoPrint ? '<script>window.onload=function(){window.focus();window.print();};</script>' : ''}</body></html>`;
 }
 
-function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, settings = getDocumentSettings(), company = getCompanyProfile() } = {}) {
-  const data = getRentalAgreementData(rental, settings, company);
-  const companyName = company.legalName || company.name || 'FIXER WEB';
-  const companyTax = formatCompanyTaxData(company);
-  const companyContact = formatCompanyContact(company);
-  const client = data.client ?? {};
-  const clientAddress = formatClientDocumentAddress(client);
-  const headerText = String(company.documentHeader ?? '').trim();
-  const companyFooter = String(company.documentFooter ?? '').trim();
-  const equipmentHeader = data.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
-  const equipmentRows = data.items.map((item, index) => `<tr>${data.columns.map((column) => `<td>${escapeHtml(getRentalAgreementColumnValue(column.key, item, index) || '—')}</td>`).join('')}</tr>`).join('');
-  const companyLines = compactLines([
-    companyName,
-    ...formatDocumentAddressLines(company),
-    companyTax,
-    companyContact,
-    company.bankAccount ? `Konto: ${company.bankAccount}` : ''
-  ]);
-  const contactPerson = client.contact_person || client.contact_name || client.representative || '';
-  const clientLines = compactLines([
-    client.name,
-    ...formatDocumentAddressLines(client),
-    formatClientDocumentNip(client),
-    contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '',
-    client.phone ? `Telefon: ${client.phone}` : '',
-    client.email ? `E-mail: ${client.email}` : ''
-  ]);
-  const manyColumns = data.columns.length > 6;
-  const issueDate = formatAgreementDate(data.issueDate);
-  const startDate = data.rental?.start_date ? formatAgreementDate(data.rental.start_date) : null;
-  const returnDate = data.rental?.planned_return_date ? formatAgreementDate(data.rental.planned_return_date) : null;
-  const actualReturnDate = data.rental?.actual_return_date ? formatAgreementDate(data.rental.actual_return_date) : '';
-  const docNumber = data.documentNumber || data.rental?.rental_number || '';
-  const introCity = company.documentCity || company.city || '';
-  const templateContext = {
-    documentNumber: docNumber,
-    issueDate,
-    returnDate: returnDate || '',
-    plannedReturnDate: returnDate || '',
-    actualReturnDate,
-    clientName: client.name || '',
-    clientAddress,
-    clientNip: formatClientDocumentNip(client),
-    clientDetails: formatClientDocumentDetails(client),
-    companyName,
-    companyAddress: formatDocumentAddress(company),
-    companyTaxData: companyTax,
-    companyContact,
-    clientContact: compactLines([contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']).join('\n'),
-    notes: compactLines(data.items.map((item) => getRentalAgreementColumnValue('notes', item, 0))).join(', '),
-    equipmentTable: '[tabela sprzętu]',
-    documentFooter: companyFooter,
-    documentCityClause: introCity ? ` w ${introCity}` : ''
-  };
-  const introText = applyTemplateVariables(data.template.introText, templateContext);
-  const issuerText = applyTemplateVariables(data.template.issuerText, templateContext);
-  const borrowerText = applyTemplateVariables(data.template.borrowerText, templateContext);
-  const termsText = applyTemplateVariables(data.template.termsText, templateContext);
-  const footerText = applyTemplateVariables(data.template.footerText, templateContext).trim();
-  const visibility = data.template.sectionVisibility ?? DEFAULT_RENTAL_AGREEMENT_SECTION_VISIBILITY;
-  const sectionBlocks = {
-    intro: `<p class="ag-intro">${escapeHtml(introText)}</p>`,
-    period: (startDate || returnDate) ? `<div class="ag-section"><h2 class="ag-section-heading">Okres wypożyczenia</h2><div class="ag-period">${startDate ? `<div><span class="ag-period-label">Data wydania</span><span class="ag-period-value">${escapeHtml(startDate)}</span></div>` : ''}${returnDate ? `<div><span class="ag-period-label">Planowany zwrot</span><span class="ag-period-value">${escapeHtml(returnDate)}</span></div>` : ''}</div></div>` : '',
-    equipment: `<div class="ag-section"><h2 class="ag-section-heading">Przedmiot umowy - przekazany sprzęt</h2><div class="ag-table-wrap"><table class="ag-table${manyColumns ? ' many-cols' : ''}"><thead><tr>${equipmentHeader}</tr></thead><tbody>${equipmentRows || `<tr><td colspan="${data.columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></div></div>`,
-    terms: `<div class="ag-section"><h2 class="ag-section-heading">Warunki umowy</h2><ul class="ag-terms">${renderTermsFromTemplate(termsText, data.template.terms)}</ul></div>`,
-    signatures: buildDocumentSignaturesHtml('Wypożyczający', 'Biorący'),
-    footer: ''
-  };
-  const orderedSections = (data.template.sectionOrder ?? DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER)
-    .filter((id) => visibility[id] !== false)
-    .map((id) => sectionBlocks[id])
-    .filter(Boolean)
-    .join('');
-  const partiesHtml = `<div class="ag-parties"><div><span class="ag-party-label">Wypożyczający</span>${issuerText.trim() ? renderTemplateMultiline(issuerText) : compactLines(companyLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div><div><span class="ag-party-label">Biorący</span>${borrowerText.trim() ? renderTemplateMultiline(borrowerText) : compactLines(clientLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div></div>`;
-  return buildBaseDocumentTemplateHtml({
-    title: data.title,
-    company,
-    headerText,
-    documentNumber: docNumber,
-    issueDate,
-    status: data.rental?.status || '',
-    partiesHtml,
-    sectionsHtml: orderedSections,
-    footerText,
-    preview,
-    autoPrint
-  });
+function buildRentalAgreementHtml(rental, { preview = false, company = getCompanyProfile(), sharedTemplate = null } = {}) {
+  return buildRentalAgreementDocumentHtml(rental, { preview, company, sharedTemplate });
 }
 
 function openRentalAgreementPrint(rental) {
@@ -3506,15 +3452,6 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     await loadRentals();
     await loadRentalDictionaries();
     setEditorOpen(false);
-    if (canCreateRentalAgreement(result.data)) {
-      setAgreementRental({
-        ...result.data,
-        rental_items: (result.data.rental_items ?? []).map((item) => ({
-          ...item,
-          equipment: item.equipment ?? equipmentById.get(String(item.equipment_id)) ?? null
-        }))
-      });
-    }
     return { error: null };
   };
 
@@ -3957,32 +3894,37 @@ function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose, onP
 }
 
 function RentalAgreementModal({ rental, onClose }) {
-  const [documentSettings, setDocumentSettings] = useState(getDocumentSettings);
-  const previewHtml = useMemo(() => buildRentalAgreementHtml(rental, { preview: true }), [rental, documentSettings]);
-
-  useEffect(() => {
-    const refresh = () => setDocumentSettings(getDocumentSettings());
-    window.addEventListener('storage', refresh);
-    return () => window.removeEventListener('storage', refresh);
-  }, []);
-
+  const previewHtml = useMemo(() => buildRentalAgreementDocumentHtml(rental, { preview: true }), [rental]);
+  const printHtml = useMemo(
+    () => prepareServiceDocumentPrintHtml(previewHtml, `Umowa_wypozyczenia_${normalizeFileNamePart(rental?.rental_number || 'DOC')}.pdf`),
+    [previewHtml, rental]
+  );
   const disabled = !canCreateRentalAgreement(rental);
-  return <ResizableModalFrame
-    className="rental-agreement-modal"
-    storageKey="fixer-rental-agreement-modal"
-    defaultSize={{ width: 1040, height: 760 }}
-    minSize={{ width: 760, height: 560 }}
-    eyebrow="Dokument"
+  const printDocument = () => printHtmlInIframe(printHtml);
+
+  if (disabled) {
+    return <ResizableModalFrame
+      className="rental-agreement-modal"
+      storageKey="fixer-rental-agreement-modal"
+      defaultSize={{ width: 640, height: 420 }}
+      minSize={{ width: 480, height: 320 }}
+      eyebrow="Dokument"
+      title="Umowa wypożyczenia sprzętu"
+      onClose={onClose}
+      footer={<ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary>}
+    >
+      <EmptyState title="Nie można przygotować umowy" description="Umowa wymaga wybranego klienta i przynajmniej jednej pozycji sprzętu." />
+    </ResizableModalFrame>;
+  }
+
+  return <DocumentPreviewModal
+    html={previewHtml}
     title="Umowa wypożyczenia sprzętu"
     onClose={onClose}
-    footer={<><ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary><ButtonPrimary onClick={() => printHtmlInIframe(previewHtml)} disabled={disabled}><Printer size={16} />Drukuj / PDF</ButtonPrimary></>}
-  >
-    {disabled
-      ? <EmptyState title="Nie można przygotować umowy" description="Umowa wymaga wybranego klienta i przynajmniej jednej pozycji sprzętu." />
-      : <div className="rental-agreement-preview-frame">
-        <iframe title="Podgląd umowy wypożyczenia" srcDoc={previewHtml} />
-      </div>}
-  </ResizableModalFrame>;
+    onPrint={printDocument}
+    onDownload={printDocument}
+    onGeneratePdf={printDocument}
+  />;
 }
 
 function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, rentalTypes = getActiveConfigDictionaryNames('rentalTypes'), rentalSettings = getRentalNumberingSettings(), onClose, onSave, onAgreement }) {
@@ -7966,6 +7908,11 @@ const RENTAL_TEMPLATE_VARIABLES = [
   { key: '{{companyName}}', label: 'Nazwa firmy' },
   { key: '{{companyAddress}}', label: 'Adres firmy' },
   { key: '{{equipmentTable}}', label: 'Tabela sprzętu' },
+  { key: '{{rentalFinancialTerms}}', label: 'Warunki finansowe wypożyczenia' },
+  { key: '{{rentalPaymentType}}', label: 'Typ rozliczenia (płatne/bezpłatne)' },
+  { key: '{{rentalPriceFormatted}}', label: 'Sformatowana cena wynajmu' },
+  { key: '{{rentalPrice}}', label: 'Cena wynajmu' },
+  { key: '{{rentalIsPaid}}', label: 'Czy wypożyczenie płatne (tak/nie)' },
   { key: '{{notes}}', label: 'Uwagi' }
 ];
 const DEFAULT_DOCUMENT_TEMPLATES = {
@@ -8031,6 +7978,14 @@ function resolveDocumentTableRows(context = {}, documentTypeId = '') {
   if (documentTypeId === 'issueProtocol') {
     return resolveIssueProtocolEquipmentTableRows(context);
   }
+  if (documentTypeId === 'rentalAgreement') {
+    if (Array.isArray(context.rentalItems) && context.rentalItems.length) {
+      return buildRentalEquipmentTableRows(context.rentalItems, getRentalEquipmentTableColumns());
+    }
+    if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
+      return context.equipmentRows;
+    }
+  }
   if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
     return context.equipmentRows;
   }
@@ -8078,6 +8033,11 @@ const DOCUMENT_TEMPLATE_TYPES = [
       { key: '{{companyAddress}}', description: 'Adres firmy' },
       { key: '{{equipmentTable}}', description: 'Tabela sprzętu' },
       { key: '{{rentalTotal}}', description: 'Podsumowanie wypożyczenia' },
+      { key: '{{rentalFinancialTerms}}', description: 'Warunki finansowe wypożyczenia' },
+      { key: '{{rentalPaymentType}}', description: 'Typ rozliczenia (płatne/bezpłatne)' },
+      { key: '{{rentalPriceFormatted}}', description: 'Sformatowana cena wynajmu' },
+      { key: '{{rentalPrice}}', description: 'Cena wynajmu' },
+      { key: '{{rentalIsPaid}}', description: 'Czy wypożyczenie płatne (tak/nie)' },
       { key: '{{notes}}', description: 'Dodatkowe uwagi' }
     ],
     defaultTemplate: {
@@ -8466,7 +8426,7 @@ function resolveIssueProtocolEquipmentTableRows(context = {}) {
 }
 
 function resolveDesignerEquipmentTableColumns(element, documentTypeId = '') {
-  if (element.tableType === 'equipmentTable' && documentTypeId === 'issueProtocol') {
+  if (element.tableType === 'equipmentTable' && ['issueProtocol', 'rentalAgreement'].includes(documentTypeId)) {
     return mapTemplateColumnsToDesignerColumns(getRentalEquipmentTableColumns());
   }
   const columns = (element.columns ?? []).filter((column) => column.visible !== false);
@@ -8719,12 +8679,35 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
     y += 56 + gap;
   }
 
+  if (documentTypeId === 'rentalAgreement') {
+    elements.push(designerLayoutElement('customText', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: 16,
+      fontSize: 8,
+      fontWeight: 700,
+      text: 'WARUNKI FINANSOWE'
+    }));
+    y += 16 + 4;
+    elements.push(designerLayoutElement('customText', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: 40,
+      fontSize: 10,
+      fontWeight: 400,
+      text: '{{rentalFinancialTerms}}'
+    }));
+    y += 40 + gap;
+  }
+
   const tableLibraryId = ['rentalAgreement', 'rentalConfirmation', 'issueProtocol', 'returnProtocol'].includes(documentTypeId)
     ? 'equipmentTable'
     : 'itemsTable';
   const tableColumns = documentTypeId === 'serviceIntake'
     ? (defaults.columns ?? DEFAULT_SERVICE_INTAKE_TEMPLATE_COLUMNS)
-    : documentTypeId === 'issueProtocol'
+    : ['issueProtocol', 'rentalAgreement'].includes(documentTypeId)
       ? getRentalEquipmentTableColumns()
       : (defaults.columns ?? DEFAULT_GENERIC_TEMPLATE_COLUMNS);
 
@@ -8946,8 +8929,10 @@ function getSavedDocumentTemplateByType(documentTypeId) {
   return normalizeSharedDocumentTemplate(library[documentTypeId], typeDef.defaultTemplate);
 }
 
-function enrichDocumentRenderContext(documentTypeId, context = {}) {
-  const savedTemplate = getSavedDocumentTemplateByType(documentTypeId);
+function enrichDocumentRenderContext(documentTypeId, context = {}, sharedTemplate = null) {
+  const savedTemplate = sharedTemplate
+    ? normalizeSharedDocumentTemplate(sharedTemplate, getDocumentTemplateTypeById(documentTypeId).defaultTemplate)
+    : getSavedDocumentTemplateByType(documentTypeId);
   const typeDef = getDocumentTemplateTypeById(documentTypeId);
   return {
     ...context,
@@ -8993,6 +8978,55 @@ function getServiceDocumentDesignerTemplate(documentTypeId) {
   const designerState = getDocumentDesignerState();
   const templates = designerState.templates.filter((template) => template.documentTypeId === documentTypeId);
   return templates[0] ?? createDefaultDocumentDesignerTemplate(documentTypeId);
+}
+
+function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile()) {
+  const client = rental?.clients ?? {};
+  const items = getRentalBaseItems(rental);
+  const issueDate = formatAgreementDate(rental?.start_date) || formatAgreementDate(getLocalIsoDate());
+  const introCity = company.documentCity || company.city || '';
+  const contactPerson = client.contact_person || client.contact_name || client.representative || '';
+  return {
+    ...mapClientToDocumentContext(client),
+    ...buildRentalFinancialContext(rental),
+    documentNumber: rental?.rental_number || '—',
+    issueDate,
+    rentalIssueDate: formatAgreementDate(rental?.start_date) || issueDate,
+    plannedReturnDate: formatAgreementDate(rental?.planned_return_date) || '',
+    actualReturnDate: formatAgreementDate(rental?.actual_return_date) || '',
+    rentalNumber: rental?.rental_number || '—',
+    status: rental?.status || '',
+    companyName: company.legalName || company.name || 'FIXER WEB',
+    companyAddress: formatCompanyAddress(company),
+    companyTaxData: formatCompanyTaxData(company),
+    companyContact: formatCompanyContact(company),
+    clientContact: compactLines([
+      contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '',
+      client.phone ? `Telefon: ${client.phone}` : '',
+      client.email ? `E-mail: ${client.email}` : ''
+    ]).join('\n'),
+    operatorName: 'Operator',
+    notes: rental?.notes || '',
+    documentFooter: company.documentFooter || '',
+    documentCityClause: introCity ? ` w ${introCity}` : '',
+    documentTypeId: 'rentalAgreement',
+    rentalItems: items,
+    equipmentRows: buildRentalEquipmentTableRows(items, getRentalEquipmentTableColumns())
+  };
+}
+
+function buildRentalAgreementDocumentHtml(rental, { preview = true, company = getCompanyProfile(), sharedTemplate = null } = {}) {
+  const context = enrichDocumentRenderContext(
+    'rentalAgreement',
+    buildRentalAgreementDocumentContext(rental, company),
+    sharedTemplate
+  );
+  const designerTemplate = getServiceDocumentDesignerTemplate('rentalAgreement');
+  return renderDesignerDocumentHtml(designerTemplate, context, {
+    preview,
+    company,
+    title: context.documentTitle || 'Umowa wypożyczenia sprzętu'
+  });
 }
 
 function buildServiceOrderDocumentHtml(order, type, { preview = true, client = null, company = getCompanyProfile() } = {}) {
@@ -12527,6 +12561,8 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     },
     start_date: '2026-06-03',
     planned_return_date: '2026-06-10',
+    rental_type: 'Płatne',
+    total_price: '1230.00',
     rental_items: [
       { id: 'preview-1', name_snapshot: 'Kamera Sony PXW-Z190', brand_snapshot: 'Sony', model_snapshot: 'PXW-Z190', serial_snapshot: 'SN-001', barcode_snapshot: '590000000001', inventory_number_snapshot: 'EQ/001', condition_out: 'Dobry' },
       { id: 'preview-2', name_snapshot: 'Statyw Manfrotto', brand_snapshot: 'Manfrotto', model_snapshot: '504HD', serial_snapshot: 'SN-002', barcode_snapshot: '590000000002', inventory_number_snapshot: 'EQ/002', condition_out: 'Bardzo dobry' }
@@ -12561,16 +12597,10 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     equipmentRows: buildRentalEquipmentTableRows(getRentalBaseItems(rentalAgreementPreviewRental))
   };
   const currentDocumentTemplatePreviewHtml = currentTemplateType.id === 'rentalAgreement'
-    ? buildRentalAgreementHtml(rentalAgreementPreviewRental, {
+    ? buildRentalAgreementDocumentHtml(rentalAgreementPreviewRental, {
       preview: true,
-      settings: {
-        ...documentSettings,
-        documentTemplates: {
-          ...documentSettings.documentTemplates,
-          [RENTAL_AGREEMENT_TEMPLATE_KEY]: mapSharedTemplateToRentalAgreementTemplate(currentDocumentTemplate, rentalAgreementTemplate)
-        }
-      },
-      company: companyProfile
+      company: companyProfile,
+      sharedTemplate: currentDocumentTemplate
     })
     : buildGenericDocumentTemplateHtml(currentTemplateType, currentDocumentTemplate, templatePreviewContext, { preview: true, company: companyProfile });
   const settingsSearchTargets = [

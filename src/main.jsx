@@ -4506,36 +4506,6 @@ function generateServiceNumber(existingRows = []) {
   return formatDocumentNumber({ ...settings, format: effectiveFormat }, sequence, today);
 }
 
-function buildServiceDocumentData(order, type) {
-  return {
-    documentType: type === 'acceptance' ? 'Przyjęcie do serwisu' : 'Wydanie z serwisu',
-    serviceNumber: order.service_number,
-    status: order.status,
-    priority: order.priority,
-    client: order.client_name,
-    equipment: order.equipment_name,
-    customerDeviceName: order.customer_device_name,
-    customerDeviceBrand: order.customer_device_brand,
-    customerDeviceModel: order.customer_device_model,
-    customerDeviceSerial: order.customer_device_serial,
-    customerDeviceCode: order.customer_device_code,
-    intakeCondition: order.intake_condition,
-    intakeAccessories: order.intake_accessories,
-    intakeVisualNotes: order.intake_visual_notes,
-    acceptedDate: order.accepted_date,
-    plannedDate: order.planned_date,
-    completedDate: order.completed_date,
-    faultDescription: order.fault_description,
-    diagnosis: order.diagnosis,
-    workPerformed: order.work_performed,
-    partsMaterials: order.parts_materials,
-    laborCost: order.labor_cost,
-    partsCost: order.parts_cost,
-    otherCost: order.other_cost,
-    totalCost: order.total_cost
-  };
-}
-
 function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [clients, setClients] = useState([]);
@@ -4555,6 +4525,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [serviceIntakeConditions, setServiceIntakeConditions] = useState(DEFAULT_SERVICE_INTAKE_CONDITIONS);
   const [serviceExternalServices, setServiceExternalServices] = useState(DEFAULT_SERVICE_EXTERNAL_SERVICES);
   const [serviceProgressTemplates, setServiceProgressTemplates] = useState(DEFAULT_SERVICE_PROGRESS_TEMPLATES);
+  const [serviceDocumentPreview, setServiceDocumentPreview] = useState(null);
 
   const loadServiceData = async () => {
     setLoading(true);
@@ -4721,11 +4692,20 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     await loadServiceData();
   };
 
-  const createServiceDocument = (order, type) => {
-    const data = buildServiceDocumentData(order, type);
-    const suffix = type === 'acceptance' ? 'przyjecie' : 'wydanie';
-    downloadTextFile(`${normalizeFileNamePart(order.service_number)}-${suffix}.json`, JSON.stringify(data, null, 2), 'application/json;charset=utf-8');
-    setNotice(type === 'acceptance' ? 'Przygotowano dane dokumentu przyjęcia do serwisu.' : 'Przygotowano dane dokumentu wydania z serwisu.');
+  const openServiceDocumentPreview = (order, type) => {
+    const client = resolveClient(order);
+    const html = buildServiceOrderDocumentHtml(order, type, { preview: true, client });
+    setServiceDocumentPreview({
+      html,
+      title: SERVICE_DOCUMENT_TITLES[type],
+      fileName: buildServiceDocumentFileName(order, type)
+    });
+    setNotice(type === 'acceptance' ? 'Przygotowano dokument przyjęcia do serwisu.' : 'Przygotowano dokument wydania z serwisu.');
+  };
+
+  const printServiceDocumentPreview = () => {
+    if (!serviceDocumentPreview) return;
+    printHtmlInIframe(prepareServiceDocumentPrintHtml(serviceDocumentPreview.html, serviceDocumentPreview.fileName));
   };
 
   const clearFilters = () => {
@@ -4820,8 +4800,8 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
         editLabel="Otwórz kartotekę"
         deleteLabel="Usuń zlecenie"
         customRowActions={[
-          { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => createServiceDocument(order, 'acceptance') },
-          { key: 'release', label: 'Utwórz dokument wydania', icon: Download, onClick: (order) => createServiceDocument(order, 'release') }
+          { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'acceptance') },
+          { key: 'release', label: 'Utwórz dokument wydania', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'release') }
         ]}
       />
     </section>
@@ -4848,8 +4828,8 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
         deleteLabel="Usuń z historii"
         customRowActions={[
           { key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: handleRestoreServiceOrder },
-          { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => createServiceDocument(order, 'acceptance') },
-          { key: 'release', label: 'Utwórz dokument wydania', icon: Download, onClick: (order) => createServiceDocument(order, 'release') }
+          { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'acceptance') },
+          { key: 'release', label: 'Utwórz dokument wydania', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'release') }
         ]}
       />}
     </section>
@@ -4876,6 +4856,14 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
         if (result?.error) setNotice(humanizeError(result.error, 'service'));
       }}
       onCancel={() => setSelectStatusDialog(null)}
+    />}
+    {serviceDocumentPreview && <DocumentPreviewModal
+      html={serviceDocumentPreview.html}
+      title={serviceDocumentPreview.title}
+      onClose={() => setServiceDocumentPreview(null)}
+      onPrint={printServiceDocumentPreview}
+      onDownload={printServiceDocumentPreview}
+      onGeneratePdf={printServiceDocumentPreview}
     />}
   </div>;
 }
@@ -8802,6 +8790,100 @@ function saveDocumentDesignerState(state) {
   const normalized = normalizeDocumentDesignerState(state);
   localStorage.setItem(DOCUMENT_DESIGNER_STORAGE_KEY, JSON.stringify(normalized));
   return normalized;
+}
+
+const SERVICE_DOCUMENT_TYPE_MAP = {
+  acceptance: 'serviceIntake',
+  release: 'serviceCompletion'
+};
+
+const SERVICE_DOCUMENT_TITLES = {
+  acceptance: 'Potwierdzenie przyjęcia do serwisu',
+  release: 'Potwierdzenie zakończenia serwisu'
+};
+
+const SERVICE_DOCUMENT_FILE_PREFIX = {
+  acceptance: 'Protokol_przyjecia',
+  release: 'Protokol_wydania'
+};
+
+function buildServiceCompletionTableRows(context = {}) {
+  const name = String(context.deviceName ?? '').trim();
+  if (!name) return [];
+  return [{
+    lp: '1',
+    name,
+    details: String(context.repairDescription ?? '—').trim() || '—',
+    status: String(context.serviceStatus ?? '—').trim() || '—',
+    notes: String(context.serviceCost ?? '—').trim() || '—'
+  }];
+}
+
+function getServiceDocumentDesignerTemplate(documentTypeId) {
+  const designerState = getDocumentDesignerState();
+  return designerState.templates.find((template) => template.documentTypeId === documentTypeId) ?? null;
+}
+
+function buildServiceOrderDocumentContext(order, type, client = null, company = getCompanyProfile()) {
+  const documentTypeId = SERVICE_DOCUMENT_TYPE_MAP[type];
+  const resolvedClient = client ?? order.clients ?? null;
+  const deviceName = String(order.customer_device_name || order.equipment_name || order.equipment?.name || '').trim();
+  const deviceSerial = String(order.customer_device_serial || order.equipment?.serial || '').trim();
+  const issueDate = formatAgreementDate(type === 'release' ? (order.completed_date || order.accepted_date) : order.accepted_date) || formatAgreementDate(getLocalIsoDate());
+  const context = {
+    documentNumber: order.service_number || '—',
+    issueDate,
+    serviceNumber: order.service_number || '—',
+    serviceStatus: order.status || '—',
+    status: order.status || '—',
+    clientName: resolvedClient?.name || order.client_name || '—',
+    clientAddress: resolvedClient ? formatClientDocumentAddress(resolvedClient) : '—',
+    companyName: company.legalName || company.name || 'FIXER WEB',
+    companyAddress: formatCompanyAddress(company),
+    companyTaxData: formatCompanyTaxData(company),
+    companyContact: formatCompanyContact(company),
+    operatorName: 'Operator',
+    deviceName: deviceName || '—',
+    deviceSerialNumber: deviceSerial || '—',
+    faultDescription: order.fault_description || '—',
+    diagnosis: order.diagnosis || '—',
+    repairDescription: order.work_performed || order.diagnosis || '—',
+    serviceCost: formatServiceMoney(order.total_cost),
+    notes: order.notes || '',
+    documentFooter: company.documentFooter || '',
+    documentTypeId
+  };
+  if (documentTypeId === 'serviceIntake') {
+    context.equipmentRows = buildServiceIntakeTableRows(context);
+  } else if (documentTypeId === 'serviceCompletion') {
+    context.equipmentRows = buildServiceCompletionTableRows(context);
+  }
+  return context;
+}
+
+function buildServiceOrderDocumentHtml(order, type, { preview = true, client = null, company = getCompanyProfile() } = {}) {
+  const documentTypeId = SERVICE_DOCUMENT_TYPE_MAP[type];
+  const documentType = getDocumentTemplateTypeById(documentTypeId);
+  const context = buildServiceOrderDocumentContext(order, type, client, company);
+  const designerTemplate = getServiceDocumentDesignerTemplate(documentTypeId);
+  if (designerTemplate?.elements?.length) {
+    return buildDocumentDesignerHtml(designerTemplate, context, { preview, company });
+  }
+  const sharedTemplate = getDocumentTemplateLibrary()[documentTypeId];
+  return buildGenericDocumentTemplateHtml(documentType, sharedTemplate, context, { preview, company });
+}
+
+function buildServiceDocumentFileName(order, type) {
+  const prefix = SERVICE_DOCUMENT_FILE_PREFIX[type] || 'Dokument_serwisowy';
+  return `${prefix}_${normalizeFileNamePart(order.service_number || 'SER')}.pdf`;
+}
+
+function prepareServiceDocumentPrintHtml(html, fileName = 'dokument.pdf') {
+  const safeTitle = String(fileName).replace(/\.pdf$/i, '');
+  if (/<title>[^<]*<\/title>/i.test(html)) {
+    return html.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtml(safeTitle)}</title>`);
+  }
+  return html.replace(/<head[^>]*>/i, (match) => `${match}<title>${escapeHtml(safeTitle)}</title>`);
 }
 
 function applyDesignerTokens(value, context = {}) {

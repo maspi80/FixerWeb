@@ -3473,7 +3473,7 @@ function renderTermsFromTemplate(text, fallbackTerms = []) {
 }
 
 function createDocumentLayoutCss() {
-  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{position:relative;width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:22mm 20mm 18mm;box-sizing:border-box}.ag-top{display:flex;gap:12px;align-items:flex-start;margin-bottom:9px;padding-bottom:8px;border-bottom:1.2px solid #1e3a5f}.ag-logo-img{width:58px;max-height:58px;object-fit:contain;display:block;flex:0 0 58px}.ag-logo-fallback{width:58px;height:58px;display:flex;align-items:center;justify-content:center;border:1.2px solid #c0ccdb;border-radius:7px;font-size:20px;font-weight:800;color:#1e3a5f;flex:0 0 58px}.ag-co-name{font-size:12.5px;font-weight:800;color:#0f1e35;margin:0 0 2px}.ag-co-info{font-size:8.8px;color:#444;margin:0 0 1px;line-height:1.35}.ag-title-block{text-align:center;margin:10px 0 8px}.ag-doc-title{font-size:16.5px;font-weight:900;color:#0f1e35;text-transform:uppercase;letter-spacing:.035em;margin:0 0 6px}.ag-meta-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-width:600px;margin:0 auto}.ag-meta-chip{display:grid;gap:1px;padding:5px 7px;border:1px solid #d8e0eb;border-radius:8px;background:#f8fafc;text-align:left}.ag-meta-chip-label{font-size:7.2px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-weight:700}.ag-meta-chip-value{font-size:9.2px;color:#0f1e35;font-weight:700;line-height:1.3}.ag-divider{border:none;border-top:1px solid #c8d4e0;margin:7px 0}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:7.8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-party-name{font-size:10.2px;font-weight:800;color:#0f1e35;margin:0 0 1px}.ag-party-line{font-size:9.2px;color:#333;margin:0 0 1px}.ag-core{display:grid;grid-template-columns:34% minmax(0,1fr);gap:13px;align-items:start;margin-bottom:8px}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700;word-break:break-word}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px;word-break:break-word;hyphens:auto}.ag-table tbody tr:last-child td{border-bottom:none}.ag-table.many-cols th,.ag-table.many-cols td{font-size:7.4px;padding:2.6px 3.5px}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px;break-inside:avoid}.ag-terms li .n{font-weight:800;color:#1e3a5f;min-width:15px;flex-shrink:0}.ag-signatures{margin-top:14px;break-inside:avoid}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}.ag-page-footer{position:absolute;left:20mm;right:20mm;bottom:7mm;display:flex;justify-content:space-between;font-size:8px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:3px}.ag-page-number::after{content:counter(page)}.ag-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:7px 12px;background:#fff;border-bottom:1px solid #dde3ed;box-shadow:0 2px 4px rgba(0,0,0,.06)}.ag-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{.ag-toolbar{display:none!important}.ag-doc{margin:0;page-break-after:auto!important;break-after:auto!important}body{margin:0;padding:0}}@media(max-width:760px){.ag-doc{width:100%;min-height:auto;padding:16px 14px 24px}.ag-top,.ag-parties,.ag-sig-grid,.ag-core,.ag-meta-grid{grid-template-columns:1fr}.ag-page-footer{position:static;left:auto;right:auto;bottom:auto;margin-top:10px}}`;
+  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{position:relative;width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:22mm 20mm 18mm;box-sizing:border-box}.ag-top{display:flex;gap:12px;align-items:flex-start;margin-bottom:9px;padding-bottom:8px;border-bottom:1.2px solid #1e3a5f}.ag-logo-img{width:58px;max-height:58px;object-fit:contain;display:block;flex:0 0 58px}.ag-logo-fallback{width:58px;height:58px;display:flex;align-items:center;justify-content:center;border:1.2px solid #c0ccdb;border-radius:7px;font-size:20px;font-weight:800;color:#1e3a5f;flex:0 0 58px}.ag-co-name{font-size:12.5px;font-weight:800;color:#0f1e35;margin:0 0 2px}.ag-co-info{font-size:8.8px;color:#444;margin:0 0 1px;line-height:1.35}.ag-title-block{text-align:center;margin:10px 0 8px}.ag-doc-title{font-size:16.5px;font-weight:900;color:#0f1e35;text-transform:uppercase;letter-spacing:.035em;margin:0 0 6px}.ag-meta-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-width:600px;margin:0 auto}.ag-meta-chip{display:grid;gap:1px;padding:5px 7px;border:1px solid #d8e0eb;border-radius:8px;background:#f8fafc;text-align:left}.ag-meta-chip-label{font-size:7.2px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-weight:700}.ag-meta-chip-value{font-size:9.2px;color:#0f1e35;font-weight:700;line-height:1.3}.ag-divider{border:none;border-top:1px solid #c8d4e0;margin:7px 0}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:7.8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-party-name{font-size:10.2px;font-weight:800;color:#0f1e35;margin:0 0 1px}.ag-party-line{font-size:9.2px;color:#333;margin:0 0 1px}.ag-core{display:grid;grid-template-columns:34% minmax(0,1fr);gap:13px;align-items:start;margin-bottom:8px}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:visible}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table thead{display:table-header-group}.ag-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700;word-break:break-word}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px;word-break:break-word;hyphens:auto}.ag-table tbody tr:last-child td{border-bottom:none}.ag-table.many-cols th,.ag-table.many-cols td{font-size:7.4px;padding:2.6px 3.5px}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px;break-inside:avoid}.ag-terms li .n{font-weight:800;color:#1e3a5f;min-width:15px;flex-shrink:0}.ag-signatures{margin-top:14px;break-inside:avoid}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}.ag-page-footer{position:absolute;left:20mm;right:20mm;bottom:7mm;display:flex;justify-content:space-between;font-size:8px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:3px}.ag-page-number::after{content:counter(page)}.ag-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:7px 12px;background:#fff;border-bottom:1px solid #dde3ed;box-shadow:0 2px 4px rgba(0,0,0,.06)}.ag-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{.ag-toolbar{display:none!important}.ag-doc{margin:0;page-break-after:auto!important;break-after:auto!important}.ag-table-wrap{overflow:visible!important}.ag-table thead{display:table-header-group}.ag-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}body{margin:0;padding:0}}@media(max-width:760px){.ag-doc{width:100%;min-height:auto;padding:16px 14px 24px}.ag-top,.ag-parties,.ag-sig-grid,.ag-core,.ag-meta-grid{grid-template-columns:1fr}.ag-page-footer{position:static;left:auto;right:auto;bottom:auto;margin-top:10px}}`;
 }
 
 function buildDocumentSignaturesHtml(leftLabel, rightLabel) {
@@ -9697,9 +9697,43 @@ function applyDesignerTokens(value, context = {}) {
   return compactTemplateMultilineText(applyTemplateVariables(String(value ?? ''), context));
 }
 
-function renderDocumentDesignerElementHtml(element, context = {}, company = getCompanyProfile()) {
+function getDesignerMarginPaddingPx(margins = DEFAULT_DESIGNER_MARGINS) {
+  return {
+    top: Math.round(Number(margins.top ?? DEFAULT_DESIGNER_MARGINS.top) * DESIGNER_MM_TO_PX),
+    right: Math.round(Number(margins.right ?? DEFAULT_DESIGNER_MARGINS.right) * DESIGNER_MM_TO_PX),
+    bottom: Math.round(Number(margins.bottom ?? DEFAULT_DESIGNER_MARGINS.bottom) * DESIGNER_MM_TO_PX),
+    left: Math.round(Number(margins.left ?? DEFAULT_DESIGNER_MARGINS.left) * DESIGNER_MM_TO_PX)
+  };
+}
+
+function splitDesignerElementsForFlowLayout(elements = []) {
+  const visible = elements.filter((element) => element.visible !== false);
+  const tables = visible
+    .filter((element) => element.kind === 'table')
+    .sort((left, right) => left.y - right.y || left.x - right.x);
+  if (!tables.length) {
+    return { before: visible, tables: [], after: [], anchorTable: null, anchorBottom: 0 };
+  }
+  const anchorTable = tables[0];
+  const tableIds = new Set(tables.map((table) => table.id));
+  const anchorBottom = anchorTable.y + anchorTable.height;
+  const before = visible.filter((element) => !tableIds.has(element.id) && (element.y + element.height <= anchorTable.y + 2));
+  const after = visible.filter((element) => !tableIds.has(element.id) && !(element.y + element.height <= anchorTable.y + 2));
+  return { before, tables, after, anchorTable, anchorBottom };
+}
+
+function buildDesignerEquipmentTableMarkup(element, context = {}) {
+  const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
+  const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
+  const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
+  const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;vertical-align:top;word-break:break-word;">${escapeHtml(formatDocumentTableCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
+  const emptyRow = `<tr><td colspan="${safeColumns.length}" style="padding:6px 5px;font-size:8.5px;color:#64748b;">Brak pozycji sprzętu.</td></tr>`;
+  return `<table class="designer-doc-equipment-table" style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body || emptyRow}</tbody></table>`;
+}
+
+function renderDocumentDesignerElementAbsoluteHtml(element, context = {}, company = getCompanyProfile(), origin = { x: 0, y: 0 }) {
   if (element.visible === false) return '';
-  const commonStyle = `position:absolute;left:${element.x}px;top:${element.y}px;width:${element.width}px;height:${element.height}px;overflow:hidden;`;
+  const commonStyle = `position:absolute;left:${element.x - origin.x}px;top:${element.y - origin.y}px;width:${element.width}px;height:${element.height}px;overflow:visible;`;
   const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;`;
   if (element.kind === 'logo') {
     const logoSource = String(element.logoDataUrl ?? '').trim() || (company?.showLogoOnDocuments !== false ? company?.logoDataUrl : '');
@@ -9717,11 +9751,8 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
     return `<div style="${commonStyle}${textStyle}display:flex;flex-direction:column;justify-content:flex-end;"><div style="font-size:${Math.max(9, element.fontSize)}px;font-weight:${element.fontWeight};margin-bottom:30px;">${escapeHtml(label)}</div><div style="border-top:1px dotted #64748b;padding-top:4px;font-size:9px;color:#64748b;text-align:center;">miejscowość, data i podpis</div></div>`;
   }
   if (element.kind === 'table') {
-    const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
-    const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
-    const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
-    const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;">${escapeHtml(formatDocumentTableCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
-    return `<div style="${commonStyle}border:1px solid #c0c8d4;background:#fff;overflow:hidden;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+    const minHeight = Math.max(40, element.height);
+    return `<div style="${commonStyle}min-height:${minHeight}px;height:auto;border:1px solid #c0c8d4;background:#fff;overflow:visible;">${buildDesignerEquipmentTableMarkup(element, context)}</div>`;
   }
   if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') {
     const summaryHtml = context.rentalCostSummaryHtml
@@ -9735,27 +9766,104 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
         isRentalFreeType(context.rental?.rental_type ?? context.rentalType),
         getRentalNumberingSettings()?.currency || 'zł'
       ).html;
-    return `<div style="${commonStyle}overflow:visible;">${summaryHtml}</div>`;
+    return `<div style="${commonStyle}height:auto;overflow:visible;">${summaryHtml}</div>`;
   }
   const rawText = String(element.text ?? '').trim();
   if (rawText === '{{rentalCostSummary}}' && context.rentalCostSummaryHtml) {
-    return `<div style="${commonStyle}overflow:visible;">${context.rentalCostSummaryHtml}</div>`;
+    return `<div style="${commonStyle}height:auto;overflow:visible;">${context.rentalCostSummaryHtml}</div>`;
   }
   const text = applyDesignerTokens(element.text, context);
-  return `<div style="${commonStyle}${textStyle}">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
+  return `<div style="${commonStyle}${textStyle}height:auto;overflow:visible;">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
+}
+
+function renderDocumentDesignerElementFlowHtml(element, context = {}, company = getCompanyProfile(), { marginTop = 0, marginLeft = 0, contentWidth = DOCUMENT_DESIGNER_PAGE.width } = {}) {
+  if (element.visible === false) return '';
+  const width = Math.min(element.width, contentWidth);
+  const wrapStyle = `margin-top:${marginTop}px;margin-left:${marginLeft}px;width:${width}px;max-width:100%;`;
+  const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;`;
+  if (element.kind === 'line') {
+    const thickness = Math.max(1, element.height);
+    return `<div class="designer-doc-flow-block" style="${wrapStyle}"><div style="width:100%;height:${thickness}px;background:${escapeHtml(element.color)};"></div></div>`;
+  }
+  if (element.kind === 'signature') {
+    const label = applyDesignerTokens(element.text || 'Podpis', context);
+    return `<div class="designer-doc-flow-block designer-doc-flow-signature" style="${wrapStyle}${textStyle}"><div style="font-size:${Math.max(9, element.fontSize)}px;font-weight:${element.fontWeight};margin-bottom:30px;">${escapeHtml(label)}</div><div style="border-top:1px dotted #64748b;padding-top:4px;font-size:9px;color:#64748b;text-align:center;">miejscowość, data i podpis</div></div>`;
+  }
+  if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') {
+    const summaryHtml = context.rentalCostSummaryHtml
+      || buildRentalCostSummaryContent(
+        buildRentalFinancialTotalsFromRental(context.rental ?? {
+          rental_type: context.rentalType,
+          vat_rate: context.rentalVatRate,
+          total_deposit: context.rentalDeposit,
+          rental_items: context.rentalItems
+        }),
+        isRentalFreeType(context.rental?.rental_type ?? context.rentalType),
+        getRentalNumberingSettings()?.currency || 'zł'
+      ).html;
+    return `<div class="designer-doc-flow-block" style="${wrapStyle}">${summaryHtml}</div>`;
+  }
+  const rawText = String(element.text ?? '').trim();
+  if (rawText === '{{rentalCostSummary}}' && context.rentalCostSummaryHtml) {
+    return `<div class="designer-doc-flow-block" style="${wrapStyle}">${context.rentalCostSummaryHtml}</div>`;
+  }
+  const text = applyDesignerTokens(element.text, context);
+  return `<div class="designer-doc-flow-block" style="${wrapStyle}${textStyle}">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
+}
+
+function renderDocumentDesignerTableFlowHtml(element, context = {}, { marginLeft = 0, contentWidth = DOCUMENT_DESIGNER_PAGE.width } = {}) {
+  if (element.visible === false) return '';
+  const width = Math.min(element.width, contentWidth);
+  const minHeight = Math.max(40, element.height);
+  return `<div class="designer-doc-table-flow" style="margin-left:${marginLeft}px;width:${width}px;max-width:100%;min-height:${minHeight}px;"><div class="designer-doc-table-flow-inner">${buildDesignerEquipmentTableMarkup(element, context)}</div></div>`;
+}
+
+function renderDocumentDesignerFlowLayoutHtml(template, context = {}, company = getCompanyProfile()) {
+  const normalized = normalizeDocumentDesignerTemplate(template, template?.documentTypeId);
+  const margins = normalized.margins ?? DEFAULT_DESIGNER_MARGINS;
+  const padding = getDesignerMarginPaddingPx(margins);
+  const origin = { x: padding.left, y: padding.top };
+  const contentWidth = DOCUMENT_DESIGNER_PAGE.width - padding.left - padding.right;
+  const { before, tables, after, anchorTable, anchorBottom } = splitDesignerElementsForFlowLayout(normalized.elements);
+  const headerHeight = anchorTable ? Math.max(anchorTable.y - padding.top, 0) : Math.max(DOCUMENT_DESIGNER_PAGE.height - padding.top - padding.bottom, 0);
+  const headerHtml = before.map((element) => renderDocumentDesignerElementAbsoluteHtml(element, context, company, origin)).join('');
+  const tablesHtml = tables.map((element) => renderDocumentDesignerTableFlowHtml(element, context, {
+    marginLeft: Math.max(0, element.x - padding.left),
+    contentWidth
+  })).join('');
+  const sortedAfter = [...after].sort((left, right) => left.y - right.y || left.x - right.x);
+  let previousBottom = anchorBottom;
+  const afterHtml = sortedAfter.map((element) => {
+    const marginTop = Math.max(8, element.y - previousBottom);
+    previousBottom = element.y + element.height;
+    return renderDocumentDesignerElementFlowHtml(element, context, company, {
+      marginTop,
+      marginLeft: Math.max(0, element.x - padding.left),
+      contentWidth
+    });
+  }).join('');
+  const marginCss = `${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm`;
+  return `<div class="designer-doc-page-flow" style="padding:${marginCss};"><div class="designer-doc-header-region" style="position:relative;min-height:${headerHeight}px;width:100%;">${headerHtml}</div>${tablesHtml ? `<div class="designer-doc-tables-region">${tablesHtml}</div>` : ''}${afterHtml ? `<div class="designer-doc-after-region">${afterHtml}</div>` : ''}</div>`;
+}
+
+function renderDocumentDesignerElementHtml(element, context = {}, company = getCompanyProfile()) {
+  return renderDocumentDesignerElementAbsoluteHtml(element, context, company);
 }
 
 function createDesignerDocumentLayoutCss() {
-  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body{display:flex;justify-content:center;align-items:flex-start;min-height:100vh;background:#e2e8f0}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:hidden;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:auto!important;height:auto!important;display:block;margin:0;padding:0}.designer-doc-page{width:210mm;height:297mm;box-shadow:none!important;margin:0!important;overflow:hidden;page-break-after:auto!important;break-after:auto!important;page-break-inside:avoid}.designer-doc-page+.designer-doc-page{page-break-before:always;break-before:page}.designer-doc-toolbar{display:none!important}}`;
+  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body{display:flex;justify-content:center;align-items:flex-start;min-height:100vh;background:#e2e8f0}.designer-doc-page-flow{width:210mm;min-height:297mm;background:#fff;box-shadow:0 0 0 1px #cbd5e1;box-sizing:border-box}.designer-doc-header-region{position:relative;width:100%}.designer-doc-tables-region,.designer-doc-after-region{width:100%}.designer-doc-table-flow{margin-top:6px;margin-bottom:6px;break-inside:auto;page-break-inside:auto}.designer-doc-table-flow-inner{border:1px solid #c0c8d4;background:#fff;overflow:visible}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-flow-signature{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;min-height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:visible;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:auto!important;height:auto!important;display:block;margin:0;padding:0}.designer-doc-page-flow{width:210mm;min-height:auto;box-shadow:none!important;margin:0!important}.designer-doc-table-flow,.designer-doc-table-flow-inner,.designer-doc-tables-region{overflow:visible!important}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block,.designer-doc-flow-signature{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-toolbar{display:none!important}}`;
 }
 
 function renderDesignerDocumentHtml(template, context = {}, { preview = true, company = getCompanyProfile(), title = '' } = {}) {
   const normalized = normalizeDocumentDesignerTemplate(template, template?.documentTypeId);
   const renderContext = { ...context, documentTypeId: normalized.documentTypeId };
-  const elementsHtml = normalized.elements.map((element) => renderDocumentDesignerElementHtml(element, renderContext, company)).join('');
+  const hasFlowTable = normalized.elements.some((element) => element.visible !== false && element.kind === 'table');
+  const bodyHtml = hasFlowTable
+    ? renderDocumentDesignerFlowLayoutHtml(normalized, renderContext, company)
+    : `<div class="designer-doc-page">${normalized.elements.map((element) => renderDocumentDesignerElementHtml(element, renderContext, company)).join('')}</div>`;
   const docTitle = escapeHtml(title || normalized.name || 'Dokument');
   const toolbar = preview ? '' : '<div class="designer-doc-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>';
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${docTitle}</title><style>${createDesignerDocumentLayoutCss()}</style></head><body>${toolbar}<div class="designer-doc-page">${elementsHtml}</div></body></html>`;
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${docTitle}</title><style>${createDesignerDocumentLayoutCss()}</style></head><body>${toolbar}${bodyHtml}</body></html>`;
 }
 
 function buildDocumentDesignerHtml(template, context = {}, options = {}) {

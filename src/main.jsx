@@ -3306,10 +3306,42 @@ function formatRentalMoney(value, currency = 'zł') {
   return currency ? `${amount} ${currency}` : amount;
 }
 
+function buildRentalCostSummaryContent(totals, isFree, currency = 'zł') {
+  if (isFree) {
+    return {
+      text: 'Wypożyczenie bezpłatne.',
+      html: `<div class="rental-cost-summary"><div style="font-size:8px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#1e3a5f;margin-bottom:5px;">PODSUMOWANIE KOSZTÓW</div><div style="padding:8px 10px;border:1px solid #c0c8d4;background:#f8fafc;font-size:9.5px;color:#111;">Wypożyczenie bezpłatne.</div></div>`
+    };
+  }
+
+  const rows = [
+    { label: 'Suma netto', value: formatRentalTermsMoney(totals.totalNet, currency), bold: false },
+    { label: 'VAT', value: formatRentalVatRate(totals.vatRate), bold: false },
+    { label: 'Kwota VAT', value: formatRentalTermsMoney(totals.vatAmount, currency), bold: false },
+    { label: 'Razem brutto', value: formatRentalTermsMoney(totals.totalGross, currency), bold: true }
+  ];
+  if (totals.deposit > 0) {
+    rows.push({ label: 'Kaucja', value: formatRentalTermsMoney(totals.deposit, currency), bold: false });
+  }
+
+  const body = rows.map((row) => {
+    const border = row.bold ? 'border-top:1px solid #c0c8d4;background:#f8fafc;' : 'border-top:1px solid #e4eaf2;';
+    const labelStyle = `padding:${row.bold ? '4px' : '3px'} 8px;font-size:${row.bold ? '9px' : '8.5px'};font-weight:${row.bold ? '700' : '400'};color:${row.bold ? '#0f1e35' : '#444'};${border}`;
+    const valueStyle = `padding:${row.bold ? '4px' : '3px'} 8px;font-size:${row.bold ? '9px' : '8.5px'};font-weight:${row.bold ? '700' : '400'};color:#111;text-align:right;${border}`;
+    return `<tr><td style="${labelStyle}">${escapeHtml(row.label)}</td><td style="${valueStyle}">${escapeHtml(row.value)}</td></tr>`;
+  }).join('');
+
+  return {
+    text: rows.map((row) => `${row.label}: ${row.value}`).join('\n'),
+    html: `<div class="rental-cost-summary"><div style="font-size:8px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#1e3a5f;margin-bottom:5px;">PODSUMOWANIE KOSZTÓW</div><table style="width:100%;border-collapse:collapse;border:1px solid #c0c8d4;background:#fff;"><tbody>${body}</tbody></table></div>`
+  };
+}
+
 function buildRentalFinancialContext(rental, currency = getRentalNumberingSettings()?.currency || 'zł') {
   const isFree = isRentalFreeType(rental?.rental_type);
   const totals = buildRentalFinancialTotalsFromRental(rental);
   const stripCurrency = (value) => String(value ?? '').replace(` ${currency}`, '');
+  const costSummary = buildRentalCostSummaryContent(totals, isFree, currency);
 
   const netFormatted = isFree ? '' : formatRentalTermsMoney(totals.totalNet, currency);
   const vatRateFormatted = isFree ? '' : formatRentalVatRate(totals.vatRate);
@@ -3345,6 +3377,8 @@ function buildRentalFinancialContext(rental, currency = getRentalNumberingSettin
     rentalPriceFormatted: grossFormatted,
     rentalTotalPrice: stripCurrency(grossFormatted),
     rentalTotalPriceFormatted: grossFormatted,
+    rentalCostSummary: costSummary.text,
+    rentalCostSummaryHtml: costSummary.html,
     rentalFinancialTerms,
     rentalTotal: grossFormatted
   };
@@ -8250,6 +8284,7 @@ const RENTAL_TEMPLATE_VARIABLES = [
   { key: '{{companyAddress}}', label: 'Adres firmy' },
   { key: '{{equipmentTable}}', label: 'Tabela sprzętu' },
   { key: '{{rentalFinancialTerms}}', label: 'Warunki finansowe wypożyczenia' },
+  { key: '{{rentalCostSummary}}', label: 'Podsumowanie kosztów wypożyczenia' },
   { key: '{{rentalPaymentType}}', label: 'Typ rozliczenia (płatne/bezpłatne)' },
   { key: '{{rentalTotalNet}}', label: 'Suma netto (wartość)' },
   { key: '{{rentalTotalNetFormatted}}', label: 'Suma netto (sformatowana)' },
@@ -8389,6 +8424,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       { key: '{{equipmentTable}}', description: 'Tabela sprzętu' },
       { key: '{{rentalTotal}}', description: 'Podsumowanie wypożyczenia' },
       { key: '{{rentalFinancialTerms}}', description: 'Warunki finansowe wypożyczenia' },
+      { key: '{{rentalCostSummary}}', description: 'Podsumowanie kosztów wypożyczenia' },
       { key: '{{rentalPaymentType}}', description: 'Typ rozliczenia (płatne/bezpłatne)' },
       { key: '{{rentalTotalNet}}', description: 'Suma netto (wartość)' },
       { key: '{{rentalTotalNetFormatted}}', description: 'Suma netto (sformatowana)' },
@@ -8846,6 +8882,7 @@ const DOCUMENT_DESIGNER_LIBRARY = [
   { id: 'documentDate', label: '📄 Data dokumentu', kind: 'text', width: 210, height: 22, text: 'Data: {{issueDate}}', fontSize: 10, fontWeight: 600, hint: 'Data wystawienia' },
   { id: 'documentStatus', label: '📄 Status dokumentu', kind: 'text', width: 210, height: 22, text: 'Status: {{serviceStatus}}', fontSize: 10, fontWeight: 600, hint: 'Status obsługi' },
   { id: 'equipmentTable', label: '📋 Tabela sprzętu', kind: 'table', width: 700, height: 170, tableType: 'equipmentTable', hint: 'Lista urządzeń' },
+  { id: 'rentalCostSummary', label: '💰 Podsumowanie kosztów', kind: 'costSummary', width: 300, height: 120, hint: 'Suma netto, VAT i brutto' },
   { id: 'itemsTable', label: '📋 Tabela pozycji', kind: 'table', width: 700, height: 170, tableType: 'itemsTable', hint: 'Pozycje dokumentu' },
   { id: 'terms', label: '📝 Warunki', kind: 'text', width: 700, height: 110, text: '{{terms}}', fontSize: 10, fontWeight: 400, hint: 'Punkty i warunki' },
   { id: 'footer', label: '📄 Stopka', kind: 'text', width: 700, height: 26, text: '{{documentFooter}}', fontSize: 9, fontWeight: 400, align: 'center', hint: 'Treść stopki' },
@@ -9064,29 +9101,6 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
     y += 56 + gap;
   }
 
-  if (documentTypeId === 'rentalAgreement') {
-    elements.push(designerLayoutElement('customText', {
-      x: area.left,
-      y,
-      width: area.width,
-      height: 16,
-      fontSize: 8,
-      fontWeight: 700,
-      text: 'WARUNKI FINANSOWE'
-    }));
-    y += 16 + 4;
-    elements.push(designerLayoutElement('customText', {
-      x: area.left,
-      y,
-      width: area.width,
-      height: 40,
-      fontSize: 10,
-      fontWeight: 400,
-      text: '{{rentalFinancialTerms}}'
-    }));
-    y += 40 + gap;
-  }
-
   const tableLibraryId = ['rentalAgreement', 'rentalConfirmation', 'issueProtocol', 'returnProtocol'].includes(documentTypeId)
     ? 'equipmentTable'
     : 'itemsTable';
@@ -9107,7 +9121,8 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
     }));
     y += 140 + gap;
   } else {
-    const tableHeight = Math.min(210, Math.max(160, area.bottom - y - 250));
+    const bottomReserve = documentTypeId === 'rentalAgreement' ? 320 : 250;
+    const tableHeight = Math.min(210, Math.max(160, area.bottom - y - bottomReserve));
     const tableEl = createDesignerTableElement(tableLibraryId, tableColumns, {
       x: area.left,
       y,
@@ -9117,6 +9132,19 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
     tableEl.columns = fitDesignerTableColumns(tableEl.columns, area.width);
     elements.push(tableEl);
     y += tableHeight + gap;
+
+    if (documentTypeId === 'rentalAgreement') {
+      const summaryW = Math.min(320, Math.floor(area.width * 0.46));
+      const summaryX = area.right - summaryW;
+      const summaryHeight = 120;
+      elements.push(designerLayoutElement('rentalCostSummary', {
+        x: summaryX,
+        y,
+        width: summaryW,
+        height: summaryHeight
+      }));
+      y += summaryHeight + gap;
+    }
   }
 
   if (documentTypeId !== 'internalDocument' && String(defaults.termsText ?? '').trim()) {
@@ -9511,6 +9539,24 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
     const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
     const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;">${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
     return `<div style="${commonStyle}border:1px solid #c0c8d4;background:#fff;overflow:hidden;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+  if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') {
+    const summaryHtml = context.rentalCostSummaryHtml
+      || buildRentalCostSummaryContent(
+        buildRentalFinancialTotalsFromRental(context.rental ?? {
+          rental_type: context.rentalType,
+          vat_rate: context.rentalVatRate,
+          total_deposit: context.rentalDeposit,
+          rental_items: context.rentalItems
+        }),
+        isRentalFreeType(context.rental?.rental_type ?? context.rentalType),
+        getRentalNumberingSettings()?.currency || 'zł'
+      ).html;
+    return `<div style="${commonStyle}overflow:visible;">${summaryHtml}</div>`;
+  }
+  const rawText = String(element.text ?? '').trim();
+  if (rawText === '{{rentalCostSummary}}' && context.rentalCostSummaryHtml) {
+    return `<div style="${commonStyle}overflow:visible;">${context.rentalCostSummaryHtml}</div>`;
   }
   const text = applyDesignerTokens(element.text, context);
   return `<div style="${commonStyle}${textStyle}">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
@@ -12949,10 +12995,12 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     start_date: '2026-06-03',
     planned_return_date: '2026-06-10',
     rental_type: 'Płatne',
-    total_price: '1230.00',
+    vat_rate: '23',
+    total_price: '246.00',
+    total_deposit: '500',
     rental_items: [
-      { id: 'preview-1', name_snapshot: 'Kamera Sony PXW-Z190', brand_snapshot: 'Sony', model_snapshot: 'PXW-Z190', serial_snapshot: 'SN-001', barcode_snapshot: '590000000001', inventory_number_snapshot: 'EQ/001', condition_out: 'Dobry' },
-      { id: 'preview-2', name_snapshot: 'Statyw Manfrotto', brand_snapshot: 'Manfrotto', model_snapshot: '504HD', serial_snapshot: 'SN-002', barcode_snapshot: '590000000002', inventory_number_snapshot: 'EQ/002', condition_out: 'Bardzo dobry' }
+      { id: 'preview-1', name_snapshot: 'Kamera Sony PXW-Z190', brand_snapshot: 'Sony', model_snapshot: 'PXW-Z190', serial_snapshot: 'SN-001', barcode_snapshot: '590000000001', inventory_number_snapshot: 'EQ/001', condition_out: 'Dobry', price_day: '100' },
+      { id: 'preview-2', name_snapshot: 'Statyw Manfrotto', brand_snapshot: 'Manfrotto', model_snapshot: '504HD', serial_snapshot: 'SN-002', barcode_snapshot: '590000000002', inventory_number_snapshot: 'EQ/002', condition_out: 'Bardzo dobry', price_day: '100' }
     ]
   };
   const templatePreviewContext = {
@@ -12962,6 +13010,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     plannedReturnDate: formatAgreementDate('2026-06-10'),
     actualReturnDate: formatAgreementDate('2026-06-10'),
     ...mapClientToDocumentContext(rentalAgreementPreviewRental.clients),
+    ...buildRentalFinancialContext(rentalAgreementPreviewRental),
     companyName: companyProfile.legalName || companyProfile.name || 'FIXER WEB',
     companyAddress: formatCompanyAddress(companyProfile),
     companyTaxData: formatCompanyTaxData(companyProfile),

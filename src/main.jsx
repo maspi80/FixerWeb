@@ -541,8 +541,8 @@ function exportTableToPdf(title, storageKey, columns, rows) {
   const body = exportData.rows.map((row) => `<tr>${exportData.columns.map((column) => `<td class="align-${escapeHtml(column.align)}">${escapeHtml(formatExportCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
   const companyName = company.name || company.legalName || 'FIXER WEB';
   const companyAddressLines = formatDocumentAddressLines(company);
-  const companyTax = formatCompanyTaxData(company);
-  const companyContact = formatCompanyContact(company);
+  const companyTaxLines = formatCompanyTaxDataLines(company);
+  const companyContactLines = formatCompanyContactLines(company);
   const companyFooter = company.documentFooter?.trim();
   const showLogo = company.showLogoOnDocuments !== false;
   const logo = showLogo
@@ -552,7 +552,7 @@ function exportTableToPdf(title, storageKey, columns, rows) {
   const templateName = documentSettings.templates?.tableExport ?? 'Standardowy';
   printHtmlInIframe(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
     @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-kicker{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}.document-custom-header{border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;color:#334155;font-size:11px}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo:empty{display:none}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}.align-center{text-align:center}.align-right{text-align:right}.align-left{text-align:left}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}
-  </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddressLines.map((line) => `<p class="company-line">${escapeHtml(line)}</p>`).join('')}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}</body></html>`);
+  </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddressLines.map((line) => `<p class="company-line">${escapeHtml(line)}</p>`).join('')}${companyTaxLines.map((line) => `<p class="company-line">${escapeHtml(line)}</p>`).join('')}${companyContactLines.map((line) => `<p class="company-line">${escapeHtml(line)}</p>`).join('')}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}</body></html>`);
 }
 
 const modules = [
@@ -3172,6 +3172,10 @@ function compactLines(lines) {
   return lines.map((line) => String(line ?? '').trim()).filter(Boolean);
 }
 
+function compactTemplateMultilineText(text) {
+  return compactLines(String(text ?? '').split('\n')).join('\n');
+}
+
 function shouldShowDocumentCountry(country, options = {}) {
   if (options.includeCountry) return Boolean(String(country ?? '').trim());
   const normalized = String(country ?? '').trim().toLocaleLowerCase('pl');
@@ -3225,26 +3229,31 @@ function formatClientDocumentNip(client = {}) {
   return `NIP: ${formatClientDocumentNipNumber(nip)}`;
 }
 
+function formatClientDocumentContactLines(client = {}) {
+  const contactPerson = client.contact_person || client.contact_name || client.representative || '';
+  return compactLines([
+    contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '',
+    client.phone ? `Telefon: ${client.phone}` : '',
+    client.email ? `E-mail: ${client.email}` : ''
+  ]);
+}
+
 function formatClientDocumentDetails(client = {}) {
   return compactLines([
     client.name,
     ...formatDocumentAddressLines(client),
-    formatClientDocumentNip(client)
+    formatClientDocumentNip(client),
+    ...formatClientDocumentContactLines(client)
   ]).join('\n');
 }
 
 function mapClientToDocumentContext(client = {}) {
-  const contactPerson = client.contact_person || client.contact_name || client.representative || '';
   return {
     clientName: client.name || '',
     clientAddress: formatClientDocumentAddress(client),
     clientNip: formatClientDocumentNip(client),
     clientDetails: formatClientDocumentDetails(client),
-    clientContact: compactLines([
-      contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '',
-      client.phone ? `Telefon: ${client.phone}` : '',
-      client.email ? `E-mail: ${client.email}` : ''
-    ]).join('\n')
+    clientContact: formatClientDocumentContactLines(client).join('\n')
   };
 }
 
@@ -3473,12 +3482,10 @@ function buildBaseDocumentTemplateHtml({
 }) {
   const companyName = company?.legalName || company?.name || 'FIXER WEB';
   const showLogo = company?.showLogoOnDocuments !== false;
-  const companyTax = formatCompanyTaxData(company ?? {});
-  const companyContact = formatCompanyContact(company ?? {});
   const coHeaderLines = compactLines([
     ...formatDocumentAddressLines(company ?? {}),
-    companyTax,
-    companyContact
+    ...formatCompanyTaxDataLines(company ?? {}),
+    ...formatCompanyContactLines(company ?? {})
   ]);
   const logoHtml = showLogo
     ? company?.logoDataUrl
@@ -9383,7 +9390,6 @@ function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile
   const items = getRentalBaseItems(rental);
   const issueDate = formatAgreementDate(rental?.start_date) || formatAgreementDate(getLocalIsoDate());
   const introCity = company.documentCity || company.city || '';
-  const contactPerson = client.contact_person || client.contact_name || client.representative || '';
   return {
     ...mapClientToDocumentContext(client),
     ...buildRentalFinancialContext(rental),
@@ -9398,11 +9404,6 @@ function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile
     companyAddress: formatCompanyAddress(company),
     companyTaxData: formatCompanyTaxData(company),
     companyContact: formatCompanyContact(company),
-    clientContact: compactLines([
-      contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '',
-      client.phone ? `Telefon: ${client.phone}` : '',
-      client.email ? `E-mail: ${client.email}` : ''
-    ]).join('\n'),
     operatorName: 'Operator',
     notes: rental?.notes || '',
     documentFooter: company.documentFooter || '',
@@ -9496,7 +9497,7 @@ function prepareServiceDocumentPrintHtml(html, fileName = 'dokument.pdf') {
 }
 
 function applyDesignerTokens(value, context = {}) {
-  return applyTemplateVariables(String(value ?? ''), context);
+  return compactTemplateMultilineText(applyTemplateVariables(String(value ?? ''), context));
 }
 
 function renderDocumentDesignerElementHtml(element, context = {}, company = getCompanyProfile()) {
@@ -9747,12 +9748,27 @@ function formatCompanyAddress(profile) {
   return formatDocumentAddress(profile);
 }
 
+function formatCompanyTaxDataLines(profile = {}) {
+  return compactLines([
+    profile.nip ? `NIP: ${profile.nip}` : '',
+    profile.regon ? `REGON: ${profile.regon}` : ''
+  ]);
+}
+
 function formatCompanyTaxData(profile) {
-  return [profile.nip ? `NIP: ${profile.nip}` : '', profile.regon ? `REGON: ${profile.regon}` : ''].filter(Boolean).join(' · ');
+  return formatCompanyTaxDataLines(profile).join('\n');
+}
+
+function formatCompanyContactLines(profile = {}) {
+  return compactLines([
+    profile.phone,
+    profile.email,
+    profile.website
+  ]);
 }
 
 function formatCompanyContact(profile) {
-  return [profile.phone, profile.email, profile.website].filter(Boolean).join(' · ');
+  return formatCompanyContactLines(profile).join('\n');
 }
 
 function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true, getRowClassName = null }) {

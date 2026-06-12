@@ -4062,7 +4062,19 @@ th.expand-cell{cursor:default}
   flex:1 1 500px;
 }
 .rental-terms-grid{
-  grid-template-columns:minmax(120px,.7fr) minmax(120px,.7fr) minmax(120px,.7fr) minmax(280px,2fr);
+  display:grid;
+  grid-template-columns:repeat(4, minmax(108px, 148px));
+  gap:12px;
+  align-items:end;
+}
+.rental-terms-grid .rental-settlement-field,
+.rental-terms-grid .rental-price-field,
+.rental-terms-grid .rental-vat-field,
+.rental-terms-grid .rental-deposit-field{
+  min-width:0;
+}
+.rental-terms-grid .money-input{
+  min-width:0;
 }
 .rental-item-price-input{
   min-width:108px;
@@ -4070,6 +4082,11 @@ th.expand-cell{cursor:default}
 }
 .rental-item-price-input .app-input{
   min-width:0;
+}
+@media(max-width:960px){
+  .rental-terms-grid{
+    grid-template-columns:repeat(2, minmax(120px, 1fr));
+  }
 }
 .rental-terms-grid .app-textarea{
   min-height:var(--fw-control-height-md);

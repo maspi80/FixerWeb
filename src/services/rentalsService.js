@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const RENTAL_STATUSES = ['active', 'partially_returned', 'returned'];
 export const RENTAL_ITEM_STATUSES = ['issued', 'returned', 'damaged', 'lost', 'service_required'];
+export const RENTAL_VAT_RATES = ['zw', '0', '5', '8', '23'];
 
 const rentalSelectColumns = `
   id,
@@ -14,6 +15,7 @@ const rentalSelectColumns = `
   notes,
   total_deposit,
   total_price,
+  vat_rate,
   created_at,
   updated_at,
   clients(id, name, type, client_kind, phone, email, street, building_number, apartment_number, postal_code, city, country, nip, regon),
@@ -82,6 +84,13 @@ function getRentalRpcError(error) {
   return error;
 }
 
+function normalizeVatRate(value) {
+  const normalized = String(value ?? '23').trim().toLocaleLowerCase('pl').replace('.', '');
+  if (normalized === 'zw' || normalized === 'zwolnione') return 'zw';
+  if (RENTAL_VAT_RATES.includes(normalized)) return normalized;
+  return '23';
+}
+
 function normalizeRentalPayload(rental) {
   return {
     rental_number: String(rental.rental_number ?? '').trim() || generateRentalNumber(),
@@ -92,7 +101,8 @@ function normalizeRentalPayload(rental) {
     actual_return_date: rental.actual_return_date || null,
     notes: rental.notes ?? '',
     total_deposit: normalizeMoneyValue(rental.total_deposit, 'total_deposit'),
-    total_price: normalizeMoneyValue(rental.total_price, 'total_price')
+    total_price: normalizeMoneyValue(rental.total_price, 'total_price'),
+    vat_rate: normalizeVatRate(rental.vat_rate)
   };
 }
 

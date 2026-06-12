@@ -3200,6 +3200,27 @@ function isRentalFreeType(rentalType) {
   return normalized === 'bezpłatne' || normalized === 'bezplatne' || normalized === 'wewnętrzne' || normalized === 'wewnetrzne';
 }
 
+const RENTAL_VAT_RATE_OPTIONS = [
+  { value: 'zw', label: 'Zw.' },
+  { value: '0', label: '0%' },
+  { value: '5', label: '5%' },
+  { value: '8', label: '8%' },
+  { value: '23', label: '23%' }
+];
+
+function normalizeRentalVatRate(value) {
+  const normalized = String(value ?? '23').trim().toLocaleLowerCase('pl').replace('.', '');
+  if (normalized === 'zw' || normalized === 'zwolnione') return 'zw';
+  if (RENTAL_VAT_RATE_OPTIONS.some((option) => option.value === normalized)) return normalized;
+  return '23';
+}
+
+function formatRentalVatRate(value) {
+  const normalized = normalizeRentalVatRate(value);
+  const option = RENTAL_VAT_RATE_OPTIONS.find((item) => item.value === normalized);
+  return option?.label ?? '';
+}
+
 function formatRentalMoney(value, currency = 'zł') {
   const parsed = parseRentalMoneyInput(value);
   if (parsed == null || parsed <= 0) return '';
@@ -3210,11 +3231,15 @@ function formatRentalMoney(value, currency = 'zł') {
 function buildRentalFinancialContext(rental, currency = getRentalNumberingSettings()?.currency || 'zł') {
   const isFree = isRentalFreeType(rental?.rental_type);
   const priceFormatted = isFree ? '' : formatRentalMoney(rental?.total_price, currency);
+  const vatFormatted = isFree ? '' : formatRentalVatRate(rental?.vat_rate);
   const rentalFinancialTerms = isFree
     ? 'Wypożyczenie bezpłatne.'
-    : priceFormatted
-      ? `Wypożyczenie płatne.\nCena łączna: ${priceFormatted}`
-      : 'Wypożyczenie płatne.';
+    : (() => {
+      const lines = ['Wypożyczenie płatne.'];
+      if (priceFormatted) lines.push(`Cena łączna: ${priceFormatted}`);
+      if (vatFormatted) lines.push(`VAT: ${vatFormatted}`);
+      return lines.join('\n');
+    })();
   const priceAmount = priceFormatted ? priceFormatted.replace(` ${currency}`, '') : '';
   return {
     rentalIsPaid: isFree ? 'nie' : 'tak',
@@ -3223,6 +3248,8 @@ function buildRentalFinancialContext(rental, currency = getRentalNumberingSettin
     rentalPriceFormatted: priceFormatted,
     rentalTotalPrice: priceAmount,
     rentalTotalPriceFormatted: priceFormatted,
+    rentalVatRate: isFree ? '' : normalizeRentalVatRate(rental?.vat_rate),
+    rentalVatRateFormatted: vatFormatted,
     rentalFinancialTerms,
     rentalTotal: priceFormatted
   };
@@ -4050,7 +4077,8 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     actual_return_date: rental?.actual_return_date ?? '',
     notes: rental?.notes ?? '',
     total_deposit: rental?.total_deposit ?? '',
-    total_price: rental?.total_price ?? ''
+    total_price: rental?.total_price ?? '',
+    vat_rate: normalizeRentalVatRate(rental?.vat_rate)
   }));
   const [selectedEquipmentIds, setSelectedEquipmentIds] = useState(() => selectedBaseItems.map(getRentalItemEquipmentId).filter(Boolean));
   const [itemPrices, setItemPrices] = useState(() => buildInitialRentalItemPrices(rental));
@@ -4435,8 +4463,21 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
                 <span>{rentalSettings.currency || 'zł'}</span>
               </div>
             </FormField>
-            <FormField label="Kaucja"><AppInput value={form.total_deposit} onChange={(event) => update('total_deposit', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 500'} /></FormField>
-            <FormField className="rental-notes-field" label="Notatki"><AppTextarea resizeKey="fixer:textarea:rental:notes" value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Warunki wydania, uwagi do klienta lub sprzętu." /></FormField>
+            <FormField className="rental-vat-field" label="VAT">
+              <AppSelect value={form.vat_rate} onChange={(event) => update('vat_rate', event.target.value)}>
+                {RENTAL_VAT_RATE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </AppSelect>
+            </FormField>
+            <FormField className="rental-deposit-field" label="Kaucja">
+              <div className="money-input">
+                <AppInput
+                  value={form.total_deposit}
+                  onChange={(event) => update('total_deposit', event.target.value)}
+                  placeholder={settlementOptional ? '0' : 'np. 500'}
+                />
+                <span>{rentalSettings.currency || 'zł'}</span>
+              </div>
+            </FormField>
           </div>
         </SectionPanel>
       </div>
@@ -8108,6 +8149,8 @@ const RENTAL_TEMPLATE_VARIABLES = [
   { key: '{{rentalPrice}}', label: 'Cena łączna' },
   { key: '{{rentalTotalPrice}}', label: 'Cena łączna (wartość)' },
   { key: '{{rentalTotalPriceFormatted}}', label: 'Cena łączna (sformatowana)' },
+  { key: '{{rentalVatRate}}', label: 'Stawka VAT (wartość)' },
+  { key: '{{rentalVatRateFormatted}}', label: 'Stawka VAT (sformatowana)' },
   { key: '{{rentalIsPaid}}', label: 'Czy wypożyczenie płatne (tak/nie)' },
   { key: '{{notes}}', label: 'Uwagi' }
 ];
@@ -8237,6 +8280,8 @@ const DOCUMENT_TEMPLATE_TYPES = [
       { key: '{{rentalPrice}}', description: 'Cena łączna' },
       { key: '{{rentalTotalPrice}}', description: 'Cena łączna (wartość)' },
       { key: '{{rentalTotalPriceFormatted}}', description: 'Cena łączna (sformatowana)' },
+      { key: '{{rentalVatRate}}', description: 'Stawka VAT (wartość)' },
+      { key: '{{rentalVatRateFormatted}}', description: 'Stawka VAT (sformatowana)' },
       { key: '{{rentalIsPaid}}', description: 'Czy wypożyczenie płatne (tak/nie)' },
       { key: '{{notes}}', description: 'Dodatkowe uwagi' }
     ],

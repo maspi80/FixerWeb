@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard, LockKeyhole,
-  LogOut, MessageSquare, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
+  LogOut, MessageSquare, MoreHorizontal, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
   ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Plus, Printer, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
@@ -1809,8 +1809,6 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
               <FormField className="client-name-field" label="Nazwa klienta" error={errors.name}><AppInput className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} /></FormField>
               <FormField className="client-type-field" label="Typ"><AppSelect value={form.type} onChange={(event) => update('type', event.target.value)}><option>Firma</option><option>Osoba prywatna</option></AppSelect></FormField>
               <FormField className="client-kind-field" label="Rodzaj klienta"><AppSelect value={form.client_kind} onChange={(event) => update('client_kind', event.target.value)}>{clientTypes.map((type) => <option key={type}>{type}</option>)}</AppSelect></FormField>
-              <FormField className="phone-field" label="Telefon" error={errors.phone}><AppInput className={fieldClass('phone')} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
-              <FormField className="email-field" label="Email" error={errors.email}><AppInput className={fieldClass('email')} value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
             </div>
           </div>
           <div className="form-section flat-form-section">
@@ -1822,6 +1820,8 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
               <FormField className="postal-field" label="Kod pocztowy" error={errors.postal_code}><AppInput className={fieldClass('postal_code')} value={form.postal_code} onChange={(event) => update('postal_code', event.target.value)} /></FormField>
               <FormField className="city-field" label="Miasto"><AppInput value={form.city} onChange={(event) => update('city', event.target.value)} /></FormField>
               <FormField className="country-field" label="Kraj"><AppInput value={form.country} onChange={(event) => update('country', event.target.value)} /></FormField>
+              <FormField className="phone-field" label="Telefon" error={errors.phone}><AppInput className={fieldClass('phone')} value={form.phone} onChange={(event) => update('phone', event.target.value)} /></FormField>
+              <FormField className="email-field" label="Email" error={errors.email}><AppInput className={fieldClass('email')} value={form.email} onChange={(event) => update('email', event.target.value)} /></FormField>
             </div>
           </div>
           {form.type === 'Firma' && <div className="form-section flat-form-section">
@@ -10946,8 +10946,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
   const [propertiesCollapsed, setPropertiesCollapsed] = useState(false);
   const [pendingTypeId, setPendingTypeId] = useState('');
   const [tableColumnResize, setTableColumnResize] = useState(null);
+  const [elementActionsMenuOpen, setElementActionsMenuOpen] = useState(false);
   const importInputRef = useRef(null);
   const logoInputRef = useRef(null);
+  const elementActionsMenuRef = useRef(null);
   const viewportRef = useRef(null);
   const pageRef = useRef(null);
   const designerStateRef = useRef(initialSavedState);
@@ -11075,6 +11077,20 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
     if (selectedElementId && activeTemplate?.elements.some((element) => element.id === selectedElementId)) return;
     setSelectedElementId('');
   }, [activeTemplate, selectedElementId]);
+
+  useEffect(() => {
+    setElementActionsMenuOpen(false);
+  }, [selectedElementId]);
+
+  useEffect(() => {
+    if (!elementActionsMenuOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (elementActionsMenuRef.current?.contains(event.target)) return;
+      setElementActionsMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [elementActionsMenuOpen]);
 
   useEffect(() => {
     const computeFit = () => {
@@ -11342,6 +11358,8 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
 
   const deleteElement = () => {
     if (!selectedElement || !activeTemplate) return;
+    const elementLabel = getDesignerLibraryItem(selectedElement.libraryId).label;
+    if (!window.confirm(`Usunąć element „${elementLabel}”?`)) return;
     commitPropertyEditSession();
     updateActiveTemplate((template) => ({ ...template, elements: template.elements.filter((element) => element.id !== selectedElement.id) }));
     setSelectedElementId('');
@@ -11670,7 +11688,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
         <AppButton variant={zoomMode === 'fit' ? 'primary' : 'secondary'} size="sm" onClick={() => setZoomMode('fit')}>Dopasuj</AppButton>
         <span className="document-designer-zoom-value">{Math.round(activeScale * 100)}%</span>
         <span className="document-designer-toolbar-divider" />
-        <AppButton variant={showGrid ? 'primary' : 'secondary'} size="sm" onClick={() => setShowGrid((current) => !current)}><Grid3X3 size={14} />Siatka</AppButton>
+        <label className="document-designer-toolbar-check"><input type="checkbox" checked={showGrid} onChange={(event) => setShowGrid(event.target.checked)} />Siatka</label>
         <label className="document-designer-toolbar-check"><input type="checkbox" checked={snapToGrid} onChange={(event) => setSnapToGrid(event.target.checked)} />Snap</label>
         <label className="document-designer-toolbar-check"><input type="checkbox" checked={showGuides} onChange={(event) => setShowGuides(event.target.checked)} />Prowadnice</label>
         <AppButton variant="primary" size="sm" onClick={() => {
@@ -11694,7 +11712,16 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
             {activeTypeTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
           </AppSelect>
         </label>
-        <button type="button" className="document-designer-panel-toggle" onClick={() => setPropertiesCollapsed((current) => !current)} title={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'}>
+        <div className="document-designer-template-actions" aria-label="Akcje szablonu">
+          <button type="button" className="dictionary-icon-button" title="Nowy szablon" aria-label="Nowy szablon" onClick={createTemplate}><Plus size={14} /></button>
+          <button type="button" className="dictionary-icon-button" title="Duplikuj szablon" aria-label="Duplikuj szablon" onClick={duplicateTemplate} disabled={!activeTemplate}><Copy size={14} /></button>
+          <button type="button" className="dictionary-icon-button remove" title="Usuń szablon" aria-label="Usuń szablon" onClick={deleteTemplate} disabled={!activeTemplate}><Trash2 size={14} /></button>
+          <span className="document-designer-template-actions-divider" aria-hidden="true" />
+          <button type="button" className="dictionary-icon-button" title="Eksportuj szablony" aria-label="Eksportuj szablony" onClick={exportTemplates}><Download size={14} /></button>
+          <button type="button" className="dictionary-icon-button" title="Importuj szablony" aria-label="Importuj szablony" onClick={() => importInputRef.current?.click()}><FolderOpen size={14} /></button>
+          <input ref={importInputRef} type="file" accept="application/json,.json" onChange={importTemplates} className="backup-file-input" />
+        </div>
+        <button type="button" className="document-designer-panel-toggle" onClick={() => setPropertiesCollapsed((current) => !current)} title={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'} aria-label={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'}>
           <SlidersHorizontal size={16} />
         </button>
       </div>
@@ -11828,25 +11855,46 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
       </div>
 
       {!propertiesCollapsed && <aside className="document-designer-properties">
-        <div className="document-designer-panel-head">
+        <div className={`document-designer-panel-head${selectedElement ? ' document-designer-panel-head--element' : ''}`}>
           <strong>{pageSelected ? 'Właściwości strony' : 'Właściwości elementu'}</strong>
+          {selectedElement && <div className="document-designer-element-actions-bar" role="toolbar" aria-label="Akcje elementu">
+            <div className="document-designer-element-actions-inline">
+              <button type="button" className="dictionary-icon-button document-designer-element-action-compact" title="Wyrównaj do lewej" aria-label="Wyrównaj do lewej" onClick={() => alignSelectedElement('left')}><AlignLeft size={14} /></button>
+              <button type="button" className="dictionary-icon-button document-designer-element-action-compact" title="Wyrównaj do środka" aria-label="Wyrównaj do środka" onClick={() => alignSelectedElement('center')}><AlignCenter size={14} /></button>
+              <button type="button" className="dictionary-icon-button document-designer-element-action-compact" title="Wyrównaj do prawej" aria-label="Wyrównaj do prawej" onClick={() => alignSelectedElement('right')}><AlignRight size={14} /></button>
+              <span className="document-designer-element-actions-divider document-designer-element-action-compact" aria-hidden="true" />
+              <button type="button" className="dictionary-icon-button" title="Duplikuj element" aria-label="Duplikuj element" onClick={duplicateElement}><Copy size={14} /></button>
+              <button type="button" className="dictionary-icon-button remove" title="Usuń element" aria-label="Usuń element" onClick={deleteElement}><Trash2 size={14} /></button>
+            </div>
+            <div className="document-designer-element-actions-overflow" ref={elementActionsMenuRef}>
+              <button
+                type="button"
+                className="dictionary-icon-button"
+                title="Więcej akcji"
+                aria-label="Więcej akcji"
+                aria-expanded={elementActionsMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setElementActionsMenuOpen((current) => !current)}
+              ><MoreHorizontal size={14} /></button>
+              {elementActionsMenuOpen && <div className="document-designer-element-actions-menu" role="menu" aria-label="Dodatkowe akcje elementu">
+                <button type="button" className="document-designer-element-actions-menu-item" role="menuitem" title="Wyrównaj do lewej" aria-label="Wyrównaj do lewej" onClick={() => { alignSelectedElement('left'); setElementActionsMenuOpen(false); }}><AlignLeft size={14} /><span>Do lewej</span></button>
+                <button type="button" className="document-designer-element-actions-menu-item" role="menuitem" title="Wyrównaj do środka" aria-label="Wyrównaj do środka" onClick={() => { alignSelectedElement('center'); setElementActionsMenuOpen(false); }}><AlignCenter size={14} /><span>Do środka</span></button>
+                <button type="button" className="document-designer-element-actions-menu-item" role="menuitem" title="Wyrównaj do prawej" aria-label="Wyrównaj do prawej" onClick={() => { alignSelectedElement('right'); setElementActionsMenuOpen(false); }}><AlignRight size={14} /><span>Do prawej</span></button>
+              </div>}
+            </div>
+          </div>}
           <button type="button" className="document-designer-panel-close" onClick={() => setPropertiesCollapsed(true)} aria-label="Ukryj właściwości"><ChevronRight size={16} /></button>
         </div>
 
-        <div className="document-designer-properties-toolbar" aria-label="Akcje szablonu">
-          <button type="button" className="dictionary-icon-button" title="Nowy szablon" onClick={createTemplate}><Plus size={14} /></button>
-          <button type="button" className="dictionary-icon-button" title="Duplikuj szablon" onClick={duplicateTemplate} disabled={!activeTemplate}><Copy size={14} /></button>
-          <button type="button" className="dictionary-icon-button remove" title="Usuń szablon" onClick={deleteTemplate} disabled={!activeTemplate}><Trash2 size={14} /></button>
-          <span className="document-designer-properties-toolbar-divider" aria-hidden="true" />
-          <button type="button" className="dictionary-icon-button" title="Eksport szablonów" onClick={exportTemplates}><Download size={14} /></button>
-          <button type="button" className="dictionary-icon-button" title="Import szablonów" onClick={() => importInputRef.current?.click()}><FolderOpen size={14} /></button>
-          <input ref={importInputRef} type="file" accept="application/json,.json" onChange={importTemplates} className="backup-file-input" />
-        </div>
-
         <div className="document-designer-properties-scroll">
-          {pageSelected && activeTemplate && <div className="settings-form-section">
+          {pageSelected && activeTemplate && <>
+            <EmptyState
+              className="document-designer-properties-empty"
+              title="Nie wybrano elementu"
+              description="Kliknij element na dokumencie, aby edytować jego właściwości."
+            />
+            <div className="settings-form-section">
             <div className="settings-section-title"><h4>Strona A4</h4></div>
-            <p className="muted document-designer-page-hint">Kliknij pusty obszar dokumentu, aby edytować marginesy strony.</p>
             <div className="settings-section-title"><h4>Marginesy (mm)</h4></div>
             <div className="settings-field-grid two-columns">
               <label className="firm-field">Górny<AppInput type="number" value={activeTemplate.margins.top} onFocus={beginPropertyEditSession} onChange={(event) => updateTemplateMargins({ top: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
@@ -11854,17 +11902,11 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
               <label className="firm-field">Lewy<AppInput type="number" value={activeTemplate.margins.left} onFocus={beginPropertyEditSession} onChange={(event) => updateTemplateMargins({ left: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
               <label className="firm-field">Prawy<AppInput type="number" value={activeTemplate.margins.right} onFocus={beginPropertyEditSession} onChange={(event) => updateTemplateMargins({ right: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
             </div>
-          </div>}
-
-          {selectedElement && <div className="settings-form-section">
-          <div className="settings-section-title"><h4>{getDesignerLibraryItem(selectedElement.libraryId).label}</h4></div>
-          <div className="settings-action-row document-designer-align-actions">
-            <AppButton variant="secondary" size="sm" onClick={() => alignSelectedElement('left')}><AlignLeft size={14} /></AppButton>
-            <AppButton variant="secondary" size="sm" onClick={() => alignSelectedElement('center')}><AlignCenter size={14} /></AppButton>
-            <AppButton variant="secondary" size="sm" onClick={() => alignSelectedElement('right')}><AlignRight size={14} /></AppButton>
-            <AppButton variant="secondary" size="sm" onClick={duplicateElement}><Copy size={14} /></AppButton>
-            <AppButton variant="secondary" size="sm" onClick={deleteElement}><Trash2 size={14} /></AppButton>
           </div>
+          </>}
+
+          {selectedElement && <div className="settings-form-section document-designer-element-props">
+          <div className="settings-section-title"><h4>{getDesignerLibraryItem(selectedElement.libraryId).label}</h4></div>
           <div className="settings-field-grid two-columns">
             <label className="firm-field">Pozycja X<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.x)} min={0} max={DOCUMENT_DESIGNER_PAGE.width} fallback={0} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ x: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Pozycja Y<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.y)} min={0} max={DOCUMENT_DESIGNER_PAGE.height} fallback={0} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ y: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
@@ -11900,10 +11942,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
                   <span>{column.label}</span>
                 </label>
                 <div className="document-designer-column-item-actions">
-                  <button type="button" className="dictionary-icon-button" title="Węższa kolumna" onClick={() => updateTableColumn(column.key, { width: Math.max(50, column.width - 10) })}><ChevronLeft size={14} /></button>
-                  <button type="button" className="dictionary-icon-button" title="Szersza kolumna" onClick={() => updateTableColumn(column.key, { width: column.width + 10 })}><ChevronRight size={14} /></button>
-                  <button type="button" className="dictionary-icon-button order" title="Wyżej" onClick={() => moveColumn(column.key, -1)} disabled={index === 0}><ArrowUp size={14} /></button>
-                  <button type="button" className="dictionary-icon-button order" title="Niżej" onClick={() => moveColumn(column.key, 1)} disabled={index === tableColumnsForEditor.length - 1}><ArrowDown size={14} /></button>
+                  <button type="button" className="dictionary-icon-button" title="Węższa kolumna" aria-label="Węższa kolumna" onClick={() => updateTableColumn(column.key, { width: Math.max(50, column.width - 10) })}><ChevronLeft size={14} /></button>
+                  <button type="button" className="dictionary-icon-button" title="Szersza kolumna" aria-label="Szersza kolumna" onClick={() => updateTableColumn(column.key, { width: column.width + 10 })}><ChevronRight size={14} /></button>
+                  <button type="button" className="dictionary-icon-button order" title="Wyżej" aria-label="Przenieś kolumnę wyżej" onClick={() => moveColumn(column.key, -1)} disabled={index === 0}><ArrowUp size={14} /></button>
+                  <button type="button" className="dictionary-icon-button order" title="Niżej" aria-label="Przenieś kolumnę niżej" onClick={() => moveColumn(column.key, 1)} disabled={index === tableColumnsForEditor.length - 1}><ArrowDown size={14} /></button>
                 </div>
               </div>
               <div className="document-designer-column-item-fields">
@@ -11950,6 +11992,28 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
     >
       <p className="confirm-dialog-message">Masz niezapisane zmiany w aktualnym szablonie.</p>
     </ModalFrame>}
+  </div>;
+}
+
+function DocumentTemplateRowActions({ type, menuOpen, onToggleMenu, onEdit, onPreview, onDuplicate, onResetDefault }) {
+  return <div className="documents-template-row-actions-inner">
+    <button type="button" className="compact-table-button documents-template-row-edit" onClick={onEdit}>Edytuj</button>
+    <div className="documents-template-row-menu">
+      <button
+        type="button"
+        className="dictionary-icon-button"
+        title="Więcej akcji"
+        aria-label="Więcej akcji"
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        onClick={onToggleMenu}
+      ><MoreHorizontal size={14} /></button>
+      {menuOpen && <div className="documents-template-row-menu-panel" role="menu" aria-label={`Akcje szablonu ${type.label}`}>
+        <button type="button" role="menuitem" className="documents-template-row-menu-item" title="Podgląd" aria-label="Podgląd" onClick={onPreview}><FileText size={14} /><span>Podgląd</span></button>
+        <button type="button" role="menuitem" className="documents-template-row-menu-item" title="Duplikuj" aria-label="Duplikuj" onClick={onDuplicate}><Copy size={14} /><span>Duplikuj</span></button>
+        <button type="button" role="menuitem" className="documents-template-row-menu-item danger" title="Przywróć domyślny" aria-label="Przywróć domyślny" onClick={onResetDefault}><RotateCcw size={14} /><span>Przywróć domyślny</span></button>
+      </div>}
+    </div>
   </div>;
 }
 
@@ -12030,6 +12094,9 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   const templateImportInputRef = useRef(null);
   const termsImportInputRef = useRef(null);
   const documentTemplateImportInputRef = useRef(null);
+  const templateHeaderToolsRef = useRef(null);
+  const [templateRowMenuTypeId, setTemplateRowMenuTypeId] = useState(null);
+  const [templateHeaderToolsOpen, setTemplateHeaderToolsOpen] = useState(false);
   const [backupNotice, setBackupNotice] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreCandidate, setRestoreCandidate] = useState(null);
@@ -12050,6 +12117,18 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setOrganizerCategoryItems(result.data ?? []);
   };
   useEffect(() => { loadOrganizerSettings(); }, []);
+
+  useEffect(() => {
+    if (!templateRowMenuTypeId && !templateHeaderToolsOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (templateHeaderToolsRef.current?.contains(event.target)) return;
+      if (event.target.closest('.documents-template-row-menu')) return;
+      setTemplateRowMenuTypeId(null);
+      setTemplateHeaderToolsOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [templateRowMenuTypeId, templateHeaderToolsOpen]);
 
   const updateCalendarSourceSetting = (sourceId, field, value) => {
     if (field === 'enabledByDefault') localStorage.removeItem(CALENDAR_ACTIVE_SOURCES_STORAGE_KEY);
@@ -13192,6 +13271,41 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       }
     });
   };
+  const duplicateDocumentTemplate = (type) => {
+    const source = normalizeSharedDocumentTemplate(documentTemplateLibrary[type.id], type.defaultTemplate, type.id);
+    setDocumentTemplateLibrary((current) => ({
+      ...current,
+      [type.id]: normalizeSharedDocumentTemplate({
+        ...source,
+        title: `${source.title} (kopia)`
+      }, type.defaultTemplate, type.id)
+    }));
+    setDocumentSettingsNotice(`Utworzono kopię szablonu „${type.label}”.`);
+    setTemplateRowMenuTypeId(null);
+  };
+  const resetDocumentTemplate = (type) => {
+    setTemplateRowMenuTypeId(null);
+    setConfirmDialog({
+      title: 'Przywróć domyślny szablon',
+      message: `Przywrócić domyślną wersję szablonu „${type.label}”?`,
+      confirmLabel: 'Przywróć',
+      cancelLabel: 'Anuluj',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        setDocumentTemplateLibrary((current) => ({
+          ...current,
+          [type.id]: normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate, type.id)
+        }));
+        setDocumentSettingsNotice(`Przywrócono domyślny szablon „${type.label}”. Kliknij „Zapisz szablon” w edycji, aby zatwierdzić.`);
+      }
+    });
+  };
+  const openDocumentTemplatePreview = (typeId) => {
+    setActiveDocumentTemplateType(typeId);
+    setAgreementPreviewOpen(true);
+    setTemplateRowMenuTypeId(null);
+  };
   const rentalAgreementPreviewRental = {
     rental_number: formatRentalNumber(rentalNumbering, 1, new Date('2026-06-03T12:00:00')),
     client_id: 'preview-client',
@@ -13687,44 +13801,60 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                   <h3>Lista szablonów</h3>
                   <p className="muted">Wybierz szablon, aby go edytować, podejrzeć lub przywrócić domyślną wersję.</p>
                 </div>
-                <div className="settings-action-row">
+                <div className="documents-template-header-actions">
                   <AppButton variant="secondary" size="sm" onClick={resetAllDocumentTemplates}><RotateCcw size={13} />Przywróć wszystkie domyślne</AppButton>
-                  <AppButton variant="secondary" size="sm" onClick={exportDocumentTemplatesJson}><Download size={13} />Eksport JSON</AppButton>
-                  <AppButton variant="secondary" size="sm" onClick={() => documentTemplateImportInputRef.current?.click()}><FolderOpen size={13} />Import JSON</AppButton>
-                  <input ref={documentTemplateImportInputRef} type="file" accept="application/json,.json" onChange={importDocumentTemplatesJson} className="backup-file-input" />
+                  <div className="documents-template-header-menu" ref={templateHeaderToolsRef}>
+                    <AppButton
+                      variant="secondary"
+                      size="sm"
+                      title="Import i eksport szablonów"
+                      aria-label="Import i eksport szablonów"
+                      aria-expanded={templateHeaderToolsOpen}
+                      aria-haspopup="menu"
+                      onClick={() => {
+                        setTemplateRowMenuTypeId(null);
+                        setTemplateHeaderToolsOpen((current) => !current);
+                      }}
+                    ><Download size={13} />Import/Eksport</AppButton>
+                    {templateHeaderToolsOpen && <div className="documents-template-header-menu-panel" role="menu" aria-label="Import i eksport szablonów">
+                      <button type="button" role="menuitem" className="documents-template-row-menu-item" title="Eksport JSON" aria-label="Eksport JSON" onClick={() => { exportDocumentTemplatesJson(); setTemplateHeaderToolsOpen(false); }}><Download size={14} /><span>Eksport JSON</span></button>
+                      <button type="button" role="menuitem" className="documents-template-row-menu-item" title="Import JSON" aria-label="Import JSON" onClick={() => { documentTemplateImportInputRef.current?.click(); setTemplateHeaderToolsOpen(false); }}><FolderOpen size={14} /><span>Import JSON</span></button>
+                    </div>}
+                    <input ref={documentTemplateImportInputRef} type="file" accept="application/json,.json" onChange={importDocumentTemplatesJson} className="backup-file-input" />
+                  </div>
                 </div>
               </div>
               <div className="data-table-shell documents-template-catalog">
-                <table className="data-table">
+                <table className="data-table documents-template-table">
+                  <colgroup>
+                    <col className="documents-template-col-lp" />
+                    <col className="documents-template-col-name" />
+                    <col className="documents-template-col-type" />
+                    <col className="documents-template-col-modified" />
+                    <col className="documents-template-col-actions" />
+                  </colgroup>
                   <thead><tr><th>LP</th><th>Nazwa</th><th>Typ</th><th>Ostatnia modyfikacja</th><th>Akcje</th></tr></thead>
                   <tbody>
                     {DOCUMENT_TEMPLATE_TYPES.map((type, index) => {
                       const isDirty = templateDirtyByType[type.id];
                       return <tr key={type.id}>
-                        <td>{index + 1}</td>
+                        <td className="documents-template-cell-lp">{index + 1}</td>
                         <td>{type.label}</td>
-                        <td>{type.id}</td>
+                        <td className="documents-template-cell-type">{type.id}</td>
                         <td>{isDirty ? 'Niezapisane zmiany' : '—'}</td>
-                        <td>
-                          <div className="settings-action-row">
-                            <AppButton variant="secondary" size="sm" onClick={() => openTemplateEditor(type.id)}>Edytuj</AppButton>
-                            <AppButton variant="secondary" size="sm" onClick={() => { setActiveDocumentTemplateType(type.id); setAgreementPreviewOpen(true); }}>Podgląd</AppButton>
-                            <AppButton variant="secondary" size="sm" onClick={() => {
-                              const source = normalizeSharedDocumentTemplate(documentTemplateLibrary[type.id], type.defaultTemplate, type.id);
-                              setDocumentTemplateLibrary((current) => ({
-                                ...current,
-                                [type.id]: normalizeSharedDocumentTemplate({
-                                  ...source,
-                                  title: `${source.title} (kopia)`
-                                }, type.defaultTemplate)
-                              }));
-                              setDocumentSettingsNotice(`Utworzono kopię szablonu „${type.label}”.`);
-                            }}>Duplikuj</AppButton>
-                            <AppButton variant="secondary" size="sm" onClick={() => {
-                              setDocumentTemplateLibrary((current) => ({ ...current, [type.id]: normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate, type.id) }));
-                              setDocumentSettingsNotice(`Przywrócono domyślny szablon „${type.label}”. Kliknij „Zapisz szablon” w edycji, aby zatwierdzić.`);
-                            }}>Przywróć domyślny</AppButton>
-                          </div>
+                        <td className="documents-template-row-actions">
+                          <DocumentTemplateRowActions
+                            type={type}
+                            menuOpen={templateRowMenuTypeId === type.id}
+                            onToggleMenu={() => {
+                              setTemplateHeaderToolsOpen(false);
+                              setTemplateRowMenuTypeId((current) => current === type.id ? null : type.id);
+                            }}
+                            onEdit={() => openTemplateEditor(type.id)}
+                            onPreview={() => openDocumentTemplatePreview(type.id)}
+                            onDuplicate={() => duplicateDocumentTemplate(type)}
+                            onResetDefault={() => resetDocumentTemplate(type)}
+                          />
                         </td>
                       </tr>;
                     })}
@@ -14063,7 +14193,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                   </div>
                   <label className="settings-check calendar-source-default-toggle">
                     <input type="checkbox" checked={settings.enabledByDefault !== false} onChange={(event) => updateCalendarSourceSetting(source.id, 'enabledByDefault', event.target.checked)} />
-                    Widoczne domyślnie
+                    Widoczność
                   </label>
                   <label className="calendar-source-color-field">
                     Kolor źródła

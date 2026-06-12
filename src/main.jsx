@@ -3344,8 +3344,14 @@ function buildGenericDocumentTemplateHtml(documentType, template, context = {}, 
   const sectionVisibility = normalized.sectionVisibility ?? DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY;
   const sectionOrder = normalized.sectionOrder?.length ? normalized.sectionOrder : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER;
   const enabledColumns = (normalized.columns ?? []).filter((column) => column.enabled !== false);
-  const columns = enabledColumns.length ? enabledColumns : DEFAULT_GENERIC_TEMPLATE_COLUMNS.filter((column) => column.enabled);
-  const tableRows = resolveDocumentTableRows(context, documentType?.id);
+  const usesRentalEquipmentTable = documentType?.id === 'issueProtocol';
+  const columns = usesRentalEquipmentTable
+    ? getRentalEquipmentTableColumns()
+    : (enabledColumns.length ? enabledColumns : DEFAULT_GENERIC_TEMPLATE_COLUMNS.filter((column) => column.enabled));
+  const tableRows = usesRentalEquipmentTable
+    ? resolveIssueProtocolEquipmentTableRows(context)
+    : resolveDocumentTableRows(context, documentType?.id);
+  const manyColumns = columns.length > 6;
   const tableHeader = columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
   const tableBody = tableRows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
   const mergedCompany = { ...company };
@@ -3358,7 +3364,7 @@ function buildGenericDocumentTemplateHtml(documentType, template, context = {}, 
     issuer: apply(normalized.issuerText).trim() ? `<div><span class="ag-party-label">${escapeHtml(normalized.signatureIssuer || 'Wystawiający')}</span>${renderTemplateMultiline(apply(normalized.issuerText))}</div>` : '',
     borrower: apply(normalized.borrowerText).trim() ? `<div><span class="ag-party-label">${escapeHtml(normalized.signatureBorrower || 'Odbiorca')}</span>${renderTemplateMultiline(apply(normalized.borrowerText))}</div>` : '',
     period: `<div class="ag-section"><h2 class="ag-section-heading">Okres</h2><div class="ag-period"><div><span class="ag-period-label">Data dokumentu</span><span class="ag-period-value">${escapeHtml(context.issueDate || getLocalIsoDate())}</span></div></div></div>`,
-    equipment: `<div class="ag-section"><h2 class="ag-section-heading">Tabela pozycji</h2><div class="ag-table-wrap"><table class="ag-table"><thead><tr>${tableHeader}</tr></thead><tbody>${tableBody}</tbody></table></div></div>`,
+    equipment: `<div class="ag-section"><h2 class="ag-section-heading">Tabela pozycji</h2><div class="ag-table-wrap"><table class="ag-table${manyColumns ? ' many-cols' : ''}"><thead><tr>${tableHeader}</tr></thead><tbody>${tableBody || `<tr><td colspan="${columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></div></div>`,
     terms: apply(normalized.termsText).trim() ? `<div class="ag-section"><h2 class="ag-section-heading">Treść</h2><ul class="ag-terms">${renderTermsFromTemplate(apply(normalized.termsText), [])}</ul></div>` : '',
     signatures: buildDocumentSignaturesHtml(normalized.signatureIssuer || 'Wystawiający', normalized.signatureBorrower || 'Odbiorca'),
     footer: ''
@@ -8022,6 +8028,9 @@ function resolveDocumentTableRows(context = {}, documentTypeId = '') {
     if (intakeRows.length) return intakeRows;
     return [{ lp: '1', name: 'Kamera Sony PXW-Z190', serial: 'SN-001', fault: 'Brak obrazu po uruchomieniu' }];
   }
+  if (documentTypeId === 'issueProtocol') {
+    return resolveIssueProtocolEquipmentTableRows(context);
+  }
   if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
     return context.equipmentRows;
   }
@@ -8110,7 +8119,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       signatureBorrower: 'Odbierający',
       sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
       sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
-      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+      columns: DEFAULT_RENTAL_AGREEMENT_COLUMNS
     }
   },
   {
@@ -8422,6 +8431,48 @@ function getDocumentTemplateLibrary() {
   return merged;
 }
 
+function getRentalEquipmentTableColumns() {
+  const rentalType = getDocumentTemplateTypeById('rentalAgreement');
+  const rentalTemplate = normalizeSharedDocumentTemplate(
+    getDocumentTemplateLibrary().rentalAgreement,
+    rentalType.defaultTemplate
+  );
+  const enabledColumns = (rentalTemplate.columns ?? DEFAULT_RENTAL_AGREEMENT_COLUMNS).filter((column) => column.enabled !== false);
+  return enabledColumns.length ? enabledColumns : DEFAULT_RENTAL_AGREEMENT_COLUMNS.filter((column) => column.enabled);
+}
+
+function buildRentalEquipmentTableRows(items = [], columns = getRentalEquipmentTableColumns()) {
+  return (Array.isArray(items) ? items : []).map((item, index) => {
+    const row = {};
+    columns.forEach((column) => {
+      const value = getRentalAgreementColumnValue(column.key, item, index);
+      row[column.key] = value === '' || value === null || value === undefined ? '—' : String(value);
+    });
+    return row;
+  });
+}
+
+function resolveIssueProtocolEquipmentTableRows(context = {}) {
+  if (Array.isArray(context.rentalItems) && context.rentalItems.length) {
+    return buildRentalEquipmentTableRows(context.rentalItems);
+  }
+  if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
+    const firstRow = context.equipmentRows[0] ?? {};
+    if ('brandModel' in firstRow || 'serial' in firstRow || 'quantity' in firstRow) {
+      return context.equipmentRows;
+    }
+  }
+  return buildRentalEquipmentTableRows([]);
+}
+
+function resolveDesignerEquipmentTableColumns(element, documentTypeId = '') {
+  if (element.tableType === 'equipmentTable' && documentTypeId === 'issueProtocol') {
+    return mapTemplateColumnsToDesignerColumns(getRentalEquipmentTableColumns());
+  }
+  const columns = (element.columns ?? []).filter((column) => column.visible !== false);
+  return columns.length ? columns : [{ key: 'name', label: 'Nazwa', width: 180, visible: true }];
+}
+
 function saveDocumentTemplateLibrary(library) {
   const next = Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [
     type.id,
@@ -8673,7 +8724,9 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
     : 'itemsTable';
   const tableColumns = documentTypeId === 'serviceIntake'
     ? (defaults.columns ?? DEFAULT_SERVICE_INTAKE_TEMPLATE_COLUMNS)
-    : (defaults.columns ?? DEFAULT_GENERIC_TEMPLATE_COLUMNS);
+    : documentTypeId === 'issueProtocol'
+      ? getRentalEquipmentTableColumns()
+      : (defaults.columns ?? DEFAULT_GENERIC_TEMPLATE_COLUMNS);
 
   if (documentTypeId === 'internalDocument') {
     elements.push(designerLayoutElement('customText', {
@@ -9033,8 +9086,7 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
   }
   if (element.kind === 'table') {
     const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
-    const columns = (element.columns ?? []).filter((column) => column.visible !== false);
-    const safeColumns = columns.length ? columns : [{ key: 'name', label: 'Nazwa', width: 180, visible: true }];
+    const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId);
     const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
     const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;">${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
     return `<div style="${commonStyle}border:1px solid #c0c8d4;background:#fff;overflow:hidden;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
@@ -12505,13 +12557,8 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     notes: 'Brak dodatkowych uwag',
     documentFooter: companyProfile.documentFooter || '',
     documentCityClause: companyProfile.documentCity ? ` w ${companyProfile.documentCity}` : '',
-    equipmentRows: getRentalBaseItems(rentalAgreementPreviewRental).map((item, index) => ({
-      lp: String(index + 1),
-      name: item.name_snapshot,
-      details: `${item.brand_snapshot || ''} ${item.model_snapshot || ''}`.trim(),
-      status: item.status || 'Wydano',
-      notes: item.condition_out || '—'
-    }))
+    rentalItems: getRentalBaseItems(rentalAgreementPreviewRental),
+    equipmentRows: buildRentalEquipmentTableRows(getRentalBaseItems(rentalAgreementPreviewRental))
   };
   const currentDocumentTemplatePreviewHtml = currentTemplateType.id === 'rentalAgreement'
     ? buildRentalAgreementHtml(rentalAgreementPreviewRental, {

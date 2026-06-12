@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import {
@@ -366,6 +366,107 @@ function useFloatingModalGeometry(storageKey, defaultSize, minSize) {
   };
 
   return { modalSize, visibleModalPosition, startDrag, startResize };
+}
+
+const RENTAL_ITEMS_SECTION_HEIGHT_KEY = 'fixer-rental-modal:items-section-height';
+const RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT = 500;
+const RENTAL_ITEMS_SECTION_MIN_HEIGHT = 180;
+
+function clampRentalItemsSectionHeight(value, maxHeight) {
+  const numeric = Number(value);
+  const max = Math.max(RENTAL_ITEMS_SECTION_MIN_HEIGHT, Number(maxHeight) || RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT);
+  if (!Number.isFinite(numeric)) return Math.min(RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT, max);
+  return Math.min(max, Math.max(RENTAL_ITEMS_SECTION_MIN_HEIGHT, Math.round(numeric)));
+}
+
+function getSavedRentalItemsSectionHeight() {
+  if (typeof window === 'undefined') return RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT;
+  try {
+    const parsed = Number(JSON.parse(localStorage.getItem(RENTAL_ITEMS_SECTION_HEIGHT_KEY) || 'null'));
+    if (Number.isFinite(parsed)) return Math.max(RENTAL_ITEMS_SECTION_MIN_HEIGHT, Math.round(parsed));
+  } catch {}
+  return RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT;
+}
+
+function useRentalItemsSectionHeight(layoutRef) {
+  const [height, setHeight] = useState(getSavedRentalItemsSectionHeight);
+  const heightRef = useRef(height);
+  const resizeStateRef = useRef(null);
+
+  const measureMaxHeight = useCallback(() => {
+    const layout = layoutRef.current;
+    if (!layout) return RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT;
+    let reserved = 0;
+    Array.from(layout.children).forEach((child) => {
+      if (child.classList.contains('rental-items-section-host')) return;
+      reserved += child.getBoundingClientRect().height;
+    });
+    const gapTotal = Math.max(0, layout.children.length - 1) * 6;
+    return Math.max(RENTAL_ITEMS_SECTION_MIN_HEIGHT, Math.floor(layout.clientHeight - reserved - gapTotal));
+  }, [layoutRef]);
+
+  const syncHeightToBounds = useCallback(() => {
+    const nextMax = measureMaxHeight();
+    setHeight((current) => clampRentalItemsSectionHeight(current, nextMax));
+  }, [measureMaxHeight]);
+
+  useEffect(() => {
+    heightRef.current = height;
+    localStorage.setItem(RENTAL_ITEMS_SECTION_HEIGHT_KEY, JSON.stringify(height));
+  }, [height]);
+
+  useEffect(() => {
+    syncHeightToBounds();
+    const layout = layoutRef.current;
+    if (!layout || typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', syncHeightToBounds);
+      return () => window.removeEventListener('resize', syncHeightToBounds);
+    }
+    const observer = new ResizeObserver(syncHeightToBounds);
+    observer.observe(layout);
+    window.addEventListener('resize', syncHeightToBounds);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncHeightToBounds);
+    };
+  }, [layoutRef, syncHeightToBounds]);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const state = resizeStateRef.current;
+      if (!state) return;
+      event.preventDefault();
+      const delta = event.clientY - state.startY;
+      setHeight(clampRentalItemsSectionHeight(state.startHeight + delta, state.maxHeight));
+    };
+    const handlePointerUp = () => {
+      if (!resizeStateRef.current) return;
+      resizeStateRef.current = null;
+      document.body.classList.remove('rental-items-section-resizing');
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      document.body.classList.remove('rental-items-section-resizing');
+    };
+  }, []);
+
+  const startResize = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const maxHeight = measureMaxHeight();
+    resizeStateRef.current = {
+      startY: event.clientY,
+      startHeight: heightRef.current,
+      maxHeight
+    };
+    document.body.classList.add('rental-items-section-resizing');
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, [measureMaxHeight]);
+
+  return { itemsSectionHeight: height, startItemsSectionResize: startResize };
 }
 
 function ResizableModalFrame({ className = '', storageKey, defaultSize, minSize, eyebrow, title, description, onClose, footer, children }) {
@@ -2682,9 +2783,9 @@ const RENTALS_TABLE_COLUMNS = [
   { key: 'brands_summary', label: 'Marka' },
   { key: 'models_summary', label: 'Model' },
   { key: 'status', label: 'Status' },
-  { key: 'start_date', label: 'Wydanie' },
+  { key: 'start_date', label: 'Wydano' },
   { key: 'planned_return_date', label: 'Termin zwrotu' },
-  { key: 'actual_return_date', label: 'Faktyczny zwrot' }
+  { key: 'actual_return_date', label: 'Zwrócono' }
 ];
 
 const RENTAL_SELECTED_EQUIPMENT_COLUMNS = [
@@ -4267,6 +4368,8 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const [rentalItemContextMenu, setRentalItemContextMenu] = useState(null);
   const [previewEquipment, setPreviewEquipment] = useState(null);
   const issueScannerRef = useRef(null);
+  const rentalRecordLayoutRef = useRef(null);
+  const { itemsSectionHeight, startItemsSectionResize } = useRentalItemsSectionHeight(rentalRecordLayoutRef);
   const [editorError, setEditorError] = useState('');
 
   const availableEquipment = equipmentRows.filter((item) => {
@@ -4565,7 +4668,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       footer={<>{rental && <ButtonSecondary onClick={() => onAgreement?.(rental)} disabled={!canCreateRentalAgreement(rental)}><FileText size={16} />Umowa</ButtonSecondary>}<ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Save size={17} />Zapisz dokument</ButtonPrimary></>}
     >
       {editorError && <AppNotice variant="error" className="service-form-notice">{editorError}</AppNotice>}
-      <div className="rental-record-layout">
+      <div ref={rentalRecordLayoutRef} className="rental-record-layout">
         <SectionPanel className="rental-record-section rental-record-header-section" title="Dokument">
           <div className="rental-document-grid">
             <div className="rental-document-row rental-document-primary-row">
@@ -4587,6 +4690,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
             </div>
           </div>
         </SectionPanel>
+        <div className="rental-items-section-host" style={{ height: `${itemsSectionHeight}px` }}>
         <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<ButtonPrimary className="rental-add-equipment-button" onClick={() => openEquipmentPicker()}><Plus size={14} />Dodaj sprzęt</ButtonPrimary>}>
           <div className="rental-scanner-strip rental-issue-scanner-strip">
             <label className="rental-scanner-field">
@@ -4616,6 +4720,15 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
             /> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Użyj akcji Dodaj sprzęt w nagłówku tabeli, aby utworzyć dokument wydania." />}
           </div>
         </SectionPanel>
+        </div>
+        <div
+          className="rental-items-section-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Reguluj wysokość sekcji sprzętu"
+          title="Przeciągnij, aby zmienić wysokość sekcji"
+          onPointerDown={startItemsSectionResize}
+        />
         <SectionPanel className="rental-record-section rental-record-terms-section" title="Warunki i rozliczenie">
           <div className="rental-terms-grid">
             <FormField className="rental-settlement-field" label="Typ rozliczenia">
@@ -10639,7 +10752,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
                 ? onRowClick ? 'Pojedynczy klik pokazuje szczegóły. Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.'
                 : 'Prawy klik pokazuje operacje tabeli.';
             return <Fragment key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>
-              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{lpVisible && <td className="lp-cell table-align-center">{index + 1}</td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-label={expanded ? 'Zwiń zestaw' : 'Rozwiń zestaw'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{lpVisible && <td className="lp-cell table-align-center">{index + 1}</td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-expanded={expanded} aria-label={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'} title={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
               {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (lpVisible ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>

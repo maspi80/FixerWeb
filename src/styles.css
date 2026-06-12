@@ -2342,11 +2342,13 @@ th.lp-header{cursor:default;user-select:none;font-weight:var(--fw-weight-medium,
 }
 
 /* v0.6.5 — zestawy rozwijane w tabeli magazynu */
-.expand-col{width:42px}
-th.expand-cell,td.expand-cell{width:42px;min-width:42px;max-width:42px;text-align:center;padding-left:6px;padding-right:6px}
+.expand-col{width:32px}
+th.expand-cell,td.expand-cell{width:32px;min-width:32px;max-width:32px;text-align:center;padding:4px 2px;vertical-align:middle}
 th.expand-cell{cursor:default}
-.row-expand-button{width:26px;height:26px;border:1px solid rgba(148,163,184,.2);border-radius:9px;background:rgba(15,23,42,.5);color:#cbd5e1;font-size:15px;font-weight:900;display:inline-grid;place-items:center;cursor:pointer;line-height:1}
-.row-expand-button:hover{border-color:rgba(96,165,250,.45);background:rgba(96,165,250,.12);color:#dbeafe}
+.row-expand-button{width:22px;height:22px;min-width:22px;min-height:22px;padding:0;border:1px solid rgba(148,163,184,.18);border-radius:6px;background:rgba(15,23,42,.38);color:#94a3b8;font-size:10px;font-weight:600;display:inline-grid;place-items:center;cursor:pointer;line-height:1;transition:border-color .15s ease,background .15s ease,color .15s ease,transform .15s ease}
+.row-expand-button:hover{border-color:rgba(96,165,250,.38);background:rgba(96,165,250,.1);color:#dbeafe}
+.row-expand-button:focus-visible{outline:2px solid rgba(96,165,250,.5);outline-offset:1px}
+.row-expand-button[aria-expanded="true"]{color:#bfdbfe;border-color:rgba(96,165,250,.28);background:rgba(96,165,250,.08)}
 .expandable-row{cursor:pointer}
 .expandable-row.expanded-row td{background:rgba(96,165,250,.08)}
 .expanded-content-row td{padding:0!important;background:rgba(8,13,21,.32)!important;border-bottom:1px solid rgba(148,163,184,.16)}
@@ -2359,8 +2361,9 @@ th.expand-cell{cursor:default}
 .expanded-set-table td:nth-child(2),.expanded-set-table th:nth-child(2){text-align:left}
 .expanded-set-table tbody tr:last-child td{border-bottom:0}
 .expanded-set-empty{padding:14px 16px;margin:10px 12px;border:1px dashed rgba(148,163,184,.24);border-radius:13px;color:#94a3b8;font-weight:800;text-align:center;background:rgba(148,163,184,.05)}
-.app-shell.theme-light .row-expand-button{background:rgba(255,255,255,.94);border-color:rgba(15,23,42,.13);color:#334155}
-.app-shell.theme-light .row-expand-button:hover{background:rgba(219,234,254,.75);border-color:rgba(59,130,246,.24);color:#1d4ed8}
+.app-shell.theme-light .row-expand-button{background:rgba(255,255,255,.92);border-color:rgba(15,23,42,.12);color:#64748b}
+.app-shell.theme-light .row-expand-button:hover{background:rgba(219,234,254,.72);border-color:rgba(59,130,246,.22);color:#1d4ed8}
+.app-shell.theme-light .row-expand-button[aria-expanded="true"]{color:#1d4ed8;border-color:rgba(59,130,246,.24);background:rgba(219,234,254,.55)}
 .app-shell.theme-light .expandable-row.expanded-row td{background:rgba(219,234,254,.46)}
 .app-shell.theme-light .expanded-content-row td{background:rgba(248,250,252,.86)!important;border-bottom-color:rgba(15,23,42,.1)}
 .app-shell.theme-light .expanded-set-panel{border-left-color:rgba(59,130,246,.58)}
@@ -4018,6 +4021,15 @@ th.expand-cell{cursor:default}
 .rental-record-layout{
   gap:6px;
 }
+.rental-record-modal .ds-modal-content{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+}
+.rental-record-modal .service-form-notice{
+  flex:0 0 auto;
+}
 .rental-record-section,
 .rental-items-section{
   padding:8px 10px;
@@ -4075,8 +4087,62 @@ th.expand-cell{cursor:default}
 .rental-record-terms-section{
   flex:0 0 auto;
 }
+.rental-items-section-host{
+  flex:0 0 auto;
+  min-height:180px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.rental-items-section-host > .app-section.rental-items-section{
+  flex:1 1 auto;
+  min-height:0;
+  height:100%;
+  max-height:none;
+  resize:none;
+  overflow:hidden;
+}
+.rental-items-section-resizer{
+  flex:0 0 8px;
+  position:relative;
+  margin:-1px 0;
+  cursor:ns-resize;
+  touch-action:none;
+  user-select:none;
+}
+.rental-items-section-resizer::before{
+  content:'';
+  position:absolute;
+  left:14px;
+  right:14px;
+  top:50%;
+  height:1px;
+  transform:translateY(-50%);
+  border-radius:999px;
+  background:rgba(148,163,184,.22);
+  transition:height .15s ease,background .15s ease;
+}
+.rental-items-section-resizer:hover::before,
+.rental-items-section-resizer:active::before,
+body.rental-items-section-resizing .rental-items-section-resizer::before{
+  height:2px;
+  background:rgba(96,165,250,.48);
+}
+body.rental-items-section-resizing,
+body.rental-items-section-resizing *{
+  cursor:ns-resize!important;
+}
+.app-shell.theme-light .rental-items-section-resizer::before{
+  background:rgba(15,23,42,.14);
+}
+.app-shell.theme-light .rental-items-section-resizer:hover::before,
+.app-shell.theme-light .rental-items-section-resizer:active::before,
+.app-shell.theme-light body.rental-items-section-resizing .rental-items-section-resizer::before{
+  background:rgba(37,99,235,.34);
+}
 .rental-items-section{
-  flex:1 1 500px;
+  display:flex;
+  flex-direction:column;
 }
 .rental-terms-grid{
   display:grid;

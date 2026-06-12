@@ -431,6 +431,17 @@
   letter-spacing:.04em;
 }
 
+.app-shell.table-vertical-lines-enabled .app-table th:not(:last-child),
+.app-shell.table-vertical-lines-enabled .app-table td:not(:last-child),
+.app-shell.table-vertical-lines-enabled .data-table th:not(:last-child),
+.app-shell.table-vertical-lines-enabled .data-table td:not(:last-child),
+.app-shell.table-vertical-lines-enabled .expanded-set-table th:not(:last-child),
+.app-shell.table-vertical-lines-enabled .expanded-set-table td:not(:last-child),
+.app-shell.table-vertical-lines-enabled .dashboard-mini-table th:not(:last-child),
+.app-shell.table-vertical-lines-enabled .dashboard-mini-table td:not(:last-child){
+  border-right:1px solid var(--fw-color-border);
+}
+
 .ds-empty-state {
   display: grid;
   place-items: center;

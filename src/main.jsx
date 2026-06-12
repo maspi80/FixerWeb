@@ -97,6 +97,15 @@ import {
 } from './services/projectsService';
 import { searchGlobalRecords } from './services/globalSearchService';
 import { BACKUP_FULL_ERROR_MESSAGE, BACKUP_INCLUDED_TABLES, createBackupArchive, createCsvExport, parseBackupText, restoreBackupArchive } from './services/backupService';
+import {
+  APP_SETTING_KEYS,
+  getAppSetting,
+  hydrateAppSettings,
+  isAppSettingsHydrated,
+  persistAppSetting,
+  setAppSettingCache,
+  subscribeAppSettings
+} from './services/appSettingsService';
 
 const PROJECTS_TABLE_KEY = 'projects-table';
 const PROJECTS_HISTORY_TABLE_KEY = 'projects-history-table';
@@ -881,9 +890,11 @@ function App() {
   const [globalSearch, setGlobalSearch] = useState('');
   const [themeCompact, setThemeCompact] = useState(() => localStorage.getItem('fixer-density') === 'compact');
   const [colorTheme, setColorTheme] = useState(() => localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark');
+  const [tableVerticalLines, setTableVerticalLines] = useState(() => Boolean(readUiPreference('tableVerticalLines', false)));
   const [moduleIntent, setModuleIntent] = useState(null);
   const [statusColors, setStatusColors] = useState(getStatusColors);
   const [activeUiTheme, setActiveUiTheme] = useState(() => getStoredActiveUiTheme(colorTheme === 'light' ? 'default-light' : 'default-dark'));
+  const [appSettingsReady, setAppSettingsReady] = useState(() => !isSupabaseConfigured);
   const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens), [activeUiTheme.tokens]);
 
   useEffect(() => {
@@ -912,6 +923,37 @@ function App() {
     ? { name: session.user.email?.split('@')[0] ?? 'Użytkownik', role: 'Użytkownik', email: session.user.email ?? '' }
     : demoUser;
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setAppSettingsReady(true);
+      return undefined;
+    }
+    if (!isAuthenticated) {
+      setAppSettingsReady(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setAppSettingsReady(false);
+    hydrateAppSettings()
+      .then(() => {
+        if (!cancelled) setAppSettingsReady(true);
+      })
+      .catch((error) => {
+        console.error('App settings hydration failed', error);
+        if (!cancelled) setAppSettingsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return undefined;
+    return subscribeAppSettings(() => {
+      if (isAppSettingsHydrated()) setAppSettingsReady(true);
+    });
+  }, []);
+
   const currentModule = modules.find((module) => module.id === activeModule) ?? modules[0];
   const navigateToModule = (moduleId, intent = null) => {
     const next = normalizeModuleNavigation(moduleId, intent);
@@ -937,7 +979,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}`} style={uiThemeCssVariables}>
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}${tableVerticalLines ? ' table-vertical-lines-enabled' : ''}`} style={uiThemeCssVariables}>
       <Sidebar
         activeModule={activeModule}
         setActiveModule={(moduleId) => navigateToModule(moduleId)}
@@ -977,8 +1019,8 @@ function App() {
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} />}
-          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} />}
+          {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} appSettingsReady={appSettingsReady} />}
+          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} />}
         </section>
       </main>
     </div>
@@ -7876,15 +7918,15 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
   </ResizableModalFrame>;
 }
 
-function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme }) {
+function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} />
+    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} onPreferenceChange={onPreferenceChange} appSettingsReady={appSettingsReady} />
   </div>;
 }
 
-function DocumentsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme }) {
+function DocumentsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, appSettingsReady = true }) {
   return <div className="module-page settings-module-page compact-settings-page documents-module-page">
-    <SettingsV2 mode="documents" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} />
+    <SettingsV2 mode="documents" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} appSettingsReady={appSettingsReady} />
   </div>;
 }
 function getStoredJson(key, fallback) {
@@ -7894,6 +7936,11 @@ function getStoredJson(key, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function readUiPreference(key, fallback) {
+  const preferences = getStoredJson('fixer-ui-preferences', {});
+  return preferences[key] ?? fallback;
 }
 
 function useStoredState(key, fallback) {
@@ -8373,14 +8420,33 @@ const DEFAULT_COMPANY_PROFILE = {
   logoDataUrl: ''
 };
 
+function isEmptyCompanyProfile(profile = {}) {
+  const next = { ...DEFAULT_COMPANY_PROFILE, ...profile };
+  return !String(next.name ?? '').trim()
+    && !String(next.legalName ?? '').trim()
+    && !String(next.nip ?? '').trim()
+    && !String(next.email ?? '').trim()
+    && !String(next.phone ?? '').trim()
+    && !String(next.logoDataUrl ?? '').trim();
+}
+
 function getCompanyProfile() {
-  return { ...DEFAULT_COMPANY_PROFILE, ...getStoredJson(COMPANY_PROFILE_STORAGE_KEY, DEFAULT_COMPANY_PROFILE) };
+  const stored = getAppSetting(APP_SETTING_KEYS.companyProfile);
+  return { ...DEFAULT_COMPANY_PROFILE, ...(stored && typeof stored === 'object' ? stored : getStoredJson(COMPANY_PROFILE_STORAGE_KEY, {})) };
 }
 
 function saveCompanyProfile(profile) {
   const nextProfile = { ...DEFAULT_COMPANY_PROFILE, ...profile };
-  localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(nextProfile));
+  setAppSettingCache(APP_SETTING_KEYS.companyProfile, nextProfile);
   return nextProfile;
+}
+
+async function persistCompanyProfile(profile) {
+  const nextProfile = saveCompanyProfile(profile);
+  if (isEmptyCompanyProfile(nextProfile)) {
+    throw new Error('EMPTY_COMPANY_PROFILE');
+  }
+  return persistAppSetting(APP_SETTING_KEYS.companyProfile, nextProfile);
 }
 
 const DOCUMENT_SETTINGS_STORAGE_KEY = 'fixer-document-settings';
@@ -9007,7 +9073,7 @@ function getDefaultDocumentTemplateLibrary() {
 
 function getDocumentTemplateLibrary() {
   const defaults = getDefaultDocumentTemplateLibrary();
-  const raw = getStoredJson(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, {});
+  const raw = getAppSetting(APP_SETTING_KEYS.documentTemplates) ?? getStoredJson(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, {});
   if (!raw || typeof raw !== 'object') return defaults;
   const merged = { ...defaults };
   DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
@@ -9180,13 +9246,13 @@ function saveDocumentTemplateLibrary(library) {
     type.id,
     normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate, type.id)
   ]));
-  try {
-    localStorage.setItem(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, JSON.stringify(next));
-  } catch (error) {
-    console.error('Document template library localStorage save failed', error);
-    throw error;
-  }
+  setAppSettingCache(APP_SETTING_KEYS.documentTemplates, next);
   return next;
+}
+
+async function persistDocumentTemplateLibrary(library) {
+  const next = saveDocumentTemplateLibrary(library);
+  return persistAppSetting(APP_SETTING_KEYS.documentTemplates, next);
 }
 
 const DOCUMENT_DESIGNER_STORAGE_KEY = 'fixer:document-designer';
@@ -9637,7 +9703,7 @@ function migrateLegacyDocumentDesignerStorageOnce() {
 
 function getDocumentDesignerState() {
   migrateLegacyDocumentDesignerStorageOnce();
-  const stored = getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
+  const stored = getAppSetting(APP_SETTING_KEYS.documentDesigner) ?? getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
   if (stored && Array.isArray(stored.templates) && stored.templates.length) {
     return normalizeDocumentDesignerState(stored);
   }
@@ -9646,13 +9712,13 @@ function getDocumentDesignerState() {
 
 function saveDocumentDesignerState(state) {
   const normalized = normalizeDocumentDesignerState(state);
-  try {
-    localStorage.setItem(DOCUMENT_DESIGNER_STORAGE_KEY, JSON.stringify(normalized));
-  } catch (error) {
-    console.error('Document designer localStorage save failed', error);
-    throw error;
-  }
+  setAppSettingCache(APP_SETTING_KEYS.documentDesigner, normalized);
   return normalized;
+}
+
+async function persistDocumentDesignerState(state) {
+  const normalized = saveDocumentDesignerState(state);
+  return persistAppSetting(APP_SETTING_KEYS.documentDesigner, normalized);
 }
 
 function getSavedDocumentTemplateByType(documentTypeId) {
@@ -10172,13 +10238,19 @@ function normalizeDocumentSettings(settings) {
 }
 
 function getDocumentSettings() {
-  return normalizeDocumentSettings(getStoredJson(DOCUMENT_SETTINGS_STORAGE_KEY, DEFAULT_DOCUMENT_SETTINGS));
+  const stored = getAppSetting(APP_SETTING_KEYS.documentSettings);
+  return normalizeDocumentSettings(stored ?? getStoredJson(DOCUMENT_SETTINGS_STORAGE_KEY, DEFAULT_DOCUMENT_SETTINGS));
 }
 
 function saveDocumentSettings(settings) {
   const normalized = normalizeDocumentSettings(settings);
-  localStorage.setItem(DOCUMENT_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+  setAppSettingCache(APP_SETTING_KEYS.documentSettings, normalized);
   return normalized;
+}
+
+async function persistDocumentSettings(settings) {
+  const normalized = saveDocumentSettings(settings);
+  return persistAppSetting(APP_SETTING_KEYS.documentSettings, normalized);
 }
 
 function formatDocumentNumber(settings, sequence, date = new Date()) {
@@ -10214,11 +10286,11 @@ const DEFAULT_CONFIG_DICTIONARIES = {
 };
 
 function getRentalNumberingSettings() {
-  const saved = getStoredJson(RENTAL_NUMBERING_STORAGE_KEY, DEFAULT_RENTAL_NUMBERING);
+  const stored = getAppSetting(APP_SETTING_KEYS.rentalNumbering) ?? getStoredJson(RENTAL_NUMBERING_STORAGE_KEY, DEFAULT_RENTAL_NUMBERING);
   return {
     ...DEFAULT_RENTAL_NUMBERING,
-    ...saved,
-    prefix: String(saved.prefix ?? DEFAULT_RENTAL_NUMBERING.prefix).trim() || DEFAULT_RENTAL_NUMBERING.prefix
+    ...stored,
+    prefix: String(stored.prefix ?? DEFAULT_RENTAL_NUMBERING.prefix).trim() || DEFAULT_RENTAL_NUMBERING.prefix
   };
 }
 
@@ -10228,8 +10300,13 @@ function saveRentalNumberingSettings(settings) {
     ...settings,
     prefix: String(settings.prefix ?? '').trim().toUpperCase() || DEFAULT_RENTAL_NUMBERING.prefix
   };
-  localStorage.setItem(RENTAL_NUMBERING_STORAGE_KEY, JSON.stringify(next));
+  setAppSettingCache(APP_SETTING_KEYS.rentalNumbering, next);
   return next;
+}
+
+async function persistRentalNumberingSettings(settings) {
+  const next = saveRentalNumberingSettings(settings);
+  return persistAppSetting(APP_SETTING_KEYS.rentalNumbering, next);
 }
 
 function formatRentalNumber(settings, sequence, date = new Date()) {
@@ -11551,10 +11628,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
     }), options);
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     commitPropertyEditSession();
     try {
-      const saved = saveDocumentDesignerState(designerStateRef.current);
+      const saved = await persistDocumentDesignerState(designerStateRef.current);
       setSavedDesignerState(saved);
       designerStateRef.current = saved;
       setDesignerState(saved);
@@ -12373,7 +12450,7 @@ function DocumentTemplateRowActions({ type, menuOpen, onToggleMenu, onEdit, onPr
   </div>;
 }
 
-function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme }) {
+function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
   const isDocumentsMode = mode === 'documents';
   const themeOptions = [
     { id: 'dark', label: 'Ciemny', icon: Moon },
@@ -12440,13 +12517,17 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     rememberColumnLayout: true,
     confirmDelete: true,
     rememberFilters: true,
-    defaultRowsPerPage: '10'
+    defaultRowsPerPage: '10',
+    tableVerticalLines: false
   }));
   const [companyProfile, setCompanyProfile] = useState(getCompanyProfile);
   const [companySaveNotice, setCompanySaveNotice] = useState('');
+  const [companySaving, setCompanySaving] = useState(false);
+  const [companyFormSynced, setCompanyFormSynced] = useState(false);
   const [rentalNumbering, setRentalNumbering] = useState(getRentalNumberingSettings);
   const [documentSettings, setDocumentSettings] = useState(getDocumentSettings);
   const [documentSettingsNotice, setDocumentSettingsNotice] = useState('');
+  const [documentSettingsSaving, setDocumentSettingsSaving] = useState(false);
   const templateImportInputRef = useRef(null);
   const termsImportInputRef = useRef(null);
   const documentTemplateImportInputRef = useRef(null);
@@ -12522,6 +12603,17 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   };
 
   useEffect(() => {
+    if (!appSettingsReady || companyFormSynced) return;
+    setCompanyProfile(getCompanyProfile());
+    setDocumentSettings(getDocumentSettings());
+    setRentalNumbering(getRentalNumberingSettings());
+    const templates = getDocumentTemplateLibrary();
+    setDocumentTemplateLibrary(templates);
+    setSavedDocumentTemplateLibrary(templates);
+    setCompanyFormSynced(true);
+  }, [appSettingsReady, companyFormSynced]);
+
+  useEffect(() => {
     if (!companySaveNotice) return undefined;
 
     const timer = window.setTimeout(() => {
@@ -12545,6 +12637,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setPreferences((current) => {
       const next = { ...current, [key]: value };
       localStorage.setItem('fixer-ui-preferences', JSON.stringify(next));
+      onPreferenceChange(key, value, next);
       return next;
     });
   };
@@ -12700,10 +12793,29 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setCompanySaveNotice('');
   };
 
-  const saveCompanySettings = () => {
-    const saved = saveCompanyProfile(companyProfile);
-    setCompanyProfile(saved);
-    setCompanySaveNotice('Dane firmy zapisane. Będą używane na wydrukach PDF.');
+  const saveCompanySettings = async () => {
+    if (!appSettingsReady) {
+      setCompanySaveNotice('Trwa ładowanie danych firmy z bazy. Spróbuj ponownie za chwilę.');
+      return;
+    }
+    if (isEmptyCompanyProfile(companyProfile)) {
+      setCompanySaveNotice('Uzupełnij dane firmy przed zapisem.');
+      return;
+    }
+    setCompanySaving(true);
+    setCompanySaveNotice('');
+    try {
+      const saved = await persistCompanyProfile(companyProfile);
+      setCompanyProfile(saved);
+      setCompanySaveNotice('Dane firmy zapisane. Będą dostępne na wszystkich urządzeniach.');
+    } catch (error) {
+      console.error('Company profile save failed', error);
+      setCompanySaveNotice(error?.message === 'EMPTY_COMPANY_PROFILE'
+        ? 'Uzupełnij dane firmy przed zapisem.'
+        : 'Nie udało się zapisać danych firmy w bazie.');
+    } finally {
+      setCompanySaving(false);
+    }
   };
 
   const addPdfArchiveRow = ({ type, number, relation }) => {
@@ -12934,7 +13046,11 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     });
   };
 
-  const saveDocumentSettingsState = () => {
+  const saveDocumentSettingsState = async () => {
+    if (!appSettingsReady) {
+      setDocumentSettingsNotice('Trwa ładowanie ustawień dokumentów. Spróbuj ponownie za chwilę.');
+      return;
+    }
     const numberingRowsToValidate = [
       { label: 'Wypożyczenia', value: rentalNumbering },
       ...Object.entries(documentSettings.numbering ?? {}).map(([key, value]) => ({ label: key, value }))
@@ -12945,13 +13061,23 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       setActiveDocumentPanel('numbering');
       return;
     }
-    const savedDocumentSettings = saveDocumentSettings(documentSettings);
-    const savedCompanyProfile = saveCompanyProfile(companyProfile);
-    const savedRentalSettings = saveRentalNumberingSettings(rentalNumbering);
-    setDocumentSettings(savedDocumentSettings);
-    setCompanyProfile(savedCompanyProfile);
-    setRentalNumbering(savedRentalSettings);
-    setDocumentSettingsNotice('Ustawienia dokumentów zapisane.');
+    setDocumentSettingsSaving(true);
+    setDocumentSettingsNotice('');
+    try {
+      const savedDocumentSettings = await persistDocumentSettings(documentSettings);
+      const savedRentalSettings = await persistRentalNumberingSettings(rentalNumbering);
+      if (!isEmptyCompanyProfile(companyProfile)) {
+        await persistCompanyProfile(companyProfile);
+      }
+      setDocumentSettings(savedDocumentSettings);
+      setRentalNumbering(savedRentalSettings);
+      setDocumentSettingsNotice('Ustawienia dokumentów zapisane.');
+    } catch (error) {
+      console.error('Document settings save failed', error);
+      setDocumentSettingsNotice('Nie udało się zapisać ustawień dokumentów w bazie.');
+    } finally {
+      setDocumentSettingsSaving(false);
+    }
   };
 
   const resetDocumentNumberingState = () => {
@@ -13025,6 +13151,17 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       setRentalNumbering(getRentalNumberingSettings());
       setConfigDictionaries(getConfigDictionaries());
       setDashboardSettings(getDashboardSettings());
+      if (isSupabaseConfigured) {
+        await Promise.all([
+          persistAppSetting(APP_SETTING_KEYS.companyProfile, getCompanyProfile()),
+          persistAppSetting(APP_SETTING_KEYS.documentSettings, getDocumentSettings()),
+          persistAppSetting(APP_SETTING_KEYS.rentalNumbering, getRentalNumberingSettings()),
+          persistAppSetting(APP_SETTING_KEYS.documentTemplates, getDocumentTemplateLibrary()),
+          persistAppSetting(APP_SETTING_KEYS.documentDesigner, getDocumentDesignerState())
+        ].map((promise) => promise.catch((error) => {
+          console.warn('Failed to sync restored app settings to Supabase', error);
+        })));
+      }
       setRestoreCandidate(null);
       setBackupNotice(warnings.length ? `Backup przywrócony z ostrzeżeniami: ${warnings.length}.` : 'Backup został przywrócony.');
     } catch (error) {
@@ -13076,11 +13213,17 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       confirmLabel: 'Wyczyść',
       cancelLabel: 'Anuluj',
       variant: 'warning',
-      onConfirm: () => {
+      onConfirm: async () => {
         setConfirmDialog(null);
         const saved = saveCompanyProfile(DEFAULT_COMPANY_PROFILE);
         setCompanyProfile(saved);
-        setCompanySaveNotice('Dane firmy zostały wyczyszczone.');
+        try {
+          await persistAppSetting(APP_SETTING_KEYS.companyProfile, saved);
+          setCompanySaveNotice('Dane firmy zostały wyczyszczone.');
+        } catch (error) {
+          console.error('Company profile reset save failed', error);
+          setCompanySaveNotice('Dane firmy wyczyszczono lokalnie, ale zapis w bazie nie powiódł się.');
+        }
       }
     });
   };
@@ -13485,10 +13628,14 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   ]));
   const hasUnsavedTemplateChanges = Object.values(templateDirtyByType).some(Boolean);
   const currentTemplateHasUnsavedChanges = templateDirtyByType[activeDocumentTemplateType] === true;
-  const saveDocumentTemplateDrafts = (noticeMessage = 'Zapisano szablon dokumentu.') => {
+  const saveDocumentTemplateDrafts = async (noticeMessage = 'Zapisano szablon dokumentu.') => {
+    if (!appSettingsReady) {
+      setDocumentSettingsNotice('Trwa ładowanie ustawień dokumentów. Spróbuj ponownie za chwilę.');
+      return null;
+    }
     try {
       const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
-      const saved = saveDocumentTemplateLibrary(normalized);
+      const saved = await persistDocumentTemplateLibrary(normalized);
       setDocumentTemplateLibrary(saved);
       setSavedDocumentTemplateLibrary(saved);
       setDocumentSettingsNotice(noticeMessage);
@@ -13821,10 +13968,11 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
             <p className="muted">Dane używane w aplikacji, na wydrukach i dokumentach PDF.</p>
           </div>
           <div className="settings-action-row">
-            <AppButton variant="secondary" size="sm" onClick={resetCompanySettings}>Wyczyść</AppButton>
-            <AppButton variant="primary" size="sm" onClick={saveCompanySettings}><Save size={15} />Zapisz</AppButton>
+            <AppButton variant="secondary" size="sm" onClick={resetCompanySettings} disabled={!appSettingsReady || companySaving}>Wyczyść</AppButton>
+            <AppButton variant="primary" size="sm" onClick={saveCompanySettings} disabled={!appSettingsReady || companySaving}><Save size={15} />Zapisz</AppButton>
           </div>
         </div>
+        {(!appSettingsReady || companySaving) && <div className="notice settings-inline-notice">{companySaving ? 'Zapisywanie danych firmy…' : 'Ładowanie danych firmy z bazy…'}</div>}
         {companySaveNotice && <div className="notice firm-save-notice settings-inline-notice">{companySaveNotice}</div>}
 
         <div className="settings-form-layout">
@@ -14023,6 +14171,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
           <div className="settings-toggle-grid two-columns">
             <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} /><span><strong>Zapamiętuj układ kolumn</strong><small>Szerokości, kolejność i widoczność kolumn zostają zapisane lokalnie.</small></span></label>
             <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} /><span><strong>Zapamiętuj filtry tabel</strong><small>Filtry zostają przywrócone po powrocie do modułu.</small></span></label>
+            <label className="settings-option-row"><input type="checkbox" checked={Boolean(preferences.tableVerticalLines)} onChange={(event) => updatePreference('tableVerticalLines', event.target.checked)} /><span><strong>Pionowe linie w tabelach</strong><small>Pokazuje delikatne linie oddzielające kolumny w tabelach.</small></span></label>
             <label className="firm-field settings-select-row">Domyślna liczba wierszy<AppSelect value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></AppSelect></label>
           </div>
         </section>
@@ -14090,7 +14239,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
           {effectiveDocumentPanel === 'company' && <section className="settings-config-card documents-config-card">
             <div className="settings-config-card-header">
               <div><p className="eyebrow">Dokumenty</p><h3>Logo i dane firmy</h3><p className="muted">Zmiana tutaj aktualizuje wszystkie dokumenty i podglądy PDF.</p></div>
-              <AppButton variant="primary" size="sm" onClick={() => { saveCompanySettings(); saveDocumentSettingsState(); }}><Save size={14} />Zapisz</AppButton>
+              <AppButton variant="primary" size="sm" onClick={() => { saveCompanySettings(); saveDocumentSettingsState(); }} disabled={!appSettingsReady || companySaving || documentSettingsSaving}><Save size={14} />Zapisz</AppButton>
             </div>
             <div className="documents-profile-grid">
               <div className="settings-form-section">
@@ -14131,7 +14280,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
               <div><p className="eyebrow">Dokumenty</p><h3>Numeracja</h3><p className="muted">Aktualny mechanizm generowania numerów pozostaje bez zmian. Puste prefiksy i formaty nie zostaną zapisane.</p></div>
               <div className="settings-action-row">
                 <AppButton variant="secondary" size="sm" onClick={resetDocumentNumberingState}><RotateCcw size={14} />Domyślne</AppButton>
-                <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={14} />Zapisz</AppButton>
+                <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState} disabled={!appSettingsReady || documentSettingsSaving}><Save size={14} />Zapisz</AppButton>
               </div>
             </div>
             <div className="document-numbering-list documents-numbering-v2">

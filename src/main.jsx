@@ -4070,7 +4070,9 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
 function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose, onPrint = null, onDownload = null, onGeneratePdf = null }) {
   const [zoomMode, setZoomMode] = useState('fit');
   const [fitScale, setFitScale] = useState(1);
+  const [contentHeight, setContentHeight] = useState(1123);
   const viewportRef = useRef(null);
+  const iframeRef = useRef(null);
   const BASE_A4_WIDTH = 794;
   const BASE_A4_HEIGHT = 1123;
 
@@ -4079,9 +4081,8 @@ function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose, onP
       const node = viewportRef.current;
       if (!node) return;
       const w = Math.max(320, node.clientWidth - 24);
-      const h = Math.max(320, node.clientHeight - 24);
-      const scale = Math.min(w / BASE_A4_WIDTH, h / BASE_A4_HEIGHT);
-      setFitScale(Math.max(0.3, Math.min(1, scale)));
+      const scale = Math.min(w / BASE_A4_WIDTH, 1);
+      setFitScale(Math.max(0.3, scale));
     };
     computeFit();
     const observer = new ResizeObserver(computeFit);
@@ -4092,6 +4093,22 @@ function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose, onP
       window.removeEventListener('resize', computeFit);
     };
   }, []);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return undefined;
+    const measure = () => {
+      try {
+        const doc = iframe.contentDocument;
+        const nextHeight = Math.max(BASE_A4_HEIGHT, doc?.documentElement?.scrollHeight ?? doc?.body?.scrollHeight ?? BASE_A4_HEIGHT);
+        setContentHeight(nextHeight);
+      } catch {
+        setContentHeight(BASE_A4_HEIGHT);
+      }
+    };
+    iframe.addEventListener('load', measure);
+    return () => iframe.removeEventListener('load', measure);
+  }, [html]);
 
   const activeScale = zoomMode === 'fit'
     ? fitScale
@@ -4130,8 +4147,8 @@ function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose, onP
       ].map(([id, label]) => <button key={id} type="button" className={zoomMode === id ? 'active' : ''} onClick={() => setZoomMode(id)}>{label}</button>)}
     </div>
     <div ref={viewportRef} className="document-preview-canvas">
-      <div className="document-preview-paper" style={{ width: `${BASE_A4_WIDTH * activeScale}px`, height: `${BASE_A4_HEIGHT * activeScale}px` }}>
-        <iframe title={title} srcDoc={html} style={{ width: `${BASE_A4_WIDTH}px`, height: `${BASE_A4_HEIGHT}px`, transform: `scale(${activeScale})`, transformOrigin: 'top left' }} />
+      <div className="document-preview-paper document-preview-paper--multipage" style={{ width: `${BASE_A4_WIDTH * activeScale}px`, height: `${contentHeight * activeScale}px` }}>
+        <iframe ref={iframeRef} title={title} srcDoc={html} style={{ width: `${BASE_A4_WIDTH}px`, height: `${contentHeight}px`, transform: `scale(${activeScale})`, transformOrigin: 'top left' }} />
       </div>
     </div>
   </ResizableModalFrame>;
@@ -9722,13 +9739,72 @@ function splitDesignerElementsForFlowLayout(elements = []) {
   return { before, tables, after, anchorTable, anchorBottom };
 }
 
+function buildDesignerEquipmentTableChunkMarkup(safeColumns, rows = []) {
+  const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
+  const body = rows.map((row) => `<tr class="designer-doc-table-row">${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;vertical-align:top;word-break:break-word;">${escapeHtml(formatDocumentTableCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
+  const emptyRow = `<tr class="designer-doc-table-row"><td colspan="${safeColumns.length}" style="padding:6px 5px;font-size:8.5px;color:#64748b;">Brak pozycji sprzętu.</td></tr>`;
+  return `<table class="designer-doc-equipment-table" style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body || emptyRow}</tbody></table>`;
+}
+
 function buildDesignerEquipmentTableMarkup(element, context = {}) {
   const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
   const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
-  const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
-  const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;vertical-align:top;word-break:break-word;">${escapeHtml(formatDocumentTableCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
-  const emptyRow = `<tr><td colspan="${safeColumns.length}" style="padding:6px 5px;font-size:8.5px;color:#64748b;">Brak pozycji sprzętu.</td></tr>`;
-  return `<table class="designer-doc-equipment-table" style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body || emptyRow}</tbody></table>`;
+  return buildDesignerEquipmentTableChunkMarkup(safeColumns, sourceRows);
+}
+
+const DESIGNER_PRINT_TABLE_HEADER_HEIGHT = 24;
+const DESIGNER_PRINT_TABLE_ROW_HEIGHT = 17;
+const DESIGNER_PRINT_BLOCK_GAP = 8;
+
+function estimateDesignerFlowBlockHeight(element, context = {}, company = getCompanyProfile(), contentWidth = DOCUMENT_DESIGNER_PAGE.width) {
+  if (element.kind === 'line') return Math.max(1, element.height);
+  if (element.kind === 'signature') return Math.max(70, element.height);
+  if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') return 118;
+  if (element.libraryId === 'footer') return Math.max(24, element.height);
+  const rawText = String(element.text ?? '').trim();
+  if (rawText === '{{rentalCostSummary}}' && context.rentalCostSummaryHtml) return 118;
+  const text = applyDesignerTokens(element.text, context);
+  const fontSize = Number(element.fontSize) || 10;
+  const lineHeight = fontSize * 1.35;
+  const charsPerLine = Math.max(24, Math.floor(contentWidth / Math.max(4.5, fontSize * 0.52)));
+  const lines = String(text).split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(String(line).length / charsPerLine)), 0);
+  return Math.max(Number(element.height) || 0, Math.ceil(lines * lineHeight) + 6);
+}
+
+function sortDesignerAfterElements(elements = []) {
+  const priority = (element) => {
+    if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') return 10;
+    if (element.libraryId === 'terms' || String(element.text ?? '').includes('{{terms}}')) return 20;
+    if (element.kind === 'signature') return 30;
+    if (element.libraryId === 'footer') return 50;
+    return 25;
+  };
+  return [...elements].sort((left, right) => priority(left) - priority(right) || left.y - right.y || left.x - right.x);
+}
+
+function paginateDesignerTableRows(rows, firstPageCapacity, nextPageCapacity) {
+  if (!rows.length) return [[]];
+  const chunks = [];
+  let index = 0;
+  let capacity = Math.max(DESIGNER_PRINT_TABLE_ROW_HEIGHT, firstPageCapacity - DESIGNER_PRINT_TABLE_HEADER_HEIGHT);
+  let chunk = [];
+  while (index < rows.length) {
+    if (chunk.length && capacity < DESIGNER_PRINT_TABLE_ROW_HEIGHT) {
+      chunks.push(chunk);
+      chunk = [];
+      capacity = Math.max(DESIGNER_PRINT_TABLE_ROW_HEIGHT, nextPageCapacity - DESIGNER_PRINT_TABLE_HEADER_HEIGHT);
+      continue;
+    }
+    chunk.push(rows[index]);
+    capacity -= DESIGNER_PRINT_TABLE_ROW_HEIGHT;
+    index += 1;
+  }
+  if (chunk.length) chunks.push(chunk);
+  return chunks.length ? chunks : [[]];
+}
+
+function renderDesignerTableChunkHtml(safeColumns, rows, marginLeft, width) {
+  return `<div class="designer-doc-table-chunk" style="margin-left:${marginLeft}px;width:${width}px;max-width:100%;"><div class="designer-doc-table-flow-inner">${buildDesignerEquipmentTableChunkMarkup(safeColumns, rows)}</div></div>`;
 }
 
 function renderDocumentDesignerElementAbsoluteHtml(element, context = {}, company = getCompanyProfile(), origin = { x: 0, y: 0 }) {
@@ -9811,39 +9887,98 @@ function renderDocumentDesignerElementFlowHtml(element, context = {}, company = 
   return `<div class="designer-doc-flow-block" style="${wrapStyle}${textStyle}">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
 }
 
-function renderDocumentDesignerTableFlowHtml(element, context = {}, { marginLeft = 0, contentWidth = DOCUMENT_DESIGNER_PAGE.width } = {}) {
-  if (element.visible === false) return '';
-  const width = Math.min(element.width, contentWidth);
-  const minHeight = Math.max(40, element.height);
-  return `<div class="designer-doc-table-flow" style="margin-left:${marginLeft}px;width:${width}px;max-width:100%;min-height:${minHeight}px;"><div class="designer-doc-table-flow-inner">${buildDesignerEquipmentTableMarkup(element, context)}</div></div>`;
-}
-
-function renderDocumentDesignerFlowLayoutHtml(template, context = {}, company = getCompanyProfile()) {
+function renderDocumentDesignerPaginatedHtml(template, context = {}, company = getCompanyProfile()) {
   const normalized = normalizeDocumentDesignerTemplate(template, template?.documentTypeId);
   const margins = normalized.margins ?? DEFAULT_DESIGNER_MARGINS;
   const padding = getDesignerMarginPaddingPx(margins);
   const origin = { x: padding.left, y: padding.top };
   const contentWidth = DOCUMENT_DESIGNER_PAGE.width - padding.left - padding.right;
-  const { before, tables, after, anchorTable, anchorBottom } = splitDesignerElementsForFlowLayout(normalized.elements);
-  const headerHeight = anchorTable ? Math.max(anchorTable.y - padding.top, 0) : Math.max(DOCUMENT_DESIGNER_PAGE.height - padding.top - padding.bottom, 0);
+  const pageBottom = DOCUMENT_DESIGNER_PAGE.height - padding.bottom;
+  const { before, tables, after, anchorTable } = splitDesignerElementsForFlowLayout(normalized.elements);
+  const headerHeight = anchorTable ? Math.max(anchorTable.y - padding.top, 0) : 0;
   const headerHtml = before.map((element) => renderDocumentDesignerElementAbsoluteHtml(element, context, company, origin)).join('');
-  const tablesHtml = tables.map((element) => renderDocumentDesignerTableFlowHtml(element, context, {
-    marginLeft: Math.max(0, element.x - padding.left),
-    contentWidth
-  })).join('');
-  const sortedAfter = [...after].sort((left, right) => left.y - right.y || left.x - right.x);
-  let previousBottom = anchorBottom;
-  const afterHtml = sortedAfter.map((element) => {
-    const marginTop = Math.max(8, element.y - previousBottom);
-    previousBottom = element.y + element.height;
-    return renderDocumentDesignerElementFlowHtml(element, context, company, {
-      marginTop,
-      marginLeft: Math.max(0, element.x - padding.left),
-      contentWidth
+  const firstPageBodyTop = anchorTable ? anchorTable.y : padding.top;
+  const firstPageAvailable = DOCUMENT_DESIGNER_PAGE.height - padding.bottom - firstPageBodyTop;
+  const nextPageAvailable = DOCUMENT_DESIGNER_PAGE.height - padding.top - padding.bottom;
+
+  const pageDrafts = [];
+  let currentParts = [];
+  let cursorY = firstPageBodyTop;
+  let pageHasHeader = true;
+
+  const pushPage = () => {
+    if (currentParts.length > 0 || (pageHasHeader && pageDrafts.length === 0)) {
+      pageDrafts.push({ parts: currentParts, includeHeader: pageHasHeader });
+    }
+    currentParts = [];
+    cursorY = padding.top;
+    pageHasHeader = false;
+  };
+
+  const ensureSpace = (height) => {
+    if (cursorY + height > pageBottom) {
+      pushPage();
+    }
+  };
+
+  tables.forEach((element) => {
+    const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
+    const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
+    const marginLeft = Math.max(0, element.x - padding.left);
+    const width = Math.min(element.width, contentWidth);
+    const rowChunks = paginateDesignerTableRows(sourceRows, firstPageAvailable, nextPageAvailable);
+    rowChunks.forEach((chunk, chunkIndex) => {
+      const chunkHeight = DESIGNER_PRINT_TABLE_HEADER_HEIGHT + (chunk.length || 1) * DESIGNER_PRINT_TABLE_ROW_HEIGHT;
+      if (chunkIndex > 0) pushPage();
+      else ensureSpace(chunkHeight);
+      currentParts.push(renderDesignerTableChunkHtml(safeColumns, chunk, marginLeft, width));
+      cursorY = chunkIndex === 0 && pageDrafts.length === 0 && pageHasHeader
+        ? firstPageBodyTop + chunkHeight + DESIGNER_PRINT_BLOCK_GAP
+        : padding.top + chunkHeight + DESIGNER_PRINT_BLOCK_GAP;
     });
-  }).join('');
+  });
+
+  const sortedAfter = sortDesignerAfterElements(after);
+  const renderedSignatureY = new Set();
+  sortedAfter.forEach((element) => {
+    if (element.kind === 'signature') {
+      if (renderedSignatureY.has(element.y)) return;
+      const pair = sortedAfter.filter((item) => item.kind === 'signature' && item.y === element.y);
+      renderedSignatureY.add(element.y);
+      const blockHeight = Math.max(...pair.map((item) => estimateDesignerFlowBlockHeight(item, context, company, contentWidth)));
+      ensureSpace(blockHeight);
+      currentParts.push(`<div class="designer-doc-flow-signatures-row">${pair.map((item) => renderDocumentDesignerElementFlowHtml(item, context, company, {
+        marginTop: 0,
+        marginLeft: Math.max(0, item.x - padding.left),
+        contentWidth: Math.min(item.width, contentWidth)
+      })).join('')}</div>`);
+      cursorY += blockHeight + DESIGNER_PRINT_BLOCK_GAP;
+      return;
+    }
+    const blockHeight = estimateDesignerFlowBlockHeight(element, context, company, contentWidth);
+    ensureSpace(blockHeight);
+    currentParts.push(renderDocumentDesignerElementFlowHtml(element, context, company, {
+      marginTop: 0,
+      marginLeft: Math.max(0, element.x - padding.left),
+      contentWidth: Math.min(element.width, contentWidth)
+    }));
+    cursorY += blockHeight + DESIGNER_PRINT_BLOCK_GAP;
+  });
+
+  pageDrafts.push({ parts: currentParts, includeHeader: pageHasHeader });
+  const totalPages = pageDrafts.length;
   const marginCss = `${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm`;
-  return `<div class="designer-doc-page-flow" style="padding:${marginCss};"><div class="designer-doc-header-region" style="position:relative;min-height:${headerHeight}px;width:100%;">${headerHtml}</div>${tablesHtml ? `<div class="designer-doc-tables-region">${tablesHtml}</div>` : ''}${afterHtml ? `<div class="designer-doc-after-region">${afterHtml}</div>` : ''}</div>`;
+  return pageDrafts.map((page, pageIndex) => {
+    const headerRegion = pageIndex === 0 && page.includeHeader && headerHtml
+      ? `<div class="designer-doc-header-region" style="position:relative;min-height:${headerHeight}px;width:100%;">${headerHtml}</div>`
+      : '';
+    const pageNumber = totalPages > 1 ? `<div class="designer-doc-page-number">Strona ${pageIndex + 1} / ${totalPages}</div>` : '';
+    return `<div class="designer-doc-print-page" style="padding:${marginCss};">${headerRegion}<div class="designer-doc-page-body">${page.parts.join('')}</div>${pageNumber}</div>`;
+  }).join('');
+}
+
+function renderDocumentDesignerFlowLayoutHtml(template, context = {}, company = getCompanyProfile()) {
+  return renderDocumentDesignerPaginatedHtml(template, context, company);
 }
 
 function renderDocumentDesignerElementHtml(element, context = {}, company = getCompanyProfile()) {
@@ -9851,7 +9986,7 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
 }
 
 function createDesignerDocumentLayoutCss() {
-  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body{display:flex;justify-content:center;align-items:flex-start;min-height:100vh;background:#e2e8f0}.designer-doc-page-flow{width:210mm;min-height:297mm;background:#fff;box-shadow:0 0 0 1px #cbd5e1;box-sizing:border-box}.designer-doc-header-region{position:relative;width:100%}.designer-doc-tables-region,.designer-doc-after-region{width:100%}.designer-doc-table-flow{margin-top:6px;margin-bottom:6px;break-inside:auto;page-break-inside:auto}.designer-doc-table-flow-inner{border:1px solid #c0c8d4;background:#fff;overflow:visible}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-flow-signature{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;min-height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:visible;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:auto!important;height:auto!important;display:block;margin:0;padding:0}.designer-doc-page-flow{width:210mm;min-height:auto;box-shadow:none!important;margin:0!important}.designer-doc-table-flow,.designer-doc-table-flow-inner,.designer-doc-tables-region{overflow:visible!important}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block,.designer-doc-flow-signature{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-toolbar{display:none!important}}`;
+  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body.designer-doc-body{display:flex;flex-direction:column;align-items:center;gap:16px;min-height:100vh;padding:16px 0;background:#e2e8f0}.designer-doc-print-page{position:relative;width:210mm;height:297mm;background:#fff;box-shadow:0 0 0 1px #cbd5e1;box-sizing:border-box;overflow:hidden;page-break-after:always;break-after:page}.designer-doc-print-page:last-child{page-break-after:auto;break-after:auto}.designer-doc-header-region{position:relative;width:100%}.designer-doc-page-body{width:100%}.designer-doc-table-chunk{margin-bottom:6px}.designer-doc-table-flow-inner{border:1px solid #c0c8d4;background:#fff;overflow:visible}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block,.designer-doc-flow-signature,.designer-doc-flow-signatures-row{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-flow-signatures-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}.designer-doc-flow-signatures-row .designer-doc-flow-block,.designer-doc-flow-signatures-row .designer-doc-flow-signature{flex:1 1 240px;margin-left:0!important;width:auto!important;max-width:100%}.designer-doc-page-number{position:absolute;left:20mm;right:20mm;bottom:6mm;display:flex;justify-content:flex-end;font-size:8px;color:#64748b}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;min-height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:visible;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed;width:100%}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:auto!important;height:auto!important;display:block;margin:0;padding:0}.designer-doc-body{padding:0!important;gap:0!important}.designer-doc-print-page{width:210mm;height:297mm;box-shadow:none!important;margin:0!important;overflow:hidden}.designer-doc-toolbar{display:none!important}}`;
 }
 
 function renderDesignerDocumentHtml(template, context = {}, { preview = true, company = getCompanyProfile(), title = '' } = {}) {
@@ -9859,11 +9994,11 @@ function renderDesignerDocumentHtml(template, context = {}, { preview = true, co
   const renderContext = { ...context, documentTypeId: normalized.documentTypeId };
   const hasFlowTable = normalized.elements.some((element) => element.visible !== false && element.kind === 'table');
   const bodyHtml = hasFlowTable
-    ? renderDocumentDesignerFlowLayoutHtml(normalized, renderContext, company)
+    ? renderDocumentDesignerPaginatedHtml(normalized, renderContext, company)
     : `<div class="designer-doc-page">${normalized.elements.map((element) => renderDocumentDesignerElementHtml(element, renderContext, company)).join('')}</div>`;
   const docTitle = escapeHtml(title || normalized.name || 'Dokument');
   const toolbar = preview ? '' : '<div class="designer-doc-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>';
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${docTitle}</title><style>${createDesignerDocumentLayoutCss()}</style></head><body>${toolbar}${bodyHtml}</body></html>`;
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${docTitle}</title><style>${createDesignerDocumentLayoutCss()}</style></head><body class="designer-doc-body">${toolbar}${bodyHtml}</body></html>`;
 }
 
 function buildDocumentDesignerHtml(template, context = {}, options = {}) {

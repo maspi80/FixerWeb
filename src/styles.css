@@ -5305,9 +5305,13 @@ th.expand-cell{cursor:default}
   box-shadow:0 16px 40px rgba(0,0,0,.35);
   overflow:hidden;
 }
+.document-preview-paper--multipage{
+  overflow:visible;
+}
 .document-preview-paper iframe{
   border:0;
   background:#fff;
+  display:block;
 }
 .template-variable-button{
   width:100%;

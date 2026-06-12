@@ -8821,7 +8821,19 @@ function buildServiceCompletionTableRows(context = {}) {
 
 function getServiceDocumentDesignerTemplate(documentTypeId) {
   const designerState = getDocumentDesignerState();
-  return designerState.templates.find((template) => template.documentTypeId === documentTypeId) ?? null;
+  const templates = designerState.templates.filter((template) => template.documentTypeId === documentTypeId);
+  return templates[0] ?? createDefaultDocumentDesignerTemplate(documentTypeId);
+}
+
+function buildServiceOrderDocumentHtml(order, type, { preview = true, client = null, company = getCompanyProfile() } = {}) {
+  const documentTypeId = SERVICE_DOCUMENT_TYPE_MAP[type];
+  const context = buildServiceOrderDocumentContext(order, type, client, company);
+  const designerTemplate = getServiceDocumentDesignerTemplate(documentTypeId);
+  return renderDesignerDocumentHtml(designerTemplate, context, {
+    preview,
+    company,
+    title: SERVICE_DOCUMENT_TITLES[type]
+  });
 }
 
 function buildServiceOrderDocumentContext(order, type, client = null, company = getCompanyProfile()) {
@@ -8859,18 +8871,6 @@ function buildServiceOrderDocumentContext(order, type, client = null, company = 
     context.equipmentRows = buildServiceCompletionTableRows(context);
   }
   return context;
-}
-
-function buildServiceOrderDocumentHtml(order, type, { preview = true, client = null, company = getCompanyProfile() } = {}) {
-  const documentTypeId = SERVICE_DOCUMENT_TYPE_MAP[type];
-  const documentType = getDocumentTemplateTypeById(documentTypeId);
-  const context = buildServiceOrderDocumentContext(order, type, client, company);
-  const designerTemplate = getServiceDocumentDesignerTemplate(documentTypeId);
-  if (designerTemplate?.elements?.length) {
-    return buildDocumentDesignerHtml(designerTemplate, context, { preview, company });
-  }
-  const sharedTemplate = getDocumentTemplateLibrary()[documentTypeId];
-  return buildGenericDocumentTemplateHtml(documentType, sharedTemplate, context, { preview, company });
 }
 
 function buildServiceDocumentFileName(order, type) {
@@ -8921,12 +8921,21 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
   return `<div style="${commonStyle}${textStyle}">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
 }
 
-function buildDocumentDesignerHtml(template, context = {}, { preview = true, company = getCompanyProfile() } = {}) {
+function createDesignerDocumentLayoutCss() {
+  return `@page{size:A4;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body{display:flex;justify-content:center;align-items:flex-start;min-height:100vh;background:#e2e8f0}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:hidden;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff;min-height:auto;display:block}.designer-doc-page{box-shadow:none;margin:0 auto;page-break-after:always}.designer-doc-toolbar{display:none}}`;
+}
+
+function renderDesignerDocumentHtml(template, context = {}, { preview = true, company = getCompanyProfile(), title = '' } = {}) {
   const normalized = normalizeDocumentDesignerTemplate(template, template?.documentTypeId);
   const renderContext = { ...context, documentTypeId: normalized.documentTypeId };
   const elementsHtml = normalized.elements.map((element) => renderDocumentDesignerElementHtml(element, renderContext, company)).join('');
-  const pageCss = `@page{size:A4;margin:${normalized.margins.top}mm ${normalized.margins.right}mm ${normalized.margins.bottom}mm ${normalized.margins.left}mm}`;
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(normalized.name)}</title><style>${createDocumentLayoutCss()}${pageCss}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc" style="padding:${normalized.margins.top}mm ${normalized.margins.right}mm ${normalized.margins.bottom}mm ${normalized.margins.left}mm;position:relative;"><div style="position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;height:${DOCUMENT_DESIGNER_PAGE.height}px;transform:scale(${210 * 3.7795275591 / DOCUMENT_DESIGNER_PAGE.width});transform-origin:top left;">${elementsHtml}</div></main></body></html>`;
+  const docTitle = escapeHtml(title || normalized.name || 'Dokument');
+  const toolbar = preview ? '' : '<div class="designer-doc-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>';
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${docTitle}</title><style>${createDesignerDocumentLayoutCss()}</style></head><body>${toolbar}<div class="designer-doc-page">${elementsHtml}</div></body></html>`;
+}
+
+function buildDocumentDesignerHtml(template, context = {}, options = {}) {
+  return renderDesignerDocumentHtml(template, context, options);
 }
 
 function termsTextToArray(value) {

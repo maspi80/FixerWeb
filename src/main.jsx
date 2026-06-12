@@ -3008,6 +3008,84 @@ function sumRentalItemPrices(equipmentIds, itemPrices = {}) {
   );
 }
 
+function roundRentalMoney(amount) {
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round(amount * 100) / 100;
+}
+
+function getRentalVatPercent(vatRate) {
+  const normalized = normalizeRentalVatRate(vatRate);
+  if (normalized === 'zw' || normalized === '0') return 0;
+  const rate = Number(normalized);
+  return Number.isFinite(rate) && rate >= 0 ? rate : 0;
+}
+
+function computeRentalFinancialTotals({
+  equipmentIds = [],
+  itemPrices = {},
+  vatRate = '23',
+  rentalType = 'Płatne',
+  deposit = null
+} = {}) {
+  const isFree = isRentalFreeType(rentalType);
+  const paymentType = isFree ? 'Bezpłatne' : 'Płatne';
+  const normalizedVatRate = normalizeRentalVatRate(vatRate);
+
+  if (isFree) {
+    return {
+      paymentType,
+      totalNet: 0,
+      vatRate: normalizedVatRate,
+      vatAmount: 0,
+      totalGross: 0,
+      deposit: roundRentalMoney(parseRentalMoneyInput(deposit) ?? 0)
+    };
+  }
+
+  const totalNet = roundRentalMoney(sumRentalItemPrices(equipmentIds, itemPrices));
+  const vatAmount = roundRentalMoney(totalNet * getRentalVatPercent(normalizedVatRate) / 100);
+  const totalGross = roundRentalMoney(totalNet + vatAmount);
+
+  return {
+    paymentType,
+    totalNet,
+    vatRate: normalizedVatRate,
+    vatAmount,
+    totalGross,
+    deposit: roundRentalMoney(parseRentalMoneyInput(deposit) ?? 0)
+  };
+}
+
+function buildRentalFinancialTotalsFromRental(rental) {
+  const items = getRentalBaseItems(rental);
+  const equipmentIds = [];
+  const itemPrices = {};
+  items.forEach((item) => {
+    const equipmentId = getRentalItemEquipmentId(item);
+    if (!equipmentId) return;
+    equipmentIds.push(equipmentId);
+    const draft = normalizeRentalItemPriceDraft(item.price_day);
+    if (draft) itemPrices[equipmentId] = draft;
+  });
+  return computeRentalFinancialTotals({
+    equipmentIds,
+    itemPrices,
+    vatRate: rental?.vat_rate,
+    rentalType: rental?.rental_type,
+    deposit: rental?.total_deposit
+  });
+}
+
+function formatRentalMoneyDisplay(number, currency = 'zł') {
+  if (!Number.isFinite(number) || number < 0) return '';
+  const amount = formatPolishMoneyAmount(number);
+  return currency ? `${amount} ${currency}` : amount;
+}
+
+function formatRentalTermsMoney(number, currency = 'zł') {
+  return formatRentalMoneyDisplay(roundRentalMoney(number), currency);
+}
+
 function normalizeRentalItemPriceDraft(value) {
   const parsed = parseRentalMoneyInput(value);
   return parsed == null ? '' : formatPolishMoneyAmount(parsed);
@@ -3230,28 +3308,45 @@ function formatRentalMoney(value, currency = 'zł') {
 
 function buildRentalFinancialContext(rental, currency = getRentalNumberingSettings()?.currency || 'zł') {
   const isFree = isRentalFreeType(rental?.rental_type);
-  const priceFormatted = isFree ? '' : formatRentalMoney(rental?.total_price, currency);
-  const vatFormatted = isFree ? '' : formatRentalVatRate(rental?.vat_rate);
+  const totals = buildRentalFinancialTotalsFromRental(rental);
+  const stripCurrency = (value) => String(value ?? '').replace(` ${currency}`, '');
+
+  const netFormatted = isFree ? '' : formatRentalTermsMoney(totals.totalNet, currency);
+  const vatRateFormatted = isFree ? '' : formatRentalVatRate(totals.vatRate);
+  const vatAmountFormatted = isFree ? '' : formatRentalTermsMoney(totals.vatAmount, currency);
+  const grossFormatted = isFree ? '' : formatRentalTermsMoney(totals.totalGross, currency);
+  const depositFormatted = isFree ? '' : (totals.deposit > 0 ? formatRentalTermsMoney(totals.deposit, currency) : '');
+
   const rentalFinancialTerms = isFree
     ? 'Wypożyczenie bezpłatne.'
-    : (() => {
-      const lines = ['Wypożyczenie płatne.'];
-      if (priceFormatted) lines.push(`Cena łączna: ${priceFormatted}`);
-      if (vatFormatted) lines.push(`VAT: ${vatFormatted}`);
-      return lines.join('\n');
-    })();
-  const priceAmount = priceFormatted ? priceFormatted.replace(` ${currency}`, '') : '';
+    : compactLines([
+      'Wypożyczenie płatne.',
+      netFormatted ? `Suma netto: ${netFormatted}` : '',
+      vatRateFormatted ? `VAT: ${vatRateFormatted}` : '',
+      `Kwota VAT: ${vatAmountFormatted || formatRentalTermsMoney(0, currency)}`,
+      grossFormatted ? `Razem brutto: ${grossFormatted}` : '',
+      depositFormatted ? `Kaucja: ${depositFormatted}` : ''
+    ]).join('\n');
+
   return {
     rentalIsPaid: isFree ? 'nie' : 'tak',
     rentalPaymentType: isFree ? 'Wypożyczenie bezpłatne.' : 'Wypożyczenie płatne.',
-    rentalPrice: priceAmount,
-    rentalPriceFormatted: priceFormatted,
-    rentalTotalPrice: priceAmount,
-    rentalTotalPriceFormatted: priceFormatted,
-    rentalVatRate: isFree ? '' : normalizeRentalVatRate(rental?.vat_rate),
-    rentalVatRateFormatted: vatFormatted,
+    rentalTotalNet: stripCurrency(netFormatted),
+    rentalTotalNetFormatted: netFormatted,
+    rentalVatRate: isFree ? '' : totals.vatRate,
+    rentalVatRateFormatted: vatRateFormatted,
+    rentalVatAmount: stripCurrency(vatAmountFormatted || formatRentalTermsMoney(0, currency)),
+    rentalVatAmountFormatted: vatAmountFormatted || formatRentalTermsMoney(0, currency),
+    rentalTotalGross: stripCurrency(grossFormatted),
+    rentalTotalGrossFormatted: grossFormatted,
+    rentalDeposit: stripCurrency(depositFormatted),
+    rentalDepositFormatted: depositFormatted,
+    rentalPrice: stripCurrency(grossFormatted),
+    rentalPriceFormatted: grossFormatted,
+    rentalTotalPrice: stripCurrency(grossFormatted),
+    rentalTotalPriceFormatted: grossFormatted,
     rentalFinancialTerms,
-    rentalTotal: priceFormatted
+    rentalTotal: grossFormatted
   };
 }
 
@@ -4112,10 +4207,18 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   }));
   const selectedSetCount = selectedEquipment.filter(isEquipmentSet).length;
   const settlementOptional = form.rental_type === 'Bezpłatne' || form.rental_type === 'Wewnętrzne';
+  const financialTotals = useMemo(() => computeRentalFinancialTotals({
+    equipmentIds: selectedEquipmentIds,
+    itemPrices,
+    vatRate: form.vat_rate,
+    rentalType: form.rental_type,
+    deposit: form.total_deposit
+  }), [selectedEquipmentIds, itemPrices, form.vat_rate, form.rental_type, form.total_deposit]);
+  const formatTermsAmount = (amount) => (settlementOptional ? '0,00' : formatPolishMoneyAmount(roundRentalMoney(amount)));
   const rentalSummary = {
     items: selectedEquipment.length,
     sets: selectedSetCount,
-    price: settlementOptional ? '0' : (formatRentalMoneyInputDisplay(form.total_price, '').trim() || form.total_price || '0'),
+    price: settlementOptional ? '0' : formatTermsAmount(financialTotals.totalGross),
     deposit: form.total_deposit || '0'
   };
   const updateItemPrice = (equipmentId, nextValue) => {
@@ -4150,7 +4253,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const rentalEquipmentColumns = useMemo(() => {
     const priceColumn = {
       key: 'price_day',
-      label: 'Cena / dzień',
+      label: 'Cena netto / dzień',
       align: 'right',
       renderCell: (row) => (
         <RentalItemPriceInput
@@ -4334,14 +4437,9 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   }, [selectedEquipmentIds]);
 
   useEffect(() => {
-    const formattedTotal = settlementOptional
-      ? '0'
-      : (() => {
-        const total = sumRentalItemPrices(selectedEquipmentIds, itemPrices);
-        return total > 0 ? formatPolishMoneyAmount(total) : '';
-      })();
-    setForm((current) => (current.total_price === formattedTotal ? current : { ...current, total_price: formattedTotal }));
-  }, [selectedEquipmentIds, itemPrices, settlementOptional]);
+    const grossValue = settlementOptional ? '0' : formatPolishMoneyAmount(financialTotals.totalGross);
+    setForm((current) => (current.total_price === grossValue ? current : { ...current, total_price: grossValue }));
+  }, [financialTotals.totalGross, settlementOptional]);
 
   useEffect(() => { setLocalClients(clients); }, [clients]);
 
@@ -4452,14 +4550,9 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
                 <option value="Bezpłatne">Bezpłatne</option>
               </AppSelect>
             </FormField>
-            <FormField className="rental-price-field" label="Cena łączna">
+            <FormField className="rental-net-field" label="Suma netto">
               <div className="money-input">
-                <AppInput
-                  value={form.total_price}
-                  readOnly={!settlementOptional}
-                  disabled={settlementOptional}
-                  placeholder={settlementOptional ? '0' : 'suma pozycji'}
-                />
+                <AppInput value={formatTermsAmount(financialTotals.totalNet)} readOnly disabled={settlementOptional} placeholder="0,00" />
                 <span>{rentalSettings.currency || 'zł'}</span>
               </div>
             </FormField>
@@ -4468,11 +4561,24 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
                 {RENTAL_VAT_RATE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </AppSelect>
             </FormField>
+            <FormField className="rental-vat-amount-field" label="Kwota VAT">
+              <div className="money-input">
+                <AppInput value={formatTermsAmount(financialTotals.vatAmount)} readOnly disabled={settlementOptional} placeholder="0,00" />
+                <span>{rentalSettings.currency || 'zł'}</span>
+              </div>
+            </FormField>
+            <FormField className="rental-gross-field" label="Razem brutto">
+              <div className="money-input">
+                <AppInput value={formatTermsAmount(financialTotals.totalGross)} readOnly disabled={settlementOptional} placeholder="0,00" />
+                <span>{rentalSettings.currency || 'zł'}</span>
+              </div>
+            </FormField>
             <FormField className="rental-deposit-field" label="Kaucja">
               <div className="money-input">
                 <AppInput
                   value={form.total_deposit}
                   onChange={(event) => update('total_deposit', event.target.value)}
+                  disabled={settlementOptional}
                   placeholder={settlementOptional ? '0' : 'np. 500'}
                 />
                 <span>{rentalSettings.currency || 'zł'}</span>
@@ -8108,7 +8214,7 @@ const DEFAULT_RENTAL_AGREEMENT_COLUMNS = [
   { key: 'brandModel', label: 'Marka / Model', enabled: true },
   { key: 'serial', label: 'Nr seryjny', enabled: true },
   { key: 'quantity', label: 'Ilość', enabled: true },
-  { key: 'priceDay', label: 'Cena / dzień', enabled: true },
+  { key: 'priceDay', label: 'Cena netto / dzień', enabled: true },
   { key: 'barcode', label: 'Kod kreskowy', enabled: false },
   { key: 'inventory', label: 'Numer ewidencyjny', enabled: false },
   { key: 'conditionOut', label: 'Stan przy wydaniu', enabled: false },
@@ -8145,12 +8251,20 @@ const RENTAL_TEMPLATE_VARIABLES = [
   { key: '{{equipmentTable}}', label: 'Tabela sprzętu' },
   { key: '{{rentalFinancialTerms}}', label: 'Warunki finansowe wypożyczenia' },
   { key: '{{rentalPaymentType}}', label: 'Typ rozliczenia (płatne/bezpłatne)' },
-  { key: '{{rentalPriceFormatted}}', label: 'Sformatowana cena łączna' },
-  { key: '{{rentalPrice}}', label: 'Cena łączna' },
-  { key: '{{rentalTotalPrice}}', label: 'Cena łączna (wartość)' },
-  { key: '{{rentalTotalPriceFormatted}}', label: 'Cena łączna (sformatowana)' },
+  { key: '{{rentalTotalNet}}', label: 'Suma netto (wartość)' },
+  { key: '{{rentalTotalNetFormatted}}', label: 'Suma netto (sformatowana)' },
   { key: '{{rentalVatRate}}', label: 'Stawka VAT (wartość)' },
   { key: '{{rentalVatRateFormatted}}', label: 'Stawka VAT (sformatowana)' },
+  { key: '{{rentalVatAmount}}', label: 'Kwota VAT (wartość)' },
+  { key: '{{rentalVatAmountFormatted}}', label: 'Kwota VAT (sformatowana)' },
+  { key: '{{rentalTotalGross}}', label: 'Razem brutto (wartość)' },
+  { key: '{{rentalTotalGrossFormatted}}', label: 'Razem brutto (sformatowana)' },
+  { key: '{{rentalDeposit}}', label: 'Kaucja (wartość)' },
+  { key: '{{rentalDepositFormatted}}', label: 'Kaucja (sformatowana)' },
+  { key: '{{rentalPriceFormatted}}', label: 'Razem brutto (sformatowana)' },
+  { key: '{{rentalPrice}}', label: 'Razem brutto' },
+  { key: '{{rentalTotalPrice}}', label: 'Razem brutto (wartość)' },
+  { key: '{{rentalTotalPriceFormatted}}', label: 'Razem brutto (sformatowana)' },
   { key: '{{rentalIsPaid}}', label: 'Czy wypożyczenie płatne (tak/nie)' },
   { key: '{{notes}}', label: 'Uwagi' }
 ];
@@ -8276,12 +8390,20 @@ const DOCUMENT_TEMPLATE_TYPES = [
       { key: '{{rentalTotal}}', description: 'Podsumowanie wypożyczenia' },
       { key: '{{rentalFinancialTerms}}', description: 'Warunki finansowe wypożyczenia' },
       { key: '{{rentalPaymentType}}', description: 'Typ rozliczenia (płatne/bezpłatne)' },
-      { key: '{{rentalPriceFormatted}}', description: 'Sformatowana cena łączna' },
-      { key: '{{rentalPrice}}', description: 'Cena łączna' },
-      { key: '{{rentalTotalPrice}}', description: 'Cena łączna (wartość)' },
-      { key: '{{rentalTotalPriceFormatted}}', description: 'Cena łączna (sformatowana)' },
+      { key: '{{rentalTotalNet}}', description: 'Suma netto (wartość)' },
+      { key: '{{rentalTotalNetFormatted}}', description: 'Suma netto (sformatowana)' },
       { key: '{{rentalVatRate}}', description: 'Stawka VAT (wartość)' },
       { key: '{{rentalVatRateFormatted}}', description: 'Stawka VAT (sformatowana)' },
+      { key: '{{rentalVatAmount}}', description: 'Kwota VAT (wartość)' },
+      { key: '{{rentalVatAmountFormatted}}', description: 'Kwota VAT (sformatowana)' },
+      { key: '{{rentalTotalGross}}', description: 'Razem brutto (wartość)' },
+      { key: '{{rentalTotalGrossFormatted}}', description: 'Razem brutto (sformatowana)' },
+      { key: '{{rentalDeposit}}', description: 'Kaucja (wartość)' },
+      { key: '{{rentalDepositFormatted}}', description: 'Kaucja (sformatowana)' },
+      { key: '{{rentalPriceFormatted}}', description: 'Razem brutto (sformatowana)' },
+      { key: '{{rentalPrice}}', description: 'Razem brutto' },
+      { key: '{{rentalTotalPrice}}', description: 'Razem brutto (wartość)' },
+      { key: '{{rentalTotalPriceFormatted}}', description: 'Razem brutto (sformatowana)' },
       { key: '{{rentalIsPaid}}', description: 'Czy wypożyczenie płatne (tak/nie)' },
       { key: '{{notes}}', description: 'Dodatkowe uwagi' }
     ],
@@ -8649,7 +8771,7 @@ function getRentalEquipmentTableColumns(rental = null) {
     columns = columns.filter((column) => !priceColumnKeys.includes(column.key));
   } else if (!columns.some((column) => priceColumnKeys.includes(column.key))) {
     const quantityIndex = columns.findIndex((column) => column.key === 'quantity');
-    const priceColumn = { key: 'priceDay', label: 'Cena / dzień', enabled: true };
+    const priceColumn = { key: 'priceDay', label: 'Cena netto / dzień', enabled: true };
     columns = quantityIndex >= 0
       ? [...columns.slice(0, quantityIndex + 1), priceColumn, ...columns.slice(quantityIndex + 1)]
       : [...columns, priceColumn];

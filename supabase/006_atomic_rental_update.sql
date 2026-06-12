@@ -27,6 +27,7 @@ begin
     notes               = p_rental->>'notes',
     total_deposit       = nullif(p_rental->>'total_deposit','')::numeric,
     total_price         = nullif(p_rental->>'total_price','')::numeric,
+    vat_rate            = coalesce(nullif(p_rental->>'vat_rate',''), '23'),
     updated_at          = now()
   where id = p_rental_id;
 

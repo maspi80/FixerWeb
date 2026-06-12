@@ -449,6 +449,8 @@ on public.service_dictionaries(dictionary_type, sort_order, name);
 
 notify pgrst, 'reload schema';
 
+alter table public.rentals add column if not exists vat_rate text default '23';
+
 -- Atomowa aktualizacja wypożyczenia: update rentals + delete/insert rental_items w jednej transakcji.
 create or replace function public.update_rental_with_items(
   p_rental_id uuid,
@@ -479,6 +481,7 @@ begin
     notes               = p_rental->>'notes',
     total_deposit       = nullif(p_rental->>'total_deposit','')::numeric,
     total_price         = nullif(p_rental->>'total_price','')::numeric,
+    vat_rate            = coalesce(nullif(p_rental->>'vat_rate',''), '23'),
     updated_at          = now()
   where id = p_rental_id;
 

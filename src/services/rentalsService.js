@@ -44,6 +44,38 @@ const rentalSelectColumns = `
   )
 `;
 
+const rentalSelectColumnsLegacy = rentalSelectColumns.replace(/\n\s*vat_rate,\n/, '\n');
+
+function isMissingVatRateColumnError(error) {
+  const message = String(error?.message ?? '').toLocaleLowerCase('pl');
+  return message.includes('vat_rate') && message.includes('does not exist');
+}
+
+function withDefaultRentalVatRate(rows = []) {
+  return rows.map((row) => ({ ...row, vat_rate: row?.vat_rate ?? '23' }));
+}
+
+async function queryRentals(selectColumns, options = {}) {
+  let query = supabase.from('rentals').select(selectColumns);
+  if (options.id) query = query.eq('id', options.id);
+  if (options.orderByCreatedAt) query = query.order('created_at', { ascending: false });
+  if (options.single) query = query.single();
+  return query;
+}
+
+async function fetchRentalsDataset(options = {}) {
+  let result = await queryRentals(rentalSelectColumns, options);
+  if (result.error && isMissingVatRateColumnError(result.error)) {
+    result = await queryRentals(rentalSelectColumnsLegacy, options);
+    if (!result.error && result.data) {
+      result.data = Array.isArray(result.data)
+        ? withDefaultRentalVatRate(result.data)
+        : withDefaultRentalVatRate([result.data])[0];
+    }
+  }
+  return result;
+}
+
 function generateRentalNumber() {
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
   return `WYP/${stamp}`;
@@ -78,6 +110,9 @@ function getRentalRpcError(error) {
   }
   if (message.toLocaleLowerCase('pl').includes('create_rental_with_items')) {
     return new Error('Nie znaleziono funkcji RPC create_rental_with_items w Supabase. Uruchom migrację supabase/012_production_safety_rpc.sql i spróbuj ponownie.');
+  }
+  if (isMissingVatRateColumnError(error)) {
+    return new Error('Brak kolumny rentals.vat_rate w Supabase. Uruchom migrację supabase/019_rentals_vat_rate.sql i spróbuj ponownie.');
   }
   if (String(error?.code ?? '') === '23505') return new Error('Dokument o takim numerze już istnieje. Zmień numer wypożyczenia i spróbuj ponownie.');
   if (String(error?.code ?? '') === '23503') return new Error('Nie można zapisać wypożyczenia, bo wybrany klient lub sprzęt nie istnieje w bazie.');
@@ -166,10 +201,7 @@ export async function fetchRentals() {
     return { data: [], error: new Error('Supabase nie jest skonfigurowany') };
   }
 
-  const { data, error } = await supabase
-    .from('rentals')
-    .select(rentalSelectColumns)
-    .order('created_at', { ascending: false });
+  const { data, error } = await fetchRentalsDataset({ orderByCreatedAt: true });
 
   return { data: data ?? [], error };
 }
@@ -202,11 +234,7 @@ export async function fetchRentalRecord(id) {
     return { data: null, error: new Error('Supabase nie jest skonfigurowany') };
   }
 
-  const { data, error } = await supabase
-    .from('rentals')
-    .select(rentalSelectColumns)
-    .eq('id', id)
-    .single();
+  const { data, error } = await fetchRentalsDataset({ id, single: true });
 
   return { data, error };
 }

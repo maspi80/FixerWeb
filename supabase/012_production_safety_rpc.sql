@@ -16,7 +16,7 @@ declare
 begin
   insert into public.rentals (
     rental_number, client_id, status, start_date, planned_return_date,
-    actual_return_date, notes, total_deposit, total_price
+    actual_return_date, notes, total_deposit, total_price, vat_rate
   )
   values (
     p_rental->>'rental_number',
@@ -27,7 +27,8 @@ begin
     nullif(p_rental->>'actual_return_date','')::date,
     coalesce(p_rental->>'notes', ''),
     nullif(p_rental->>'total_deposit','')::numeric,
-    nullif(p_rental->>'total_price','')::numeric
+    nullif(p_rental->>'total_price','')::numeric,
+    coalesce(nullif(p_rental->>'vat_rate',''), '23')
   )
   returning id into created_rental_id;
 

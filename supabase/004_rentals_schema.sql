@@ -10,6 +10,7 @@ create table if not exists public.rentals (
     notes text,
     total_deposit numeric(12,2),
     total_price numeric(12,2),
+    vat_rate text default '23',
     created_at timestamptz default now(),
     updated_at timestamptz default now(),
     constraint rentals_status_check check (status in ('active', 'partially_returned', 'returned'))
@@ -50,6 +51,7 @@ alter table public.rentals add column if not exists actual_return_date date;
 alter table public.rentals add column if not exists notes text;
 alter table public.rentals add column if not exists total_deposit numeric(12,2);
 alter table public.rentals add column if not exists total_price numeric(12,2);
+alter table public.rentals add column if not exists vat_rate text default '23';
 alter table public.rentals add column if not exists created_at timestamptz default now();
 alter table public.rentals add column if not exists updated_at timestamptz default now();
 

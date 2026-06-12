@@ -10024,6 +10024,69 @@ function InterfaceSettingsPanel({ children }) { return children; }
 function IntegrationsSettingsPanel({ children }) { return children; }
 function SystemSettingsPanel({ children }) { return children; }
 
+function DocumentDesignerDeferredNumberInput({
+  elementId,
+  value,
+  onFocus,
+  onCommit,
+  onBlurCommit,
+  min = 0,
+  max = 9999,
+  fallback = 0
+}) {
+  const [draft, setDraft] = useState(String(value ?? ''));
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(String(value ?? ''));
+    }
+  }, [elementId, value]);
+
+  const commitDraft = () => {
+    focusedRef.current = false;
+    const trimmed = String(draft ?? '').trim();
+    if (!trimmed || trimmed === '-') {
+      setDraft(String(value ?? fallback));
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value ?? fallback));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, Math.round(parsed)));
+    if (clamped !== value) onCommit(clamped);
+    setDraft(String(clamped));
+  };
+
+  return <AppInput
+    type="number"
+    value={draft}
+    onFocus={() => {
+      focusedRef.current = true;
+      setDraft(String(value ?? ''));
+      onFocus?.();
+    }}
+    onChange={(event) => setDraft(event.target.value)}
+    onBlur={() => {
+      commitDraft();
+      onBlurCommit?.();
+    }}
+    onKeyDown={(event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.currentTarget.blur();
+      }
+      if (event.key === 'Escape') {
+        focusedRef.current = false;
+        setDraft(String(value ?? fallback));
+        event.currentTarget.blur();
+      }
+    }}
+  />;
+}
+
 function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () => {}, onGeneratePdf = () => {}, fullscreen = false, onClose }) {
   const initialSavedState = useMemo(getDocumentDesignerState, []);
   const [savedDesignerState, setSavedDesignerState] = useState(initialSavedState);
@@ -10936,11 +10999,11 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
             <AppButton variant="secondary" size="sm" onClick={deleteElement}><Trash2 size={14} /></AppButton>
           </div>
           <div className="settings-field-grid two-columns">
-            <label className="firm-field">Pozycja X<AppInput type="number" value={Math.round(selectedElement.x)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ x: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
-            <label className="firm-field">Pozycja Y<AppInput type="number" value={Math.round(selectedElement.y)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ y: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
-            <label className="firm-field">Szerokość<AppInput type="number" value={Math.round(selectedElement.width)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ width: Number(event.target.value) || DOCUMENT_DESIGNER_MIN_SIZE.width })} onBlur={commitPropertyEditSession} /></label>
-            <label className="firm-field">Wysokość<AppInput type="number" value={Math.round(selectedElement.height)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ height: Number(event.target.value) || DOCUMENT_DESIGNER_MIN_SIZE.height })} onBlur={commitPropertyEditSession} /></label>
-            <label className="firm-field">Rozmiar<AppInput type="number" value={selectedElement.fontSize} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ fontSize: Number(event.target.value) || 10 })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Pozycja X<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.x)} min={0} max={DOCUMENT_DESIGNER_PAGE.width} fallback={0} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ x: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
+            <label className="firm-field">Pozycja Y<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.y)} min={0} max={DOCUMENT_DESIGNER_PAGE.height} fallback={0} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ y: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
+            <label className="firm-field">Szerokość<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.width)} min={DOCUMENT_DESIGNER_MIN_SIZE.width} max={DOCUMENT_DESIGNER_PAGE.width} fallback={DOCUMENT_DESIGNER_MIN_SIZE.width} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ width: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
+            <label className="firm-field">Wysokość<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.height)} min={DOCUMENT_DESIGNER_MIN_SIZE.height} max={DOCUMENT_DESIGNER_PAGE.height} fallback={DOCUMENT_DESIGNER_MIN_SIZE.height} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ height: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
+            <label className="firm-field">Rozmiar<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={selectedElement.fontSize} min={8} max={72} fallback={10} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ fontSize: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Pogrubienie<AppSelect value={String(selectedElement.fontWeight)} onChange={(event) => updateSelectedElement({ fontWeight: Number(event.target.value) })}><option value="400">Normal</option><option value="500">Średni</option><option value="700">Mocny</option></AppSelect></label>
             <label className="firm-field">Kolor<AppInput type="color" value={selectedElement.color} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ color: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
             <label className="firm-field">Wyrównanie<AppSelect value={selectedElement.align} onChange={(event) => updateSelectedElement({ align: event.target.value })}><option value="left">Do lewej</option><option value="center">Wyśrodkuj</option><option value="right">Do prawej</option></AppSelect></label>

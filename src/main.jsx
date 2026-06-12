@@ -8949,6 +8949,23 @@ function mergeEquipmentDesignerColumns(elementColumns = [], documentTypeId = 're
   });
 }
 
+function getDesignerTableVisibleColumns(elementColumns = [], documentTypeId = 'rentalAgreement') {
+  const mergedColumns = mergeEquipmentDesignerColumns(elementColumns, documentTypeId);
+  const mergedMap = new Map(mergedColumns.map((column) => [column.key, column]));
+  const incoming = Array.isArray(elementColumns) ? elementColumns : [];
+  const orderedKeys = [];
+  incoming.forEach((column) => {
+    const key = String(column?.key ?? '').trim();
+    if (key && !orderedKeys.includes(key)) orderedKeys.push(key);
+  });
+  mergedColumns.forEach((column) => {
+    if (!orderedKeys.includes(column.key)) orderedKeys.push(column.key);
+  });
+  return orderedKeys
+    .map((key) => mergedMap.get(key))
+    .filter((column) => column && column.visible !== false);
+}
+
 function applyEquipmentPriceColumnRules(columns = [], documentTypeId = 'rentalAgreement', rental = null) {
   let nextColumns = [...columns];
   if (rental && isRentalFreeType(rental.rental_type)) {
@@ -9015,27 +9032,17 @@ function resolveIssueProtocolEquipmentTableRows(context = {}) {
 function resolveDesignerEquipmentTableColumns(element, documentTypeId = '', context = {}) {
   if (isEquipmentDocumentTable(element, documentTypeId)) {
     const rental = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
-    const mergedColumns = mergeEquipmentDesignerColumns(element.columns, documentTypeId);
-    let visibleColumns = mergedColumns.filter((column) => column.visible !== false);
+    let visibleColumns = getDesignerTableVisibleColumns(element.columns, documentTypeId);
     if (!visibleColumns.length) {
       visibleColumns = mapTemplateColumnsToDesignerColumns(getDocumentEquipmentTableColumns(documentTypeId, rental));
-    } else {
-      const allowedKeys = new Set(
-        applyEquipmentPriceColumnRules(
-          getDocumentEquipmentTableColumns(documentTypeId, rental),
-          documentTypeId,
-          rental
-        ).map((column) => column.key)
-      );
-      visibleColumns = visibleColumns.filter((column) => allowedKeys.has(column.key));
-      if (!visibleColumns.length) {
-        visibleColumns = mapTemplateColumnsToDesignerColumns(getDocumentEquipmentTableColumns(documentTypeId, rental));
-      }
+    } else if (rental && isRentalFreeType(rental.rental_type)) {
+      visibleColumns = visibleColumns.filter((column) => !EQUIPMENT_TABLE_PRICE_COLUMN_KEYS.includes(column.key));
     }
     return fitDesignerTableColumns(visibleColumns, Math.max(120, Number(element.width) || 700));
   }
   const columns = (element.columns ?? []).filter((column) => column.visible !== false);
-  return columns.length ? columns : [{ key: 'name', label: 'Nazwa', width: 180, visible: true }];
+  if (!columns.length) return [{ key: 'name', label: 'Nazwa', width: 180, visible: true }];
+  return fitDesignerTableColumns(columns, Math.max(120, Number(element.width) || 700));
 }
 
 function saveDocumentTemplateLibrary(library) {
@@ -11604,7 +11611,9 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
 
   const moveColumn = (key, direction) => {
     if (!selectedElement || selectedElement.kind !== 'table') return;
-    const next = [...(selectedElement.columns ?? [])];
+    const next = isEquipmentDocumentTable(selectedElement, activeTypeId)
+      ? mergeEquipmentDesignerColumns(selectedElement.columns, activeTypeId)
+      : [...(selectedElement.columns ?? [])];
     const index = next.findIndex((column) => column.key === key);
     const target = index + direction;
     if (index < 0 || target < 0 || target >= next.length) return;
@@ -11615,7 +11624,9 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
 
   const moveColumnByDrop = (sourceKey, targetKey) => {
     if (!selectedElement || selectedElement.kind !== 'table' || !sourceKey || !targetKey || sourceKey === targetKey) return;
-    const next = [...(selectedElement.columns ?? [])];
+    const next = isEquipmentDocumentTable(selectedElement, activeTypeId)
+      ? mergeEquipmentDesignerColumns(selectedElement.columns, activeTypeId)
+      : [...(selectedElement.columns ?? [])];
     const sourceIndex = next.findIndex((column) => column.key === sourceKey);
     const targetIndex = next.findIndex((column) => column.key === targetKey);
     if (sourceIndex < 0 || targetIndex < 0) return;
@@ -11623,6 +11634,24 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
     next.splice(targetIndex, 0, moved);
     updateSelectedElement({ columns: next });
   };
+
+  const getSelectedTableColumns = () => {
+    if (!selectedElement || selectedElement.kind !== 'table') return [];
+    if (isEquipmentDocumentTable(selectedElement, activeTypeId)) {
+      return mergeEquipmentDesignerColumns(selectedElement.columns, activeTypeId);
+    }
+    return selectedElement.columns ?? [];
+  };
+
+  const updateTableColumn = (columnKey, patch, { history = 'immediate' } = {}) => {
+    if (!selectedElement || selectedElement.kind !== 'table') return;
+    const base = getSelectedTableColumns();
+    updateSelectedElement({
+      columns: base.map((item) => item.key === columnKey ? { ...item, ...patch } : item)
+    }, { history });
+  };
+
+  const tableColumnsForEditor = selectedElement?.kind === 'table' ? getSelectedTableColumns() : [];
 
   const pageSelected = !selectedElement;
 
@@ -11804,20 +11833,17 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
           <button type="button" className="document-designer-panel-close" onClick={() => setPropertiesCollapsed(true)} aria-label="Ukryj właściwości"><ChevronRight size={16} /></button>
         </div>
 
-        <div className="document-designer-properties-scroll">
-          <div className="settings-form-section">
-            <div className="settings-action-row">
-              <AppButton variant="secondary" size="sm" onClick={createTemplate}><Plus size={14} />Nowy</AppButton>
-              <AppButton variant="secondary" size="sm" onClick={duplicateTemplate} disabled={!activeTemplate}><Copy size={14} />Duplikuj</AppButton>
-              <AppButton variant="secondary" size="sm" onClick={deleteTemplate} disabled={!activeTemplate}><Trash2 size={14} />Usuń</AppButton>
-            </div>
-            <div className="settings-action-row">
-              <AppButton variant="secondary" size="sm" onClick={exportTemplates}><Download size={14} />Eksport</AppButton>
-              <AppButton variant="secondary" size="sm" onClick={() => importInputRef.current?.click()}><FolderOpen size={14} />Import</AppButton>
-              <input ref={importInputRef} type="file" accept="application/json,.json" onChange={importTemplates} className="backup-file-input" />
-            </div>
-          </div>
+        <div className="document-designer-properties-toolbar" aria-label="Akcje szablonu">
+          <button type="button" className="dictionary-icon-button" title="Nowy szablon" onClick={createTemplate}><Plus size={14} /></button>
+          <button type="button" className="dictionary-icon-button" title="Duplikuj szablon" onClick={duplicateTemplate} disabled={!activeTemplate}><Copy size={14} /></button>
+          <button type="button" className="dictionary-icon-button remove" title="Usuń szablon" onClick={deleteTemplate} disabled={!activeTemplate}><Trash2 size={14} /></button>
+          <span className="document-designer-properties-toolbar-divider" aria-hidden="true" />
+          <button type="button" className="dictionary-icon-button" title="Eksport szablonów" onClick={exportTemplates}><Download size={14} /></button>
+          <button type="button" className="dictionary-icon-button" title="Import szablonów" onClick={() => importInputRef.current?.click()}><FolderOpen size={14} /></button>
+          <input ref={importInputRef} type="file" accept="application/json,.json" onChange={importTemplates} className="backup-file-input" />
+        </div>
 
+        <div className="document-designer-properties-scroll">
           {pageSelected && activeTemplate && <div className="settings-form-section">
             <div className="settings-section-title"><h4>Strona A4</h4></div>
             <p className="muted document-designer-page-hint">Kliknij pusty obszar dokumentu, aby edytować marginesy strony.</p>
@@ -11860,22 +11886,29 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
           {selectedElement.kind === 'signature' && <label className="firm-field">Nazwa podpisu<AppInput value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
           {selectedElement.kind === 'table' && <div className="document-designer-columns-editor">
             <strong>Kolumny tabeli</strong>
-            {(selectedElement.columns ?? []).map((column, index) => <div
+            {tableColumnsForEditor.map((column, index) => <div
               key={column.key}
-              className="document-column-row compact"
+              className={`document-designer-column-item${column.visible === false ? ' is-hidden' : ''}`}
               draggable
               onDragStart={() => setColumnDragKey(column.key)}
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => { moveColumnByDrop(columnDragKey, column.key); setColumnDragKey(''); }}
             >
-              <div className="document-designer-column-main">
-                <label className="settings-check"><input type="checkbox" checked={column.visible !== false} onChange={() => updateSelectedElement({
-                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, visible: item.visible === false } : item)
-                })} /><span>{column.label}</span></label>
-                <label className="firm-field">Nagłówek<AppInput value={column.label} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({
-                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, label: event.target.value } : item)
-                }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
-                <label className="firm-field">Szerokość kolumny
+              <div className="document-designer-column-item-head">
+                <label className="settings-check document-designer-column-check">
+                  <input type="checkbox" checked={column.visible !== false} onChange={(event) => updateTableColumn(column.key, { visible: event.target.checked })} />
+                  <span>{column.label}</span>
+                </label>
+                <div className="document-designer-column-item-actions">
+                  <button type="button" className="dictionary-icon-button" title="Węższa kolumna" onClick={() => updateTableColumn(column.key, { width: Math.max(50, column.width - 10) })}><ChevronLeft size={14} /></button>
+                  <button type="button" className="dictionary-icon-button" title="Szersza kolumna" onClick={() => updateTableColumn(column.key, { width: column.width + 10 })}><ChevronRight size={14} /></button>
+                  <button type="button" className="dictionary-icon-button order" title="Wyżej" onClick={() => moveColumn(column.key, -1)} disabled={index === 0}><ArrowUp size={14} /></button>
+                  <button type="button" className="dictionary-icon-button order" title="Niżej" onClick={() => moveColumn(column.key, 1)} disabled={index === tableColumnsForEditor.length - 1}><ArrowDown size={14} /></button>
+                </div>
+              </div>
+              <div className="document-designer-column-item-fields">
+                <label className="firm-field document-designer-column-field">Nagłówek<AppInput value={column.label} onFocus={beginPropertyEditSession} onChange={(event) => updateTableColumn(column.key, { label: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
+                <label className="firm-field document-designer-column-field">Szer.
                   <input
                     className="document-designer-column-width-range"
                     type="range"
@@ -11883,22 +11916,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
                     max="360"
                     value={column.width}
                     onMouseDown={beginPropertyEditSession}
-                    onChange={(event) => updateSelectedElement({
-                      columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, width: Number(event.target.value) || item.width } : item)
-                    }, { history: 'deferred' })}
+                    onChange={(event) => updateTableColumn(column.key, { width: Number(event.target.value) || column.width }, { history: 'deferred' })}
                     onMouseUp={commitPropertyEditSession}
                   />
                 </label>
-              </div>
-              <div className="dictionary-row-actions dictionary-icon-actions">
-                <button type="button" className="dictionary-icon-button" onClick={() => updateSelectedElement({
-                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, width: Math.max(50, item.width - 10) } : item)
-                })}><ChevronLeft size={14} /></button>
-                <button type="button" className="dictionary-icon-button" onClick={() => updateSelectedElement({
-                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, width: item.width + 10 } : item)
-                })}><ChevronRight size={14} /></button>
-                <button type="button" className="dictionary-icon-button" onClick={() => moveColumn(column.key, -1)} disabled={index === 0}><ArrowUp size={14} /></button>
-                <button type="button" className="dictionary-icon-button" onClick={() => moveColumn(column.key, 1)} disabled={index === selectedElement.columns.length - 1}><ArrowDown size={14} /></button>
               </div>
             </div>)}
           </div>}

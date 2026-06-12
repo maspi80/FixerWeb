@@ -5699,6 +5699,79 @@ th.expand-cell{cursor:default}
   display:grid;
   gap:6px;
 }
+.document-designer-columns-editor > strong{
+  font-size:12px;
+  color:#cbd5e1;
+}
+.document-designer-properties-toolbar{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:4px;
+  padding:6px 12px;
+  border-bottom:1px solid rgba(148,163,184,.14);
+}
+.document-designer-properties-toolbar-divider{
+  width:1px;
+  height:18px;
+  margin:0 2px;
+  background:rgba(148,163,184,.22);
+}
+.document-designer-properties-toolbar .dictionary-icon-button{
+  width:28px;
+  height:28px;
+  padding:0;
+}
+.document-designer-column-item{
+  display:grid;
+  gap:6px;
+  padding:6px 8px;
+  border:1px solid rgba(148,163,184,.12);
+  border-radius:8px;
+  background:rgba(8,13,21,.12);
+}
+.document-designer-column-item.is-hidden{
+  opacity:.72;
+}
+.document-designer-column-item-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:6px;
+}
+.document-designer-column-check{
+  margin:0;
+  min-width:0;
+  flex:1;
+}
+.document-designer-column-check span{
+  font-size:12px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.document-designer-column-item-actions{
+  display:flex;
+  align-items:center;
+  gap:2px;
+  flex-shrink:0;
+}
+.document-designer-column-item-actions .dictionary-icon-button{
+  width:24px;
+  height:24px;
+  padding:0;
+}
+.document-designer-column-item-fields{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,92px);
+  gap:6px;
+  align-items:end;
+}
+.document-designer-column-field{
+  margin:0;
+  font-size:11px;
+  gap:3px;
+}
 .document-designer-column-main{
   display:grid;
   gap:6px;
@@ -5708,6 +5781,13 @@ th.expand-cell{cursor:default}
 }
 .document-designer-align-actions{
   justify-content:flex-start;
+}
+.app-shell.theme-light .document-designer-columns-editor > strong{
+  color:#334155;
+}
+.app-shell.theme-light .document-designer-column-item{
+  background:#f8fafc;
+  border-color:#dbe3ee;
 }
 .app-shell.theme-light .document-designer-workspace{
   background:#e8edf4;

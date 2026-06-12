@@ -4767,6 +4767,127 @@ th.expand-cell{cursor:default}
 .documents-module-page .settings-section-shell{
   padding-left:0;
 }
+/* Documents module — compact typography aligned with operational modules */
+.documents-module-page .settings-v2-layout{
+  gap:10px;
+}
+.documents-module-page .settings-v2-header h2{
+  margin:0 0 3px;
+  font-size:20px;
+  line-height:1.12;
+  font-weight:var(--fw-weight-semibold);
+}
+.documents-module-page .settings-v2-header .muted{
+  font-size:13px;
+  line-height:1.35;
+}
+.documents-module-page .settings-v2-header .eyebrow{
+  font-size:10px;
+  margin-bottom:2px;
+}
+.documents-module-page .documents-nav-panel{
+  padding:6px;
+  gap:3px;
+}
+.documents-module-page .documents-v2-nav .documents-nav-item{
+  min-height:42px;
+  padding:6px 10px;
+  gap:1px;
+  font-size:12px;
+}
+.documents-module-page .documents-v2-nav .documents-nav-item strong{
+  font-size:12px;
+  font-weight:var(--fw-weight-medium);
+  line-height:1.25;
+}
+.documents-module-page .documents-v2-nav .documents-nav-item small{
+  font-size:10.5px;
+  font-weight:var(--fw-weight-body);
+  line-height:1.3;
+}
+.documents-module-page .settings-config-card{
+  gap:10px;
+  padding:10px;
+}
+.documents-module-page .settings-config-card-header{
+  gap:10px;
+}
+.documents-module-page .settings-config-card-header h3{
+  font-size:14px;
+  line-height:1.2;
+}
+.documents-module-page .settings-config-card-header .muted{
+  font-size:11.5px;
+  line-height:1.35;
+}
+.documents-module-page .settings-config-card-header .eyebrow{
+  font-size:10px;
+  margin-bottom:2px;
+}
+.documents-module-page .settings-config-card-header .settings-action-row{
+  gap:8px;
+}
+.documents-module-page .settings-config-card-header .settings-action-row .app-button-sm{
+  min-height:30px;
+  padding:0 10px;
+  font-size:12px;
+  border-radius:var(--fw-radius-sm);
+}
+.documents-module-page .data-table-shell{
+  border:1px solid rgba(148,163,184,.13);
+  border-radius:12px;
+  background:rgba(8,13,21,.18);
+  overflow:auto;
+}
+.documents-module-page .data-table{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+  font-size:13px;
+}
+.documents-module-page .data-table th,
+.documents-module-page .data-table td{
+  padding:8px 10px;
+  border-bottom:1px solid rgba(148,163,184,.10);
+  vertical-align:middle;
+  text-align:left;
+}
+.documents-module-page .data-table th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:rgba(15,23,42,.96);
+  color:#94a3b8;
+  font-size:12px;
+  font-weight:var(--fw-weight-semibold);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.documents-module-page .data-table tbody tr:hover td{
+  background:rgba(96,165,250,.06);
+  color:inherit;
+}
+.documents-module-page .documents-template-catalog .settings-action-row{
+  gap:6px;
+  justify-content:flex-start;
+  flex-wrap:wrap;
+}
+.documents-module-page .documents-template-catalog .settings-action-row .app-button-sm{
+  min-height:30px;
+  padding:0 10px;
+  font-size:12px;
+  border-radius:var(--fw-radius-sm);
+  white-space:nowrap;
+}
+.documents-module-page .documents-templates-card{
+  gap:10px;
+}
+.documents-module-page .documents-v2-workspace{
+  gap:8px;
+}
+.documents-module-page .documents-detail-panel{
+  gap:8px;
+}
 .documents-designer-fullscreen{
   position:fixed;
   inset:0;
@@ -5805,6 +5926,17 @@ th.expand-cell{cursor:default}
 }
 .app-shell.theme-light .documents-v2-nav .documents-nav-item.active small{
   color:#2563eb;
+}
+.app-shell.theme-light .documents-module-page .data-table-shell{
+  background:#ffffff;
+  border-color:#d8e1ee;
+}
+.app-shell.theme-light .documents-module-page .data-table th{
+  background:#f8fafc;
+  color:#64748b;
+}
+.app-shell.theme-light .documents-module-page .data-table tbody tr:hover td{
+  background:rgba(37,99,235,.06);
 }
 .app-shell.theme-light .agreement-subtab{
   background:#f8fafc;

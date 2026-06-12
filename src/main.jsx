@@ -8427,11 +8427,18 @@ function saveDocumentTemplateLibrary(library) {
     type.id,
     normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate)
   ]));
-  localStorage.setItem(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, JSON.stringify(next));
+  try {
+    localStorage.setItem(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    console.error('Document template library localStorage save failed', error);
+    throw error;
+  }
   return next;
 }
 
 const DOCUMENT_DESIGNER_STORAGE_KEY = 'fixer:document-designer';
+const DOCUMENT_DESIGNER_LEGACY_MIGRATION_KEY = 'fixer:document-designer-legacy-migrated';
+const DOCUMENT_DESIGNER_LAYOUT_VERSION = 2;
 const DOCUMENT_DESIGNER_PAGE = { width: 794, height: 1123 };
 const DOCUMENT_DESIGNER_MIN_SIZE = { width: 40, height: 18 };
 const DESIGNER_MM_TO_PX = 3.7795275591;
@@ -8699,7 +8706,7 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
       width: area.width,
       height: termsHeight,
       fontSize: 10,
-      text: defaults.termsText
+      text: '{{terms}}'
     }));
     y += termsHeight + gap;
   }
@@ -8732,6 +8739,7 @@ function createDesignerTableElement(libraryId, columns, position = {}) {
 }
 
 function isLegacyDesignerTemplateLayout(template) {
+  if (Number(template?.layoutVersion) >= DOCUMENT_DESIGNER_LAYOUT_VERSION) return false;
   if (!template?.elements?.length) return true;
   const margins = template.margins ?? DEFAULT_DESIGNER_MARGINS;
   const area = getDesignerWorkArea(margins);
@@ -8761,7 +8769,8 @@ function createDefaultDocumentDesignerTemplate(documentTypeId, name = 'Domyślny
     name,
     documentTypeId,
     margins,
-    elements
+    elements,
+    layoutVersion: DOCUMENT_DESIGNER_LAYOUT_VERSION
   };
 }
 
@@ -8807,7 +8816,8 @@ function normalizeDocumentDesignerTemplate(template = {}, fallbackTypeId = DOCUM
     name: String(template.name ?? 'Szablon').trim() || 'Szablon',
     documentTypeId: String(template.documentTypeId ?? fallbackTypeId),
     margins,
-    elements: normalizedElements
+    elements: normalizedElements,
+    layoutVersion: DOCUMENT_DESIGNER_LAYOUT_VERSION
   };
 }
 
@@ -8822,7 +8832,6 @@ function normalizeDocumentDesignerState(value) {
   const incomingTemplates = Array.isArray(value?.templates) ? value.templates : defaults.templates;
   const normalizedTemplates = incomingTemplates
     .map((template) => normalizeDocumentDesignerTemplate(template, template?.documentTypeId))
-    .map((template) => upgradeLegacyDesignerTemplate(template))
     .filter(Boolean);
   DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
     if (normalizedTemplates.some((template) => template.documentTypeId === type.id)) return;
@@ -8831,14 +8840,73 @@ function normalizeDocumentDesignerState(value) {
   return { templates: normalizedTemplates };
 }
 
+function migrateLegacyDocumentDesignerStorageOnce() {
+  if (localStorage.getItem(DOCUMENT_DESIGNER_LEGACY_MIGRATION_KEY) === '1') return;
+  const raw = getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
+  if (!raw || !Array.isArray(raw.templates) || !raw.templates.length) {
+    localStorage.setItem(DOCUMENT_DESIGNER_LEGACY_MIGRATION_KEY, '1');
+    return;
+  }
+  const migratedTemplates = raw.templates
+    .map((template) => {
+      const upgraded = upgradeLegacyDesignerTemplate({
+        id: String(template.id ?? ''),
+        name: String(template.name ?? 'Szablon'),
+        documentTypeId: String(template.documentTypeId ?? DOCUMENT_TEMPLATE_TYPES[0].id),
+        margins: template.margins,
+        elements: Array.isArray(template.elements) ? template.elements : [],
+        layoutVersion: Number(template.layoutVersion) || 0
+      });
+      return normalizeDocumentDesignerTemplate(upgraded, upgraded.documentTypeId);
+    });
+  DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
+    if (migratedTemplates.some((template) => template.documentTypeId === type.id)) return;
+    migratedTemplates.push(createDefaultDocumentDesignerTemplate(type.id, `Domyślny • ${type.label}`));
+  });
+  localStorage.setItem(DOCUMENT_DESIGNER_STORAGE_KEY, JSON.stringify({ templates: migratedTemplates }));
+  localStorage.setItem(DOCUMENT_DESIGNER_LEGACY_MIGRATION_KEY, '1');
+}
+
 function getDocumentDesignerState() {
-  return normalizeDocumentDesignerState(getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, getDefaultDocumentDesignerState()));
+  migrateLegacyDocumentDesignerStorageOnce();
+  const stored = getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
+  if (stored && Array.isArray(stored.templates) && stored.templates.length) {
+    return normalizeDocumentDesignerState(stored);
+  }
+  return normalizeDocumentDesignerState(getDefaultDocumentDesignerState());
 }
 
 function saveDocumentDesignerState(state) {
   const normalized = normalizeDocumentDesignerState(state);
-  localStorage.setItem(DOCUMENT_DESIGNER_STORAGE_KEY, JSON.stringify(normalized));
+  try {
+    localStorage.setItem(DOCUMENT_DESIGNER_STORAGE_KEY, JSON.stringify(normalized));
+  } catch (error) {
+    console.error('Document designer localStorage save failed', error);
+    throw error;
+  }
   return normalized;
+}
+
+function getSavedDocumentTemplateByType(documentTypeId) {
+  const typeDef = getDocumentTemplateTypeById(documentTypeId);
+  const library = getDocumentTemplateLibrary();
+  return normalizeSharedDocumentTemplate(library[documentTypeId], typeDef.defaultTemplate);
+}
+
+function enrichDocumentRenderContext(documentTypeId, context = {}) {
+  const savedTemplate = getSavedDocumentTemplateByType(documentTypeId);
+  const typeDef = getDocumentTemplateTypeById(documentTypeId);
+  return {
+    ...context,
+    documentTypeId,
+    documentTitle: savedTemplate.title || typeDef.label,
+    terms: savedTemplate.termsText || context.terms || '',
+    introText: savedTemplate.introText || context.introText || '',
+    issuerText: savedTemplate.issuerText || context.issuerText || '',
+    borrowerText: savedTemplate.borrowerText || context.borrowerText || '',
+    footerText: savedTemplate.footerText || context.footerText || '',
+    documentFooter: context.documentFooter || savedTemplate.footerText || ''
+  };
 }
 
 const SERVICE_DOCUMENT_TYPE_MAP = {
@@ -8876,7 +8944,10 @@ function getServiceDocumentDesignerTemplate(documentTypeId) {
 
 function buildServiceOrderDocumentHtml(order, type, { preview = true, client = null, company = getCompanyProfile() } = {}) {
   const documentTypeId = SERVICE_DOCUMENT_TYPE_MAP[type];
-  const context = buildServiceOrderDocumentContext(order, type, client, company);
+  const context = enrichDocumentRenderContext(
+    documentTypeId,
+    buildServiceOrderDocumentContext(order, type, client, company)
+  );
   const designerTemplate = getServiceDocumentDesignerTemplate(documentTypeId);
   return renderDesignerDocumentHtml(designerTemplate, context, {
     preview,
@@ -10202,13 +10273,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
     return JSON.stringify(activeTemplate) !== JSON.stringify(savedTemplate);
   }, [activeTemplate, savedDesignerState]);
   const designerPreviewContext = useMemo(() => {
-    const typeDef = getDocumentTemplateTypeById(activeTypeId);
-    const base = {
+    const base = enrichDocumentRenderContext(activeTypeId, {
       ...previewContext,
-      documentTypeId: activeTypeId,
-      terms: typeDef.defaultTemplate?.termsText ?? previewContext.terms ?? '',
-      documentTitle: typeDef.defaultTemplate?.title ?? typeDef.label
-    };
+      documentTypeId: activeTypeId
+    });
     if (activeTypeId === 'serviceIntake') {
       base.equipmentRows = buildServiceIntakeTableRows(base);
     }
@@ -10396,11 +10464,16 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
 
   const saveDraft = () => {
     commitPropertyEditSession();
-    const saved = saveDocumentDesignerState(designerStateRef.current);
-    setSavedDesignerState(saved);
-    designerStateRef.current = saved;
-    setDesignerState(saved);
-    onNotice('Szablon projektanta zapisany.');
+    try {
+      const saved = saveDocumentDesignerState(designerStateRef.current);
+      setSavedDesignerState(saved);
+      designerStateRef.current = saved;
+      setDesignerState(saved);
+      onNotice('Zapisano szablon dokumentu.');
+    } catch (error) {
+      console.error('Document designer save failed', error);
+      onNotice('Nie udało się zapisać szablonu dokumentu. Spróbuj ponownie.');
+    }
   };
 
   const discardDraft = () => {
@@ -10441,7 +10514,12 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
   const resetTemplateLayout = () => {
     if (!activeTemplate) return;
     const reset = createDefaultDocumentDesignerTemplate(activeTypeId, activeTemplate.name);
-    updateActiveTemplate((template) => ({ ...template, elements: reset.elements, margins: reset.margins }));
+    updateActiveTemplate((template) => ({
+      ...template,
+      elements: reset.elements,
+      margins: reset.margins,
+      layoutVersion: DOCUMENT_DESIGNER_LAYOUT_VERSION
+    }));
     setSelectedElementId('');
   };
 
@@ -12239,13 +12317,19 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   ]));
   const hasUnsavedTemplateChanges = Object.values(templateDirtyByType).some(Boolean);
   const currentTemplateHasUnsavedChanges = templateDirtyByType[activeDocumentTemplateType] === true;
-  const saveDocumentTemplateDrafts = (noticeMessage = 'Szablon zapisany') => {
-    const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
-    const saved = saveDocumentTemplateLibrary(normalized);
-    setDocumentTemplateLibrary(saved);
-    setSavedDocumentTemplateLibrary(saved);
-    setDocumentSettingsNotice(noticeMessage);
-    return saved;
+  const saveDocumentTemplateDrafts = (noticeMessage = 'Zapisano szablon dokumentu.') => {
+    try {
+      const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
+      const saved = saveDocumentTemplateLibrary(normalized);
+      setDocumentTemplateLibrary(saved);
+      setSavedDocumentTemplateLibrary(saved);
+      setDocumentSettingsNotice(noticeMessage);
+      return saved;
+    } catch (error) {
+      console.error('Document template save failed', error);
+      setDocumentSettingsNotice('Nie udało się zapisać szablonu dokumentu. Spróbuj ponownie.');
+      return null;
+    }
   };
   const discardDocumentTemplateDrafts = (noticeMessage = 'Odrzucono niezapisane zmiany.') => {
     const restored = normalizeTemplateLibraryState(savedDocumentTemplateLibrary);
@@ -12262,7 +12346,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setPendingTemplateExitAction(() => action);
   };
   const confirmTemplateExitWithSave = () => {
-    saveDocumentTemplateDrafts('Szablon zapisany');
+    saveDocumentTemplateDrafts('Zapisano szablon dokumentu.');
     const pendingAction = pendingTemplateExitAction;
     setPendingTemplateExitAction(null);
     pendingAction?.();
@@ -12310,10 +12394,15 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   useEffect(() => {
     if (!hasUnsavedTemplateChanges) return undefined;
     const autosaveTimer = window.setTimeout(() => {
-      const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
-      const saved = saveDocumentTemplateLibrary(normalized);
-      setDocumentTemplateLibrary(saved);
-      setSavedDocumentTemplateLibrary(saved);
+      try {
+        const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
+        const saved = saveDocumentTemplateLibrary(normalized);
+        setDocumentTemplateLibrary(saved);
+        setSavedDocumentTemplateLibrary(saved);
+      } catch (error) {
+        console.error('Document template autosave failed', error);
+        setDocumentSettingsNotice('Nie udało się zapisać szablonu dokumentu. Spróbuj ponownie.');
+      }
     }, 1400);
     return () => window.clearTimeout(autosaveTimer);
   }, [documentTemplateLibrary, hasUnsavedTemplateChanges]);
@@ -12923,7 +13012,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                 <div className="settings-action-row">
                   <AppButton variant="secondary" size="sm" onClick={requestReturnToTemplateList}><ChevronLeft size={14} />Wróć do listy</AppButton>
                   <AppButton variant="secondary" size="sm" onClick={resetCurrentDocumentTemplate}><RotateCcw size={13} />Przywróć domyślny</AppButton>
-                  <AppButton variant="primary" size="sm" onClick={() => saveDocumentTemplateDrafts('Szablon zapisany')} disabled={!currentTemplateHasUnsavedChanges}><Save size={13} />Zapisz szablon</AppButton>
+                  <AppButton variant="primary" size="sm" onClick={() => saveDocumentTemplateDrafts('Zapisano szablon dokumentu.')} disabled={!currentTemplateHasUnsavedChanges}><Save size={13} />Zapisz szablon</AppButton>
                 </div>
               </div>
 

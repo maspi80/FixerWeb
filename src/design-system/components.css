@@ -189,6 +189,86 @@
   border-top: 1px solid var(--fw-color-border);
 }
 
+/* Compact confirmation / status dialogs */
+.confirm-dialog,
+.select-status-dialog {
+  width: min(480px, calc(100vw - 48px));
+  max-height: none;
+  padding: 14px 16px;
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-shadow-panel);
+}
+
+.confirm-dialog .ds-modal-header,
+.select-status-dialog .ds-modal-header {
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+
+.confirm-dialog .ds-modal-header h2,
+.select-status-dialog .ds-modal-header h2 {
+  font-size: 16px;
+  font-weight: var(--fw-weight-semibold);
+  line-height: 1.25;
+}
+
+.confirm-dialog .ds-modal-header .ds-icon-button,
+.select-status-dialog .ds-modal-header .ds-icon-button {
+  width: var(--fw-icon-button-size);
+  height: var(--fw-icon-button-size);
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.confirm-dialog .ds-modal-content,
+.select-status-dialog .ds-modal-content {
+  overflow: visible;
+}
+
+.confirm-dialog-message {
+  margin: 0;
+  color: var(--fw-color-text-soft);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.confirm-dialog .ds-modal-footer,
+.select-status-dialog .ds-modal-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirm-dialog .ds-modal-footer .app-button,
+.confirm-dialog .ds-modal-footer .ds-button,
+.select-status-dialog .ds-modal-footer .app-button,
+.select-status-dialog .ds-modal-footer .ds-button {
+  min-height: var(--fw-control-height-sm);
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+  border-radius: var(--fw-radius-sm);
+}
+
+@media (max-width: 560px) {
+  .confirm-dialog .ds-modal-footer,
+  .select-status-dialog .ds-modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .confirm-dialog .ds-modal-footer .app-button,
+  .confirm-dialog .ds-modal-footer .ds-button,
+  .select-status-dialog .ds-modal-footer .app-button,
+  .select-status-dialog .ds-modal-footer .ds-button {
+    width: 100%;
+  }
+}
+
 .app-eyebrow,
 .ds-eyebrow {
   margin: 0 0 var(--fw-space-1);

@@ -3899,7 +3899,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       className="confirm-dialog"
       title="Rejestracja zwrotu"
       onClose={() => setRentalReturnPending(null)}
-      footer={<><ButtonSecondary onClick={() => executeReturn(rentalReturnPending, false)}>Zarejestruj zwrot</ButtonSecondary><ButtonPrimary onClick={() => executeReturn(rentalReturnPending, true)}>Zamknij wypożyczenie</ButtonPrimary></>}
+      footer={<><ButtonSecondary size="sm" onClick={() => executeReturn(rentalReturnPending, false)}>Zarejestruj zwrot</ButtonSecondary><ButtonPrimary size="sm" onClick={() => executeReturn(rentalReturnPending, true)}>Zamknij wypożyczenie</ButtonPrimary></>}
     >
       <p className="confirm-dialog-message">Czy zamknąć wypożyczenie <strong>{rentalReturnPending.rental.rental_number}</strong> i przenieść je do historii?</p>
       {rentalReturnPending.returnedCount < rentalReturnPending.totalCount && <AppNotice variant="warning" className="service-form-notice">Nie wszystkie pozycje są oznaczone jako zwrócone. Przy zamknięciu wypożyczenie zostanie oznaczone jako częściowo zwrócone.</AppNotice>}
@@ -4801,7 +4801,7 @@ function ConfirmDialog({ title, message, confirmLabel = 'Tak', cancelLabel = 'An
     className="confirm-dialog"
     title={title}
     onClose={onCancel}
-    footer={<><ButtonSecondary onClick={onCancel}>{cancelLabel}</ButtonSecondary><AppButton variant={variant} onClick={onConfirm}>{confirmLabel}</AppButton></>}
+    footer={<><ButtonSecondary size="sm" onClick={onCancel}>{cancelLabel}</ButtonSecondary><AppButton variant={variant} size="sm" onClick={onConfirm}>{confirmLabel}</AppButton></>}
   >
     {message && <p className="confirm-dialog-message">{message}</p>}
   </ModalFrame>;
@@ -4814,7 +4814,7 @@ function SelectStatusDialog({ order, statuses, onConfirm, onCancel }) {
     eyebrow="Serwis"
     title="Zmień status zlecenia"
     onClose={onCancel}
-    footer={<><ButtonSecondary onClick={onCancel}>Anuluj</ButtonSecondary><ButtonPrimary onClick={() => onConfirm(selected)} disabled={selected === order?.status}>Zmień status</ButtonPrimary></>}
+    footer={<><ButtonSecondary size="sm" onClick={onCancel}>Anuluj</ButtonSecondary><ButtonPrimary size="sm" onClick={() => onConfirm(selected)} disabled={selected === order?.status}>Zmień status</ButtonPrimary></>}
   >
     <FormField label="Nowy status">
       <AppSelect value={selected} onChange={(event) => setSelected(event.target.value)}>
@@ -11724,15 +11724,15 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
       title="Niezapisane zmiany"
       onClose={() => setPendingTypeId('')}
       footer={<>
-        <ButtonSecondary onClick={() => setPendingTypeId('')}>Anuluj</ButtonSecondary>
-        <AppButton variant="secondary" onClick={() => {
+        <ButtonSecondary size="sm" onClick={() => setPendingTypeId('')}>Anuluj</ButtonSecondary>
+        <ButtonSecondary size="sm" onClick={() => {
           discardCurrentTemplateChanges();
           applyTypeSwitch(pendingTypeId);
-        }}>Odrzuć i przełącz</AppButton>
-        <AppButton variant="primary" onClick={() => {
+        }}>Odrzuć i przełącz</ButtonSecondary>
+        <ButtonPrimary size="sm" onClick={() => {
           saveDraft();
           applyTypeSwitch(pendingTypeId);
-        }}>Zapisz i przełącz</AppButton>
+        }}>Zapisz i przełącz</ButtonPrimary>
       </>}
     >
       <p className="confirm-dialog-message">Masz niezapisane zmiany w aktualnym szablonie.</p>
@@ -13901,9 +13901,9 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       title="Masz niezapisane zmiany."
       onClose={cancelTemplateExit}
       footer={<>
-        <ButtonSecondary onClick={cancelTemplateExit}>Anuluj</ButtonSecondary>
-        <ButtonSecondary onClick={confirmTemplateExitWithDiscard}>Odrzuć</ButtonSecondary>
-        <ButtonPrimary onClick={confirmTemplateExitWithSave}>Zapisz</ButtonPrimary>
+        <ButtonSecondary size="sm" onClick={cancelTemplateExit}>Anuluj</ButtonSecondary>
+        <ButtonSecondary size="sm" onClick={confirmTemplateExitWithDiscard}>Odrzuć</ButtonSecondary>
+        <ButtonPrimary size="sm" onClick={confirmTemplateExitWithSave}>Zapisz</ButtonPrimary>
       </>}
     >
       <p className="confirm-dialog-message">Przed opuszczeniem widoku zapisz zmiany albo je odrzuć.</p>

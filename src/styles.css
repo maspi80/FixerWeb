@@ -4062,7 +4062,14 @@ th.expand-cell{cursor:default}
   flex:1 1 500px;
 }
 .rental-terms-grid{
-  grid-template-columns:minmax(120px,.6fr) minmax(120px,.6fr) minmax(320px,2fr);
+  grid-template-columns:minmax(120px,.7fr) minmax(120px,.7fr) minmax(120px,.7fr) minmax(280px,2fr);
+}
+.rental-item-price-input{
+  min-width:108px;
+  max-width:132px;
+}
+.rental-item-price-input .app-input{
+  min-width:0;
 }
 .rental-terms-grid .app-textarea{
   min-height:var(--fw-control-height-md);

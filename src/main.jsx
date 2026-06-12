@@ -2980,10 +2980,59 @@ function getRentalBaseItems(rental) {
   return (rental?.rental_items ?? []).filter((item) => item.item_type !== 'set_component');
 }
 
-function buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows) {
+function parseRentalMoneyInput(value) {
+  const raw = String(value ?? '').trim().replace(/\s/g, '').replace(',', '.');
+  if (!raw) return null;
+  const number = Number(raw);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function formatPolishMoneyAmount(number) {
+  if (!Number.isFinite(number) || number < 0) return '';
+  const fixed = number.toFixed(2).replace('.', ',');
+  const [whole, fraction = '00'] = fixed.split(',');
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')},${fraction}`;
+}
+
+function formatRentalMoneyInputDisplay(value, currency = 'zł') {
+  const parsed = parseRentalMoneyInput(value);
+  if (parsed == null) return '';
+  const amount = formatPolishMoneyAmount(parsed);
+  return currency ? `${amount} ${currency}` : amount;
+}
+
+function sumRentalItemPrices(equipmentIds, itemPrices = {}) {
+  return (Array.isArray(equipmentIds) ? equipmentIds : []).reduce(
+    (sum, id) => sum + (parseRentalMoneyInput(itemPrices[id]) ?? 0),
+    0
+  );
+}
+
+function normalizeRentalItemPriceDraft(value) {
+  const parsed = parseRentalMoneyInput(value);
+  return parsed == null ? '' : formatPolishMoneyAmount(parsed);
+}
+
+function buildInitialRentalItemPrices(rental) {
+  const map = {};
+  getRentalBaseItems(rental).forEach((item) => {
+    const equipmentId = getRentalItemEquipmentId(item);
+    if (!equipmentId) return;
+    const draft = normalizeRentalItemPriceDraft(item.price_day);
+    if (draft) map[equipmentId] = draft;
+  });
+  return map;
+}
+
+function getEquipmentDefaultRentalPrice(equipment) {
+  return normalizeRentalItemPriceDraft(equipment?.price_day);
+}
+
+function buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows, itemPrices = {}) {
   const rows = [];
   selectedEquipment.forEach((item) => {
     const isSet = isEquipmentSet(item);
+    const itemPrice = itemPrices[item.id];
     rows.push({
       equipment_id: item.id,
       parent_set_equipment_id: null,
@@ -2993,7 +3042,7 @@ function buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows
       inventory_number_snapshot: item.inventory_number ?? '',
       barcode_snapshot: item.barcode ?? '',
       status: 'issued',
-      price_day: item.price_day ?? '',
+      price_day: itemPrice ?? item.price_day ?? '',
       price_week: item.price_week ?? '',
       deposit: item.deposit ?? '',
       condition_out: item.condition ?? ''
@@ -3134,7 +3183,14 @@ function getRentalAgreementColumnValue(key, item, index) {
     inventory: item?.inventory_number_snapshot || equipment.inventory_number || '',
     quantity: 1,
     conditionOut: item?.condition_out || equipment.condition || '',
-    notes: compactLines([item?.damage_notes, item?.settlement_notes]).join('; ')
+    notes: compactLines([item?.damage_notes, item?.settlement_notes]).join('; '),
+    priceDay: formatRentalMoney(item?.price_day) || '',
+    price: formatRentalMoney(item?.price_day) || '',
+    linePrice: formatRentalMoney(item?.price_day) || '',
+    dailyPrice: formatRentalMoney(item?.price_day) || '',
+    equipmentPrice: formatRentalMoney(item?.price_day) || '',
+    equipmentDailyPrice: formatRentalMoney(item?.price_day) || '',
+    equipmentLinePrice: formatRentalMoney(item?.price_day) || ''
   };
   return values[key] ?? '';
 }
@@ -3145,11 +3201,10 @@ function isRentalFreeType(rentalType) {
 }
 
 function formatRentalMoney(value, currency = 'zł') {
-  const raw = String(value ?? '').trim().replace(/\s/g, '').replace(',', '.');
-  if (!raw) return '';
-  const number = Number(raw);
-  if (!Number.isFinite(number) || number <= 0) return '';
-  return `${number.toFixed(2).replace('.', ',')} ${currency}`;
+  const parsed = parseRentalMoneyInput(value);
+  if (parsed == null || parsed <= 0) return '';
+  const amount = formatPolishMoneyAmount(parsed);
+  return currency ? `${amount} ${currency}` : amount;
 }
 
 function buildRentalFinancialContext(rental, currency = getRentalNumberingSettings()?.currency || 'zł') {
@@ -3158,13 +3213,16 @@ function buildRentalFinancialContext(rental, currency = getRentalNumberingSettin
   const rentalFinancialTerms = isFree
     ? 'Wypożyczenie bezpłatne.'
     : priceFormatted
-      ? `Wypożyczenie płatne.\nCena wynajmu: ${priceFormatted}`
+      ? `Wypożyczenie płatne.\nCena łączna: ${priceFormatted}`
       : 'Wypożyczenie płatne.';
+  const priceAmount = priceFormatted ? priceFormatted.replace(` ${currency}`, '') : '';
   return {
     rentalIsPaid: isFree ? 'nie' : 'tak',
     rentalPaymentType: isFree ? 'Wypożyczenie bezpłatne.' : 'Wypożyczenie płatne.',
-    rentalPrice: priceFormatted ? priceFormatted.replace(` ${currency}`, '') : '',
+    rentalPrice: priceAmount,
     rentalPriceFormatted: priceFormatted,
+    rentalTotalPrice: priceAmount,
+    rentalTotalPriceFormatted: priceFormatted,
     rentalFinancialTerms,
     rentalTotal: priceFormatted
   };
@@ -3291,8 +3349,9 @@ function buildGenericDocumentTemplateHtml(documentType, template, context = {}, 
   const sectionOrder = normalized.sectionOrder?.length ? normalized.sectionOrder : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER;
   const enabledColumns = (normalized.columns ?? []).filter((column) => column.enabled !== false);
   const usesRentalEquipmentTable = documentType?.id === 'issueProtocol';
+  const rentalContext = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
   const columns = usesRentalEquipmentTable
-    ? getRentalEquipmentTableColumns()
+    ? getRentalEquipmentTableColumns(rentalContext)
     : (enabledColumns.length ? enabledColumns : DEFAULT_GENERIC_TEMPLATE_COLUMNS.filter((column) => column.enabled));
   const tableRows = usesRentalEquipmentTable
     ? resolveIssueProtocolEquipmentTableRows(context)
@@ -3436,11 +3495,11 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     setEditorOpen(true);
   };
 
-  const handleSave = async ({ rental, selectedEquipmentIds }) => {
+  const handleSave = async ({ rental, selectedEquipmentIds, itemPrices = {} }) => {
     const selectedEquipment = equipmentRows.filter((item) => selectedEquipmentIds.includes(item.id));
     if (!rental.client_id) return { error: new Error('Wybierz klienta.') };
     if (!selectedEquipment.length) return { error: new Error('Wybierz przynajmniej jedną pozycję sprzętu.') };
-    const items = buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows);
+    const items = buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows, itemPrices);
     const rentalToSave = {
       ...rental,
       rental_number: String(rental.rental_number ?? '').trim() || generateNextRentalNumber(rows)
@@ -3927,6 +3986,54 @@ function RentalAgreementModal({ rental, onClose }) {
   />;
 }
 
+function RentalItemPriceInput({ value, onChange, disabled = false, currency = 'zł' }) {
+  const [draft, setDraft] = useState(String(value ?? ''));
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(String(value ?? ''));
+    }
+  }, [value]);
+
+  const commitDraft = () => {
+    focusedRef.current = false;
+    const trimmed = String(draft ?? '').trim();
+    if (!trimmed) {
+      onChange('');
+      setDraft('');
+      return;
+    }
+    const normalized = normalizeRentalItemPriceDraft(trimmed);
+    if (!normalized) {
+      setDraft(String(value ?? ''));
+      return;
+    }
+    onChange(normalized);
+    setDraft(normalized);
+  };
+
+  return (
+    <div className="money-input rental-item-price-input">
+      <AppInput
+        value={draft}
+        disabled={disabled}
+        placeholder="—"
+        onFocus={() => {
+          focusedRef.current = true;
+          setDraft(String(value ?? ''));
+        }}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+        }}
+      />
+      <span>{currency}</span>
+    </div>
+  );
+}
+
 function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, rentalTypes = getActiveConfigDictionaryNames('rentalTypes'), rentalSettings = getRentalNumberingSettings(), onClose, onSave, onAgreement }) {
   const selectedBaseItems = getRentalBaseItems(rental);
   const initialClient = clients.find((client) => client.id === rental?.client_id) ?? null;
@@ -3946,6 +4053,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     total_price: rental?.total_price ?? ''
   }));
   const [selectedEquipmentIds, setSelectedEquipmentIds] = useState(() => selectedBaseItems.map(getRentalItemEquipmentId).filter(Boolean));
+  const [itemPrices, setItemPrices] = useState(() => buildInitialRentalItemPrices(rental));
   const [localClients, setLocalClients] = useState(clients);
   const [selectedClient, setSelectedClient] = useState(initialClient);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
@@ -3979,9 +4087,59 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const rentalSummary = {
     items: selectedEquipment.length,
     sets: selectedSetCount,
-    price: form.total_price || '0',
+    price: settlementOptional ? '0' : (formatRentalMoneyInputDisplay(form.total_price, '').trim() || form.total_price || '0'),
     deposit: form.total_deposit || '0'
   };
+  const updateItemPrice = (equipmentId, nextValue) => {
+    setItemPrices((current) => {
+      if (!nextValue) {
+        const next = { ...current };
+        delete next[equipmentId];
+        return next;
+      }
+      return { ...current, [equipmentId]: nextValue };
+    });
+  };
+  const applyDefaultPricesForEquipment = (ids) => {
+    setItemPrices((current) => {
+      const next = { ...current };
+      ids.forEach((id) => {
+        if (Object.prototype.hasOwnProperty.call(next, id)) return;
+        const equipment = equipmentRows.find((item) => item.id === id);
+        const defaultPrice = getEquipmentDefaultRentalPrice(equipment);
+        if (defaultPrice) next[id] = defaultPrice;
+      });
+      return next;
+    });
+  };
+  const removeItemPrices = (ids) => {
+    setItemPrices((current) => {
+      const next = { ...current };
+      ids.forEach((id) => delete next[id]);
+      return next;
+    });
+  };
+  const rentalEquipmentColumns = useMemo(() => {
+    const priceColumn = {
+      key: 'price_day',
+      label: 'Cena / dzień',
+      align: 'right',
+      renderCell: (row) => (
+        <RentalItemPriceInput
+          value={itemPrices[row.id] ?? ''}
+          onChange={(next) => updateItemPrice(row.id, next)}
+          disabled={settlementOptional}
+          currency={rentalSettings.currency || 'zł'}
+        />
+      )
+    };
+    const insertIndex = RENTAL_SELECTED_EQUIPMENT_COLUMNS.findIndex((column) => column.key === 'code_display') + 1;
+    return [
+      ...RENTAL_SELECTED_EQUIPMENT_COLUMNS.slice(0, insertIndex),
+      priceColumn,
+      ...RENTAL_SELECTED_EQUIPMENT_COLUMNS.slice(insertIndex)
+    ];
+  }, [itemPrices, settlementOptional, rentalSettings.currency]);
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const chooseClient = (client) => {
@@ -4031,6 +4189,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const addEquipment = (items) => {
     const ids = items.map((item) => item.id).filter(Boolean);
     setSelectedEquipmentIds((current) => [...new Set([...current, ...ids])]);
+    applyDefaultPricesForEquipment(ids);
     setEquipmentPickerOpen(false);
     setEquipmentPickerInitialQuery('');
   };
@@ -4077,6 +4236,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       return;
     }
     setSelectedEquipmentIds((current) => [...new Set([...current, item.id])]);
+    applyDefaultPricesForEquipment([item.id]);
     showIssueScanNotice('Dodano sprzęt do dokumentu.', 'success');
     focusIssueScanner();
   };
@@ -4089,11 +4249,14 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     });
   };
   const removeSelectedEquipment = () => {
+    const ids = [...selectedRentalItemIds];
     setSelectedEquipmentIds((current) => current.filter((id) => !selectedRentalItemIds.has(id)));
+    removeItemPrices(ids);
     setSelectedRentalItemIds(new Set());
   };
   const removeRentalEquipment = (id) => {
     setSelectedEquipmentIds((current) => current.filter((itemId) => itemId !== id));
+    removeItemPrices([id]);
     setSelectedRentalItemIds((current) => {
       const next = new Set(current);
       next.delete(id);
@@ -4106,9 +4269,10 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     setRentalItemContextMenu({ ...getSafeMenuPosition(event, 240, 260), item });
   };
   const removeRentalEquipmentRows = async (items) => {
-    const ids = new Set(items.map((item) => item.id).filter(Boolean));
-    if (!ids.size) return;
-    setSelectedEquipmentIds((current) => current.filter((itemId) => !ids.has(itemId)));
+    const ids = items.map((item) => item.id).filter(Boolean);
+    if (!ids.length) return;
+    setSelectedEquipmentIds((current) => current.filter((itemId) => !ids.includes(itemId)));
+    removeItemPrices(ids);
     setSelectedRentalItemIds(new Set());
   };
   const runRentalItemAction = (action) => {
@@ -4131,7 +4295,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       setEditorError('Wybierz przynajmniej jedną pozycję sprzętu.');
       return;
     }
-    const result = await onSave({ rental: form, selectedEquipmentIds });
+    const result = await onSave({ rental: form, selectedEquipmentIds, itemPrices });
     if (result?.error) {
       setEditorError(humanizeError(result.error, 'rental'));
     }
@@ -4140,6 +4304,16 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   useEffect(() => {
     setSelectedRentalItemIds((current) => new Set([...current].filter((id) => selectedEquipmentIds.includes(id))));
   }, [selectedEquipmentIds]);
+
+  useEffect(() => {
+    const formattedTotal = settlementOptional
+      ? '0'
+      : (() => {
+        const total = sumRentalItemPrices(selectedEquipmentIds, itemPrices);
+        return total > 0 ? formatPolishMoneyAmount(total) : '';
+      })();
+    setForm((current) => (current.total_price === formattedTotal ? current : { ...current, total_price: formattedTotal }));
+  }, [selectedEquipmentIds, itemPrices, settlementOptional]);
 
   useEffect(() => { setLocalClients(clients); }, [clients]);
 
@@ -4226,7 +4400,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
           <div className="rental-items-table-shell">
             {selectedEquipmentRows.length ? <DataTable
               storageKey={RENTAL_SELECTED_EQUIPMENT_TABLE_KEY}
-              columns={RENTAL_SELECTED_EQUIPMENT_COLUMNS}
+              columns={rentalEquipmentColumns}
               rows={selectedEquipmentRows}
               onOpen={(item) => setPreviewEquipment(item)}
               onDelete={(item) => removeRentalEquipment(item.id)}
@@ -4241,7 +4415,26 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
         </SectionPanel>
         <SectionPanel className="rental-record-section rental-record-terms-section" title="Warunki i rozliczenie">
           <div className="rental-terms-grid">
-            <FormField className="rental-price-field" label="Cena łączna"><div className="money-input"><AppInput value={form.total_price} onChange={(event) => update('total_price', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 1200'} /><span>{rentalSettings.currency || 'zł'}</span></div></FormField>
+            <FormField className="rental-settlement-field" label="Typ rozliczenia">
+              <AppSelect
+                value={settlementOptional ? 'Bezpłatne' : 'Płatne'}
+                onChange={(event) => update('rental_type', event.target.value === 'Bezpłatne' ? 'Bezpłatne' : 'Płatne')}
+              >
+                <option value="Płatne">Płatne</option>
+                <option value="Bezpłatne">Bezpłatne</option>
+              </AppSelect>
+            </FormField>
+            <FormField className="rental-price-field" label="Cena łączna">
+              <div className="money-input">
+                <AppInput
+                  value={form.total_price}
+                  readOnly={!settlementOptional}
+                  disabled={settlementOptional}
+                  placeholder={settlementOptional ? '0' : 'suma pozycji'}
+                />
+                <span>{rentalSettings.currency || 'zł'}</span>
+              </div>
+            </FormField>
             <FormField label="Kaucja"><AppInput value={form.total_deposit} onChange={(event) => update('total_deposit', event.target.value)} placeholder={settlementOptional ? 'opcjonalnie' : 'np. 500'} /></FormField>
             <FormField className="rental-notes-field" label="Notatki"><AppTextarea resizeKey="fixer:textarea:rental:notes" value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Warunki wydania, uwagi do klienta lub sprzętu." /></FormField>
           </div>
@@ -7874,6 +8067,7 @@ const DEFAULT_RENTAL_AGREEMENT_COLUMNS = [
   { key: 'brandModel', label: 'Marka / Model', enabled: true },
   { key: 'serial', label: 'Nr seryjny', enabled: true },
   { key: 'quantity', label: 'Ilość', enabled: true },
+  { key: 'priceDay', label: 'Cena / dzień', enabled: true },
   { key: 'barcode', label: 'Kod kreskowy', enabled: false },
   { key: 'inventory', label: 'Numer ewidencyjny', enabled: false },
   { key: 'conditionOut', label: 'Stan przy wydaniu', enabled: false },
@@ -7910,8 +8104,10 @@ const RENTAL_TEMPLATE_VARIABLES = [
   { key: '{{equipmentTable}}', label: 'Tabela sprzętu' },
   { key: '{{rentalFinancialTerms}}', label: 'Warunki finansowe wypożyczenia' },
   { key: '{{rentalPaymentType}}', label: 'Typ rozliczenia (płatne/bezpłatne)' },
-  { key: '{{rentalPriceFormatted}}', label: 'Sformatowana cena wynajmu' },
-  { key: '{{rentalPrice}}', label: 'Cena wynajmu' },
+  { key: '{{rentalPriceFormatted}}', label: 'Sformatowana cena łączna' },
+  { key: '{{rentalPrice}}', label: 'Cena łączna' },
+  { key: '{{rentalTotalPrice}}', label: 'Cena łączna (wartość)' },
+  { key: '{{rentalTotalPriceFormatted}}', label: 'Cena łączna (sformatowana)' },
   { key: '{{rentalIsPaid}}', label: 'Czy wypożyczenie płatne (tak/nie)' },
   { key: '{{notes}}', label: 'Uwagi' }
 ];
@@ -7979,8 +8175,10 @@ function resolveDocumentTableRows(context = {}, documentTypeId = '') {
     return resolveIssueProtocolEquipmentTableRows(context);
   }
   if (documentTypeId === 'rentalAgreement') {
+    const rental = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
+    const columns = getRentalEquipmentTableColumns(rental);
     if (Array.isArray(context.rentalItems) && context.rentalItems.length) {
-      return buildRentalEquipmentTableRows(context.rentalItems, getRentalEquipmentTableColumns());
+      return buildRentalEquipmentTableRows(context.rentalItems, columns);
     }
     if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
       return context.equipmentRows;
@@ -8035,8 +8233,10 @@ const DOCUMENT_TEMPLATE_TYPES = [
       { key: '{{rentalTotal}}', description: 'Podsumowanie wypożyczenia' },
       { key: '{{rentalFinancialTerms}}', description: 'Warunki finansowe wypożyczenia' },
       { key: '{{rentalPaymentType}}', description: 'Typ rozliczenia (płatne/bezpłatne)' },
-      { key: '{{rentalPriceFormatted}}', description: 'Sformatowana cena wynajmu' },
-      { key: '{{rentalPrice}}', description: 'Cena wynajmu' },
+      { key: '{{rentalPriceFormatted}}', description: 'Sformatowana cena łączna' },
+      { key: '{{rentalPrice}}', description: 'Cena łączna' },
+      { key: '{{rentalTotalPrice}}', description: 'Cena łączna (wartość)' },
+      { key: '{{rentalTotalPriceFormatted}}', description: 'Cena łączna (sformatowana)' },
       { key: '{{rentalIsPaid}}', description: 'Czy wypożyczenie płatne (tak/nie)' },
       { key: '{{notes}}', description: 'Dodatkowe uwagi' }
     ],
@@ -8391,14 +8591,25 @@ function getDocumentTemplateLibrary() {
   return merged;
 }
 
-function getRentalEquipmentTableColumns() {
+function getRentalEquipmentTableColumns(rental = null) {
   const rentalType = getDocumentTemplateTypeById('rentalAgreement');
   const rentalTemplate = normalizeSharedDocumentTemplate(
     getDocumentTemplateLibrary().rentalAgreement,
     rentalType.defaultTemplate
   );
   const enabledColumns = (rentalTemplate.columns ?? DEFAULT_RENTAL_AGREEMENT_COLUMNS).filter((column) => column.enabled !== false);
-  return enabledColumns.length ? enabledColumns : DEFAULT_RENTAL_AGREEMENT_COLUMNS.filter((column) => column.enabled);
+  let columns = enabledColumns.length ? enabledColumns : DEFAULT_RENTAL_AGREEMENT_COLUMNS.filter((column) => column.enabled);
+  const priceColumnKeys = ['priceDay', 'price', 'linePrice', 'dailyPrice', 'equipmentPrice', 'equipmentDailyPrice', 'equipmentLinePrice'];
+  if (rental && isRentalFreeType(rental.rental_type)) {
+    columns = columns.filter((column) => !priceColumnKeys.includes(column.key));
+  } else if (!columns.some((column) => priceColumnKeys.includes(column.key))) {
+    const quantityIndex = columns.findIndex((column) => column.key === 'quantity');
+    const priceColumn = { key: 'priceDay', label: 'Cena / dzień', enabled: true };
+    columns = quantityIndex >= 0
+      ? [...columns.slice(0, quantityIndex + 1), priceColumn, ...columns.slice(quantityIndex + 1)]
+      : [...columns, priceColumn];
+  }
+  return columns;
 }
 
 function buildRentalEquipmentTableRows(items = [], columns = getRentalEquipmentTableColumns()) {
@@ -8413,8 +8624,10 @@ function buildRentalEquipmentTableRows(items = [], columns = getRentalEquipmentT
 }
 
 function resolveIssueProtocolEquipmentTableRows(context = {}) {
+  const rental = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
+  const columns = getRentalEquipmentTableColumns(rental);
   if (Array.isArray(context.rentalItems) && context.rentalItems.length) {
-    return buildRentalEquipmentTableRows(context.rentalItems);
+    return buildRentalEquipmentTableRows(context.rentalItems, columns);
   }
   if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
     const firstRow = context.equipmentRows[0] ?? {};
@@ -8425,9 +8638,10 @@ function resolveIssueProtocolEquipmentTableRows(context = {}) {
   return buildRentalEquipmentTableRows([]);
 }
 
-function resolveDesignerEquipmentTableColumns(element, documentTypeId = '') {
+function resolveDesignerEquipmentTableColumns(element, documentTypeId = '', context = {}) {
   if (element.tableType === 'equipmentTable' && ['issueProtocol', 'rentalAgreement'].includes(documentTypeId)) {
-    return mapTemplateColumnsToDesignerColumns(getRentalEquipmentTableColumns());
+    const rental = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
+    return mapTemplateColumnsToDesignerColumns(getRentalEquipmentTableColumns(rental));
   }
   const columns = (element.columns ?? []).filter((column) => column.visible !== false);
   return columns.length ? columns : [{ key: 'name', label: 'Nazwa', width: 180, visible: true }];
@@ -8515,6 +8729,10 @@ function mapTemplateColumnsToDesignerColumns(columns = DEFAULT_GENERIC_TEMPLATE_
     serial: 120,
     fault: 220,
     quantity: 60,
+    priceDay: 88,
+    price: 88,
+    linePrice: 88,
+    dailyPrice: 88,
     details: 180,
     status: 90,
     notes: 140,
@@ -9010,8 +9228,10 @@ function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile
     documentFooter: company.documentFooter || '',
     documentCityClause: introCity ? ` w ${introCity}` : '',
     documentTypeId: 'rentalAgreement',
+    rental,
+    rentalType: rental?.rental_type ?? '',
     rentalItems: items,
-    equipmentRows: buildRentalEquipmentTableRows(items, getRentalEquipmentTableColumns())
+    equipmentRows: buildRentalEquipmentTableRows(items, getRentalEquipmentTableColumns(rental))
   };
 }
 
@@ -9120,7 +9340,7 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
   }
   if (element.kind === 'table') {
     const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
-    const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId);
+    const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
     const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
     const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;">${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
     return `<div style="${commonStyle}border:1px solid #c0c8d4;background:#fff;overflow:hidden;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;

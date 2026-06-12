@@ -3257,20 +3257,42 @@ function mapClientToDocumentContext(client = {}) {
   };
 }
 
+function formatRentalItemType(itemType = '') {
+  if (itemType === 'set') return 'Zestaw';
+  if (itemType === 'set_component') return 'Składnik';
+  return 'Sprzęt';
+}
+
+function formatDocumentTableCell(value) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'number' && !Number.isFinite(value)) return '—';
+  const text = String(value).trim();
+  if (!text || text === 'undefined' || text === 'null' || text === 'NaN' || text === '[object Object]') return '—';
+  return text;
+}
+
 function getRentalAgreementColumnValue(key, item, index) {
   const equipment = item?.equipment ?? {};
   const values = {
     lp: index + 1,
     name: item?.name_snapshot || equipment.name || 'Sprzęt',
+    type: formatRentalItemType(item?.item_type),
     brand: getRentalItemBrand(item),
     model: getRentalItemModel(item),
     brandModel: compactLines([getRentalItemBrand(item), getRentalItemModel(item)]).join(' / '),
     serial: item?.serial_snapshot || equipment.serial || '',
     barcode: item?.barcode_snapshot || equipment.barcode || '',
     inventory: item?.inventory_number_snapshot || equipment.inventory_number || '',
+    category: item?.category_snapshot ?? equipment.category ?? '',
+    location: item?.location_snapshot ?? equipment.location ?? '',
+    status: formatRentalItemStatus(item?.status) || '',
     quantity: 1,
     conditionOut: item?.condition_out || equipment.condition || '',
     notes: compactLines([item?.damage_notes, item?.settlement_notes]).join('; '),
+    details: compactLines([
+      compactLines([getRentalItemBrand(item), getRentalItemModel(item)]).join(' / '),
+      item?.serial_snapshot || equipment.serial || ''
+    ]).join(' · '),
     priceDay: formatRentalMoney(item?.price_day) || '',
     price: formatRentalMoney(item?.price_day) || '',
     linePrice: formatRentalMoney(item?.price_day) || '',
@@ -3506,22 +3528,22 @@ function openRentalAgreementPrint(rental) {
 }
 
 function buildGenericDocumentTemplateHtml(documentType, template, context = {}, { preview = true, company = getCompanyProfile() } = {}) {
-  const normalized = normalizeSharedDocumentTemplate(template, documentType?.defaultTemplate ?? {});
+  const normalized = normalizeSharedDocumentTemplate(template, documentType?.defaultTemplate ?? {}, documentType?.id ?? '');
   const apply = (value) => applyTemplateVariables(value, context);
   const sectionVisibility = normalized.sectionVisibility ?? DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY;
   const sectionOrder = normalized.sectionOrder?.length ? normalized.sectionOrder : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER;
   const enabledColumns = (normalized.columns ?? []).filter((column) => column.enabled !== false);
-  const usesRentalEquipmentTable = documentType?.id === 'issueProtocol';
+  const usesRentalEquipmentTable = EQUIPMENT_DOCUMENT_TYPE_IDS.includes(documentType?.id);
   const rentalContext = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
   const columns = usesRentalEquipmentTable
-    ? getRentalEquipmentTableColumns(rentalContext)
+    ? getDocumentEquipmentTableColumns(documentType?.id, rentalContext)
     : (enabledColumns.length ? enabledColumns : DEFAULT_GENERIC_TEMPLATE_COLUMNS.filter((column) => column.enabled));
   const tableRows = usesRentalEquipmentTable
-    ? resolveIssueProtocolEquipmentTableRows(context)
+    ? resolveDocumentTableRows(context, documentType?.id)
     : resolveDocumentTableRows(context, documentType?.id);
   const manyColumns = columns.length > 6;
   const tableHeader = columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
-  const tableBody = tableRows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
+  const tableBody = tableRows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(formatDocumentTableCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
   const mergedCompany = { ...company };
   if (!mergedCompany.name && context.companyName) mergedCompany.name = context.companyName;
   if (!mergedCompany.legalName && context.companyName) mergedCompany.legalName = context.companyName;
@@ -8242,10 +8264,73 @@ const DEFAULT_RENTAL_AGREEMENT_COLUMNS = [
   { key: 'quantity', label: 'Ilość', enabled: true },
   { key: 'priceDay', label: 'Cena netto / dzień', enabled: true },
   { key: 'barcode', label: 'Kod kreskowy', enabled: false },
-  { key: 'inventory', label: 'Numer ewidencyjny', enabled: false },
+  { key: 'inventory', label: 'Nr inwentarzowy', enabled: false },
   { key: 'conditionOut', label: 'Stan przy wydaniu', enabled: false },
   { key: 'notes', label: 'Uwagi', enabled: false }
 ];
+const DEFAULT_ISSUE_PROTOCOL_COLUMNS = [
+  { key: 'lp', label: 'LP', enabled: true },
+  { key: 'name', label: 'Nazwa sprzętu', enabled: true },
+  { key: 'brandModel', label: 'Marka / Model', enabled: true },
+  { key: 'serial', label: 'Nr seryjny', enabled: true },
+  { key: 'quantity', label: 'Ilość', enabled: true },
+  { key: 'type', label: 'Typ', enabled: false },
+  { key: 'brand', label: 'Marka', enabled: false },
+  { key: 'model', label: 'Model', enabled: false },
+  { key: 'barcode', label: 'Kod kreskowy', enabled: false },
+  { key: 'inventory', label: 'Nr inwentarzowy', enabled: false },
+  { key: 'category', label: 'Kategoria', enabled: false },
+  { key: 'location', label: 'Lokalizacja', enabled: false },
+  { key: 'status', label: 'Status', enabled: false },
+  { key: 'priceDay', label: 'Cena netto / dzień', enabled: false },
+  { key: 'conditionOut', label: 'Stan przy wydaniu', enabled: false },
+  { key: 'notes', label: 'Uwagi', enabled: false },
+  { key: 'details', label: 'Szczegóły', enabled: false }
+];
+const EQUIPMENT_DOCUMENT_TABLE_COLUMN_DEFINITIONS = [
+  { key: 'lp', label: 'LP' },
+  { key: 'name', label: 'Nazwa sprzętu' },
+  { key: 'type', label: 'Typ' },
+  { key: 'brand', label: 'Marka' },
+  { key: 'model', label: 'Model' },
+  { key: 'brandModel', label: 'Marka / Model' },
+  { key: 'serial', label: 'Nr seryjny' },
+  { key: 'barcode', label: 'Kod kreskowy' },
+  { key: 'inventory', label: 'Nr inwentarzowy' },
+  { key: 'category', label: 'Kategoria' },
+  { key: 'location', label: 'Lokalizacja' },
+  { key: 'status', label: 'Status' },
+  { key: 'quantity', label: 'Ilość' },
+  { key: 'priceDay', label: 'Cena netto / dzień' },
+  { key: 'conditionOut', label: 'Stan przy wydaniu' },
+  { key: 'notes', label: 'Uwagi' },
+  { key: 'details', label: 'Szczegóły' }
+];
+const EQUIPMENT_DOCUMENT_TYPE_IDS = ['rentalAgreement', 'rentalConfirmation', 'issueProtocol', 'returnProtocol'];
+const EQUIPMENT_TABLE_PRICE_COLUMN_KEYS = ['priceDay', 'price', 'linePrice', 'dailyPrice', 'equipmentPrice', 'equipmentDailyPrice', 'equipmentLinePrice'];
+const DESIGNER_EQUIPMENT_COLUMN_WIDTHS = {
+  lp: 44,
+  name: 180,
+  type: 72,
+  brand: 90,
+  model: 90,
+  brandModel: 160,
+  serial: 120,
+  fault: 220,
+  quantity: 60,
+  priceDay: 88,
+  price: 88,
+  linePrice: 88,
+  dailyPrice: 88,
+  details: 180,
+  status: 90,
+  notes: 140,
+  barcode: 100,
+  inventory: 120,
+  conditionOut: 120,
+  category: 100,
+  location: 100
+};
 const DEFAULT_RENTAL_AGREEMENT_TERMS = [
   'Wypożyczający przekazuje sprzęt sprawny technicznie.',
   'Biorący potwierdza odbiór sprzętu.',
@@ -8358,14 +8443,20 @@ function resolveDocumentTableRows(context = {}, documentTypeId = '') {
   if (documentTypeId === 'issueProtocol') {
     return resolveIssueProtocolEquipmentTableRows(context);
   }
-  if (documentTypeId === 'rentalAgreement') {
+  if (documentTypeId === 'rentalAgreement' || documentTypeId === 'returnProtocol' || documentTypeId === 'rentalConfirmation') {
     const rental = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
-    const columns = getRentalEquipmentTableColumns(rental);
+    const columns = getDocumentEquipmentTableColumns(documentTypeId, rental);
     if (Array.isArray(context.rentalItems) && context.rentalItems.length) {
       return buildRentalEquipmentTableRows(context.rentalItems, columns);
     }
     if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
-      return context.equipmentRows;
+      return context.equipmentRows.map((row) => {
+        const mapped = {};
+        columns.forEach((column) => {
+          mapped[column.key] = formatDocumentTableCell(row[column.key]);
+        });
+        return mapped;
+      });
     }
   }
   if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
@@ -8474,7 +8565,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       signatureBorrower: 'Odbierający',
       sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
       sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
-      columns: DEFAULT_RENTAL_AGREEMENT_COLUMNS
+      columns: DEFAULT_ISSUE_PROTOCOL_COLUMNS
     }
   },
   {
@@ -8501,7 +8592,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       signatureBorrower: 'Zwracający',
       sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
       sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
-      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+      columns: DEFAULT_ISSUE_PROTOCOL_COLUMNS
     }
   },
   {
@@ -8724,25 +8815,34 @@ function getDocumentTemplateTypeById(templateTypeId) {
   return DOCUMENT_TEMPLATE_TYPES.find((item) => item.id === templateTypeId) ?? DOCUMENT_TEMPLATE_TYPES[0];
 }
 
-function normalizeSharedDocumentTemplate(template = {}, fallbackTemplate = {}) {
+function normalizeSharedDocumentTemplate(template = {}, fallbackTemplate = {}, documentTypeId = '') {
   const fallbackColumns = Array.isArray(fallbackTemplate.columns) && fallbackTemplate.columns.length
     ? fallbackTemplate.columns
     : DEFAULT_GENERIC_TEMPLATE_COLUMNS;
   const incomingColumns = Array.isArray(template.columns) && template.columns.length
     ? template.columns
     : fallbackColumns;
-  const fallbackColumnMap = new Map(fallbackColumns.map((column) => [column.key, column]));
-  const columns = incomingColumns
-    .map((column) => {
-      const fallback = fallbackColumnMap.get(column?.key) ?? column;
-      if (!fallback?.key) return null;
-      return {
-        key: fallback.key,
-        label: String(column?.label ?? fallback.label ?? fallback.key),
-        enabled: column?.enabled !== false
-      };
-    })
-    .filter(Boolean);
+  const columns = EQUIPMENT_DOCUMENT_TYPE_IDS.includes(documentTypeId)
+    ? normalizeEquipmentDocumentTemplateColumns(incomingColumns, documentTypeId)
+    : (() => {
+      const fallbackColumnMap = new Map(fallbackColumns.map((column) => [column.key, column]));
+      return incomingColumns
+        .map((column) => {
+          const fallback = fallbackColumnMap.get(column?.key) ?? column;
+          if (!fallback?.key) return null;
+          return {
+            key: fallback.key,
+            label: String(column?.label ?? fallback.label ?? fallback.key),
+            enabled: column?.enabled !== false
+          };
+        })
+        .filter(Boolean);
+    })();
+  const resolvedColumns = columns.length
+    ? columns
+    : (EQUIPMENT_DOCUMENT_TYPE_IDS.includes(documentTypeId)
+      ? getEquipmentColumnDefaults(documentTypeId)
+      : fallbackColumns);
   const sectionVisibility = {
     ...DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
     ...(fallbackTemplate.sectionVisibility ?? {}),
@@ -8767,12 +8867,12 @@ function normalizeSharedDocumentTemplate(template = {}, fallbackTemplate = {}) {
     signatureBorrower: String(template.signatureBorrower ?? fallbackTemplate.signatureBorrower ?? 'Odbierający'),
     sectionVisibility,
     sectionOrder: sectionOrder.length ? sectionOrder : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
-    columns: columns.length ? columns : fallbackColumns
+    columns: resolvedColumns
   };
 }
 
 function getDefaultDocumentTemplateLibrary() {
-  return Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [type.id, normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate)]));
+  return Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [type.id, normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate, type.id)]));
 }
 
 function getDocumentTemplateLibrary() {
@@ -8781,38 +8881,111 @@ function getDocumentTemplateLibrary() {
   if (!raw || typeof raw !== 'object') return defaults;
   const merged = { ...defaults };
   DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
-    merged[type.id] = normalizeSharedDocumentTemplate(raw[type.id], type.defaultTemplate);
+    merged[type.id] = normalizeSharedDocumentTemplate(raw[type.id], type.defaultTemplate, type.id);
   });
   return merged;
 }
 
-function getRentalEquipmentTableColumns(rental = null) {
-  const rentalType = getDocumentTemplateTypeById('rentalAgreement');
-  const rentalTemplate = normalizeSharedDocumentTemplate(
-    getDocumentTemplateLibrary().rentalAgreement,
-    rentalType.defaultTemplate
-  );
-  const enabledColumns = (rentalTemplate.columns ?? DEFAULT_RENTAL_AGREEMENT_COLUMNS).filter((column) => column.enabled !== false);
-  let columns = enabledColumns.length ? enabledColumns : DEFAULT_RENTAL_AGREEMENT_COLUMNS.filter((column) => column.enabled);
-  const priceColumnKeys = ['priceDay', 'price', 'linePrice', 'dailyPrice', 'equipmentPrice', 'equipmentDailyPrice', 'equipmentLinePrice'];
-  if (rental && isRentalFreeType(rental.rental_type)) {
-    columns = columns.filter((column) => !priceColumnKeys.includes(column.key));
-  } else if (!columns.some((column) => priceColumnKeys.includes(column.key))) {
-    const quantityIndex = columns.findIndex((column) => column.key === 'quantity');
-    const priceColumn = { key: 'priceDay', label: 'Cena netto / dzień', enabled: true };
-    columns = quantityIndex >= 0
-      ? [...columns.slice(0, quantityIndex + 1), priceColumn, ...columns.slice(quantityIndex + 1)]
-      : [...columns, priceColumn];
-  }
-  return columns;
+function isEquipmentDocumentTable(element, documentTypeId = '') {
+  return element?.tableType === 'equipmentTable' && EQUIPMENT_DOCUMENT_TYPE_IDS.includes(documentTypeId);
 }
 
-function buildRentalEquipmentTableRows(items = [], columns = getRentalEquipmentTableColumns()) {
+function getEquipmentColumnDefaults(documentTypeId = 'rentalAgreement') {
+  if (documentTypeId === 'rentalAgreement' || documentTypeId === 'rentalConfirmation') return DEFAULT_RENTAL_AGREEMENT_COLUMNS;
+  if (documentTypeId === 'issueProtocol' || documentTypeId === 'returnProtocol') return DEFAULT_ISSUE_PROTOCOL_COLUMNS;
+  return DEFAULT_RENTAL_AGREEMENT_COLUMNS;
+}
+
+function normalizeEquipmentDocumentTemplateColumns(incomingColumns = [], documentTypeId = 'rentalAgreement') {
+  const hasIncoming = Array.isArray(incomingColumns) && incomingColumns.length > 0;
+  const fallbackDefaults = getEquipmentColumnDefaults(documentTypeId);
+  const fallbackMap = new Map(fallbackDefaults.map((column) => [column.key, column]));
+  const catalogKeys = new Set(EQUIPMENT_DOCUMENT_TABLE_COLUMN_DEFINITIONS.map((column) => column.key));
+  const incomingKeys = new Set();
+  const columns = (hasIncoming ? incomingColumns : [])
+    .map((column) => {
+      const key = String(column?.key ?? '').trim();
+      if (!catalogKeys.has(key)) return null;
+      const fallback = fallbackMap.get(key) ?? EQUIPMENT_DOCUMENT_TABLE_COLUMN_DEFINITIONS.find((item) => item.key === key);
+      if (!fallback) return null;
+      incomingKeys.add(key);
+      return {
+        key,
+        label: String(column?.label ?? fallback.label ?? key),
+        enabled: column?.enabled !== false
+      };
+    })
+    .filter(Boolean);
+  fallbackDefaults.forEach((fallback) => {
+    if (incomingKeys.has(fallback.key)) return;
+    columns.push({
+      key: fallback.key,
+      label: fallback.label,
+      enabled: hasIncoming ? false : (fallback.enabled !== false)
+    });
+  });
+  return columns.length ? columns : fallbackDefaults;
+}
+
+function mergeEquipmentDesignerColumns(elementColumns = [], documentTypeId = 'rentalAgreement') {
+  const typeDefaults = getEquipmentColumnDefaults(documentTypeId);
+  const enabledByDefault = new Map(typeDefaults.map((column) => [column.key, column.enabled !== false]));
+  const incoming = Array.isArray(elementColumns) ? elementColumns : [];
+  const hasSavedColumns = incoming.length > 0;
+  const incomingMap = new Map(incoming.map((column) => [column.key, column]));
+  return EQUIPMENT_DOCUMENT_TABLE_COLUMN_DEFINITIONS.map((definition) => {
+    const existing = incomingMap.get(definition.key);
+    const typeDefault = typeDefaults.find((column) => column.key === definition.key);
+    const label = String(existing?.label ?? typeDefault?.label ?? definition.label);
+    const visible = existing
+      ? existing.visible !== false
+      : (hasSavedColumns ? false : (enabledByDefault.get(definition.key) ?? false));
+    return {
+      key: definition.key,
+      label,
+      width: Math.max(50, Number(existing?.width) || DESIGNER_EQUIPMENT_COLUMN_WIDTHS[definition.key] || 120),
+      visible
+    };
+  });
+}
+
+function applyEquipmentPriceColumnRules(columns = [], documentTypeId = 'rentalAgreement', rental = null) {
+  let nextColumns = [...columns];
+  if (rental && isRentalFreeType(rental.rental_type)) {
+    nextColumns = nextColumns.filter((column) => !EQUIPMENT_TABLE_PRICE_COLUMN_KEYS.includes(column.key));
+  } else if (documentTypeId === 'rentalAgreement' && !nextColumns.some((column) => EQUIPMENT_TABLE_PRICE_COLUMN_KEYS.includes(column.key))) {
+    const quantityIndex = nextColumns.findIndex((column) => column.key === 'quantity');
+    const priceColumn = { key: 'priceDay', label: 'Cena netto / dzień', enabled: true };
+    nextColumns = quantityIndex >= 0
+      ? [...nextColumns.slice(0, quantityIndex + 1), priceColumn, ...nextColumns.slice(quantityIndex + 1)]
+      : [...nextColumns, priceColumn];
+  }
+  return nextColumns;
+}
+
+function getDocumentEquipmentTableColumns(documentTypeId = 'rentalAgreement', rental = null) {
+  if (!EQUIPMENT_DOCUMENT_TYPE_IDS.includes(documentTypeId)) {
+    return DEFAULT_GENERIC_TEMPLATE_COLUMNS.filter((column) => column.enabled !== false);
+  }
+  const typeDef = getDocumentTemplateTypeById(documentTypeId);
+  const library = getDocumentTemplateLibrary();
+  const template = normalizeSharedDocumentTemplate(library[documentTypeId], typeDef.defaultTemplate, documentTypeId);
+  const fallbackDefaults = getEquipmentColumnDefaults(documentTypeId);
+  const normalizedColumns = normalizeEquipmentDocumentTemplateColumns(template.columns ?? fallbackDefaults, documentTypeId);
+  let columns = normalizedColumns.filter((column) => column.enabled !== false);
+  if (!columns.length) columns = fallbackDefaults.filter((column) => column.enabled !== false);
+  return applyEquipmentPriceColumnRules(columns, documentTypeId, rental);
+}
+
+function getRentalEquipmentTableColumns(rental = null, documentTypeId = 'rentalAgreement') {
+  return getDocumentEquipmentTableColumns(documentTypeId, rental);
+}
+
+function buildRentalEquipmentTableRows(items = [], columns = getDocumentEquipmentTableColumns()) {
   return (Array.isArray(items) ? items : []).map((item, index) => {
     const row = {};
     columns.forEach((column) => {
-      const value = getRentalAgreementColumnValue(column.key, item, index);
-      row[column.key] = value === '' || value === null || value === undefined ? '—' : String(value);
+      row[column.key] = formatDocumentTableCell(getRentalAgreementColumnValue(column.key, item, index));
     });
     return row;
   });
@@ -8820,23 +8993,46 @@ function buildRentalEquipmentTableRows(items = [], columns = getRentalEquipmentT
 
 function resolveIssueProtocolEquipmentTableRows(context = {}) {
   const rental = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
-  const columns = getRentalEquipmentTableColumns(rental);
+  const columns = getDocumentEquipmentTableColumns('issueProtocol', rental);
   if (Array.isArray(context.rentalItems) && context.rentalItems.length) {
     return buildRentalEquipmentTableRows(context.rentalItems, columns);
   }
   if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
     const firstRow = context.equipmentRows[0] ?? {};
     if ('brandModel' in firstRow || 'serial' in firstRow || 'quantity' in firstRow) {
-      return context.equipmentRows;
+      return context.equipmentRows.map((row) => {
+        const mapped = {};
+        columns.forEach((column) => {
+          mapped[column.key] = formatDocumentTableCell(row[column.key]);
+        });
+        return mapped;
+      });
     }
   }
-  return buildRentalEquipmentTableRows([]);
+  return buildRentalEquipmentTableRows([], columns);
 }
 
 function resolveDesignerEquipmentTableColumns(element, documentTypeId = '', context = {}) {
-  if (element.tableType === 'equipmentTable' && ['issueProtocol', 'rentalAgreement'].includes(documentTypeId)) {
+  if (isEquipmentDocumentTable(element, documentTypeId)) {
     const rental = context.rental ?? (context.rentalType ? { rental_type: context.rentalType } : null);
-    return mapTemplateColumnsToDesignerColumns(getRentalEquipmentTableColumns(rental));
+    const mergedColumns = mergeEquipmentDesignerColumns(element.columns, documentTypeId);
+    let visibleColumns = mergedColumns.filter((column) => column.visible !== false);
+    if (!visibleColumns.length) {
+      visibleColumns = mapTemplateColumnsToDesignerColumns(getDocumentEquipmentTableColumns(documentTypeId, rental));
+    } else {
+      const allowedKeys = new Set(
+        applyEquipmentPriceColumnRules(
+          getDocumentEquipmentTableColumns(documentTypeId, rental),
+          documentTypeId,
+          rental
+        ).map((column) => column.key)
+      );
+      visibleColumns = visibleColumns.filter((column) => allowedKeys.has(column.key));
+      if (!visibleColumns.length) {
+        visibleColumns = mapTemplateColumnsToDesignerColumns(getDocumentEquipmentTableColumns(documentTypeId, rental));
+      }
+    }
+    return fitDesignerTableColumns(visibleColumns, Math.max(120, Number(element.width) || 700));
   }
   const columns = (element.columns ?? []).filter((column) => column.visible !== false);
   return columns.length ? columns : [{ key: 'name', label: 'Nazwa', width: 180, visible: true }];
@@ -8845,7 +9041,7 @@ function resolveDesignerEquipmentTableColumns(element, documentTypeId = '', cont
 function saveDocumentTemplateLibrary(library) {
   const next = Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [
     type.id,
-    normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate)
+    normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate, type.id)
   ]));
   try {
     localStorage.setItem(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, JSON.stringify(next));
@@ -8918,30 +9114,12 @@ function createDocumentDesignerElement(libraryId, index = 0) {
 }
 
 function mapTemplateColumnsToDesignerColumns(columns = DEFAULT_GENERIC_TEMPLATE_COLUMNS) {
-  const widthMap = {
-    lp: 44,
-    name: 180,
-    brandModel: 160,
-    serial: 120,
-    fault: 220,
-    quantity: 60,
-    priceDay: 88,
-    price: 88,
-    linePrice: 88,
-    dailyPrice: 88,
-    details: 180,
-    status: 90,
-    notes: 140,
-    barcode: 100,
-    inventory: 120,
-    conditionOut: 120
-  };
   return columns
     .filter((column) => column.enabled !== false)
     .map((column) => ({
       key: column.key,
       label: column.label,
-      width: widthMap[column.key] ?? 120,
+      width: DESIGNER_EQUIPMENT_COLUMN_WIDTHS[column.key] ?? 120,
       visible: true
     }));
 }
@@ -9098,8 +9276,8 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
     : 'itemsTable';
   const tableColumns = documentTypeId === 'serviceIntake'
     ? (defaults.columns ?? DEFAULT_SERVICE_INTAKE_TEMPLATE_COLUMNS)
-    : ['issueProtocol', 'rentalAgreement'].includes(documentTypeId)
-      ? getRentalEquipmentTableColumns()
+    : EQUIPMENT_DOCUMENT_TYPE_IDS.includes(documentTypeId)
+      ? getDocumentEquipmentTableColumns(documentTypeId)
       : (defaults.columns ?? DEFAULT_GENERIC_TEMPLATE_COLUMNS);
 
   if (documentTypeId === 'internalDocument') {
@@ -9120,7 +9298,7 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
       y,
       width: area.width,
       height: tableHeight
-    });
+    }, documentTypeId);
     tableEl.columns = fitDesignerTableColumns(tableEl.columns, area.width);
     elements.push(tableEl);
     y += tableHeight + gap;
@@ -9173,9 +9351,13 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
   return elements.map((element) => clampDesignerElementToWorkArea(element, margins));
 }
 
-function createDesignerTableElement(libraryId, columns, position = {}) {
+function createDesignerTableElement(libraryId, columns, position = {}, documentTypeId = '') {
   const element = createDocumentDesignerElement(libraryId, 0);
-  element.columns = mapTemplateColumnsToDesignerColumns(columns);
+  if (libraryId === 'equipmentTable' && documentTypeId) {
+    element.columns = mergeEquipmentDesignerColumns(mapTemplateColumnsToDesignerColumns(columns), documentTypeId);
+  } else {
+    element.columns = mapTemplateColumnsToDesignerColumns(columns);
+  }
   return { ...element, ...position };
 }
 
@@ -9249,13 +9431,21 @@ function normalizeDocumentDesignerTemplate(template = {}, fallbackTypeId = DOCUM
     bottom: Math.max(0, Math.min(40, Number(template.margins?.bottom ?? DEFAULT_DESIGNER_MARGINS.bottom) || DEFAULT_DESIGNER_MARGINS.bottom)),
     left: Math.max(0, Math.min(40, Number(template.margins?.left ?? DEFAULT_DESIGNER_MARGINS.left) || DEFAULT_DESIGNER_MARGINS.left))
   };
+  const documentTypeId = String(template.documentTypeId ?? fallbackTypeId);
   const normalizedElements = (Array.isArray(template.elements) ? template.elements : [])
     .map((element) => normalizeDocumentDesignerElement(element))
-    .map((element) => clampDesignerElementToWorkArea(element, margins));
+    .map((element) => clampDesignerElementToWorkArea(element, margins))
+    .map((element) => {
+      if (!isEquipmentDocumentTable(element, documentTypeId)) return element;
+      return {
+        ...element,
+        columns: mergeEquipmentDesignerColumns(element.columns, documentTypeId)
+      };
+    });
   return {
     id: String(template.id ?? `layout-${Date.now()}-${Math.round(Math.random() * 1000)}`),
     name: String(template.name ?? 'Szablon').trim() || 'Szablon',
-    documentTypeId: String(template.documentTypeId ?? fallbackTypeId),
+    documentTypeId,
     margins,
     elements: normalizedElements,
     layoutVersion: DOCUMENT_DESIGNER_LAYOUT_VERSION
@@ -9331,12 +9521,12 @@ function saveDocumentDesignerState(state) {
 function getSavedDocumentTemplateByType(documentTypeId) {
   const typeDef = getDocumentTemplateTypeById(documentTypeId);
   const library = getDocumentTemplateLibrary();
-  return normalizeSharedDocumentTemplate(library[documentTypeId], typeDef.defaultTemplate);
+  return normalizeSharedDocumentTemplate(library[documentTypeId], typeDef.defaultTemplate, documentTypeId);
 }
 
 function enrichDocumentRenderContext(documentTypeId, context = {}, sharedTemplate = null) {
   const savedTemplate = sharedTemplate
-    ? normalizeSharedDocumentTemplate(sharedTemplate, getDocumentTemplateTypeById(documentTypeId).defaultTemplate)
+    ? normalizeSharedDocumentTemplate(sharedTemplate, getDocumentTemplateTypeById(documentTypeId).defaultTemplate, documentTypeId)
     : getSavedDocumentTemplateByType(documentTypeId);
   const typeDef = getDocumentTemplateTypeById(documentTypeId);
   return {
@@ -9412,7 +9602,7 @@ function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile
     rental,
     rentalType: rental?.rental_type ?? '',
     rentalItems: items,
-    equipmentRows: buildRentalEquipmentTableRows(items, getRentalEquipmentTableColumns(rental))
+    equipmentRows: buildRentalEquipmentTableRows(items, getDocumentEquipmentTableColumns('rentalAgreement', rental))
   };
 }
 
@@ -9523,7 +9713,7 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
     const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
     const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
     const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
-    const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;">${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
+    const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;">${escapeHtml(formatDocumentTableCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
     return `<div style="${commonStyle}border:1px solid #c0c8d4;background:#fff;overflow:hidden;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
   if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') {
@@ -9575,7 +9765,7 @@ function termsTextToArray(value) {
 
 function mapSharedTemplateToRentalAgreementTemplate(sharedTemplate, fallbackTemplate = getRentalAgreementTemplate()) {
   const fallback = normalizeRentalAgreementTemplate(fallbackTemplate);
-  const normalized = normalizeSharedDocumentTemplate(sharedTemplate, sharedTemplate);
+  const normalized = normalizeSharedDocumentTemplate(sharedTemplate, sharedTemplate, 'rentalAgreement');
   return normalizeRentalAgreementTemplate({
     ...fallback,
     documentTitle: normalized.title || fallback.documentTitle,
@@ -11535,7 +11725,9 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
               {showGuides && dragGuides.vertical.map((value) => <div key={`v-${value}`} className="document-designer-guide-line vertical" style={{ left: `${value}px` }} />)}
               {showGuides && dragGuides.horizontal.map((value) => <div key={`h-${value}`} className="document-designer-guide-line horizontal" style={{ top: `${value}px` }} />)}
               {activeTemplate.elements.map((element) => {
-                const visibleColumns = (element.columns ?? []).filter((column) => column.visible !== false);
+                const visibleColumns = element.kind === 'table' && isEquipmentDocumentTable(element, activeTypeId)
+                  ? resolveDesignerEquipmentTableColumns(element, activeTypeId, designerPreviewContext)
+                  : (element.columns ?? []).filter((column) => column.visible !== false);
                 const safeColumns = visibleColumns.length ? visibleColumns : [{ key: 'name', label: 'Kolumna', width: 160 }];
                 const selectedTable = selectedElementId === element.id && element.kind === 'table';
                 return <div
@@ -11585,7 +11777,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
                         const previewRows = resolveDocumentTableRows(designerPreviewContext, activeTypeId);
                         const previewRow = previewRows[0];
                         if (!previewRow) return <span>Podgląd wierszy tabeli</span>;
-                        return <div className="document-designer-table-preview-row">{safeColumns.map((column) => <span key={column.key} style={{ width: `${column.width}px`, flex: `0 0 ${column.width}px` }}>{previewRow[column.key] ?? '—'}</span>)}</div>;
+                        return <div className="document-designer-table-preview-row">{safeColumns.map((column) => <span key={column.key} style={{ width: `${column.width}px`, flex: `0 0 ${column.width}px` }}>{formatDocumentTableCell(previewRow[column.key])}</span>)}</div>;
                       })()}
                     </div>
                   </div>}
@@ -12821,14 +13013,14 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   ];
   const rentalAgreementTemplate = getRentalAgreementTemplate(documentSettings);
   const currentTemplateType = getDocumentTemplateTypeById(activeDocumentTemplateType);
-  const currentDocumentTemplate = normalizeSharedDocumentTemplate(documentTemplateLibrary[activeDocumentTemplateType], currentTemplateType.defaultTemplate);
+  const currentDocumentTemplate = normalizeSharedDocumentTemplate(documentTemplateLibrary[activeDocumentTemplateType], currentTemplateType.defaultTemplate, activeDocumentTemplateType);
   const normalizeTemplateLibraryState = (library) => Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [
     type.id,
-    normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate)
+    normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate, type.id)
   ]));
   const areTemplateLibrariesEqual = (left, right) => DOCUMENT_TEMPLATE_TYPES.every((type) => {
-    const leftTemplate = normalizeSharedDocumentTemplate(left?.[type.id], type.defaultTemplate);
-    const rightTemplate = normalizeSharedDocumentTemplate(right?.[type.id], type.defaultTemplate);
+    const leftTemplate = normalizeSharedDocumentTemplate(left?.[type.id], type.defaultTemplate, type.id);
+    const rightTemplate = normalizeSharedDocumentTemplate(right?.[type.id], type.defaultTemplate, type.id);
     return JSON.stringify(leftTemplate) === JSON.stringify(rightTemplate);
   });
   const templateDirtyByType = Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [
@@ -12906,8 +13098,8 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   };
   const updateCurrentDocumentTemplate = (updater) => {
     setDocumentTemplateLibrary((current) => {
-      const base = normalizeSharedDocumentTemplate(current[activeDocumentTemplateType], currentTemplateType.defaultTemplate);
-      const nextTemplate = normalizeSharedDocumentTemplate(typeof updater === 'function' ? updater(base) : updater, currentTemplateType.defaultTemplate);
+      const base = normalizeSharedDocumentTemplate(current[activeDocumentTemplateType], currentTemplateType.defaultTemplate, activeDocumentTemplateType);
+      const nextTemplate = normalizeSharedDocumentTemplate(typeof updater === 'function' ? updater(base) : updater, currentTemplateType.defaultTemplate, activeDocumentTemplateType);
       return { ...current, [activeDocumentTemplateType]: nextTemplate };
     });
   };
@@ -12928,7 +13120,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   }, [documentTemplateLibrary, hasUnsavedTemplateChanges]);
   const resetCurrentDocumentTemplate = () => {
     setDocumentTemplateLibrary((current) => {
-      return { ...current, [activeDocumentTemplateType]: normalizeSharedDocumentTemplate(currentTemplateType.defaultTemplate, currentTemplateType.defaultTemplate) };
+      return { ...current, [activeDocumentTemplateType]: normalizeSharedDocumentTemplate(currentTemplateType.defaultTemplate, currentTemplateType.defaultTemplate, activeDocumentTemplateType) };
     });
     setDocumentSettingsNotice('Przywrócono domyślny szablon bieżącego dokumentu. Kliknij „Zapisz szablon”, aby zatwierdzić.');
   };
@@ -13031,7 +13223,10 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     documentFooter: companyProfile.documentFooter || '',
     documentCityClause: companyProfile.documentCity ? ` w ${companyProfile.documentCity}` : '',
     rentalItems: getRentalBaseItems(rentalAgreementPreviewRental),
-    equipmentRows: buildRentalEquipmentTableRows(getRentalBaseItems(rentalAgreementPreviewRental))
+    equipmentRows: buildRentalEquipmentTableRows(
+      getRentalBaseItems(rentalAgreementPreviewRental),
+      getDocumentEquipmentTableColumns(currentTemplateType.id)
+    )
   };
   const currentDocumentTemplatePreviewHtml = currentTemplateType.id === 'rentalAgreement'
     ? buildRentalAgreementDocumentHtml(rentalAgreementPreviewRental, {
@@ -13494,7 +13689,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                             <AppButton variant="secondary" size="sm" onClick={() => openTemplateEditor(type.id)}>Edytuj</AppButton>
                             <AppButton variant="secondary" size="sm" onClick={() => { setActiveDocumentTemplateType(type.id); setAgreementPreviewOpen(true); }}>Podgląd</AppButton>
                             <AppButton variant="secondary" size="sm" onClick={() => {
-                              const source = normalizeSharedDocumentTemplate(documentTemplateLibrary[type.id], type.defaultTemplate);
+                              const source = normalizeSharedDocumentTemplate(documentTemplateLibrary[type.id], type.defaultTemplate, type.id);
                               setDocumentTemplateLibrary((current) => ({
                                 ...current,
                                 [type.id]: normalizeSharedDocumentTemplate({
@@ -13505,7 +13700,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                               setDocumentSettingsNotice(`Utworzono kopię szablonu „${type.label}”.`);
                             }}>Duplikuj</AppButton>
                             <AppButton variant="secondary" size="sm" onClick={() => {
-                              setDocumentTemplateLibrary((current) => ({ ...current, [type.id]: normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate) }));
+                              setDocumentTemplateLibrary((current) => ({ ...current, [type.id]: normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate, type.id) }));
                               setDocumentSettingsNotice(`Przywrócono domyślny szablon „${type.label}”. Kliknij „Zapisz szablon” w edycji, aby zatwierdzić.`);
                             }}>Przywróć domyślny</AppButton>
                           </div>

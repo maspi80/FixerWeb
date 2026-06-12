@@ -3081,6 +3081,46 @@ function formatClientDocumentAddress(client = {}) {
   return formatDocumentAddress(client);
 }
 
+function isBusinessClient(client = {}) {
+  return String(client.type ?? '').trim().toLocaleLowerCase('pl') === 'firma';
+}
+
+function formatClientDocumentNipNumber(value = '') {
+  const digits = onlyDigits(value);
+  if (digits.length !== 10) return String(value ?? '').trim();
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
+}
+
+function formatClientDocumentNip(client = {}) {
+  if (!isBusinessClient(client)) return '';
+  const nip = String(client.nip ?? '').trim();
+  if (!nip) return '';
+  return `NIP: ${formatClientDocumentNipNumber(nip)}`;
+}
+
+function formatClientDocumentDetails(client = {}) {
+  return compactLines([
+    client.name,
+    ...formatDocumentAddressLines(client),
+    formatClientDocumentNip(client)
+  ]).join('\n');
+}
+
+function mapClientToDocumentContext(client = {}) {
+  const contactPerson = client.contact_person || client.contact_name || client.representative || '';
+  return {
+    clientName: client.name || '',
+    clientAddress: formatClientDocumentAddress(client),
+    clientNip: formatClientDocumentNip(client),
+    clientDetails: formatClientDocumentDetails(client),
+    clientContact: compactLines([
+      contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '',
+      client.phone ? `Telefon: ${client.phone}` : '',
+      client.email ? `E-mail: ${client.email}` : ''
+    ]).join('\n')
+  };
+}
+
 function getRentalAgreementColumnValue(key, item, index) {
   const equipment = item?.equipment ?? {};
   const values = {
@@ -3210,7 +3250,6 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
   const companyTax = formatCompanyTaxData(company);
   const companyContact = formatCompanyContact(company);
   const client = data.client ?? {};
-  const clientIsCompany = String(client.type ?? '').toLocaleLowerCase('pl') === 'firma';
   const clientAddress = formatClientDocumentAddress(client);
   const headerText = String(company.documentHeader ?? '').trim();
   const companyFooter = String(company.documentFooter ?? '').trim();
@@ -3224,9 +3263,14 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
     company.bankAccount ? `Konto: ${company.bankAccount}` : ''
   ]);
   const contactPerson = client.contact_person || client.contact_name || client.representative || '';
-  const clientLines = compactLines(clientIsCompany
-    ? [client.name, client.nip ? `NIP: ${client.nip}` : '', ...formatDocumentAddressLines(client), contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']
-    : [client.name, ...formatDocumentAddressLines(client), client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']);
+  const clientLines = compactLines([
+    client.name,
+    ...formatDocumentAddressLines(client),
+    formatClientDocumentNip(client),
+    contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '',
+    client.phone ? `Telefon: ${client.phone}` : '',
+    client.email ? `E-mail: ${client.email}` : ''
+  ]);
   const manyColumns = data.columns.length > 6;
   const issueDate = formatAgreementDate(data.issueDate);
   const startDate = data.rental?.start_date ? formatAgreementDate(data.rental.start_date) : null;
@@ -3242,6 +3286,8 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
     actualReturnDate,
     clientName: client.name || '',
     clientAddress,
+    clientNip: formatClientDocumentNip(client),
+    clientDetails: formatClientDocumentDetails(client),
     companyName,
     companyAddress: formatDocumentAddress(company),
     companyTaxData: companyTax,
@@ -7910,6 +7956,7 @@ const RENTAL_TEMPLATE_VARIABLES = [
   { key: '{{returnDate}}', label: 'Planowany zwrot' },
   { key: '{{clientName}}', label: 'Nazwa klienta' },
   { key: '{{clientAddress}}', label: 'Adres klienta' },
+  { key: '{{clientNip}}', label: 'NIP klienta' },
   { key: '{{companyName}}', label: 'Nazwa firmy' },
   { key: '{{companyAddress}}', label: 'Adres firmy' },
   { key: '{{equipmentTable}}', label: 'Tabela sprzętu' },
@@ -7923,7 +7970,7 @@ const DEFAULT_DOCUMENT_TEMPLATES = {
     terms: DEFAULT_RENTAL_AGREEMENT_TERMS,
     introText: 'Umowa została zawarta{{documentCityClause}} dnia {{issueDate}} pomiędzy:',
     issuerText: '{{companyName}}\n{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}',
-    borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientContact}}',
+    borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}\n{{clientContact}}',
     termsText: DEFAULT_RENTAL_AGREEMENT_TERMS.map((item) => `- ${item}`).join('\n'),
     footerText: '{{documentFooter}}',
     sectionVisibility: DEFAULT_RENTAL_AGREEMENT_SECTION_VISIBILITY,
@@ -7987,6 +8034,8 @@ const SHARED_DOCUMENT_TEMPLATE_VARIABLES = [
   { key: '{{companyAddress}}', description: 'Adres firmy' },
   { key: '{{clientName}}', description: 'Nazwa klienta' },
   { key: '{{clientAddress}}', description: 'Adres klienta' },
+  { key: '{{clientNip}}', description: 'NIP klienta (tylko firma)' },
+  { key: '{{clientDetails}}', description: 'Nazwa, adres i NIP klienta' },
   { key: '{{operatorName}}', description: 'Operator dokumentu' },
   { key: '{{notes}}', description: 'Uwagi / notatki' }
 ];
@@ -8027,7 +8076,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       headerText: '{{companyName}}\n{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}',
       introText: 'Umowa została zawarta{{documentCityClause}} dnia {{issueDate}} pomiędzy:',
       issuerText: '{{companyName}}\n{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientContact}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}\n{{clientContact}}',
       termsText: DEFAULT_RENTAL_AGREEMENT_TERMS.map((item) => `- ${item}`).join('\n'),
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Wypożyczający',
@@ -8054,7 +8103,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       headerText: '{{companyName}}\n{{companyAddress}}',
       introText: 'Poniżej potwierdzono wydanie sprzętu dnia {{issueDate}}.',
       issuerText: '{{companyName}}\nOperator: {{operatorName}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
       termsText: '- Sprzęt został wydany kompletny.\n- Klient potwierdza odbiór bez zastrzeżeń.',
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Wydający',
@@ -8081,7 +8130,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       headerText: '{{companyName}}\n{{companyAddress}}',
       introText: 'Dokument potwierdza zwrot sprzętu dnia {{actualReturnDate}}.',
       issuerText: '{{companyName}}\nPrzyjmujący: {{operatorName}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
       termsText: '- Zwrot został zweryfikowany przez operatora.\n- Ewentualne uszkodzenia opisano w uwagach.',
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Przyjmujący',
@@ -8108,7 +8157,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       headerText: '{{companyName}}\n{{companyAddress}}',
       introText: 'Potwierdza się przyjęcie urządzenia do serwisu dnia {{issueDate}}.',
       issuerText: '{{companyName}}\nPrzyjął: {{operatorName}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
       termsText: '- Sprzęt przyjęto do diagnozy.\n- Zakres prac zostanie potwierdzony po weryfikacji.',
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Serwis',
@@ -8134,7 +8183,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       headerText: '{{companyName}}\n{{companyAddress}}',
       introText: 'Niniejszym potwierdzono zakończenie serwisu dnia {{issueDate}}.',
       issuerText: '{{companyName}}\nSerwisant: {{operatorName}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
       termsText: '- Urządzenie zostało sprawdzone po naprawie.\n- Klient potwierdza odbiór urządzenia.',
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Serwis',
@@ -8162,7 +8211,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       headerText: '{{companyName}}\n{{companyAddress}}',
       introText: 'Raport serwisowy dla zlecenia {{serviceNumber}}.',
       issuerText: '{{companyName}}\nSerwisant: {{operatorName}}',
-      borrowerText: '{{clientName}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
       termsText: '- Diagnoza: {{diagnosis}}\n- Zakres naprawy: {{repairDescription}}\n- Status: {{serviceStatus}}',
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Serwisant',
@@ -8188,7 +8237,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       headerText: '{{companyName}}\n{{companyAddress}}',
       introText: 'Dokument potwierdza rezerwację / wypożyczenie sprzętu.',
       issuerText: '{{companyName}}\nOperator: {{operatorName}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
       termsText: '- Termin wydania: {{rentalIssueDate}}\n- Planowany zwrot: {{plannedReturnDate}}',
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Wydający',
@@ -8391,7 +8440,7 @@ const DOCUMENT_DESIGNER_LIBRARY = [
   { id: 'logo', label: '🖼 Logo', kind: 'logo', width: 110, height: 58, hint: 'Element graficzny' },
   { id: 'companyName', label: '🏢 Nagłówek firmy', kind: 'text', width: 240, height: 24, text: '{{companyName}}', fontSize: 16, fontWeight: 700, hint: 'Nazwa w nagłówku' },
   { id: 'companyDetails', label: '🏢 Dane firmy', kind: 'text', width: 300, height: 64, text: '{{companyAddress}}\n{{companyContact}}', fontSize: 10, fontWeight: 400, hint: 'Adres i kontakt' },
-  { id: 'clientDetails', label: '👤 Dane klienta', kind: 'text', width: 300, height: 64, text: '{{clientName}}\n{{clientAddress}}', fontSize: 10, fontWeight: 400, hint: 'Informacje klienta' },
+  { id: 'clientDetails', label: '👤 Dane klienta', kind: 'text', width: 300, height: 64, text: '{{clientDetails}}', fontSize: 10, fontWeight: 400, hint: 'Informacje klienta' },
   { id: 'serviceDetails', label: '🔧 Dane serwisowe', kind: 'text', width: 300, height: 64, text: '{{serviceNumber}}\n{{serviceStatus}}\n{{diagnosis}}', fontSize: 10, fontWeight: 400, hint: 'Numer, status, diagnoza' },
   { id: 'rentalDetails', label: '📦 Dane wypożyczenia', kind: 'text', width: 300, height: 64, text: '{{rentalNumber}}\n{{rentalIssueDate}}\n{{plannedReturnDate}}', fontSize: 10, fontWeight: 400, hint: 'Numer i terminy' },
   { id: 'documentNumber', label: '📄 Numer dokumentu', kind: 'text', width: 210, height: 22, text: 'Numer: {{documentNumber}}', fontSize: 10, fontWeight: 600, hint: 'Numeracja dokumentu' },
@@ -8595,7 +8644,7 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
         height: 78,
         fontSize: 10,
         fontWeight: 400,
-        text: defaults.borrowerText ?? '{{clientName}}\n{{clientAddress}}'
+        text: defaults.borrowerText ?? '{{clientName}}\n{{clientAddress}}\n{{clientNip}}'
       })
     );
     y += 78 + gap;
@@ -8839,17 +8888,19 @@ function buildServiceOrderDocumentHtml(order, type, { preview = true, client = n
 function buildServiceOrderDocumentContext(order, type, client = null, company = getCompanyProfile()) {
   const documentTypeId = SERVICE_DOCUMENT_TYPE_MAP[type];
   const resolvedClient = client ?? order.clients ?? null;
+  const clientContext = resolvedClient
+    ? mapClientToDocumentContext(resolvedClient)
+    : { clientName: order.client_name || '—', clientAddress: '—', clientNip: '', clientDetails: order.client_name || '—', clientContact: '' };
   const deviceName = String(order.customer_device_name || order.equipment_name || order.equipment?.name || '').trim();
   const deviceSerial = String(order.customer_device_serial || order.equipment?.serial || '').trim();
   const issueDate = formatAgreementDate(type === 'release' ? (order.completed_date || order.accepted_date) : order.accepted_date) || formatAgreementDate(getLocalIsoDate());
   const context = {
+    ...clientContext,
     documentNumber: order.service_number || '—',
     issueDate,
     serviceNumber: order.service_number || '—',
     serviceStatus: order.status || '—',
     status: order.status || '—',
-    clientName: resolvedClient?.name || order.client_name || '—',
-    clientAddress: resolvedClient ? formatClientDocumentAddress(resolvedClient) : '—',
     companyName: company.legalName || company.name || 'FIXER WEB',
     companyAddress: formatCompanyAddress(company),
     companyTaxData: formatCompanyTaxData(company),
@@ -12346,13 +12397,11 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     rentalIssueDate: formatAgreementDate('2026-06-03'),
     plannedReturnDate: formatAgreementDate('2026-06-10'),
     actualReturnDate: formatAgreementDate('2026-06-10'),
-    clientName: rentalAgreementPreviewRental.clients.name,
-    clientAddress: formatClientDocumentAddress(rentalAgreementPreviewRental.clients),
+    ...mapClientToDocumentContext(rentalAgreementPreviewRental.clients),
     companyName: companyProfile.legalName || companyProfile.name || 'FIXER WEB',
     companyAddress: formatCompanyAddress(companyProfile),
     companyTaxData: formatCompanyTaxData(companyProfile),
     companyContact: formatCompanyContact(companyProfile),
-    clientContact: compactLines([rentalAgreementPreviewRental.clients.phone ? `Telefon: ${rentalAgreementPreviewRental.clients.phone}` : '', rentalAgreementPreviewRental.clients.email ? `E-mail: ${rentalAgreementPreviewRental.clients.email}` : '']).join('\n'),
     operatorName: 'Operator FIXER WEB',
     rentalNumber: rentalAgreementPreviewRental.rental_number,
     rentalTotal: '1230,00 PLN',

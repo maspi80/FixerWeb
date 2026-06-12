@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard, LockKeyhole,
   LogOut, MessageSquare, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, History, Plus, Printer, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Plus, Printer, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -540,7 +540,7 @@ function exportTableToPdf(title, storageKey, columns, rows) {
   const header = exportData.columns.map((column) => `<th class="align-${escapeHtml(column.align)}">${escapeHtml(column.label)}</th>`).join('');
   const body = exportData.rows.map((row) => `<tr>${exportData.columns.map((column) => `<td class="align-${escapeHtml(column.align)}">${escapeHtml(formatExportCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
   const companyName = company.name || company.legalName || 'FIXER WEB';
-  const companyAddress = formatCompanyAddress(company);
+  const companyAddressLines = formatDocumentAddressLines(company);
   const companyTax = formatCompanyTaxData(company);
   const companyContact = formatCompanyContact(company);
   const companyFooter = company.documentFooter?.trim();
@@ -552,7 +552,7 @@ function exportTableToPdf(title, storageKey, columns, rows) {
   const templateName = documentSettings.templates?.tableExport ?? 'Standardowy';
   printHtmlInIframe(`<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title)}</title><style>
     @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0}.document-kicker{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px}.document-custom-header{border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;color:#334155;font-size:11px}.document-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px}.company-block{display:flex;gap:12px;align-items:flex-start}.company-logo{width:72px;height:72px;border:1px solid #cbd5e1;border-radius:12px;display:grid;place-items:center;overflow:hidden;flex:0 0 auto}.company-logo:empty{display:none}.company-logo img{max-width:100%;max-height:100%;object-fit:contain}.print-logo-fallback{width:100%;height:100%;display:grid;place-items:center;background:#2563eb;color:#fff;font-size:28px;font-weight:800}.company-name{font-size:18px;font-weight:800;margin:0 0 4px}.company-line{margin:0 0 3px;color:#475569;font-size:10.5px}.document-meta{text-align:right}.document-meta h1{font-size:20px;margin:0 0 5px}.document-meta p{margin:0 0 3px;color:#475569;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e2e8f0;color:#0f172a;font-weight:700}.align-center{text-align:center}.align-right{text-align:right}.align-left{text-align:left}tr:nth-child(even) td{background:#f8fafc}.document-footer{border-top:1px solid #e2e8f0;margin-top:12px;padding-top:8px;color:#64748b;font-size:10px}
-  </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddress ? `<p class="company-line">${escapeHtml(companyAddress)}</p>` : ''}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}</body></html>`);
+  </style></head><body><p class="document-kicker">Szablon: ${escapeHtml(templateName)}</p>${headerText ? `<div class="document-custom-header">${escapeHtml(headerText)}</div>` : ''}<div class="document-header"><div class="company-block"><div class="company-logo">${logo}</div><div><p class="company-name">${escapeHtml(companyName)}</p>${companyAddressLines.map((line) => `<p class="company-line">${escapeHtml(line)}</p>`).join('')}${companyTax ? `<p class="company-line">${escapeHtml(companyTax)}</p>` : ''}${companyContact ? `<p class="company-line">${escapeHtml(companyContact)}</p>` : ''}${company.bankAccount ? `<p class="company-line">Konto: ${escapeHtml(company.bankAccount)}</p>` : ''}</div></div><div class="document-meta"><h1>${escapeHtml(title)}</h1><p>Data eksportu: ${escapeHtml(date)}</p><p>Liczba wpisów: ${exportData.rows.length}</p></div></div><table><thead><tr>${header}</tr></thead><tbody>${body || `<tr><td colspan="${exportData.columns.length}">Brak danych do eksportu.</td></tr>`}</tbody></table>${companyFooter ? `<div class="document-footer">${escapeHtml(companyFooter)}</div>` : ''}</body></html>`);
 }
 
 const modules = [
@@ -563,6 +563,7 @@ const modules = [
   { id: 'service', label: 'Serwis', icon: Wrench },
   { id: 'projects', label: 'Zadania i projekty', icon: Briefcase },
   { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
+  { id: 'documents', label: 'Dokumenty', icon: FileText },
   { id: 'settings', label: 'Ustawienia', icon: Settings }
 ];
 
@@ -875,6 +876,7 @@ function App() {
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} />}
           {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} />}
         </section>
       </main>
@@ -3043,12 +3045,40 @@ function compactLines(lines) {
   return lines.map((line) => String(line ?? '').trim()).filter(Boolean);
 }
 
+function shouldShowDocumentCountry(country, options = {}) {
+  if (options.includeCountry) return Boolean(String(country ?? '').trim());
+  const normalized = String(country ?? '').trim().toLocaleLowerCase('pl');
+  if (!normalized) return false;
+  return !['polska', 'poland', 'pl'].includes(normalized);
+}
+
+function formatDocumentAddress(entity = {}, options = {}) {
+  const street = String(entity.street ?? '').trim();
+  const building = String(entity.building_number ?? entity.buildingNumber ?? '').trim();
+  const apartment = String(entity.apartment_number ?? entity.apartmentNumber ?? '').trim();
+  let streetLine = '';
+  if (street && building) {
+    streetLine = apartment ? `${street} ${building}/${apartment}` : `${street} ${building}`;
+  } else if (street) {
+    streetLine = street;
+  } else if (building) {
+    streetLine = apartment ? `${building}/${apartment}` : building;
+  }
+  const postalCode = String(entity.postal_code ?? entity.postalCode ?? '').trim();
+  const city = String(entity.city ?? '').trim();
+  const cityLine = [postalCode, city].filter(Boolean).join(' ');
+  const country = String(entity.country ?? '').trim();
+  const lines = compactLines([streetLine, cityLine]);
+  if (shouldShowDocumentCountry(country, options)) lines.push(country);
+  return lines.join('\n');
+}
+
+function formatDocumentAddressLines(entity = {}, options = {}) {
+  return compactLines(formatDocumentAddress(entity, options).split('\n'));
+}
+
 function formatClientDocumentAddress(client = {}) {
-  return compactLines([
-    [client.street, client.building_number, client.apartment_number ? `/${client.apartment_number}` : ''].filter(Boolean).join(''),
-    [client.postal_code, client.city].filter(Boolean).join(' '),
-    client.country
-  ]).join(', ');
+  return formatDocumentAddress(client);
 }
 
 function getRentalAgreementColumnValue(key, item, index) {
@@ -3126,6 +3156,54 @@ function renderTermsFromTemplate(text, fallbackTerms = []) {
   }).join('');
 }
 
+function createDocumentLayoutCss() {
+  return `@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{position:relative;width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:22mm 20mm 18mm;box-sizing:border-box}.ag-top{display:flex;gap:12px;align-items:flex-start;margin-bottom:9px;padding-bottom:8px;border-bottom:1.2px solid #1e3a5f}.ag-logo-img{width:58px;max-height:58px;object-fit:contain;display:block;flex:0 0 58px}.ag-logo-fallback{width:58px;height:58px;display:flex;align-items:center;justify-content:center;border:1.2px solid #c0ccdb;border-radius:7px;font-size:20px;font-weight:800;color:#1e3a5f;flex:0 0 58px}.ag-co-name{font-size:12.5px;font-weight:800;color:#0f1e35;margin:0 0 2px}.ag-co-info{font-size:8.8px;color:#444;margin:0 0 1px;line-height:1.35}.ag-title-block{text-align:center;margin:10px 0 8px}.ag-doc-title{font-size:16.5px;font-weight:900;color:#0f1e35;text-transform:uppercase;letter-spacing:.035em;margin:0 0 6px}.ag-meta-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-width:600px;margin:0 auto}.ag-meta-chip{display:grid;gap:1px;padding:5px 7px;border:1px solid #d8e0eb;border-radius:8px;background:#f8fafc;text-align:left}.ag-meta-chip-label{font-size:7.2px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-weight:700}.ag-meta-chip-value{font-size:9.2px;color:#0f1e35;font-weight:700;line-height:1.3}.ag-divider{border:none;border-top:1px solid #c8d4e0;margin:7px 0}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:7.8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-party-name{font-size:10.2px;font-weight:800;color:#0f1e35;margin:0 0 1px}.ag-party-line{font-size:9.2px;color:#333;margin:0 0 1px}.ag-core{display:grid;grid-template-columns:34% minmax(0,1fr);gap:13px;align-items:start;margin-bottom:8px}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700;word-break:break-word}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px;word-break:break-word;hyphens:auto}.ag-table tbody tr:last-child td{border-bottom:none}.ag-table.many-cols th,.ag-table.many-cols td{font-size:7.4px;padding:2.6px 3.5px}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px;break-inside:avoid}.ag-terms li .n{font-weight:800;color:#1e3a5f;min-width:15px;flex-shrink:0}.ag-signatures{margin-top:14px;break-inside:avoid}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}.ag-page-footer{position:absolute;left:20mm;right:20mm;bottom:7mm;display:flex;justify-content:space-between;font-size:8px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:3px}.ag-page-number::after{content:counter(page)}.ag-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:7px 12px;background:#fff;border-bottom:1px solid #dde3ed;box-shadow:0 2px 4px rgba(0,0,0,.06)}.ag-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{.ag-toolbar{display:none}.ag-doc{margin:0 auto}}@media(max-width:760px){.ag-doc{width:100%;min-height:auto;padding:16px 14px 24px}.ag-top,.ag-parties,.ag-sig-grid,.ag-core,.ag-meta-grid{grid-template-columns:1fr}.ag-page-footer{position:static;left:auto;right:auto;bottom:auto;margin-top:10px}}`;
+}
+
+function buildDocumentSignaturesHtml(leftLabel, rightLabel) {
+  return `<div class="ag-signatures"><div class="ag-sig-grid"><div><span class="ag-sig-label">${escapeHtml(leftLabel || 'Wystawiający')}</span><div class="ag-sig-line">miejscowość, data i podpis</div></div><div><span class="ag-sig-label">${escapeHtml(rightLabel || 'Odbierający')}</span><div class="ag-sig-line">miejscowość, data i podpis</div></div></div></div>`;
+}
+
+function buildDocumentMetaChips({ documentNumber = '', issueDate = '', status = '' }) {
+  const chips = [
+    { label: 'Numer dokumentu', value: documentNumber || '—' },
+    { label: 'Data wystawienia', value: issueDate || '—' }
+  ];
+  if (String(status ?? '').trim()) chips.push({ label: 'Status', value: status });
+  return `<div class="ag-meta-grid">${chips.map((chip) => `<div class="ag-meta-chip"><span class="ag-meta-chip-label">${escapeHtml(chip.label)}</span><span class="ag-meta-chip-value">${escapeHtml(chip.value)}</span></div>`).join('')}</div>`;
+}
+
+function buildBaseDocumentTemplateHtml({
+  title,
+  company,
+  headerText = '',
+  documentNumber = '',
+  issueDate = '',
+  status = '',
+  partiesHtml = '',
+  sectionsHtml = '',
+  footerText = '',
+  preview = true,
+  autoPrint = false
+}) {
+  const companyName = company?.legalName || company?.name || 'FIXER WEB';
+  const showLogo = company?.showLogoOnDocuments !== false;
+  const companyTax = formatCompanyTaxData(company ?? {});
+  const companyContact = formatCompanyContact(company ?? {});
+  const coHeaderLines = compactLines([
+    ...formatDocumentAddressLines(company ?? {}),
+    companyTax,
+    companyContact
+  ]);
+  const logoHtml = showLogo
+    ? company?.logoDataUrl
+      ? `<img class="ag-logo-img" src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>`
+      : `<div class="ag-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`
+    : '';
+  const footerBase = compactLines([companyName, company?.website]).join(' · ') || companyName;
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(title || 'Dokument')}</title><style>${createDocumentLayoutCss()}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc">${String(headerText ?? '').trim() ? `<div class="ag-custom-header">${renderTemplateMultiline(headerText)}</div>` : ''}<div class="ag-top">${logoHtml}<div><p class="ag-co-name">${escapeHtml(companyName)}</p>${coHeaderLines.map((line) => `<p class="ag-co-info">${escapeHtml(line)}</p>`).join('')}</div></div><div class="ag-title-block"><h1 class="ag-doc-title">${escapeHtml(title || 'Dokument')}</h1>${buildDocumentMetaChips({ documentNumber, issueDate, status })}</div><hr class="ag-divider"/>${partiesHtml}${sectionsHtml}${String(footerText ?? '').trim() ? `<footer class="ag-footer">${escapeHtml(footerText)}</footer>` : ''}<div class="ag-page-footer"><span>${escapeHtml(footerBase)}</span><span>Strona <span class="ag-page-number"></span></span></div></main>${autoPrint ? '<script>window.onload=function(){window.focus();window.print();};</script>' : ''}</body></html>`;
+}
+
 function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, settings = getDocumentSettings(), company = getCompanyProfile() } = {}) {
   const data = getRentalAgreementData(rental, settings, company);
   const companyName = company.legalName || company.name || 'FIXER WEB';
@@ -3134,36 +3212,38 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
   const client = data.client ?? {};
   const clientIsCompany = String(client.type ?? '').toLocaleLowerCase('pl') === 'firma';
   const clientAddress = formatClientDocumentAddress(client);
-  const showLogo = company.showLogoOnDocuments !== false;
   const headerText = String(company.documentHeader ?? '').trim();
   const companyFooter = String(company.documentFooter ?? '').trim();
   const equipmentHeader = data.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
   const equipmentRows = data.items.map((item, index) => `<tr>${data.columns.map((column) => `<td>${escapeHtml(getRentalAgreementColumnValue(column.key, item, index) || '—')}</td>`).join('')}</tr>`).join('');
-  const companyLines = [
+  const companyLines = compactLines([
     companyName,
-    formatCompanyAddress(company),
+    ...formatDocumentAddressLines(company),
     companyTax,
     companyContact,
     company.bankAccount ? `Konto: ${company.bankAccount}` : ''
-  ];
+  ]);
   const contactPerson = client.contact_person || client.contact_name || client.representative || '';
-  const clientLines = clientIsCompany
-    ? [client.name, client.nip ? `NIP: ${client.nip}` : '', clientAddress, contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']
-    : [client.name, clientAddress, client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : ''];
+  const clientLines = compactLines(clientIsCompany
+    ? [client.name, client.nip ? `NIP: ${client.nip}` : '', ...formatDocumentAddressLines(client), contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']
+    : [client.name, ...formatDocumentAddressLines(client), client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']);
   const manyColumns = data.columns.length > 6;
   const issueDate = formatAgreementDate(data.issueDate);
   const startDate = data.rental?.start_date ? formatAgreementDate(data.rental.start_date) : null;
   const returnDate = data.rental?.planned_return_date ? formatAgreementDate(data.rental.planned_return_date) : null;
+  const actualReturnDate = data.rental?.actual_return_date ? formatAgreementDate(data.rental.actual_return_date) : '';
   const docNumber = data.documentNumber || data.rental?.rental_number || '';
   const introCity = company.documentCity || company.city || '';
   const templateContext = {
     documentNumber: docNumber,
     issueDate,
     returnDate: returnDate || '',
+    plannedReturnDate: returnDate || '',
+    actualReturnDate,
     clientName: client.name || '',
     clientAddress,
     companyName,
-    companyAddress: formatCompanyAddress(company),
+    companyAddress: formatDocumentAddress(company),
     companyTaxData: companyTax,
     companyContact,
     clientContact: compactLines([contactPerson ? `Osoba kontaktowa: ${contactPerson}` : '', client.phone ? `Telefon: ${client.phone}` : '', client.email ? `E-mail: ${client.email}` : '']).join('\n'),
@@ -3183,30 +3263,28 @@ function buildRentalAgreementHtml(rental, { autoPrint = false, preview = false, 
     period: (startDate || returnDate) ? `<div class="ag-section"><h2 class="ag-section-heading">Okres wypożyczenia</h2><div class="ag-period">${startDate ? `<div><span class="ag-period-label">Data wydania</span><span class="ag-period-value">${escapeHtml(startDate)}</span></div>` : ''}${returnDate ? `<div><span class="ag-period-label">Planowany zwrot</span><span class="ag-period-value">${escapeHtml(returnDate)}</span></div>` : ''}</div></div>` : '',
     equipment: `<div class="ag-section"><h2 class="ag-section-heading">Przedmiot umowy - przekazany sprzęt</h2><div class="ag-table-wrap"><table class="ag-table${manyColumns ? ' many-cols' : ''}"><thead><tr>${equipmentHeader}</tr></thead><tbody>${equipmentRows || `<tr><td colspan="${data.columns.length}">Brak pozycji sprzętu.</td></tr>`}</tbody></table></div></div>`,
     terms: `<div class="ag-section"><h2 class="ag-section-heading">Warunki umowy</h2><ul class="ag-terms">${renderTermsFromTemplate(termsText, data.template.terms)}</ul></div>`,
-    signatures: `<div class="ag-signatures"><div class="ag-sig-grid"><div><span class="ag-sig-label">Wypożyczający</span><div class="ag-sig-line">miejscowość, data i podpis</div></div><div><span class="ag-sig-label">Biorący</span><div class="ag-sig-line">miejscowość, data i podpis</div></div></div></div>`,
-    footer: footerText ? `<footer class="ag-footer">${escapeHtml(footerText)}</footer>` : ''
+    signatures: buildDocumentSignaturesHtml('Wypożyczający', 'Biorący'),
+    footer: ''
   };
   const orderedSections = (data.template.sectionOrder ?? DEFAULT_RENTAL_AGREEMENT_SECTION_ORDER)
     .filter((id) => visibility[id] !== false)
     .map((id) => sectionBlocks[id])
     .filter(Boolean)
     .join('');
-  const coStreet = compactLines([company.street, company.buildingNumber, company.apartmentNumber ? `/${company.apartmentNumber}` : '']).join(' ');
-  const coCity = compactLines([company.postalCode, company.city]).join(' ');
-  const coHeaderLines = compactLines([coStreet, coCity, companyTax, companyContact]);
-  const logoHtml = showLogo
-    ? company.logoDataUrl
-      ? `<img class="ag-logo-img" src="${escapeHtml(company.logoDataUrl)}" alt="Logo firmy"/>`
-      : `<div class="ag-logo-fallback">${escapeHtml(companyName.slice(0, 1).toUpperCase())}</div>`
-    : '';
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(data.title)}</title><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:22mm 20mm;box-sizing:border-box}.ag-top{margin-bottom:9px;padding-bottom:8px;border-bottom:1.2px solid #1e3a5f}.ag-logo-img{max-width:96px;max-height:72px;object-fit:contain;display:block;margin-bottom:7px}.ag-logo-fallback{width:58px;height:58px;display:flex;align-items:center;justify-content:center;border:1.2px solid #c0ccdb;border-radius:7px;font-size:20px;font-weight:800;color:#1e3a5f;margin-bottom:7px}.ag-co-name{font-size:12.5px;font-weight:800;color:#0f1e35;margin:0 0 2px}.ag-co-info{font-size:8.8px;color:#444;margin:0 0 1px;line-height:1.35}.ag-title-block{text-align:center;margin:10px 0 8px}.ag-doc-title{font-size:16.5px;font-weight:900;color:#0f1e35;text-transform:uppercase;letter-spacing:.035em;margin:0 0 5px}.ag-doc-meta{font-size:9.5px;color:#444;margin:0 0 1px}.ag-divider{border:none;border-top:1px solid #c8d4e0;margin:7px 0}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:7.8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-party-name{font-size:10.2px;font-weight:800;color:#0f1e35;margin:0 0 1px}.ag-party-line{font-size:9.2px;color:#333;margin:0 0 1px}.ag-core{display:grid;grid-template-columns:34% minmax(0,1fr);gap:13px;align-items:start;margin-bottom:8px}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700;word-break:break-word}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px;word-break:break-word;hyphens:auto}.ag-table tbody tr:last-child td{border-bottom:none}.ag-table.many-cols th,.ag-table.many-cols td{font-size:7.4px;padding:2.6px 3.5px}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px;break-inside:avoid}.ag-terms li .n{font-weight:800;color:#1e3a5f;min-width:15px;flex-shrink:0}.ag-signatures{margin-top:14px;break-inside:avoid}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}.ag-toolbar{position:sticky;top:0;z-index:3;display:flex;gap:8px;justify-content:flex-end;margin:0 0 12px;padding:7px 12px;background:#fff;border-bottom:1px solid #dde3ed;box-shadow:0 2px 4px rgba(0,0,0,.06)}.ag-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{.ag-toolbar{display:none}.ag-doc{margin:0 auto}}@media(max-width:760px){.ag-doc{width:100%;min-height:auto;padding:16px}.ag-parties,.ag-sig-grid,.ag-core{grid-template-columns:1fr}}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc">
-    ${headerText ? `<div class="ag-custom-header">${escapeHtml(headerText)}</div>` : ''}
-    <div class="ag-top">${logoHtml}<p class="ag-co-name">${escapeHtml(companyName)}</p>${coHeaderLines.map((line) => `<p class="ag-co-info">${escapeHtml(line)}</p>`).join('')}</div>
-    <div class="ag-title-block"><h1 class="ag-doc-title">${escapeHtml(data.title)}</h1>${docNumber ? `<p class="ag-doc-meta">Nr: <strong>${escapeHtml(docNumber)}</strong></p>` : ''}<p class="ag-doc-meta">Data wystawienia: <strong>${escapeHtml(issueDate)}</strong></p></div>
-    <hr class="ag-divider"/>
-    <div class="ag-parties"><div><span class="ag-party-label">Wypożyczający</span>${issuerText.trim() ? renderTemplateMultiline(issuerText) : compactLines(companyLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div><div><span class="ag-party-label">Biorący</span>${borrowerText.trim() ? renderTemplateMultiline(borrowerText) : compactLines(clientLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div></div>
-    ${orderedSections}
-  </main>${autoPrint ? '<script>window.onload=function(){window.focus();window.print();};</script>' : ''}</body></html>`;
+  const partiesHtml = `<div class="ag-parties"><div><span class="ag-party-label">Wypożyczający</span>${issuerText.trim() ? renderTemplateMultiline(issuerText) : compactLines(companyLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div><div><span class="ag-party-label">Biorący</span>${borrowerText.trim() ? renderTemplateMultiline(borrowerText) : compactLines(clientLines).map((line, i) => `<p class="${i === 0 ? 'ag-party-name' : 'ag-party-line'}">${escapeHtml(line)}</p>`).join('')}</div></div>`;
+  return buildBaseDocumentTemplateHtml({
+    title: data.title,
+    company,
+    headerText,
+    documentNumber: docNumber,
+    issueDate,
+    status: data.rental?.status || '',
+    partiesHtml,
+    sectionsHtml: orderedSections,
+    footerText,
+    preview,
+    autoPrint
+  });
 }
 
 function openRentalAgreementPrint(rental) {
@@ -3214,28 +3292,30 @@ function openRentalAgreementPrint(rental) {
   printHtmlInIframe(buildRentalAgreementHtml(rental, { preview: true }));
 }
 
-function buildGenericDocumentTemplateHtml(documentType, template, context = {}, { preview = true } = {}) {
+function buildGenericDocumentTemplateHtml(documentType, template, context = {}, { preview = true, company = getCompanyProfile() } = {}) {
   const normalized = normalizeSharedDocumentTemplate(template, documentType?.defaultTemplate ?? {});
   const apply = (value) => applyTemplateVariables(value, context);
   const sectionVisibility = normalized.sectionVisibility ?? DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY;
   const sectionOrder = normalized.sectionOrder?.length ? normalized.sectionOrder : DEFAULT_SHARED_TEMPLATE_SECTION_ORDER;
   const enabledColumns = (normalized.columns ?? []).filter((column) => column.enabled !== false);
   const columns = enabledColumns.length ? enabledColumns : DEFAULT_GENERIC_TEMPLATE_COLUMNS.filter((column) => column.enabled);
-  const tableRows = Array.isArray(context.equipmentRows) && context.equipmentRows.length ? context.equipmentRows : [
-    { lp: '1', name: 'Przykładowa pozycja', details: 'Model / numer seryjny', status: 'OK', notes: '—' }
-  ];
+  const tableRows = resolveDocumentTableRows(context, documentType?.id);
   const tableHeader = columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join('');
   const tableBody = tableRows.map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
+  const mergedCompany = { ...company };
+  if (!mergedCompany.name && context.companyName) mergedCompany.name = context.companyName;
+  if (!mergedCompany.legalName && context.companyName) mergedCompany.legalName = context.companyName;
+  if (!mergedCompany.documentHeader && context.companyHeaderText) mergedCompany.documentHeader = context.companyHeaderText;
   const sectionMap = {
-    header: apply(normalized.headerText).trim() ? `<div class="ag-custom-header">${renderTemplateMultiline(apply(normalized.headerText))}</div>` : '',
+    header: '',
     intro: apply(normalized.introText).trim() ? `<p class="ag-intro">${escapeHtml(apply(normalized.introText))}</p>` : '',
     issuer: apply(normalized.issuerText).trim() ? `<div><span class="ag-party-label">${escapeHtml(normalized.signatureIssuer || 'Wystawiający')}</span>${renderTemplateMultiline(apply(normalized.issuerText))}</div>` : '',
     borrower: apply(normalized.borrowerText).trim() ? `<div><span class="ag-party-label">${escapeHtml(normalized.signatureBorrower || 'Odbiorca')}</span>${renderTemplateMultiline(apply(normalized.borrowerText))}</div>` : '',
     period: `<div class="ag-section"><h2 class="ag-section-heading">Okres</h2><div class="ag-period"><div><span class="ag-period-label">Data dokumentu</span><span class="ag-period-value">${escapeHtml(context.issueDate || getLocalIsoDate())}</span></div></div></div>`,
     equipment: `<div class="ag-section"><h2 class="ag-section-heading">Tabela pozycji</h2><div class="ag-table-wrap"><table class="ag-table"><thead><tr>${tableHeader}</tr></thead><tbody>${tableBody}</tbody></table></div></div>`,
     terms: apply(normalized.termsText).trim() ? `<div class="ag-section"><h2 class="ag-section-heading">Treść</h2><ul class="ag-terms">${renderTermsFromTemplate(apply(normalized.termsText), [])}</ul></div>` : '',
-    signatures: `<div class="ag-signatures"><div class="ag-sig-grid"><div><span class="ag-sig-label">${escapeHtml(normalized.signatureIssuer || 'Wystawiający')}</span><div class="ag-sig-line">podpis</div></div><div><span class="ag-sig-label">${escapeHtml(normalized.signatureBorrower || 'Odbiorca')}</span><div class="ag-sig-line">podpis</div></div></div></div>`,
-    footer: apply(normalized.footerText).trim() ? `<footer class="ag-footer">${escapeHtml(apply(normalized.footerText))}</footer>` : ''
+    signatures: buildDocumentSignaturesHtml(normalized.signatureIssuer || 'Wystawiający', normalized.signatureBorrower || 'Odbiorca'),
+    footer: ''
   };
   const partyBlocks = [sectionMap.issuer, sectionMap.borrower].filter(Boolean);
   const ordered = sectionOrder
@@ -3244,8 +3324,22 @@ function buildGenericDocumentTemplateHtml(documentType, template, context = {}, 
     .map((sectionId) => sectionMap[sectionId])
     .filter(Boolean)
     .join('');
-
-  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(normalized.title || documentType?.label || 'Dokument')}</title><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;background:#fff}.ag-doc{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:22mm 20mm;box-sizing:border-box}.ag-title-block{text-align:center;margin:8px 0 8px}.ag-doc-title{font-size:16px;font-weight:900;color:#0f1e35;margin:0 0 4px}.ag-doc-meta{font-size:9px;color:#475569;margin:0}.ag-custom-header p,.ag-party-line{margin:0 0 1px}.ag-custom-header{background:#f5f8fc;border-left:3px solid #1e3a5f;padding:4px 8px;margin-bottom:8px;color:#334155;font-size:9px}.ag-intro{font-size:10px;color:#222;margin:0 0 8px}.ag-parties{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.ag-party-label{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#1e3a5f;margin:0 0 3px;padding-bottom:2px;border-bottom:1px solid #c8d4e0;display:block}.ag-section{margin-bottom:8px}.ag-section-heading{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1e3a5f;margin:0 0 5px}.ag-period{display:grid;gap:8px;padding-top:1px}.ag-period-label{font-size:8px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:1px}.ag-period-value{font-weight:800;color:#0f1e35;font-size:10px}.ag-table-wrap{border:1px solid #c0c8d4;overflow:hidden}.ag-table{width:100%;border-collapse:collapse;table-layout:fixed}.ag-table th{background:#1e3a5f;color:#fff;padding:3.2px 5px;text-align:left;font-size:7.8px;font-weight:700}.ag-table td{border-bottom:1px solid #e4eaf2;padding:3px 5px;color:#222;vertical-align:top;font-size:8.5px}.ag-table tbody tr:last-child td{border-bottom:none}.ag-terms{margin:0;padding:0;list-style:none}.ag-terms li{display:flex;gap:5px;font-size:9.2px;color:#333;line-height:1.3;margin-bottom:2px}.ag-signatures{margin-top:14px}.ag-sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px}.ag-sig-label{font-size:10px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.ag-sig-line{border-top:1.2px dotted #8090a8;padding-top:4px;font-size:8.5px;color:#666;text-align:center}.ag-footer{border-top:1px solid #dde3ec;margin-top:8px;padding-top:4px;color:#888;font-size:8.5px;text-align:center}@media(max-width:760px){.ag-doc{width:100%;min-height:auto;padding:16px}.ag-parties,.ag-sig-grid{grid-template-columns:1fr}}</style></head><body><main class="ag-doc"><div class="ag-title-block"><h1 class="ag-doc-title">${escapeHtml(apply(normalized.title || documentType?.label || 'Dokument'))}</h1><p class="ag-doc-meta">Podgląd szablonu: ${escapeHtml(documentType?.label || '')}</p></div>${partyBlocks.length ? `<div class="ag-parties">${partyBlocks.join('')}</div>` : ''}${ordered}</main></body></html>`;
+  const resolvedDocumentNumber = String(context.documentNumber || context.rentalNumber || context.serviceNumber || '—');
+  const resolvedIssueDate = String(context.issueDate || getLocalIsoDate());
+  const resolvedStatus = String(context.status || context.serviceStatus || '');
+  return buildBaseDocumentTemplateHtml({
+    title: apply(normalized.title || documentType?.label || 'Dokument'),
+    company: mergedCompany,
+    headerText: apply(normalized.headerText),
+    documentNumber: resolvedDocumentNumber,
+    issueDate: resolvedIssueDate,
+    status: resolvedStatus,
+    partiesHtml: partyBlocks.length ? `<div class="ag-parties">${partyBlocks.join('')}</div>` : '',
+    sectionsHtml: ordered,
+    footerText: apply(normalized.footerText),
+    preview,
+    autoPrint: false
+  });
 }
 
 function normalizeScannerCode(value) {
@@ -7284,7 +7378,13 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
 
 function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsV2 dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} />
+    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} />
+  </div>;
+}
+
+function DocumentsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme }) {
+  return <div className="module-page settings-module-page compact-settings-page documents-module-page">
+    <SettingsV2 mode="documents" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} />
   </div>;
 }
 function getStoredJson(key, fallback) {
@@ -7863,6 +7963,35 @@ const DEFAULT_GENERIC_TEMPLATE_COLUMNS = [
   { key: 'status', label: 'Status', enabled: false },
   { key: 'notes', label: 'Uwagi', enabled: false }
 ];
+const DEFAULT_SERVICE_INTAKE_TEMPLATE_COLUMNS = [
+  { key: 'lp', label: 'LP', enabled: true },
+  { key: 'name', label: 'Urządzenie', enabled: true },
+  { key: 'serial', label: 'Nr seryjny', enabled: true },
+  { key: 'fault', label: 'Opis usterki', enabled: true }
+];
+
+function buildServiceIntakeTableRows(context = {}) {
+  const name = String(context.deviceName ?? '').trim();
+  if (!name) return [];
+  return [{
+    lp: '1',
+    name,
+    serial: String(context.deviceSerialNumber ?? '—').trim() || '—',
+    fault: String(context.faultDescription ?? '—').trim() || '—'
+  }];
+}
+
+function resolveDocumentTableRows(context = {}, documentTypeId = '') {
+  if (documentTypeId === 'serviceIntake') {
+    const intakeRows = buildServiceIntakeTableRows(context);
+    if (intakeRows.length) return intakeRows;
+    return [{ lp: '1', name: 'Kamera Sony PXW-Z190', serial: 'SN-001', fault: 'Brak obrazu po uruchomieniu' }];
+  }
+  if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) {
+    return context.equipmentRows;
+  }
+  return [{ lp: '1', name: 'Przykładowa pozycja', details: 'Model / numer seryjny', status: 'OK', notes: '—' }];
+}
 const SHARED_DOCUMENT_TEMPLATE_VARIABLES = [
   { key: '{{documentNumber}}', description: 'Numer dokumentu' },
   { key: '{{issueDate}}', description: 'Data wystawienia / utworzenia' },
@@ -7998,7 +8127,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       signatureBorrower: 'Klient',
       sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
       sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
-      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+      columns: DEFAULT_SERVICE_INTAKE_TEMPLATE_COLUMNS
     }
   },
   {
@@ -8265,6 +8394,459 @@ function saveDocumentTemplateLibrary(library) {
   return next;
 }
 
+const DOCUMENT_DESIGNER_STORAGE_KEY = 'fixer:document-designer';
+const DOCUMENT_DESIGNER_PAGE = { width: 794, height: 1123 };
+const DOCUMENT_DESIGNER_MIN_SIZE = { width: 40, height: 18 };
+const DESIGNER_MM_TO_PX = 3.7795275591;
+const DEFAULT_DESIGNER_MARGINS = { top: 22, right: 20, bottom: 18, left: 20 };
+const DOCUMENT_DESIGNER_LIBRARY = [
+  { id: 'logo', label: '🖼 Logo', kind: 'logo', width: 110, height: 58, hint: 'Element graficzny' },
+  { id: 'companyName', label: '🏢 Nagłówek firmy', kind: 'text', width: 240, height: 24, text: '{{companyName}}', fontSize: 16, fontWeight: 700, hint: 'Nazwa w nagłówku' },
+  { id: 'companyDetails', label: '🏢 Dane firmy', kind: 'text', width: 300, height: 64, text: '{{companyAddress}}\n{{companyContact}}', fontSize: 10, fontWeight: 400, hint: 'Adres i kontakt' },
+  { id: 'clientDetails', label: '👤 Dane klienta', kind: 'text', width: 300, height: 64, text: '{{clientName}}\n{{clientAddress}}', fontSize: 10, fontWeight: 400, hint: 'Informacje klienta' },
+  { id: 'serviceDetails', label: '🔧 Dane serwisowe', kind: 'text', width: 300, height: 64, text: '{{serviceNumber}}\n{{serviceStatus}}\n{{diagnosis}}', fontSize: 10, fontWeight: 400, hint: 'Numer, status, diagnoza' },
+  { id: 'rentalDetails', label: '📦 Dane wypożyczenia', kind: 'text', width: 300, height: 64, text: '{{rentalNumber}}\n{{rentalIssueDate}}\n{{plannedReturnDate}}', fontSize: 10, fontWeight: 400, hint: 'Numer i terminy' },
+  { id: 'documentNumber', label: '📄 Numer dokumentu', kind: 'text', width: 210, height: 22, text: 'Numer: {{documentNumber}}', fontSize: 10, fontWeight: 600, hint: 'Numeracja dokumentu' },
+  { id: 'documentDate', label: '📄 Data dokumentu', kind: 'text', width: 210, height: 22, text: 'Data: {{issueDate}}', fontSize: 10, fontWeight: 600, hint: 'Data wystawienia' },
+  { id: 'documentStatus', label: '📄 Status dokumentu', kind: 'text', width: 210, height: 22, text: 'Status: {{serviceStatus}}', fontSize: 10, fontWeight: 600, hint: 'Status obsługi' },
+  { id: 'equipmentTable', label: '📋 Tabela sprzętu', kind: 'table', width: 700, height: 170, tableType: 'equipmentTable', hint: 'Lista urządzeń' },
+  { id: 'itemsTable', label: '📋 Tabela pozycji', kind: 'table', width: 700, height: 170, tableType: 'itemsTable', hint: 'Pozycje dokumentu' },
+  { id: 'terms', label: '📝 Warunki', kind: 'text', width: 700, height: 110, text: '{{terms}}', fontSize: 10, fontWeight: 400, hint: 'Punkty i warunki' },
+  { id: 'footer', label: '📄 Stopka', kind: 'text', width: 700, height: 26, text: '{{documentFooter}}', fontSize: 9, fontWeight: 400, align: 'center', hint: 'Treść stopki' },
+  { id: 'signatureLeft', label: '✍ Podpis', kind: 'signature', width: 260, height: 70, text: 'Wystawiający', hint: 'Pole podpisu' },
+  { id: 'signatureRight', label: '✍ Podpis', kind: 'signature', width: 260, height: 70, text: 'Odbierający', hint: 'Pole podpisu' },
+  { id: 'separator', label: '📌 Separator', kind: 'line', width: 700, height: 1, color: '#cbd5e1', hint: 'Linia podziału' },
+  { id: 'customText', label: '📃 Tekst własny', kind: 'text', width: 260, height: 50, text: 'Tekst własny', fontSize: 11, fontWeight: 400, hint: 'Dowolny tekst' }
+];
+
+function getDesignerLibraryItem(libraryId) {
+  return DOCUMENT_DESIGNER_LIBRARY.find((item) => item.id === libraryId) ?? DOCUMENT_DESIGNER_LIBRARY[0];
+}
+
+function createDocumentDesignerElement(libraryId, index = 0) {
+  const base = getDesignerLibraryItem(libraryId);
+  const rowOffset = (index % 4) * 14;
+  return {
+    id: `${base.id}-${Date.now()}-${Math.round(Math.random() * 1000)}`,
+    libraryId: base.id,
+    kind: base.kind,
+    x: 56 + rowOffset,
+    y: 76 + rowOffset,
+    width: base.width,
+    height: base.height,
+    text: base.text ?? '',
+    align: base.align ?? 'left',
+    fontSize: base.fontSize ?? 10,
+    fontWeight: base.fontWeight ?? 400,
+    color: base.color ?? '#111827',
+    visible: true,
+    tableType: base.tableType ?? 'equipmentTable',
+    logoDataUrl: '',
+    columns: [
+      { key: 'lp', label: 'LP', width: 44, visible: true },
+      { key: 'name', label: 'Nazwa', width: 180, visible: true },
+      { key: 'details', label: 'Szczegóły', width: 180, visible: true },
+      { key: 'status', label: 'Status', width: 90, visible: true },
+      { key: 'notes', label: 'Uwagi', width: 140, visible: true }
+    ]
+  };
+}
+
+function mapTemplateColumnsToDesignerColumns(columns = DEFAULT_GENERIC_TEMPLATE_COLUMNS) {
+  const widthMap = {
+    lp: 44,
+    name: 180,
+    brandModel: 160,
+    serial: 120,
+    fault: 220,
+    quantity: 60,
+    details: 180,
+    status: 90,
+    notes: 140,
+    barcode: 100,
+    inventory: 120,
+    conditionOut: 120
+  };
+  return columns
+    .filter((column) => column.enabled !== false)
+    .map((column) => ({
+      key: column.key,
+      label: column.label,
+      width: widthMap[column.key] ?? 120,
+      visible: true
+    }));
+}
+
+function getDesignerWorkArea(margins = DEFAULT_DESIGNER_MARGINS) {
+  const left = Math.round(Number(margins.left ?? DEFAULT_DESIGNER_MARGINS.left) * DESIGNER_MM_TO_PX);
+  const top = Math.round(Number(margins.top ?? DEFAULT_DESIGNER_MARGINS.top) * DESIGNER_MM_TO_PX);
+  const right = DOCUMENT_DESIGNER_PAGE.width - Math.round(Number(margins.right ?? DEFAULT_DESIGNER_MARGINS.right) * DESIGNER_MM_TO_PX);
+  const bottom = DOCUMENT_DESIGNER_PAGE.height - Math.round(Number(margins.bottom ?? DEFAULT_DESIGNER_MARGINS.bottom) * DESIGNER_MM_TO_PX);
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: Math.max(120, right - left),
+    height: Math.max(120, bottom - top),
+    centerX: left + (right - left) / 2,
+    centerY: top + (bottom - top) / 2
+  };
+}
+
+function clampDesignerElementToWorkArea(element = {}, margins = DEFAULT_DESIGNER_MARGINS) {
+  const area = getDesignerWorkArea(margins);
+  const minW = DOCUMENT_DESIGNER_MIN_SIZE.width;
+  const minH = DOCUMENT_DESIGNER_MIN_SIZE.height;
+  let width = Math.max(minW, Math.min(area.width, Number(element.width) || minW));
+  let height = Math.max(minH, Math.min(area.height, Number(element.height) || minH));
+  let x = Number(element.x) || area.left;
+  let y = Number(element.y) || area.top;
+
+  if (width > area.width) width = area.width;
+  if (height > area.height) height = area.height;
+
+  x = Math.min(area.right - width, Math.max(area.left, x));
+  y = Math.min(area.bottom - height, Math.max(area.top, y));
+
+  const outOfBounds = x < area.left || y < area.top || x + width > area.right || y + height > area.bottom;
+  if (outOfBounds) {
+    x = Math.round(area.left + (area.width - width) / 2);
+    y = Math.round(area.top + (area.height - height) / 2);
+  }
+
+  return { ...element, x, y, width, height };
+}
+
+function fitDesignerTableColumns(columns = [], targetWidth = 640) {
+  const visible = columns.filter((column) => column.visible !== false);
+  if (!visible.length) return columns;
+  const total = visible.reduce((sum, column) => sum + (Number(column.width) || 120), 0);
+  if (total <= targetWidth) return columns;
+  const scale = targetWidth / total;
+  return columns.map((column) => ({
+    ...column,
+    width: Math.max(50, Math.round((Number(column.width) || 120) * scale))
+  }));
+}
+
+function designerLayoutElement(libraryId, layout = {}, overrides = {}) {
+  const base = createDocumentDesignerElement(libraryId, 0);
+  return { ...base, ...layout, ...overrides };
+}
+
+function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DESIGNER_MARGINS) {
+  const typeDef = getDocumentTemplateTypeById(documentTypeId);
+  const defaults = typeDef.defaultTemplate ?? {};
+  const area = getDesignerWorkArea(margins);
+  const gap = 12;
+  const colGap = 16;
+  const colW = Math.floor((area.width - colGap) / 2);
+  const metaW = Math.min(240, Math.floor(area.width * 0.36));
+  const metaX = area.right - metaW;
+  const leftColW = Math.min(300, Math.floor(area.width * 0.44));
+  const logoH = 58;
+  const elements = [];
+  let y = area.top;
+
+  elements.push(
+    designerLayoutElement('logo', { x: area.left, y, width: 110, height: logoH }),
+    designerLayoutElement('companyName', { x: area.left, y: y + logoH + 8, width: leftColW, height: 22, fontSize: 14, fontWeight: 700, text: '{{companyName}}' }),
+    designerLayoutElement('companyDetails', { x: area.left, y: y + logoH + 34, width: leftColW, height: 42, fontSize: 10, fontWeight: 400, text: '{{companyAddress}}' }),
+    designerLayoutElement('documentNumber', { x: metaX, y, width: metaW, height: 20, align: 'right', fontSize: 10, fontWeight: 600, text: 'Numer: {{documentNumber}}' }),
+    designerLayoutElement('documentDate', { x: metaX, y: y + 22, width: metaW, height: 20, align: 'right', fontSize: 10, fontWeight: 600, text: 'Data: {{issueDate}}' })
+  );
+
+  if (['serviceIntake', 'serviceCompletion', 'serviceReport', 'returnProtocol', 'issueProtocol'].includes(documentTypeId)) {
+    elements.push(designerLayoutElement('documentStatus', { x: metaX, y: y + 44, width: metaW, height: 20, align: 'right', fontSize: 10, text: 'Status: {{serviceStatus}}' }));
+  }
+
+  y = area.top + logoH + 34 + 42 + gap + 6;
+
+  elements.push(designerLayoutElement('customText', {
+    x: area.left,
+    y,
+    width: area.width,
+    height: 30,
+    align: 'center',
+    fontSize: 16,
+    fontWeight: 700,
+    text: defaults.title ?? typeDef.label
+  }));
+  y += 30 + gap;
+
+  if (String(defaults.introText ?? '').trim()) {
+    elements.push(designerLayoutElement('customText', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: 46,
+      fontSize: 10,
+      fontWeight: 400,
+      text: defaults.introText
+    }));
+    y += 46 + gap;
+  }
+
+  const borrowerText = String(defaults.borrowerText ?? '').trim();
+  if (borrowerText) {
+    elements.push(
+      designerLayoutElement('customText', {
+        x: area.left,
+        y,
+        width: colW,
+        height: 78,
+        fontSize: 10,
+        fontWeight: 400,
+        text: defaults.issuerText ?? '{{companyName}}'
+      }),
+      designerLayoutElement('customText', {
+        x: area.left + colW + colGap,
+        y,
+        width: colW,
+        height: 78,
+        fontSize: 10,
+        fontWeight: 400,
+        text: defaults.borrowerText ?? '{{clientName}}\n{{clientAddress}}'
+      })
+    );
+    y += 78 + gap;
+  } else if (String(defaults.issuerText ?? '').trim()) {
+    elements.push(designerLayoutElement('customText', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: 56,
+      fontSize: 10,
+      fontWeight: 400,
+      text: defaults.issuerText
+    }));
+    y += 56 + gap;
+  }
+
+  const tableLibraryId = ['rentalAgreement', 'rentalConfirmation', 'issueProtocol', 'returnProtocol'].includes(documentTypeId)
+    ? 'equipmentTable'
+    : 'itemsTable';
+  const tableColumns = documentTypeId === 'serviceIntake'
+    ? (defaults.columns ?? DEFAULT_SERVICE_INTAKE_TEMPLATE_COLUMNS)
+    : (defaults.columns ?? DEFAULT_GENERIC_TEMPLATE_COLUMNS);
+
+  if (documentTypeId === 'internalDocument') {
+    elements.push(designerLayoutElement('customText', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: 140,
+      fontSize: 10,
+      text: defaults.termsText ?? '{{notes}}'
+    }));
+    y += 140 + gap;
+  } else {
+    const tableHeight = Math.min(210, Math.max(160, area.bottom - y - 250));
+    const tableEl = createDesignerTableElement(tableLibraryId, tableColumns, {
+      x: area.left,
+      y,
+      width: area.width,
+      height: tableHeight
+    });
+    tableEl.columns = fitDesignerTableColumns(tableEl.columns, area.width);
+    elements.push(tableEl);
+    y += tableHeight + gap;
+  }
+
+  if (documentTypeId !== 'internalDocument' && String(defaults.termsText ?? '').trim()) {
+    const termsHeight = Math.min(112, Math.max(72, area.bottom - y - 150));
+    elements.push(designerLayoutElement('terms', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: termsHeight,
+      fontSize: 10,
+      text: defaults.termsText
+    }));
+    y += termsHeight + gap;
+  }
+
+  const sigW = Math.min(300, Math.floor((area.width - colGap) / 2));
+  const sigY = Math.min(y, area.bottom - 98);
+  elements.push(
+    designerLayoutElement('signatureLeft', { x: area.left, y: sigY, width: sigW, height: 70, text: defaults.signatureIssuer ?? 'Wystawiający' }),
+    designerLayoutElement('signatureRight', { x: area.left + sigW + colGap, y: sigY, width: sigW, height: 70, text: defaults.signatureBorrower ?? 'Odbierający' })
+  );
+
+  const footerY = Math.min(sigY + 78, area.bottom - 26);
+  elements.push(designerLayoutElement('footer', {
+    x: area.left,
+    y: footerY,
+    width: area.width,
+    height: 24,
+    align: 'center',
+    fontSize: 9,
+    text: defaults.footerText ?? '{{documentFooter}}'
+  }));
+
+  return elements.map((element) => clampDesignerElementToWorkArea(element, margins));
+}
+
+function createDesignerTableElement(libraryId, columns, position = {}) {
+  const element = createDocumentDesignerElement(libraryId, 0);
+  element.columns = mapTemplateColumnsToDesignerColumns(columns);
+  return { ...element, ...position };
+}
+
+function isLegacyDesignerTemplateLayout(template) {
+  if (!template?.elements?.length) return true;
+  const margins = template.margins ?? DEFAULT_DESIGNER_MARGINS;
+  const area = getDesignerWorkArea(margins);
+  const companyNameEl = template.elements.find((element) => element.libraryId === 'companyName');
+  const logoEl = template.elements.find((element) => element.libraryId === 'logo');
+  const companyDetailsEl = template.elements.find((element) => element.libraryId === 'companyDetails');
+  if (!companyNameEl || !logoEl) return true;
+  if (Number(companyNameEl.x) > area.left + 130) return true;
+  if (Number(companyNameEl.y) < Number(logoEl.y) + Number(logoEl.height) - 8) return true;
+  if (companyDetailsEl && Number(companyDetailsEl.x) > area.left + 130) return true;
+  if (template.documentTypeId === 'serviceIntake' && template.elements.some((element) => element.libraryId === 'serviceDetails')) return true;
+  return template.elements.some((element) => Number(element.x) <= 60 && Number(element.width) >= 680);
+}
+
+function upgradeLegacyDesignerTemplate(template) {
+  if (!isLegacyDesignerTemplateLayout(template)) return template;
+  const fresh = createDefaultDocumentDesignerTemplate(template.documentTypeId, template.name);
+  return { ...fresh, id: template.id, name: template.name };
+}
+
+function createDefaultDocumentDesignerTemplate(documentTypeId, name = 'Domyślny') {
+  const margins = { ...DEFAULT_DESIGNER_MARGINS };
+  const elements = buildFactoryDocumentDesignerLayout(documentTypeId, margins)
+    .map((element) => clampDesignerElementToWorkArea(normalizeDocumentDesignerElement(element), margins));
+  return {
+    id: `layout-${documentTypeId}-${Date.now()}-${Math.round(Math.random() * 1000)}`,
+    name,
+    documentTypeId,
+    margins,
+    elements
+  };
+}
+
+function normalizeDocumentDesignerElement(element = {}) {
+  const base = createDocumentDesignerElement(element.libraryId || 'customText');
+  const sourceColumns = Array.isArray(element.columns) && element.columns.length ? element.columns : base.columns;
+  return {
+    ...base,
+    ...element,
+    x: Math.max(0, Number(element.x ?? base.x) || 0),
+    y: Math.max(0, Number(element.y ?? base.y) || 0),
+    width: Math.max(DOCUMENT_DESIGNER_MIN_SIZE.width, Number(element.width ?? base.width) || base.width),
+    height: Math.max(DOCUMENT_DESIGNER_MIN_SIZE.height, Number(element.height ?? base.height) || base.height),
+    fontSize: Math.max(8, Number(element.fontSize ?? base.fontSize) || base.fontSize),
+    fontWeight: Number(element.fontWeight ?? base.fontWeight) >= 700 ? 700 : Number(element.fontWeight ?? base.fontWeight) >= 600 ? 600 : Number(element.fontWeight ?? base.fontWeight) >= 500 ? 500 : 400,
+    align: ['left', 'center', 'right'].includes(String(element.align ?? base.align)) ? String(element.align ?? base.align) : 'left',
+    color: normalizeHexColor(element.color, base.color),
+    logoDataUrl: String(element.logoDataUrl ?? base.logoDataUrl ?? ''),
+    visible: element.visible !== false,
+    columns: sourceColumns
+      .map((column, index) => ({
+        key: String(column?.key ?? `col-${index}`),
+        label: String(column?.label ?? `Kolumna ${index + 1}`),
+        width: Math.max(50, Number(column?.width ?? 120) || 120),
+        visible: column?.visible !== false
+      }))
+      .filter((column) => column.key)
+  };
+}
+
+function normalizeDocumentDesignerTemplate(template = {}, fallbackTypeId = DOCUMENT_TEMPLATE_TYPES[0].id) {
+  const margins = {
+    top: Math.max(0, Math.min(40, Number(template.margins?.top ?? DEFAULT_DESIGNER_MARGINS.top) || DEFAULT_DESIGNER_MARGINS.top)),
+    right: Math.max(0, Math.min(40, Number(template.margins?.right ?? DEFAULT_DESIGNER_MARGINS.right) || DEFAULT_DESIGNER_MARGINS.right)),
+    bottom: Math.max(0, Math.min(40, Number(template.margins?.bottom ?? DEFAULT_DESIGNER_MARGINS.bottom) || DEFAULT_DESIGNER_MARGINS.bottom)),
+    left: Math.max(0, Math.min(40, Number(template.margins?.left ?? DEFAULT_DESIGNER_MARGINS.left) || DEFAULT_DESIGNER_MARGINS.left))
+  };
+  const normalizedElements = (Array.isArray(template.elements) ? template.elements : [])
+    .map((element) => normalizeDocumentDesignerElement(element))
+    .map((element) => clampDesignerElementToWorkArea(element, margins));
+  return {
+    id: String(template.id ?? `layout-${Date.now()}-${Math.round(Math.random() * 1000)}`),
+    name: String(template.name ?? 'Szablon').trim() || 'Szablon',
+    documentTypeId: String(template.documentTypeId ?? fallbackTypeId),
+    margins,
+    elements: normalizedElements
+  };
+}
+
+function getDefaultDocumentDesignerState() {
+  return {
+    templates: DOCUMENT_TEMPLATE_TYPES.map((type) => createDefaultDocumentDesignerTemplate(type.id, `Domyślny • ${type.label}`))
+  };
+}
+
+function normalizeDocumentDesignerState(value) {
+  const defaults = getDefaultDocumentDesignerState();
+  const incomingTemplates = Array.isArray(value?.templates) ? value.templates : defaults.templates;
+  const normalizedTemplates = incomingTemplates
+    .map((template) => normalizeDocumentDesignerTemplate(template, template?.documentTypeId))
+    .map((template) => upgradeLegacyDesignerTemplate(template))
+    .filter(Boolean);
+  DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
+    if (normalizedTemplates.some((template) => template.documentTypeId === type.id)) return;
+    normalizedTemplates.push(createDefaultDocumentDesignerTemplate(type.id, `Domyślny • ${type.label}`));
+  });
+  return { templates: normalizedTemplates };
+}
+
+function getDocumentDesignerState() {
+  return normalizeDocumentDesignerState(getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, getDefaultDocumentDesignerState()));
+}
+
+function saveDocumentDesignerState(state) {
+  const normalized = normalizeDocumentDesignerState(state);
+  localStorage.setItem(DOCUMENT_DESIGNER_STORAGE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function applyDesignerTokens(value, context = {}) {
+  return applyTemplateVariables(String(value ?? ''), context);
+}
+
+function renderDocumentDesignerElementHtml(element, context = {}, company = getCompanyProfile()) {
+  if (element.visible === false) return '';
+  const commonStyle = `position:absolute;left:${element.x}px;top:${element.y}px;width:${element.width}px;height:${element.height}px;overflow:hidden;`;
+  const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;`;
+  if (element.kind === 'logo') {
+    const logoSource = String(element.logoDataUrl ?? '').trim() || (company?.showLogoOnDocuments !== false ? company?.logoDataUrl : '');
+    const logo = logoSource
+      ? `<img src="${escapeHtml(logoSource)}" style="width:100%;height:100%;object-fit:contain;"/>`
+      : `<div style="width:100%;height:100%;display:grid;place-items:center;background:#eef2ff;border:1px dashed #94a3b8;color:#475569;font-size:12px;font-weight:700;">LOGO</div>`;
+    return `<div style="${commonStyle}">${logo}</div>`;
+  }
+  if (element.kind === 'line') {
+    const thickness = Math.max(1, element.height);
+    return `<div style="${commonStyle}height:${thickness}px;background:${escapeHtml(element.color)};"></div>`;
+  }
+  if (element.kind === 'signature') {
+    const label = applyDesignerTokens(element.text || 'Podpis', context);
+    return `<div style="${commonStyle}${textStyle}display:flex;flex-direction:column;justify-content:flex-end;"><div style="font-size:${Math.max(9, element.fontSize)}px;font-weight:${element.fontWeight};margin-bottom:30px;">${escapeHtml(label)}</div><div style="border-top:1px dotted #64748b;padding-top:4px;font-size:9px;color:#64748b;text-align:center;">miejscowość, data i podpis</div></div>`;
+  }
+  if (element.kind === 'table') {
+    const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
+    const columns = (element.columns ?? []).filter((column) => column.visible !== false);
+    const safeColumns = columns.length ? columns : [{ key: 'name', label: 'Nazwa', width: 180, visible: true }];
+    const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
+    const body = sourceRows.map((row) => `<tr>${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;">${escapeHtml(row[column.key] ?? '—')}</td>`).join('')}</tr>`).join('');
+    return `<div style="${commonStyle}border:1px solid #c0c8d4;background:#fff;overflow:hidden;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+  const text = applyDesignerTokens(element.text, context);
+  return `<div style="${commonStyle}${textStyle}">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
+}
+
+function buildDocumentDesignerHtml(template, context = {}, { preview = true, company = getCompanyProfile() } = {}) {
+  const normalized = normalizeDocumentDesignerTemplate(template, template?.documentTypeId);
+  const renderContext = { ...context, documentTypeId: normalized.documentTypeId };
+  const elementsHtml = normalized.elements.map((element) => renderDocumentDesignerElementHtml(element, renderContext, company)).join('');
+  const pageCss = `@page{size:A4;margin:${normalized.margins.top}mm ${normalized.margins.right}mm ${normalized.margins.bottom}mm ${normalized.margins.left}mm}`;
+  return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${escapeHtml(normalized.name)}</title><style>${createDocumentLayoutCss()}${pageCss}</style></head><body>${preview ? '' : '<div class="ag-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>'}<main class="ag-doc" style="padding:${normalized.margins.top}mm ${normalized.margins.right}mm ${normalized.margins.bottom}mm ${normalized.margins.left}mm;position:relative;"><div style="position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;height:${DOCUMENT_DESIGNER_PAGE.height}px;transform:scale(${210 * 3.7795275591 / DOCUMENT_DESIGNER_PAGE.width});transform-origin:top left;">${elementsHtml}</div></main></body></html>`;
+}
+
 function termsTextToArray(value) {
   const lines = String(value ?? '')
     .split('\n')
@@ -8445,9 +9027,7 @@ function addDaysToIsoDate(isoDate, days) {
 }
 
 function formatCompanyAddress(profile) {
-  const line1 = [profile.street, profile.buildingNumber, profile.apartmentNumber ? `/${profile.apartmentNumber}` : ''].filter(Boolean).join(' ');
-  const line2 = [profile.postalCode, profile.city].filter(Boolean).join(' ');
-  return [line1, line2, profile.country].filter(Boolean).join(', ');
+  return formatDocumentAddress(profile);
 }
 
 function formatCompanyTaxData(profile) {
@@ -9353,20 +9933,1025 @@ function InterfaceSettingsPanel({ children }) { return children; }
 function IntegrationsSettingsPanel({ children }) { return children; }
 function SystemSettingsPanel({ children }) { return children; }
 
-function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme }) {
+function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () => {}, onGeneratePdf = () => {}, fullscreen = false, onClose }) {
+  const initialSavedState = useMemo(getDocumentDesignerState, []);
+  const [savedDesignerState, setSavedDesignerState] = useState(initialSavedState);
+  const [designerState, setDesignerState] = useState(initialSavedState);
+  const [historyTick, setHistoryTick] = useState(0);
+  const [activeTypeId, setActiveTypeId] = useState(DOCUMENT_TEMPLATE_TYPES[0].id);
+  const [activeTemplateId, setActiveTemplateId] = useState('');
+  const [selectedElementId, setSelectedElementId] = useState('');
+  const [zoomMode, setZoomMode] = useState('fit');
+  const [fitScale, setFitScale] = useState(1);
+  const [dragState, setDragState] = useState(null);
+  const [columnDragKey, setColumnDragKey] = useState('');
+  const [showGrid, setShowGrid] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [showGuides, setShowGuides] = useState(true);
+  const [dragGuides, setDragGuides] = useState({ vertical: [], horizontal: [] });
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false);
+  const [propertiesCollapsed, setPropertiesCollapsed] = useState(false);
+  const [pendingTypeId, setPendingTypeId] = useState('');
+  const [tableColumnResize, setTableColumnResize] = useState(null);
+  const importInputRef = useRef(null);
+  const logoInputRef = useRef(null);
+  const viewportRef = useRef(null);
+  const pageRef = useRef(null);
+  const designerStateRef = useRef(initialSavedState);
+  const historyStoreRef = useRef({});
+  const propertyEditSnapshotRef = useRef(null);
+  const dragSnapshotRef = useRef(null);
+  const columnResizeSnapshotRef = useRef(null);
+  const propertyCommitTimerRef = useRef(null);
+  const HISTORY_LIMIT = 50;
+  const GRID_STEP = 12;
+  const SNAP_THRESHOLD = 6;
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  const activeTypeTemplates = useMemo(
+    () => designerState.templates.filter((template) => template.documentTypeId === activeTypeId),
+    [designerState.templates, activeTypeId]
+  );
+  const activeTemplate = useMemo(
+    () => activeTypeTemplates.find((template) => template.id === activeTemplateId) ?? activeTypeTemplates[0] ?? null,
+    [activeTypeTemplates, activeTemplateId]
+  );
+  const selectedElement = useMemo(
+    () => activeTemplate?.elements.find((element) => element.id === selectedElementId) ?? null,
+    [activeTemplate, selectedElementId]
+  );
+  const activeScale = zoomMode === 'fit' ? fitScale : Number(zoomMode) || 1;
+  const isFitZoom = zoomMode === 'fit';
+  const normalizeAndClampElement = (element, patch = {}, margins = activeTemplate?.margins) => clampDesignerElementToWorkArea(
+    normalizeDocumentDesignerElement({ ...element, ...patch }),
+    margins ?? DEFAULT_DESIGNER_MARGINS
+  );
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(designerState) !== JSON.stringify(savedDesignerState),
+    [designerState, savedDesignerState]
+  );
+  const hasUnsavedCurrentTemplateChanges = useMemo(() => {
+    if (!activeTemplate) return false;
+    const savedTemplate = savedDesignerState.templates.find((template) => template.id === activeTemplate.id);
+    if (!savedTemplate) return true;
+    return JSON.stringify(activeTemplate) !== JSON.stringify(savedTemplate);
+  }, [activeTemplate, savedDesignerState]);
+  const designerPreviewContext = useMemo(() => {
+    const typeDef = getDocumentTemplateTypeById(activeTypeId);
+    const base = {
+      ...previewContext,
+      documentTypeId: activeTypeId,
+      terms: typeDef.defaultTemplate?.termsText ?? previewContext.terms ?? '',
+      documentTitle: typeDef.defaultTemplate?.title ?? typeDef.label
+    };
+    if (activeTypeId === 'serviceIntake') {
+      base.equipmentRows = buildServiceIntakeTableRows(base);
+    }
+    return base;
+  }, [previewContext, activeTypeId]);
+
+  useEffect(() => {
+    designerStateRef.current = designerState;
+  }, [designerState]);
+
+  useEffect(() => () => {
+    if (propertyCommitTimerRef.current) window.clearTimeout(propertyCommitTimerRef.current);
+  }, []);
+
+  const getHistoryKey = (typeId = activeTypeId, templateId = activeTemplateId) => `${typeId}::${templateId || 'none'}`;
+
+  const bumpHistoryUi = () => setHistoryTick((tick) => tick + 1);
+
+  const getHistoryStacks = (key = getHistoryKey()) => {
+    if (!historyStoreRef.current[key]) {
+      historyStoreRef.current[key] = { past: [], future: [] };
+    }
+    return historyStoreRef.current[key];
+  };
+
+  const pushHistorySnapshot = (snapshot, key = getHistoryKey()) => {
+    if (!snapshot) return;
+    const stacks = getHistoryStacks(key);
+    stacks.past = [...stacks.past.slice(-(HISTORY_LIMIT - 1)), snapshot];
+    stacks.future = [];
+    bumpHistoryUi();
+  };
+
+  const clearAllHistory = () => {
+    historyStoreRef.current = {};
+    propertyEditSnapshotRef.current = null;
+    dragSnapshotRef.current = null;
+    columnResizeSnapshotRef.current = null;
+    if (propertyCommitTimerRef.current) {
+      window.clearTimeout(propertyCommitTimerRef.current);
+      propertyCommitTimerRef.current = null;
+    }
+    bumpHistoryUi();
+  };
+
+  const beginPropertyEditSession = () => {
+    if (!propertyEditSnapshotRef.current) {
+      propertyEditSnapshotRef.current = designerStateRef.current;
+    }
+  };
+
+  const commitPropertyEditSession = () => {
+    if (propertyCommitTimerRef.current) {
+      window.clearTimeout(propertyCommitTimerRef.current);
+      propertyCommitTimerRef.current = null;
+    }
+    const snapshot = propertyEditSnapshotRef.current;
+    propertyEditSnapshotRef.current = null;
+    if (!snapshot) return;
+    if (JSON.stringify(snapshot) !== JSON.stringify(designerStateRef.current)) {
+      pushHistorySnapshot(snapshot);
+    }
+  };
+
+  const schedulePropertyEditCommit = () => {
+    if (propertyCommitTimerRef.current) window.clearTimeout(propertyCommitTimerRef.current);
+    propertyCommitTimerRef.current = window.setTimeout(() => commitPropertyEditSession(), 450);
+  };
+
+  const canUndo = useMemo(() => getHistoryStacks().past.length > 0, [activeTypeId, activeTemplateId, historyTick]);
+  const canRedo = useMemo(() => getHistoryStacks().future.length > 0, [activeTypeId, activeTemplateId, historyTick]);
+
+  useEffect(() => {
+    if (activeTemplateId && activeTypeTemplates.some((template) => template.id === activeTemplateId)) return;
+    setActiveTemplateId(activeTypeTemplates[0]?.id ?? '');
+  }, [activeTypeTemplates, activeTemplateId]);
+
+  useEffect(() => {
+    if (selectedElementId && activeTemplate?.elements.some((element) => element.id === selectedElementId)) return;
+    setSelectedElementId('');
+  }, [activeTemplate, selectedElementId]);
+
+  useEffect(() => {
+    const computeFit = () => {
+      const node = viewportRef.current;
+      if (!node) return;
+      const padding = 48;
+      const availableWidth = Math.max(240, node.clientWidth - padding);
+      const availableHeight = Math.max(240, node.clientHeight - padding);
+      const scale = Math.min(
+        availableWidth / DOCUMENT_DESIGNER_PAGE.width,
+        availableHeight / DOCUMENT_DESIGNER_PAGE.height
+      );
+      setFitScale(Math.max(0.15, scale));
+    };
+    computeFit();
+    const observer = new ResizeObserver(computeFit);
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    window.addEventListener('resize', computeFit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', computeFit);
+    };
+  }, [libraryCollapsed, propertiesCollapsed, fullscreen]);
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return undefined;
+    const onWheel = (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? -0.05 : 0.05;
+      setZoomMode(String(Math.max(0.15, Math.min(2, activeScale + delta)).toFixed(2)));
+    };
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, [activeScale]);
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node || isFitZoom) return;
+    node.scrollTop = 0;
+    node.scrollLeft = 0;
+  }, [zoomMode, activeScale, isFitZoom]);
+
+  useEffect(() => {
+    const beforeUnload = (event) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const applyDesignerState = (updater, { trackHistory = true } = {}) => {
+    const current = designerStateRef.current;
+    const nextRaw = typeof updater === 'function' ? updater(current) : updater;
+    const next = normalizeDocumentDesignerState(nextRaw);
+    if (trackHistory && JSON.stringify(next) !== JSON.stringify(current)) {
+      pushHistorySnapshot(current);
+    }
+    designerStateRef.current = next;
+    setDesignerState(next);
+    return next;
+  };
+
+  const undo = () => {
+    commitPropertyEditSession();
+    const key = getHistoryKey();
+    const stacks = getHistoryStacks(key);
+    if (!stacks.past.length) return;
+    const previous = stacks.past[stacks.past.length - 1];
+    stacks.past = stacks.past.slice(0, -1);
+    stacks.future = [designerStateRef.current, ...stacks.future.slice(0, HISTORY_LIMIT - 1)];
+    designerStateRef.current = previous;
+    setDesignerState(previous);
+    bumpHistoryUi();
+  };
+
+  const redo = () => {
+    commitPropertyEditSession();
+    const key = getHistoryKey();
+    const stacks = getHistoryStacks(key);
+    if (!stacks.future.length) return;
+    const [next, ...rest] = stacks.future;
+    stacks.future = rest;
+    stacks.past = [...stacks.past.slice(-(HISTORY_LIMIT - 1)), designerStateRef.current];
+    designerStateRef.current = next;
+    setDesignerState(next);
+    bumpHistoryUi();
+  };
+
+  const updateActiveTemplate = (updater, options = {}) => {
+    if (!activeTemplate) return;
+    applyDesignerState((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== activeTemplate.id) return template;
+        const nextTemplate = typeof updater === 'function' ? updater(template) : updater;
+        return normalizeDocumentDesignerTemplate(nextTemplate, activeTypeId);
+      })
+    }), options);
+  };
+
+  const saveDraft = () => {
+    commitPropertyEditSession();
+    const saved = saveDocumentDesignerState(designerStateRef.current);
+    setSavedDesignerState(saved);
+    designerStateRef.current = saved;
+    setDesignerState(saved);
+    onNotice('Szablon projektanta zapisany.');
+  };
+
+  const discardDraft = () => {
+    commitPropertyEditSession();
+    designerStateRef.current = savedDesignerState;
+    setDesignerState(savedDesignerState);
+    clearAllHistory();
+    onNotice('Odrzucono niezapisane zmiany.');
+  };
+
+  const createTemplate = () => {
+    const nextTemplate = createDefaultDocumentDesignerTemplate(activeTypeId, `Nowy szablon ${new Date().toLocaleTimeString('pl-PL')}`);
+    applyDesignerState((current) => ({ ...current, templates: [...current.templates, nextTemplate] }));
+    setActiveTemplateId(nextTemplate.id);
+  };
+
+  const duplicateTemplate = () => {
+    if (!activeTemplate) return;
+    const clone = normalizeDocumentDesignerTemplate({
+      ...activeTemplate,
+      id: `${activeTemplate.id}-copy-${Date.now()}`,
+      name: `${activeTemplate.name} (kopia)`
+    }, activeTypeId);
+    applyDesignerState((current) => ({ ...current, templates: [...current.templates, clone] }));
+    setActiveTemplateId(clone.id);
+  };
+
+  const deleteTemplate = () => {
+    if (!activeTemplate) return;
+    if (!window.confirm(`Usunąć szablon „${activeTemplate.name}”?`)) return;
+    applyDesignerState((current) => {
+      const remaining = current.templates.filter((template) => template.id !== activeTemplate.id);
+      return { ...current, templates: remaining.length ? remaining : getDefaultDocumentDesignerState().templates };
+    });
+    setActiveTemplateId('');
+  };
+
+  const resetTemplateLayout = () => {
+    if (!activeTemplate) return;
+    const reset = createDefaultDocumentDesignerTemplate(activeTypeId, activeTemplate.name);
+    updateActiveTemplate((template) => ({ ...template, elements: reset.elements, margins: reset.margins }));
+    setSelectedElementId('');
+  };
+
+  const exportTemplates = () => {
+    downloadTextFile(`fixer-document-designer-${getLocalIsoDate()}.json`, JSON.stringify(designerState, null, 2), 'application/json;charset=utf-8');
+    onNotice('Wyeksportowano szablony projektanta.');
+  };
+
+  const importTemplates = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(String(reader.result ?? '{}'));
+        const normalized = normalizeDocumentDesignerState(payload);
+        applyDesignerState(normalized);
+        setActiveTemplateId('');
+        onNotice('Zaimportowano szablony projektanta.');
+      } catch (error) {
+        console.error('Document designer import failed', error);
+        onNotice('Nie udało się zaimportować szablonów projektanta.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const addElementAt = (libraryId, x = null, y = null) => {
+    if (!activeTemplate) return;
+    commitPropertyEditSession();
+    let nextElement = createDocumentDesignerElement(libraryId, activeTemplate.elements.length);
+    if (Number.isFinite(x)) nextElement.x = x;
+    if (Number.isFinite(y)) nextElement.y = y;
+    nextElement = normalizeAndClampElement(nextElement);
+    updateActiveTemplate((template) => ({ ...template, elements: [...template.elements, nextElement] }));
+    setSelectedElementId(nextElement.id);
+  };
+
+  const updateSelectedElement = (patch, { history = 'immediate' } = {}) => {
+    if (!selectedElement || !activeTemplate) return;
+    if (history === 'silent') {
+      updateActiveTemplate((template) => ({
+        ...template,
+        elements: template.elements.map((element) => element.id === selectedElement.id ? normalizeAndClampElement(element, patch) : element)
+      }), { trackHistory: false });
+      return;
+    }
+    if (history === 'deferred') {
+      beginPropertyEditSession();
+      updateActiveTemplate((template) => ({
+        ...template,
+        elements: template.elements.map((element) => element.id === selectedElement.id ? normalizeAndClampElement(element, patch) : element)
+      }), { trackHistory: false });
+      schedulePropertyEditCommit();
+      return;
+    }
+    updateActiveTemplate((template) => ({
+      ...template,
+      elements: template.elements.map((element) => element.id === selectedElement.id ? normalizeAndClampElement(element, patch) : element)
+    }), { trackHistory: history === 'immediate' });
+  };
+
+  const updateTemplateMargins = (patch, { history = 'deferred' } = {}) => {
+    if (!activeTemplate) return;
+    const applyMargins = (template) => {
+      const nextMargins = { ...template.margins, ...patch };
+      return {
+        ...template,
+        margins: nextMargins,
+        elements: template.elements.map((element) => clampDesignerElementToWorkArea(element, nextMargins))
+      };
+    };
+    if (history === 'deferred') {
+      beginPropertyEditSession();
+      updateActiveTemplate(applyMargins, { trackHistory: false });
+      schedulePropertyEditCommit();
+      return;
+    }
+    updateActiveTemplate(applyMargins, { trackHistory: history === 'immediate' });
+  };
+
+  const updateSelectedElementGeometry = (patch) => {
+    if (!selectedElement || !activeTemplate) return;
+    beginPropertyEditSession();
+    updateActiveTemplate((template) => ({
+      ...template,
+      elements: template.elements.map((element) => element.id === selectedElement.id ? normalizeAndClampElement(element, patch) : element)
+    }), { trackHistory: false });
+    schedulePropertyEditCommit();
+  };
+
+  const duplicateElement = () => {
+    if (!selectedElement || !activeTemplate) return;
+    const clone = normalizeAndClampElement(selectedElement, {
+      id: `${selectedElement.id}-copy-${Date.now()}`,
+      x: selectedElement.x + 14,
+      y: selectedElement.y + 14
+    });
+    updateActiveTemplate((template) => ({ ...template, elements: [...template.elements, clone] }));
+    setSelectedElementId(clone.id);
+  };
+
+  const deleteElement = () => {
+    if (!selectedElement || !activeTemplate) return;
+    commitPropertyEditSession();
+    updateActiveTemplate((template) => ({ ...template, elements: template.elements.filter((element) => element.id !== selectedElement.id) }));
+    setSelectedElementId('');
+  };
+
+  useEffect(() => {
+    const isEditableTarget = (target) => {
+      if (!(target instanceof Element)) return false;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+      return Boolean(target.closest('[contenteditable="true"]'));
+    };
+    const onKeyDown = (event) => {
+      const modKey = event.metaKey || event.ctrlKey;
+      if (modKey && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+        if (isEditableTarget(event.target)) return;
+        event.preventDefault();
+        undo();
+        return;
+      }
+      if ((modKey && event.shiftKey && event.key.toLowerCase() === 'z') || (event.ctrlKey && event.key.toLowerCase() === 'y')) {
+        if (isEditableTarget(event.target)) return;
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+      if (isEditableTarget(event.target)) return;
+      if (!selectedElementId) return;
+      event.preventDefault();
+      deleteElement();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedElementId, deleteElement]);
+
+  const applyTypeSwitch = (nextTypeId) => {
+    commitPropertyEditSession();
+    setActiveTypeId(nextTypeId);
+    setActiveTemplateId('');
+    setSelectedElementId('');
+    setPendingTypeId('');
+  };
+
+  const discardCurrentTemplateChanges = () => {
+    if (!activeTemplate) return;
+    const savedTemplate = savedDesignerState.templates.find((template) => template.id === activeTemplate.id);
+    if (!savedTemplate) return;
+    applyDesignerState((current) => ({
+      ...current,
+      templates: current.templates.map((template) => template.id === activeTemplate.id ? savedTemplate : template)
+    }), { trackHistory: false });
+  };
+
+  const requestTypeSwitch = (nextTypeId) => {
+    if (nextTypeId === activeTypeId) return;
+    if (hasUnsavedCurrentTemplateChanges) {
+      setPendingTypeId(nextTypeId);
+      return;
+    }
+    applyTypeSwitch(nextTypeId);
+  };
+
+  const alignSelectedElement = (direction) => {
+    if (!selectedElement || !activeTemplate) return;
+    const area = getDesignerWorkArea(activeTemplate.margins);
+    if (direction === 'left') updateSelectedElement({ x: area.left });
+    if (direction === 'center') updateSelectedElement({ x: area.left + (area.width - selectedElement.width) / 2 });
+    if (direction === 'right') updateSelectedElement({ x: area.right - selectedElement.width });
+  };
+
+  const getSnapForAxis = (targetLines, candidateLines) => {
+    let best = null;
+    candidateLines.forEach((line) => {
+      targetLines.forEach((targetLine) => {
+        const delta = targetLine.value - line.value;
+        if (Math.abs(delta) > SNAP_THRESHOLD) return;
+        if (!best || Math.abs(delta) < Math.abs(best.delta)) {
+          best = { delta, target: targetLine.value };
+        }
+      });
+    });
+    return best;
+  };
+
+  const applySmartSnap = (element, x, y) => {
+    if (!activeTemplate || !showGuides) return { x, y, guides: { vertical: [], horizontal: [] } };
+    const otherElements = activeTemplate.elements.filter((item) => item.id !== element.id && item.visible !== false);
+    const verticalTargets = otherElements.flatMap((item) => [item.x, item.x + item.width / 2, item.x + item.width]).map((value) => ({ value }));
+    const horizontalTargets = otherElements.flatMap((item) => [item.y, item.y + item.height / 2, item.y + item.height]).map((value) => ({ value }));
+
+    const verticalCandidateLines = [
+      { key: 'left', value: x, offset: 0 },
+      { key: 'center', value: x + element.width / 2, offset: element.width / 2 },
+      { key: 'right', value: x + element.width, offset: element.width }
+    ];
+    const horizontalCandidateLines = [
+      { key: 'top', value: y, offset: 0 },
+      { key: 'center', value: y + element.height / 2, offset: element.height / 2 },
+      { key: 'bottom', value: y + element.height, offset: element.height }
+    ];
+
+    const bestX = getSnapForAxis(verticalTargets, verticalCandidateLines);
+    const bestY = getSnapForAxis(horizontalTargets, horizontalCandidateLines);
+    const resolvedX = bestX ? x + bestX.delta : x;
+    const resolvedY = bestY ? y + bestY.delta : y;
+    return {
+      x: resolvedX,
+      y: resolvedY,
+      guides: {
+        vertical: bestX ? [bestX.target] : [],
+        horizontal: bestY ? [bestY.target] : []
+      }
+    };
+  };
+
+  const startDrag = (event, element, mode = 'move') => {
+    event.preventDefault();
+    event.stopPropagation();
+    commitPropertyEditSession();
+    dragSnapshotRef.current = designerStateRef.current;
+    setSelectedElementId(element.id);
+    setDragState({
+      id: element.id,
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: element.x,
+      originY: element.y,
+      originWidth: element.width,
+      originHeight: element.height
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState || !activeTemplate) return undefined;
+    const onMove = (event) => {
+      const dx = (event.clientX - dragState.startX) / activeScale;
+      const dy = (event.clientY - dragState.startY) / activeScale;
+      const area = getDesignerWorkArea(activeTemplate.margins);
+      if (dragState.mode.startsWith('resize')) {
+        const mode = dragState.mode.replace('resize-', '');
+        const isWest = mode.includes('w');
+        const isEast = mode.includes('e');
+        const isNorth = mode.includes('n');
+        const isSouth = mode.includes('s');
+        const anchorLeft = dragState.originX;
+        const anchorTop = dragState.originY;
+        const anchorRight = dragState.originX + dragState.originWidth;
+        const anchorBottom = dragState.originY + dragState.originHeight;
+
+        let nextLeft = anchorLeft;
+        let nextRight = anchorRight;
+        let nextTop = anchorTop;
+        let nextBottom = anchorBottom;
+
+        if (isWest) nextLeft = clamp(anchorLeft + dx, area.left, anchorRight - DOCUMENT_DESIGNER_MIN_SIZE.width);
+        if (isEast) nextRight = clamp(anchorRight + dx, anchorLeft + DOCUMENT_DESIGNER_MIN_SIZE.width, area.right);
+        if (isNorth) nextTop = clamp(anchorTop + dy, area.top, anchorBottom - DOCUMENT_DESIGNER_MIN_SIZE.height);
+        if (isSouth) nextBottom = clamp(anchorBottom + dy, anchorTop + DOCUMENT_DESIGNER_MIN_SIZE.height, area.bottom);
+
+        updateActiveTemplate((template) => ({
+          ...template,
+          elements: template.elements.map((element) => element.id === dragState.id
+            ? clampDesignerElementToWorkArea(normalizeDocumentDesignerElement({
+              ...element,
+              x: nextLeft,
+              y: nextTop,
+              width: nextRight - nextLeft,
+              height: nextBottom - nextTop
+            }), template.margins)
+            : element)
+        }), { trackHistory: false });
+        return;
+      }
+      const target = activeTemplate.elements.find((element) => element.id === dragState.id);
+      if (!target) return;
+      const nextX = dragState.originX + dx;
+      const nextY = dragState.originY + dy;
+      const snappedX = snapToGrid ? Math.round(nextX / GRID_STEP) * GRID_STEP : nextX;
+      const snappedY = snapToGrid ? Math.round(nextY / GRID_STEP) * GRID_STEP : nextY;
+      const snappedToElements = applySmartSnap(target, snappedX, snappedY);
+      updateActiveTemplate((template) => ({
+        ...template,
+        elements: template.elements.map((element) => element.id === dragState.id
+          ? clampDesignerElementToWorkArea(normalizeDocumentDesignerElement({
+            ...element,
+            x: Math.min(area.right - element.width, Math.max(area.left, snappedToElements.x)),
+            y: Math.min(area.bottom - element.height, Math.max(area.top, snappedToElements.y))
+          }), template.margins)
+          : element)
+      }), { trackHistory: false });
+      setDragGuides(snappedToElements.guides);
+    };
+    const onUp = () => {
+      const snapshot = dragSnapshotRef.current;
+      dragSnapshotRef.current = null;
+      if (snapshot && JSON.stringify(snapshot) !== JSON.stringify(designerStateRef.current)) {
+        pushHistorySnapshot(snapshot);
+      }
+      setDragState(null);
+      setDragGuides({ vertical: [], horizontal: [] });
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragState, activeScale, activeTemplate, snapToGrid, showGuides]);
+
+  useEffect(() => {
+    if (!tableColumnResize || !selectedElement || selectedElement.kind !== 'table') return undefined;
+    const onMove = (event) => {
+      const delta = (event.clientX - tableColumnResize.startX) / activeScale;
+      const startColumns = tableColumnResize.startColumns;
+      const index = startColumns.findIndex((column) => column.key === tableColumnResize.columnKey);
+      if (index < 0) return;
+      const minWidth = 50;
+      const maxWidth = 560;
+      const nextWidth = clamp(startColumns[index].width + delta, minWidth, maxWidth);
+      const nextColumns = startColumns.map((column, columnIndex) => (columnIndex === index ? { ...column, width: nextWidth } : column));
+      updateSelectedElement({ columns: nextColumns }, { history: 'silent' });
+    };
+    const onUp = () => {
+      const snapshot = columnResizeSnapshotRef.current;
+      columnResizeSnapshotRef.current = null;
+      if (snapshot && JSON.stringify(snapshot) !== JSON.stringify(designerStateRef.current)) {
+        pushHistorySnapshot(snapshot);
+      }
+      setTableColumnResize(null);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [tableColumnResize, selectedElement, activeScale, updateSelectedElement]);
+
+  const handleCanvasDragOver = (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleCanvasDrop = (event) => {
+    event.preventDefault();
+    const libraryId = event.dataTransfer.getData('text/fixer-designer-item');
+    if (!libraryId || !pageRef.current) return;
+    const rect = pageRef.current.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / activeScale;
+    const y = (event.clientY - rect.top) / activeScale;
+    addElementAt(libraryId, x, y);
+  };
+
+  const replaceLogoForSelectedElement = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !selectedElement || selectedElement.kind !== 'logo') return;
+    if (!file.type.startsWith('image/')) {
+      onNotice('Wybierz plik obrazu dla logo.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => updateSelectedElement({ logoDataUrl: String(reader.result ?? '') });
+    reader.readAsDataURL(file);
+  };
+
+  const moveColumn = (key, direction) => {
+    if (!selectedElement || selectedElement.kind !== 'table') return;
+    const next = [...(selectedElement.columns ?? [])];
+    const index = next.findIndex((column) => column.key === key);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= next.length) return;
+    const [moved] = next.splice(index, 1);
+    next.splice(target, 0, moved);
+    updateSelectedElement({ columns: next });
+  };
+
+  const moveColumnByDrop = (sourceKey, targetKey) => {
+    if (!selectedElement || selectedElement.kind !== 'table' || !sourceKey || !targetKey || sourceKey === targetKey) return;
+    const next = [...(selectedElement.columns ?? [])];
+    const sourceIndex = next.findIndex((column) => column.key === sourceKey);
+    const targetIndex = next.findIndex((column) => column.key === targetKey);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const [moved] = next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    updateSelectedElement({ columns: next });
+  };
+
+  const pageSelected = !selectedElement;
+
+  return <div className={`document-designer-workspace ${fullscreen ? 'document-designer-workspace--fullscreen' : ''}`}>
+    <div className="document-designer-top-toolbar">
+      <div className="document-designer-toolbar-actions">
+        <button type="button" className="document-designer-panel-toggle" onClick={() => setLibraryCollapsed((current) => !current)} title={libraryCollapsed ? 'Pokaż bibliotekę' : 'Ukryj bibliotekę'}>
+          <PanelLeft size={16} />
+        </button>
+        <AppButton variant="primary" size="sm" onClick={saveDraft} disabled={!hasUnsavedChanges}><Save size={14} />Zapisz</AppButton>
+        <AppButton variant="secondary" size="sm" onClick={undo} disabled={!canUndo}><RotateCcw size={14} />Cofnij</AppButton>
+        <AppButton variant="secondary" size="sm" onClick={redo} disabled={!canRedo}><History size={14} />Ponów</AppButton>
+        <span className="document-designer-toolbar-divider" />
+        <AppButton variant="secondary" size="sm" onClick={() => setZoomMode(String(Math.min(2, activeScale + 0.1).toFixed(2)))}><Plus size={14} /></AppButton>
+        <AppButton variant="secondary" size="sm" onClick={() => setZoomMode(String(Math.max(0.15, activeScale - 0.1).toFixed(2)))}><Minus size={14} /></AppButton>
+        <AppButton variant={zoomMode === 'fit' ? 'primary' : 'secondary'} size="sm" onClick={() => setZoomMode('fit')}>Dopasuj</AppButton>
+        <span className="document-designer-zoom-value">{Math.round(activeScale * 100)}%</span>
+        <span className="document-designer-toolbar-divider" />
+        <AppButton variant={showGrid ? 'primary' : 'secondary'} size="sm" onClick={() => setShowGrid((current) => !current)}><Grid3X3 size={14} />Siatka</AppButton>
+        <label className="document-designer-toolbar-check"><input type="checkbox" checked={snapToGrid} onChange={(event) => setSnapToGrid(event.target.checked)} />Snap</label>
+        <label className="document-designer-toolbar-check"><input type="checkbox" checked={showGuides} onChange={(event) => setShowGuides(event.target.checked)} />Prowadnice</label>
+        <AppButton variant="primary" size="sm" onClick={() => {
+          printHtmlInIframe(buildDocumentDesignerHtml(activeTemplate, designerPreviewContext, { preview: false, company: companyProfile }));
+          onGeneratePdf({ type: activeTypeId, number: designerPreviewContext.documentNumber || 'DOC/DESIGNER', relation: 'Projektant dokumentów' });
+        }} disabled={!activeTemplate}><FileText size={14} />PDF</AppButton>
+        <AppButton variant="secondary" size="sm" onClick={resetTemplateLayout} disabled={!activeTemplate}><RotateCcw size={14} />Domyślny układ</AppButton>
+        {hasUnsavedChanges && <span className="document-designer-unsaved-dot" title="Niezapisane zmiany">●</span>}
+        {onClose && <AppButton variant="secondary" size="sm" onClick={onClose}>Zamknij</AppButton>}
+      </div>
+      <div className="document-designer-toolbar-right">
+        <label className="firm-field document-designer-toolbar-field">
+          Typ dokumentu
+          <AppSelect value={activeTypeId} onChange={(event) => requestTypeSwitch(event.target.value)}>
+            {DOCUMENT_TEMPLATE_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+          </AppSelect>
+        </label>
+        <label className="firm-field document-designer-toolbar-field">
+          Szablon
+          <AppSelect value={activeTemplate?.id ?? ''} onChange={(event) => { commitPropertyEditSession(); setActiveTemplateId(event.target.value); }}>
+            {activeTypeTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+          </AppSelect>
+        </label>
+        <button type="button" className="document-designer-panel-toggle" onClick={() => setPropertiesCollapsed((current) => !current)} title={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'}>
+          <SlidersHorizontal size={16} />
+        </button>
+      </div>
+    </div>
+
+    <div className={`document-designer-layout ${libraryCollapsed ? 'library-collapsed' : ''} ${propertiesCollapsed ? 'properties-collapsed' : ''}`}>
+      {!libraryCollapsed && <aside className="document-designer-library">
+        <div className="document-designer-panel-head">
+          <strong>Biblioteka elementów</strong>
+          <button type="button" className="document-designer-panel-close" onClick={() => setLibraryCollapsed(true)} aria-label="Ukryj bibliotekę"><ChevronLeft size={16} /></button>
+        </div>
+        <div className="document-designer-library-list">
+          {DOCUMENT_DESIGNER_LIBRARY.map((item) => <button
+            key={item.id}
+            type="button"
+            draggable
+            className="document-designer-library-tile"
+            onDragStart={(event) => event.dataTransfer.setData('text/fixer-designer-item', item.id)}
+            onDoubleClick={() => addElementAt(item.id)}
+          >
+            <strong>{item.label}</strong>
+            <small>{item.hint || 'Przeciągnij na dokument A4'}</small>
+          </button>)}
+        </div>
+      </aside>}
+
+      <div className="document-designer-stage">
+        {libraryCollapsed && <button type="button" className="document-designer-edge-toggle left" onClick={() => setLibraryCollapsed(false)} title="Pokaż bibliotekę"><PanelLeft size={16} /></button>}
+        {propertiesCollapsed && <button type="button" className="document-designer-edge-toggle right" onClick={() => setPropertiesCollapsed(false)} title="Pokaż właściwości"><SlidersHorizontal size={16} /></button>}
+
+        {hasUnsavedChanges && <div className="document-designer-unsaved-bar">
+          <strong>Niezapisane zmiany</strong>
+          <div className="settings-action-row">
+            <AppButton variant="primary" size="sm" onClick={saveDraft}><Save size={14} />Zapisz</AppButton>
+            <AppButton variant="secondary" size="sm" onClick={discardDraft}>Odrzuć</AppButton>
+          </div>
+        </div>}
+
+        <div ref={viewportRef} className={`document-designer-canvas ${isFitZoom ? 'document-designer-canvas--fit' : 'document-designer-canvas--manual'}`} onDragOver={handleCanvasDragOver} onDrop={handleCanvasDrop}>
+          <div className="document-designer-canvas-center">
+            {activeTemplate && <div className="document-designer-page-wrap" style={{ width: `${DOCUMENT_DESIGNER_PAGE.width * activeScale}px`, height: `${DOCUMENT_DESIGNER_PAGE.height * activeScale}px` }}>
+            <div
+              ref={pageRef}
+              className={`document-designer-page ${showGrid ? 'with-grid' : ''}`}
+              style={{ transform: `scale(${activeScale})`, transformOrigin: 'top left' }}
+              onMouseDown={() => setSelectedElementId('')}
+            >
+              <div
+                className="document-designer-margins-guide"
+                style={{
+                  left: `${activeTemplate.margins.left * DESIGNER_MM_TO_PX}px`,
+                  top: `${activeTemplate.margins.top * DESIGNER_MM_TO_PX}px`,
+                  right: `${activeTemplate.margins.right * DESIGNER_MM_TO_PX}px`,
+                  bottom: `${activeTemplate.margins.bottom * DESIGNER_MM_TO_PX}px`
+                }}
+              />
+              {showGuides && dragGuides.vertical.map((value) => <div key={`v-${value}`} className="document-designer-guide-line vertical" style={{ left: `${value}px` }} />)}
+              {showGuides && dragGuides.horizontal.map((value) => <div key={`h-${value}`} className="document-designer-guide-line horizontal" style={{ top: `${value}px` }} />)}
+              {activeTemplate.elements.map((element) => {
+                const visibleColumns = (element.columns ?? []).filter((column) => column.visible !== false);
+                const safeColumns = visibleColumns.length ? visibleColumns : [{ key: 'name', label: 'Kolumna', width: 160 }];
+                const selectedTable = selectedElementId === element.id && element.kind === 'table';
+                return <div
+                  key={element.id}
+                  className={`document-designer-element ${selectedElementId === element.id ? 'selected' : ''}`}
+                  style={{
+                    left: `${element.x}px`,
+                    top: `${element.y}px`,
+                    width: `${element.width}px`,
+                    height: `${element.height}px`,
+                    textAlign: element.align,
+                    color: element.color,
+                    fontSize: `${element.fontSize}px`,
+                    fontWeight: element.fontWeight,
+                    display: element.visible === false ? 'none' : 'block'
+                  }}
+                  onMouseDown={(event) => startDrag(event, element, 'move')}
+                >
+                  {element.kind === 'logo' && <div className="document-designer-logo-preview">{(element.logoDataUrl || companyProfile.logoDataUrl) ? <img src={element.logoDataUrl || companyProfile.logoDataUrl} alt="Logo" /> : 'Logo'}</div>}
+                  {element.kind === 'table' && <div className="document-designer-table-preview">
+                    <div className="document-designer-table-head">
+                      {safeColumns.map((column) => <div
+                        key={column.key}
+                        className="document-designer-table-col"
+                        style={{ width: `${column.width}px` }}
+                      >
+                        <span>{column.label}</span>
+                        {selectedTable && <button
+                          type="button"
+                          className="document-designer-col-resize"
+                          onMouseDown={(event) => {
+                            event.stopPropagation();
+                            commitPropertyEditSession();
+                            columnResizeSnapshotRef.current = designerStateRef.current;
+                            setTableColumnResize({
+                              columnKey: column.key,
+                              startX: event.clientX,
+                              startColumns: (element.columns ?? []).map((item) => ({ ...item }))
+                            });
+                          }}
+                          aria-label={`Zmień szerokość kolumny ${column.label}`}
+                        />}
+                      </div>)}
+                    </div>
+                    <div className="document-designer-table-body">
+                      {(() => {
+                        const previewRows = resolveDocumentTableRows(designerPreviewContext, activeTypeId);
+                        const previewRow = previewRows[0];
+                        if (!previewRow) return <span>Podgląd wierszy tabeli</span>;
+                        return <div className="document-designer-table-preview-row">{safeColumns.map((column) => <span key={column.key} style={{ width: `${column.width}px`, flex: `0 0 ${column.width}px` }}>{previewRow[column.key] ?? '—'}</span>)}</div>;
+                      })()}
+                    </div>
+                  </div>}
+                  {element.kind === 'line' && <div className="document-designer-line-preview" style={{ background: element.color, height: `${Math.max(1, element.height)}px` }} />}
+                  {element.kind === 'signature' && <div className="document-designer-signature-preview"><strong>{applyDesignerTokens(element.text, designerPreviewContext)}</strong><em>podpis</em></div>}
+                  {!['logo', 'table', 'line', 'signature'].includes(element.kind) && <div className="document-designer-text-preview">{applyDesignerTokens(element.text, designerPreviewContext)}</div>}
+                  {selectedElementId === element.id && <>
+                    <button type="button" className="document-designer-resize-handle top-left" onMouseDown={(event) => startDrag(event, element, 'resize-nw')} aria-label="Zmień rozmiar z lewego górnego rogu" />
+                    <button type="button" className="document-designer-resize-handle top-right" onMouseDown={(event) => startDrag(event, element, 'resize-ne')} aria-label="Zmień rozmiar z prawego górnego rogu" />
+                    <button type="button" className="document-designer-resize-handle bottom-left" onMouseDown={(event) => startDrag(event, element, 'resize-sw')} aria-label="Zmień rozmiar z lewego dolnego rogu" />
+                    <button type="button" className="document-designer-resize-handle bottom-right" onMouseDown={(event) => startDrag(event, element, 'resize-se')} aria-label="Zmień rozmiar z prawego dolnego rogu" />
+                  </>}
+                </div>;
+              })}
+            </div>
+            </div>}
+          </div>
+        </div>
+      </div>
+
+      {!propertiesCollapsed && <aside className="document-designer-properties">
+        <div className="document-designer-panel-head">
+          <strong>{pageSelected ? 'Właściwości strony' : 'Właściwości elementu'}</strong>
+          <button type="button" className="document-designer-panel-close" onClick={() => setPropertiesCollapsed(true)} aria-label="Ukryj właściwości"><ChevronRight size={16} /></button>
+        </div>
+
+        <div className="document-designer-properties-scroll">
+          <div className="settings-form-section">
+            <div className="settings-action-row">
+              <AppButton variant="secondary" size="sm" onClick={createTemplate}><Plus size={14} />Nowy</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={duplicateTemplate} disabled={!activeTemplate}><Copy size={14} />Duplikuj</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={deleteTemplate} disabled={!activeTemplate}><Trash2 size={14} />Usuń</AppButton>
+            </div>
+            <div className="settings-action-row">
+              <AppButton variant="secondary" size="sm" onClick={exportTemplates}><Download size={14} />Eksport</AppButton>
+              <AppButton variant="secondary" size="sm" onClick={() => importInputRef.current?.click()}><FolderOpen size={14} />Import</AppButton>
+              <input ref={importInputRef} type="file" accept="application/json,.json" onChange={importTemplates} className="backup-file-input" />
+            </div>
+          </div>
+
+          {pageSelected && activeTemplate && <div className="settings-form-section">
+            <div className="settings-section-title"><h4>Strona A4</h4></div>
+            <p className="muted document-designer-page-hint">Kliknij pusty obszar dokumentu, aby edytować marginesy strony.</p>
+            <div className="settings-section-title"><h4>Marginesy (mm)</h4></div>
+            <div className="settings-field-grid two-columns">
+              <label className="firm-field">Górny<AppInput type="number" value={activeTemplate.margins.top} onFocus={beginPropertyEditSession} onChange={(event) => updateTemplateMargins({ top: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
+              <label className="firm-field">Dolny<AppInput type="number" value={activeTemplate.margins.bottom} onFocus={beginPropertyEditSession} onChange={(event) => updateTemplateMargins({ bottom: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
+              <label className="firm-field">Lewy<AppInput type="number" value={activeTemplate.margins.left} onFocus={beginPropertyEditSession} onChange={(event) => updateTemplateMargins({ left: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
+              <label className="firm-field">Prawy<AppInput type="number" value={activeTemplate.margins.right} onFocus={beginPropertyEditSession} onChange={(event) => updateTemplateMargins({ right: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
+            </div>
+          </div>}
+
+          {selectedElement && <div className="settings-form-section">
+          <div className="settings-section-title"><h4>{getDesignerLibraryItem(selectedElement.libraryId).label}</h4></div>
+          <div className="settings-action-row document-designer-align-actions">
+            <AppButton variant="secondary" size="sm" onClick={() => alignSelectedElement('left')}><AlignLeft size={14} /></AppButton>
+            <AppButton variant="secondary" size="sm" onClick={() => alignSelectedElement('center')}><AlignCenter size={14} /></AppButton>
+            <AppButton variant="secondary" size="sm" onClick={() => alignSelectedElement('right')}><AlignRight size={14} /></AppButton>
+            <AppButton variant="secondary" size="sm" onClick={duplicateElement}><Copy size={14} /></AppButton>
+            <AppButton variant="secondary" size="sm" onClick={deleteElement}><Trash2 size={14} /></AppButton>
+          </div>
+          <div className="settings-field-grid two-columns">
+            <label className="firm-field">Pozycja X<AppInput type="number" value={Math.round(selectedElement.x)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ x: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Pozycja Y<AppInput type="number" value={Math.round(selectedElement.y)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ y: Number(event.target.value) || 0 })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Szerokość<AppInput type="number" value={Math.round(selectedElement.width)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ width: Number(event.target.value) || DOCUMENT_DESIGNER_MIN_SIZE.width })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Wysokość<AppInput type="number" value={Math.round(selectedElement.height)} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ height: Number(event.target.value) || DOCUMENT_DESIGNER_MIN_SIZE.height })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Rozmiar<AppInput type="number" value={selectedElement.fontSize} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElementGeometry({ fontSize: Number(event.target.value) || 10 })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Pogrubienie<AppSelect value={String(selectedElement.fontWeight)} onChange={(event) => updateSelectedElement({ fontWeight: Number(event.target.value) })}><option value="400">Normal</option><option value="500">Średni</option><option value="700">Mocny</option></AppSelect></label>
+            <label className="firm-field">Kolor<AppInput type="color" value={selectedElement.color} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ color: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Wyrównanie<AppSelect value={selectedElement.align} onChange={(event) => updateSelectedElement({ align: event.target.value })}><option value="left">Do lewej</option><option value="center">Wyśrodkuj</option><option value="right">Do prawej</option></AppSelect></label>
+          </div>
+          <label className="settings-check"><input type="checkbox" checked={selectedElement.visible !== false} onChange={(event) => updateSelectedElement({ visible: event.target.checked })} />Widoczny</label>
+
+          {selectedElement.kind === 'logo' && <>
+            <AppButton variant="secondary" size="sm" onClick={() => logoInputRef.current?.click()}><FolderOpen size={14} />Podmień logo</AppButton>
+            <input ref={logoInputRef} type="file" accept="image/*" onChange={replaceLogoForSelectedElement} className="backup-file-input" />
+          </>}
+
+          {!['logo', 'table', 'line', 'signature'].includes(selectedElement.kind) && <label className="firm-field">Treść<AppTextarea rows={5} value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
+          {selectedElement.kind === 'signature' && <label className="firm-field">Nazwa podpisu<AppInput value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
+          {selectedElement.kind === 'table' && <div className="document-designer-columns-editor">
+            <strong>Kolumny tabeli</strong>
+            {(selectedElement.columns ?? []).map((column, index) => <div
+              key={column.key}
+              className="document-column-row compact"
+              draggable
+              onDragStart={() => setColumnDragKey(column.key)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => { moveColumnByDrop(columnDragKey, column.key); setColumnDragKey(''); }}
+            >
+              <div className="document-designer-column-main">
+                <label className="settings-check"><input type="checkbox" checked={column.visible !== false} onChange={() => updateSelectedElement({
+                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, visible: item.visible === false } : item)
+                })} /><span>{column.label}</span></label>
+                <label className="firm-field">Nagłówek<AppInput value={column.label} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({
+                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, label: event.target.value } : item)
+                }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
+                <label className="firm-field">Szerokość kolumny
+                  <input
+                    className="document-designer-column-width-range"
+                    type="range"
+                    min="50"
+                    max="360"
+                    value={column.width}
+                    onMouseDown={beginPropertyEditSession}
+                    onChange={(event) => updateSelectedElement({
+                      columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, width: Number(event.target.value) || item.width } : item)
+                    }, { history: 'deferred' })}
+                    onMouseUp={commitPropertyEditSession}
+                  />
+                </label>
+              </div>
+              <div className="dictionary-row-actions dictionary-icon-actions">
+                <button type="button" className="dictionary-icon-button" onClick={() => updateSelectedElement({
+                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, width: Math.max(50, item.width - 10) } : item)
+                })}><ChevronLeft size={14} /></button>
+                <button type="button" className="dictionary-icon-button" onClick={() => updateSelectedElement({
+                  columns: selectedElement.columns.map((item) => item.key === column.key ? { ...item, width: item.width + 10 } : item)
+                })}><ChevronRight size={14} /></button>
+                <button type="button" className="dictionary-icon-button" onClick={() => moveColumn(column.key, -1)} disabled={index === 0}><ArrowUp size={14} /></button>
+                <button type="button" className="dictionary-icon-button" onClick={() => moveColumn(column.key, 1)} disabled={index === selectedElement.columns.length - 1}><ArrowDown size={14} /></button>
+              </div>
+            </div>)}
+          </div>}
+          </div>}
+
+          {!selectedElement && !activeTemplate && <div className="settings-form-section">
+            <p className="muted">Wybierz szablon lub utwórz nowy, aby rozpocząć projektowanie.</p>
+          </div>}
+        </div>
+      </aside>}
+    </div>
+
+    {pendingTypeId && <ModalFrame
+      className="confirm-dialog"
+      title="Niezapisane zmiany"
+      onClose={() => setPendingTypeId('')}
+      footer={<>
+        <ButtonSecondary onClick={() => setPendingTypeId('')}>Anuluj</ButtonSecondary>
+        <AppButton variant="secondary" onClick={() => {
+          discardCurrentTemplateChanges();
+          applyTypeSwitch(pendingTypeId);
+        }}>Odrzuć i przełącz</AppButton>
+        <AppButton variant="primary" onClick={() => {
+          saveDraft();
+          applyTypeSwitch(pendingTypeId);
+        }}>Zapisz i przełącz</AppButton>
+      </>}
+    >
+      <p className="confirm-dialog-message">Masz niezapisane zmiany w aktualnym szablonie.</p>
+    </ModalFrame>}
+  </div>;
+}
+
+function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme }) {
+  const isDocumentsMode = mode === 'documents';
   const themeOptions = [
     { id: 'dark', label: 'Ciemny', icon: Moon },
     { id: 'light', label: 'Jasny', icon: Sun }
   ];
-  const sections = [
-    { id: 'company', label: 'Firma', icon: FileText, description: 'Dane firmy, logo i dane do dokumentów.' },
-    { id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony, umowy, numeracja, nagłówki i stopki.' },
-    { id: 'dictionaries', label: 'Słowniki', icon: List, description: 'Statusy, kategorie, priorytety, lokalizacje i stany w modułach.' },
-    { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, dashboard, tabele, widoki i preferencje pracy.' },
-    { id: 'integrations', label: 'Integracje', icon: CalendarDays, description: 'Kalendarz, powiadomienia, import, eksport i przyszłe połączenia.' },
-    { id: 'system', label: 'System', icon: Settings, description: 'Backup, restore, diagnostyka, migracje i przyszła administracja.' }
-  ];
-  const [activeSection, setActiveSection] = useState('company');
+  const sections = isDocumentsMode
+    ? [{ id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony, numeracja, profil firmy i projektant.' }]
+    : [
+      { id: 'dictionaries', label: 'Słowniki', icon: List, description: 'Statusy, kategorie, priorytety, lokalizacje i stany w modułach.' },
+      { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, dashboard, tabele, widoki i preferencje pracy.' },
+      { id: 'integrations', label: 'Integracje', icon: CalendarDays, description: 'Kalendarz, powiadomienia, import, eksport i przyszłe połączenia.' },
+      { id: 'system', label: 'System', icon: Settings, description: 'Backup, restore, diagnostyka, migracje i przyszła administracja.' }
+    ];
+  const [activeSection, setActiveSection] = useState(isDocumentsMode ? 'documents' : 'interface');
   const [activeSubs, setActiveSubs] = useState({});
   const subSectionsMap = {
     company: [],
@@ -9384,10 +10969,18 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   };
   const getActiveSub = (section) => activeSubs[section] || subSectionsMap[section]?.[0]?.id || null;
   const handleSectionChange = (sectionId) => {
-    setActiveSection(sectionId);
+    if (isDocumentsMode) {
+      setActiveSection('documents');
+      return;
+    }
+    requestDocumentTemplateExitGuard(() => setActiveSection(sectionId), { leavingSection: sectionId !== 'documents' });
   };
-  const [activeDocumentPanel, setActiveDocumentPanel] = useState('agreement');
+  const [activeDocumentPanel, setActiveDocumentPanel] = useState(isDocumentsMode ? 'agreement' : 'designer');
+  const [documentsMainSection, setDocumentsMainSection] = useState('templates');
+  const [documentsDesignerFullscreen, setDocumentsDesignerFullscreen] = useState(false);
+  const [pdfArchiveRows, setPdfArchiveRows] = useState(() => getStoredJson('fixer:pdf-archive', []));
   const [activeAgreementTab, setActiveAgreementTab] = useState('content');
+  const [documentTemplateViewMode, setDocumentTemplateViewMode] = useState('list');
   const [activeDocumentTemplateType, setActiveDocumentTemplateType] = useState('rentalAgreement');
   const [activeIntegrationPanel, setActiveIntegrationPanel] = useState('calendar');
   const [activeSystemPanel, setActiveSystemPanel] = useState('backup');
@@ -9431,6 +11024,8 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   const [agreementPreviewOpen, setAgreementPreviewOpen] = useState(false);
   const [copiedTemplateVariable, setCopiedTemplateVariable] = useState('');
   const [documentTemplateLibrary, setDocumentTemplateLibrary] = useState(getDocumentTemplateLibrary);
+  const [savedDocumentTemplateLibrary, setSavedDocumentTemplateLibrary] = useState(getDocumentTemplateLibrary);
+  const [pendingTemplateExitAction, setPendingTemplateExitAction] = useState(null);
   const [uiThemeNameInput, setUiThemeNameInput] = useState('');
   const [uiThemeNotice, setUiThemeNotice] = useState('');
 
@@ -9658,6 +11253,29 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
     const saved = saveCompanyProfile(companyProfile);
     setCompanyProfile(saved);
     setCompanySaveNotice('Dane firmy zapisane. Będą używane na wydrukach PDF.');
+  };
+
+  const addPdfArchiveRow = ({ type, number, relation }) => {
+    setPdfArchiveRows((current) => {
+      const next = [{
+        id: `pdf-${Date.now()}-${Math.round(Math.random() * 1000)}`,
+        type: String(type || 'Dokument'),
+        number: String(number || '—'),
+        createdAt: new Date().toISOString(),
+        relation: String(relation || 'Ręcznie'),
+        createdBy: demoUser.name
+      }, ...current].slice(0, 500);
+      localStorage.setItem('fixer:pdf-archive', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const deletePdfArchiveRow = (rowId) => {
+    setPdfArchiveRows((current) => {
+      const next = current.filter((row) => row.id !== rowId);
+      localStorage.setItem('fixer:pdf-archive', JSON.stringify(next));
+      return next;
+    });
   };
 
   const updateRentalNumbering = (key, value) => {
@@ -10069,6 +11687,7 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   useEffect(() => { loadEquipmentSettings(); }, []);
 
   useEffect(() => {
+    if (isDocumentsMode) return;
     if (dashboardIntent?.type !== 'settings') return;
     const sectionMap = {
       company: { section: 'company' },
@@ -10400,20 +12019,104 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   const rentalAgreementTemplate = getRentalAgreementTemplate(documentSettings);
   const currentTemplateType = getDocumentTemplateTypeById(activeDocumentTemplateType);
   const currentDocumentTemplate = normalizeSharedDocumentTemplate(documentTemplateLibrary[activeDocumentTemplateType], currentTemplateType.defaultTemplate);
+  const normalizeTemplateLibraryState = (library) => Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [
+    type.id,
+    normalizeSharedDocumentTemplate(library?.[type.id], type.defaultTemplate)
+  ]));
+  const areTemplateLibrariesEqual = (left, right) => DOCUMENT_TEMPLATE_TYPES.every((type) => {
+    const leftTemplate = normalizeSharedDocumentTemplate(left?.[type.id], type.defaultTemplate);
+    const rightTemplate = normalizeSharedDocumentTemplate(right?.[type.id], type.defaultTemplate);
+    return JSON.stringify(leftTemplate) === JSON.stringify(rightTemplate);
+  });
+  const templateDirtyByType = Object.fromEntries(DOCUMENT_TEMPLATE_TYPES.map((type) => [
+    type.id,
+    !areTemplateLibrariesEqual({ [type.id]: documentTemplateLibrary?.[type.id] }, { [type.id]: savedDocumentTemplateLibrary?.[type.id] })
+  ]));
+  const hasUnsavedTemplateChanges = Object.values(templateDirtyByType).some(Boolean);
+  const currentTemplateHasUnsavedChanges = templateDirtyByType[activeDocumentTemplateType] === true;
+  const saveDocumentTemplateDrafts = (noticeMessage = 'Szablon zapisany') => {
+    const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
+    const saved = saveDocumentTemplateLibrary(normalized);
+    setDocumentTemplateLibrary(saved);
+    setSavedDocumentTemplateLibrary(saved);
+    setDocumentSettingsNotice(noticeMessage);
+    return saved;
+  };
+  const discardDocumentTemplateDrafts = (noticeMessage = 'Odrzucono niezapisane zmiany.') => {
+    const restored = normalizeTemplateLibraryState(savedDocumentTemplateLibrary);
+    setDocumentTemplateLibrary(restored);
+    setDocumentSettingsNotice(noticeMessage);
+    return restored;
+  };
+  const requestDocumentTemplateExitGuard = (action, { leavingSection = false } = {}) => {
+    const leavingAgreementView = leavingSection || (activeSection === 'documents' && activeDocumentPanel === 'agreement');
+    if (!leavingAgreementView || !hasUnsavedTemplateChanges) {
+      action();
+      return;
+    }
+    setPendingTemplateExitAction(() => action);
+  };
+  const confirmTemplateExitWithSave = () => {
+    saveDocumentTemplateDrafts('Szablon zapisany');
+    const pendingAction = pendingTemplateExitAction;
+    setPendingTemplateExitAction(null);
+    pendingAction?.();
+  };
+  const confirmTemplateExitWithDiscard = () => {
+    discardDocumentTemplateDrafts();
+    const pendingAction = pendingTemplateExitAction;
+    setPendingTemplateExitAction(null);
+    pendingAction?.();
+  };
+  const cancelTemplateExit = () => {
+    setPendingTemplateExitAction(null);
+  };
+  const requestReturnToTemplateList = () => {
+    if (!currentTemplateHasUnsavedChanges) {
+      setDocumentTemplateViewMode('list');
+      return;
+    }
+    setPendingTemplateExitAction(() => () => setDocumentTemplateViewMode('list'));
+  };
+  const openTemplateEditor = (typeId) => {
+    setActiveDocumentTemplateType(typeId);
+    setActiveAgreementTab('content');
+    setDocumentTemplateViewMode('edit');
+  };
+  const requestTemplateTypeSwitch = (nextTypeId) => {
+    if (nextTypeId === activeDocumentTemplateType) return;
+    if (currentTemplateHasUnsavedChanges) {
+      setPendingTemplateExitAction(() => () => {
+        setActiveDocumentTemplateType(nextTypeId);
+        setActiveAgreementTab('content');
+      });
+      return;
+    }
+    setActiveDocumentTemplateType(nextTypeId);
+    setActiveAgreementTab('content');
+  };
   const updateCurrentDocumentTemplate = (updater) => {
     setDocumentTemplateLibrary((current) => {
       const base = normalizeSharedDocumentTemplate(current[activeDocumentTemplateType], currentTemplateType.defaultTemplate);
       const nextTemplate = normalizeSharedDocumentTemplate(typeof updater === 'function' ? updater(base) : updater, currentTemplateType.defaultTemplate);
-      const nextState = { ...current, [activeDocumentTemplateType]: nextTemplate };
-      return saveDocumentTemplateLibrary(nextState);
+      return { ...current, [activeDocumentTemplateType]: nextTemplate };
     });
   };
+  useEffect(() => {
+    if (!hasUnsavedTemplateChanges) return undefined;
+    const autosaveTimer = window.setTimeout(() => {
+      const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
+      const saved = saveDocumentTemplateLibrary(normalized);
+      setDocumentTemplateLibrary(saved);
+      setSavedDocumentTemplateLibrary(saved);
+    }, 1400);
+    return () => window.clearTimeout(autosaveTimer);
+  }, [documentTemplateLibrary, hasUnsavedTemplateChanges]);
   const resetCurrentDocumentTemplate = () => {
     setDocumentTemplateLibrary((current) => {
-      const nextState = { ...current, [activeDocumentTemplateType]: normalizeSharedDocumentTemplate(currentTemplateType.defaultTemplate, currentTemplateType.defaultTemplate) };
-      return saveDocumentTemplateLibrary(nextState);
+      return { ...current, [activeDocumentTemplateType]: normalizeSharedDocumentTemplate(currentTemplateType.defaultTemplate, currentTemplateType.defaultTemplate) };
     });
-    setDocumentSettingsNotice('Przywrócono domyślny szablon bieżącego dokumentu.');
+    setDocumentSettingsNotice('Przywrócono domyślny szablon bieżącego dokumentu. Kliknij „Zapisz szablon”, aby zatwierdzić.');
   };
   const resetAllDocumentTemplates = () => {
     setConfirmDialog({
@@ -10425,8 +12128,8 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       onConfirm: () => {
         setConfirmDialog(null);
         const defaults = getDefaultDocumentTemplateLibrary();
-        setDocumentTemplateLibrary(saveDocumentTemplateLibrary(defaults));
-        setDocumentSettingsNotice('Przywrócono wszystkie domyślne szablony dokumentów.');
+        setDocumentTemplateLibrary(defaults);
+        setDocumentSettingsNotice('Przywrócono wszystkie domyślne szablony dokumentów. Kliknij „Zapisz szablon”, aby zatwierdzić.');
       }
     });
   };
@@ -10450,9 +12153,9 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
         reader.onload = () => {
           try {
             const payload = JSON.parse(String(reader.result ?? '{}'));
-            const normalized = saveDocumentTemplateLibrary(payload);
+            const normalized = normalizeTemplateLibraryState(payload);
             setDocumentTemplateLibrary(normalized);
-            setDocumentSettingsNotice('Zaimportowano szablony dokumentów.');
+            setDocumentSettingsNotice('Zaimportowano szablony dokumentów. Kliknij „Zapisz szablon”, aby zatwierdzić.');
           } catch (error) {
             console.error('Document template import failed', error);
             setDocumentSettingsNotice('Nie udało się zaimportować szablonów dokumentów.');
@@ -10530,13 +12233,8 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       },
       company: companyProfile
     })
-    : buildGenericDocumentTemplateHtml(currentTemplateType, currentDocumentTemplate, templatePreviewContext, { preview: true });
+    : buildGenericDocumentTemplateHtml(currentTemplateType, currentDocumentTemplate, templatePreviewContext, { preview: true, company: companyProfile });
   const settingsSearchTargets = [
-    { section: 'company', label: 'Firma', keywords: 'firma dane nip regon telefon email www logo adres miejscowosc dokumentow' },
-    { section: 'documents', documentPanel: 'header', label: 'Logo i nagłówek dokumentów', keywords: 'logo naglowek pdf miejscowosc dokumenty dokumentow zabrzu' },
-    { section: 'documents', documentPanel: 'numbering', label: 'Numeracja dokumentów', keywords: 'numeracja numer dokument wypozyczenia zwrot serwis kosztorys projekty' },
-    { section: 'documents', documentPanel: 'agreement', agreementTab: 'sections', label: 'Szablony dokumentów — sekcje', keywords: 'szablony dokumentow sekcje kolejnosc kolumny' },
-    { section: 'documents', documentPanel: 'agreement', agreementTab: 'content', label: 'Szablony dokumentów — treść', keywords: 'szablony dokumentow tresc warunki stopka tekst' },
     { section: 'integrations', integrationPanel: 'calendar', label: 'Kalendarz', keywords: 'kalendarz zrodla kolory filtr roboczy wydarzenia' },
     { section: 'system', systemPanel: 'backup', label: 'Backup', keywords: 'backup kopie bezpieczenstwa pelna kopia json' },
     { section: 'system', systemPanel: 'restore', label: 'Restore', keywords: 'restore przywroc import backup przywracanie' },
@@ -10553,17 +12251,53 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
     if (!normalizedSettingsSearch) return true;
     return `${target.label} ${target.keywords}`.toLocaleLowerCase('pl').includes(normalizedSettingsSearch);
   };
-  const visibleSections = normalizedSettingsSearch
-    ? sections.filter((section) => settingsSearchTargets.some((target) => target.section === section.id && searchMatchesTarget(target)))
-    : sections;
-  const settingsSearchResults = normalizedSettingsSearch ? settingsSearchTargets.filter(searchMatchesTarget).slice(0, 6) : [];
+  const visibleSections = isDocumentsMode
+    ? sections
+    : normalizedSettingsSearch
+      ? sections.filter((section) => settingsSearchTargets.some((target) => target.section === section.id && searchMatchesTarget(target)))
+      : sections;
+  const settingsSearchResults = isDocumentsMode
+    ? []
+    : normalizedSettingsSearch ? settingsSearchTargets.filter(searchMatchesTarget).slice(0, 6) : [];
+  const openDocumentPanel = (panelId) => {
+    if (isDocumentsMode) {
+      const leavingTemplates = documentsMainSection === 'templates' && panelId !== 'templates';
+      if (leavingTemplates && hasUnsavedTemplateChanges) {
+        requestDocumentTemplateExitGuard(() => {
+          setDocumentsMainSection(panelId);
+          setDocumentTemplateViewMode('list');
+        }, { leavingSection: true });
+        return;
+      }
+      setDocumentsMainSection(panelId);
+      if (panelId !== 'templates') setDocumentTemplateViewMode('list');
+      return;
+    }
+    requestDocumentTemplateExitGuard(() => setActiveDocumentPanel(panelId), { leavingSection: panelId !== 'agreement' });
+  };
+  const documentsSectionToPanel = {
+    templates: 'agreement',
+    numbering: 'numbering',
+    company: 'company',
+    designer: 'designer',
+    archive: 'archive'
+  };
+  const effectiveDocumentPanel = isDocumentsMode ? (documentsSectionToPanel[documentsMainSection] ?? 'agreement') : activeDocumentPanel;
+
+  useEffect(() => {
+    if (!isDocumentsMode) return;
+    if (effectiveDocumentPanel === 'designer') setDocumentsDesignerFullscreen(true);
+  }, [isDocumentsMode, effectiveDocumentPanel]);
+
   const openSettingsSearchTarget = (target) => {
-    setActiveSection(target.section);
-    if (target.sub) setActiveSubs((current) => ({ ...current, [target.section]: target.sub }));
-    if (target.documentPanel) setActiveDocumentPanel(target.documentPanel);
-    if (target.agreementTab) setActiveAgreementTab(target.agreementTab);
-    if (target.integrationPanel) setActiveIntegrationPanel(target.integrationPanel);
-    if (target.systemPanel) setActiveSystemPanel(target.systemPanel);
+    requestDocumentTemplateExitGuard(() => {
+      setActiveSection(target.section);
+      if (target.sub) setActiveSubs((current) => ({ ...current, [target.section]: target.sub }));
+      if (target.documentPanel) setActiveDocumentPanel(target.documentPanel);
+      if (target.agreementTab) setActiveAgreementTab(target.agreementTab);
+      if (target.integrationPanel) setActiveIntegrationPanel(target.integrationPanel);
+      if (target.systemPanel) setActiveSystemPanel(target.systemPanel);
+    }, { leavingSection: target.section !== 'documents' || target.documentPanel !== 'agreement' });
   };
 
 
@@ -10578,14 +12312,14 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
   return <div className="settings-v2-layout">
     <div className="settings-v2-header">
       <div>
-        <p className="eyebrow">Panel administracyjny</p>
-        <h2>Ustawienia</h2>
-        <p className="muted">Centralne miejsce konfiguracji FIXER WEB, słowników, dokumentów, integracji i systemu.</p>
+        <p className="eyebrow">{isDocumentsMode ? 'Moduł biznesowy' : 'Panel administracyjny'}</p>
+        <h2>{isDocumentsMode ? 'Dokumenty' : 'Ustawienia'}</h2>
+        <p className="muted">{isDocumentsMode ? 'Szablony, numeracja, dane firmy, projektant A4 i archiwum PDF.' : 'Centralne miejsce konfiguracji FIXER WEB, słowników, integracji i systemu.'}</p>
       </div>
-      <SettingsSearch value={settingsSearch} onChange={setSettingsSearch} results={settingsSearchResults} onOpenResult={openSettingsSearchTarget} />
+      {!isDocumentsMode && <SettingsSearch value={settingsSearch} onChange={setSettingsSearch} results={settingsSearchResults} onOpenResult={openSettingsSearchTarget} />}
     </div>
     <div className="settings-sidebar-layout settings-v2-body">
-      <SettingsNavigation sections={visibleSections} activeSection={activeSection} onSelect={handleSectionChange} />
+      {!isDocumentsMode && <SettingsNavigation sections={visibleSections} activeSection={activeSection} onSelect={handleSectionChange} />}
       <SettingsSectionShell subSections={currentSubSections} activeSub={activeSubsInSection} onSubChange={(subId) => setActiveSubs((prev) => ({ ...prev, [activeSection]: subId }))}>
 
       {activeSection === 'company' && <CompanySettingsPanel><div className="settings-form-screen company-v2-screen">
@@ -10666,8 +12400,11 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
             <div className="firm-document-preview">
               {companyProfile.logoDataUrl && companyProfile.showLogoOnDocuments !== false && <img src={companyProfile.logoDataUrl} alt="Logo firmy" />}
               <strong>{companyProfile.legalName || companyProfile.name || 'Nazwa na dokumentach'}</strong>
-              <span>{[companyProfile.street, companyProfile.buildingNumber, companyProfile.apartmentNumber ? `/${companyProfile.apartmentNumber}` : ''].filter(Boolean).join('') || 'Ulica i numer'}</span>
-              <span>{[companyProfile.postalCode, companyProfile.city].filter(Boolean).join(' ') || 'Kod pocztowy i miasto'}</span>
+              {formatDocumentAddressLines(companyProfile).map((line) => <span key={line}>{line}</span>)}
+              {!formatDocumentAddressLines(companyProfile).length && <>
+                <span>Ulica i numer</span>
+                <span>Kod pocztowy i miasto</span>
+              </>}
               <dl>
                 <dt>NIP</dt><dd>{companyProfile.nip || '—'}</dd>
                 <dt>REGON</dt><dd>{companyProfile.regon || '—'}</dd>
@@ -10846,50 +12583,58 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
       {activeSection === 'documents' && <DocumentsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace">
         <aside className="documents-nav-panel documents-v2-nav">
           {[
-            ['agreement', 'Szablony dokumentów', 'Wspólny edytor treści, sekcji, kolumn i podglądu'],
-            ['numbering', 'Numeracja', 'Prefiksy, formaty i przykłady'],
-            ['profile', 'Profil dokumentów', 'Dane firmy i typy dokumentów'],
-            ['header', 'Nagłówek i logo', 'Logo oraz tekst nad dokumentem'],
-            ['footer', 'Stopka dokumentów', 'Tekst końcowy na PDF'],
-            ['exchange', 'Import / eksport', 'Konfiguracja szablonów']
-          ].map(([id, label, description]) => <button key={id} type="button" className={`documents-nav-item ${activeDocumentPanel === id ? 'active' : ''}`} onClick={() => setActiveDocumentPanel(id)}>
+            ['templates', 'Szablony dokumentów', 'Umowy, protokoły, raporty i dokumenty wewnętrzne'],
+            ['numbering', 'Numeracja dokumentów', 'Formaty numerów dla każdego typu dokumentu'],
+            ['company', 'Logo i dane firmy', 'Jedno źródło danych dla wszystkich dokumentów'],
+            ['designer', 'Projektant dokumentów', 'Edytor pełnoekranowy A4: układ i elementy'],
+            ['archive', 'Archiwum PDF', 'Lista wygenerowanych dokumentów PDF']
+          ].map(([id, label, description]) => <button key={id} type="button" className={`documents-nav-item ${(isDocumentsMode ? documentsMainSection : activeDocumentPanel) === id ? 'active' : ''}`} onClick={() => openDocumentPanel(id)}>
             <strong>{label}</strong><small>{description}</small>
           </button>)}
         </aside>
         <div className="documents-detail-panel documents-v2-detail">
           {documentSettingsNotice && <div className="notice firm-save-notice settings-inline-notice">{documentSettingsNotice}</div>}
 
-          {activeDocumentPanel === 'profile' && <section className="settings-config-card documents-config-card">
+          {effectiveDocumentPanel === 'company' && <section className="settings-config-card documents-config-card">
             <div className="settings-config-card-header">
-              <div><p className="eyebrow">Dokumenty</p><h3>Profil dokumentów</h3><p className="muted">Wspólne ustawienia używane przez dokumenty. Dane firmy są zarządzane w sekcji Firma.</p></div>
-              <AppButton variant="primary" size="sm" onClick={saveDocumentSettingsState}><Save size={14} />Zapisz</AppButton>
+              <div><p className="eyebrow">Dokumenty</p><h3>Logo i dane firmy</h3><p className="muted">Zmiana tutaj aktualizuje wszystkie dokumenty i podglądy PDF.</p></div>
+              <AppButton variant="primary" size="sm" onClick={() => { saveCompanySettings(); saveDocumentSettingsState(); }}><Save size={14} />Zapisz</AppButton>
             </div>
             <div className="documents-profile-grid">
               <div className="settings-form-section">
-                <div className="settings-section-title"><h4>Dane firmy na dokumentach</h4><p className="muted">To jest podgląd profilu firmy, bez drugiego niezależnego formularza.</p></div>
-                <div className="firm-document-preview compact-document-preview">
-                  {companyProfile.logoDataUrl && companyProfile.showLogoOnDocuments !== false && <img src={companyProfile.logoDataUrl} alt="Logo firmy" />}
-                  <strong>{companyProfile.legalName || companyProfile.name || 'Dane firmy'}</strong>
-                  <span>{formatCompanyAddress(companyProfile) || 'Adres pobierany z sekcji Firma'}</span>
-                  <span>{formatCompanyTaxData(companyProfile) || 'NIP / REGON / KRS'}</span>
-                  <span>{formatCompanyContact(companyProfile) || 'Kontakt pobierany z sekcji Firma'}</span>
+                <div className="settings-section-title"><h4>Dane firmy</h4><p className="muted">Centralne dane używane w każdym dokumencie.</p></div>
+                <div className="settings-field-grid two-columns">
+                  <label className="firm-field field-wide">Nazwa firmy<AppInput value={companyProfile.name} onChange={(event) => updateCompanyProfile('name', event.target.value)} /></label>
+                  <label className="firm-field field-wide">Nazwa na dokumentach<AppInput value={companyProfile.legalName} onChange={(event) => updateCompanyProfile('legalName', event.target.value)} /></label>
+                  <label className="firm-field">NIP<AppInput value={companyProfile.nip} onChange={(event) => updateCompanyProfile('nip', event.target.value)} /></label>
+                  <label className="firm-field">Telefon<AppInput value={companyProfile.phone} onChange={(event) => updateCompanyProfile('phone', event.target.value)} /></label>
+                  <label className="firm-field">E-mail<AppInput value={companyProfile.email} onChange={(event) => updateCompanyProfile('email', event.target.value)} /></label>
+                  <label className="firm-field">WWW<AppInput value={companyProfile.website} onChange={(event) => updateCompanyProfile('website', event.target.value)} /></label>
+                  <label className="firm-field">Ulica<AppInput value={companyProfile.street} onChange={(event) => updateCompanyProfile('street', event.target.value)} /></label>
+                  <label className="firm-field">Nr budynku<AppInput value={companyProfile.buildingNumber} onChange={(event) => updateCompanyProfile('buildingNumber', event.target.value)} /></label>
+                  <label className="firm-field">Kod pocztowy<AppInput value={companyProfile.postalCode} onChange={(event) => updateCompanyProfile('postalCode', event.target.value)} /></label>
+                  <label className="firm-field">Miasto<AppInput value={companyProfile.city} onChange={(event) => updateCompanyProfile('city', event.target.value)} /></label>
+                  <label className="firm-field field-wide">Nagłówek dokumentów<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} rows={2} /></label>
+                  <label className="firm-field field-wide">Stopka dokumentów<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} rows={2} /></label>
                 </div>
               </div>
               <div className="settings-form-section">
-                <div className="settings-section-title"><h4>Szablony dokumentów</h4><p className="muted">Wybór obecnie obsługiwanych wariantów szablonów.</p></div>
-                <div className="document-template-list">
-                  {documentTemplateRows.map(([key, label]) => <label className="firm-field document-template-row" key={key}>
-                    {label}
-                    <AppSelect value={documentSettings.templates[key] ?? 'Standardowy'} onChange={(event) => updateDocumentTemplate(key, event.target.value)}>
-                      {DOCUMENT_TEMPLATE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </AppSelect>
-                  </label>)}
+                <div className="settings-section-title"><h4>Logo firmy</h4><p className="muted">Logo działa jak obiekt graficzny w projektancie.</p></div>
+                <div className="company-logo-row-v2">
+                  <div className="firm-logo-preview compact">
+                    {companyProfile.logoDataUrl ? <img src={companyProfile.logoDataUrl} alt="Logo firmy" /> : <span>Logo</span>}
+                  </div>
+                  <div className="firm-logo-actions">
+                    <label className="app-button app-button-secondary app-button-sm file-button"><FolderOpen size={14} />Dodaj / zmień<input type="file" accept="image/*" onChange={handleCompanyLogoUpload} /></label>
+                    <AppButton variant="secondary" size="sm" onClick={removeCompanyLogo} disabled={!companyProfile.logoDataUrl}>Usuń</AppButton>
+                    <label className="settings-check compact-check"><input type="checkbox" checked={companyProfile.showLogoOnDocuments !== false} onChange={(event) => updateCompanyProfile('showLogoOnDocuments', event.target.checked)} />Pokazuj na dokumentach</label>
+                  </div>
                 </div>
               </div>
             </div>
           </section>}
 
-          {activeDocumentPanel === 'numbering' && <section className="settings-config-card documents-config-card">
+          {effectiveDocumentPanel === 'numbering' && <section className="settings-config-card documents-config-card">
             <div className="settings-config-card-header">
               <div><p className="eyebrow">Dokumenty</p><h3>Numeracja</h3><p className="muted">Aktualny mechanizm generowania numerów pozostaje bez zmian. Puste prefiksy i formaty nie zostaną zapisane.</p></div>
               <div className="settings-action-row">
@@ -10912,201 +12657,266 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
             </div>
           </section>}
 
-          {activeDocumentPanel === 'agreement' && <section className="settings-config-card documents-config-card agreement-settings-card-v2">
-            <div className="settings-config-card-header">
-              <div><p className="eyebrow">Szablony dokumentów</p><h3>Wspólny edytor szablonów</h3><p className="muted">Jeden edytor dla wszystkich typów dokumentów i wydruków.</p></div>
-              <div className="settings-action-row">
-                <AppButton variant="secondary" size="sm" onClick={resetCurrentDocumentTemplate}><RotateCcw size={13} />Przywróć domyślny szablon</AppButton>
-                <AppButton variant="secondary" size="sm" onClick={resetAllDocumentTemplates}><RotateCcw size={13} />Przywróć wszystkie domyślne</AppButton>
-                <AppButton variant="secondary" size="sm" onClick={exportDocumentTemplatesJson}><Download size={13} />Eksport JSON</AppButton>
-                <AppButton variant="secondary" size="sm" onClick={() => documentTemplateImportInputRef.current?.click()}><FolderOpen size={13} />Import JSON</AppButton>
-                <input ref={documentTemplateImportInputRef} type="file" accept="application/json,.json" onChange={importDocumentTemplatesJson} className="backup-file-input" />
+          {effectiveDocumentPanel === 'agreement' && <section className={`settings-config-card documents-config-card documents-templates-card ${documentTemplateViewMode === 'edit' ? 'documents-templates-card--edit' : 'documents-templates-card--list'}`}>
+            {documentTemplateViewMode === 'list' ? <>
+              <div className="settings-config-card-header">
+                <div>
+                  <p className="eyebrow">Szablony dokumentów</p>
+                  <h3>Lista szablonów</h3>
+                  <p className="muted">Wybierz szablon, aby go edytować, podejrzeć lub przywrócić domyślną wersję.</p>
+                </div>
+                <div className="settings-action-row">
+                  <AppButton variant="secondary" size="sm" onClick={resetAllDocumentTemplates}><RotateCcw size={13} />Przywróć wszystkie domyślne</AppButton>
+                  <AppButton variant="secondary" size="sm" onClick={exportDocumentTemplatesJson}><Download size={13} />Eksport JSON</AppButton>
+                  <AppButton variant="secondary" size="sm" onClick={() => documentTemplateImportInputRef.current?.click()}><FolderOpen size={13} />Import JSON</AppButton>
+                  <input ref={documentTemplateImportInputRef} type="file" accept="application/json,.json" onChange={importDocumentTemplatesJson} className="backup-file-input" />
+                </div>
               </div>
-            </div>
-            <div className="document-template-editor-layout">
-              <div className="document-template-editor-toolbar">
-                <label className="firm-field document-template-type-picker">
-                  Typ dokumentu
-                  <AppSelect value={activeDocumentTemplateType} onChange={(event) => setActiveDocumentTemplateType(event.target.value)}>
-                    {DOCUMENT_TEMPLATE_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
-                  </AppSelect>
-                </label>
-                <p className="muted">{currentTemplateType.description}</p>
+              <div className="data-table-shell documents-template-catalog">
+                <table className="data-table">
+                  <thead><tr><th>LP</th><th>Nazwa</th><th>Typ</th><th>Ostatnia modyfikacja</th><th>Akcje</th></tr></thead>
+                  <tbody>
+                    {DOCUMENT_TEMPLATE_TYPES.map((type, index) => {
+                      const isDirty = templateDirtyByType[type.id];
+                      return <tr key={type.id}>
+                        <td>{index + 1}</td>
+                        <td>{type.label}</td>
+                        <td>{type.id}</td>
+                        <td>{isDirty ? 'Niezapisane zmiany' : '—'}</td>
+                        <td>
+                          <div className="settings-action-row">
+                            <AppButton variant="secondary" size="sm" onClick={() => openTemplateEditor(type.id)}>Edytuj</AppButton>
+                            <AppButton variant="secondary" size="sm" onClick={() => { setActiveDocumentTemplateType(type.id); setAgreementPreviewOpen(true); }}>Podgląd</AppButton>
+                            <AppButton variant="secondary" size="sm" onClick={() => {
+                              const source = normalizeSharedDocumentTemplate(documentTemplateLibrary[type.id], type.defaultTemplate);
+                              setDocumentTemplateLibrary((current) => ({
+                                ...current,
+                                [type.id]: normalizeSharedDocumentTemplate({
+                                  ...source,
+                                  title: `${source.title} (kopia)`
+                                }, type.defaultTemplate)
+                              }));
+                              setDocumentSettingsNotice(`Utworzono kopię szablonu „${type.label}”.`);
+                            }}>Duplikuj</AppButton>
+                            <AppButton variant="secondary" size="sm" onClick={() => {
+                              setDocumentTemplateLibrary((current) => ({ ...current, [type.id]: normalizeSharedDocumentTemplate(type.defaultTemplate, type.defaultTemplate) }));
+                              setDocumentSettingsNotice(`Przywrócono domyślny szablon „${type.label}”. Kliknij „Zapisz szablon” w edycji, aby zatwierdzić.`);
+                            }}>Przywróć domyślny</AppButton>
+                          </div>
+                        </td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </> : <>
+              <div className="settings-config-card-header">
+                <div>
+                  <p className="eyebrow">Edycja szablonu</p>
+                  <h3>{currentTemplateType.label}</h3>
+                  <p className="muted">{currentTemplateType.description}</p>
+                  {currentTemplateHasUnsavedChanges && <p className="document-template-unsaved-indicator">● Niezapisane zmiany</p>}
+                </div>
+                <div className="settings-action-row">
+                  <AppButton variant="secondary" size="sm" onClick={requestReturnToTemplateList}><ChevronLeft size={14} />Wróć do listy</AppButton>
+                  <AppButton variant="secondary" size="sm" onClick={resetCurrentDocumentTemplate}><RotateCcw size={13} />Przywróć domyślny</AppButton>
+                  <AppButton variant="primary" size="sm" onClick={() => saveDocumentTemplateDrafts('Szablon zapisany')} disabled={!currentTemplateHasUnsavedChanges}><Save size={13} />Zapisz szablon</AppButton>
+                </div>
               </div>
 
-              <div className="agreement-subtabs">
-                {[
-                  ['content', 'Treść'],
-                  ['sections', 'Sekcje'],
-                  ['columns', 'Kolumny tabel'],
-                  ['variables', 'Zmienne'],
-                  ['preview', 'Podgląd']
-                ].map(([id, label]) => <button key={id} type="button" className={`agreement-subtab ${activeAgreementTab === id ? 'active' : ''}`} onClick={() => setActiveAgreementTab(id)}>{label}</button>)}
-              </div>
+              <div className="document-template-editor-layout">
+                <div className="document-template-editor-toolbar">
+                  <label className="firm-field document-template-type-picker">
+                    Typ dokumentu
+                    <AppSelect value={activeDocumentTemplateType} onChange={(event) => requestTemplateTypeSwitch(event.target.value)}>
+                      {DOCUMENT_TEMPLATE_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+                    </AppSelect>
+                  </label>
+                </div>
 
-              <div className="document-template-editor-scroll">
-                {activeAgreementTab === 'content' && <div className="document-section-content compact-document-form">
-                  <div className="settings-form-section">
-                    <label className="firm-field">Tytuł dokumentu<AppInput value={currentDocumentTemplate.title} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, title: event.target.value }))} /></label>
-                    <label className="firm-field">Nagłówek<AppTextarea value={currentDocumentTemplate.headerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, headerText: event.target.value }))} rows={3} /></label>
-                    <label className="firm-field">Tekst wstępny<AppTextarea value={currentDocumentTemplate.introText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, introText: event.target.value }))} rows={3} /></label>
-                    <label className="firm-field">Sekcja „Wydający”<AppTextarea value={currentDocumentTemplate.issuerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, issuerText: event.target.value }))} rows={4} /></label>
-                    <label className="firm-field">Sekcja „Biorący”<AppTextarea value={currentDocumentTemplate.borrowerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, borrowerText: event.target.value }))} rows={4} /></label>
-                    <label className="firm-field">Treść warunków<AppTextarea value={currentDocumentTemplate.termsText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, termsText: event.target.value }))} rows={6} /></label>
-                    <label className="firm-field">Stopka<AppTextarea value={currentDocumentTemplate.footerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, footerText: event.target.value }))} rows={3} /></label>
-                    <div className="settings-field-grid two-columns">
-                      <label className="firm-field">Podpis lewy<AppInput value={currentDocumentTemplate.signatureIssuer} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, signatureIssuer: event.target.value }))} /></label>
-                      <label className="firm-field">Podpis prawy<AppInput value={currentDocumentTemplate.signatureBorrower} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, signatureBorrower: event.target.value }))} /></label>
+                <div className="agreement-subtabs">
+                  {[
+                    ['content', 'Treść'],
+                    ['sections', 'Sekcje'],
+                    ['columns', 'Kolumny tabel'],
+                    ['variables', 'Zmienne'],
+                    ['preview', 'Podgląd']
+                  ].map(([id, label]) => <button key={id} type="button" className={`agreement-subtab ${activeAgreementTab === id ? 'active' : ''}`} onClick={() => setActiveAgreementTab(id)}>{label}</button>)}
+                </div>
+
+                <div className="document-template-editor-scroll">
+                  {activeAgreementTab === 'content' && <div className="document-section-content compact-document-form">
+                    <div className="settings-form-section">
+                      <label className="firm-field">Tytuł dokumentu<AppInput value={currentDocumentTemplate.title} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, title: event.target.value }))} /></label>
+                      <label className="firm-field">Nagłówek<AppTextarea value={currentDocumentTemplate.headerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, headerText: event.target.value }))} rows={3} /></label>
+                      <label className="firm-field">Tekst wstępny<AppTextarea value={currentDocumentTemplate.introText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, introText: event.target.value }))} rows={3} /></label>
+                      <label className="firm-field">Sekcja „Wydający”<AppTextarea value={currentDocumentTemplate.issuerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, issuerText: event.target.value }))} rows={4} /></label>
+                      <label className="firm-field">Sekcja „Biorący”<AppTextarea value={currentDocumentTemplate.borrowerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, borrowerText: event.target.value }))} rows={4} /></label>
+                      <label className="firm-field">Treść warunków<AppTextarea value={currentDocumentTemplate.termsText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, termsText: event.target.value }))} rows={6} /></label>
+                      <label className="firm-field">Stopka<AppTextarea value={currentDocumentTemplate.footerText} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, footerText: event.target.value }))} rows={3} /></label>
+                      <div className="settings-field-grid two-columns">
+                        <label className="firm-field">Podpis lewy<AppInput value={currentDocumentTemplate.signatureIssuer} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, signatureIssuer: event.target.value }))} /></label>
+                        <label className="firm-field">Podpis prawy<AppInput value={currentDocumentTemplate.signatureBorrower} onChange={(event) => updateCurrentDocumentTemplate((template) => ({ ...template, signatureBorrower: event.target.value }))} /></label>
+                      </div>
                     </div>
-                  </div>
-                </div>}
+                  </div>}
 
-                {activeAgreementTab === 'sections' && <div className="document-section-content">
-                  <div className="document-column-list compact-column-list">
-                    {(currentDocumentTemplate.sectionOrder ?? DEFAULT_SHARED_TEMPLATE_SECTION_ORDER).map((sectionId, index) => {
-                      const labels = {
-                        header: 'Nagłówek',
-                        intro: 'Wstęp',
-                        issuer: 'Wydający',
-                        borrower: 'Biorący',
-                        period: 'Okres',
-                        equipment: 'Tabela pozycji',
-                        terms: 'Warunki',
-                        signatures: 'Podpisy',
-                        footer: 'Stopka'
-                      };
-                      const active = currentDocumentTemplate.sectionVisibility?.[sectionId] !== false;
-                      return <div key={sectionId} className="document-column-row compact">
-                        <label className="settings-check"><input type="checkbox" checked={active} onChange={() => updateCurrentDocumentTemplate((template) => ({ ...template, sectionVisibility: { ...template.sectionVisibility, [sectionId]: !active } }))} /><span>{labels[sectionId] ?? sectionId}</span></label>
+                  {activeAgreementTab === 'sections' && <div className="document-section-content">
+                    <div className="document-column-list compact-column-list">
+                      {(currentDocumentTemplate.sectionOrder ?? DEFAULT_SHARED_TEMPLATE_SECTION_ORDER).map((sectionId, index) => {
+                        const labels = {
+                          header: 'Nagłówek',
+                          intro: 'Wstęp',
+                          issuer: 'Wydający',
+                          borrower: 'Biorący',
+                          period: 'Okres',
+                          equipment: 'Tabela pozycji',
+                          terms: 'Warunki',
+                          signatures: 'Podpisy',
+                          footer: 'Stopka'
+                        };
+                        const active = currentDocumentTemplate.sectionVisibility?.[sectionId] !== false;
+                        return <div key={sectionId} className="document-column-row compact">
+                          <label className="settings-check"><input type="checkbox" checked={active} onChange={() => updateCurrentDocumentTemplate((template) => ({ ...template, sectionVisibility: { ...template.sectionVisibility, [sectionId]: !active } }))} /><span>{labels[sectionId] ?? sectionId}</span></label>
+                          <div className="dictionary-row-actions dictionary-icon-actions">
+                            <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
+                              const order = [...template.sectionOrder];
+                              const source = order.indexOf(sectionId);
+                              const target = source - 1;
+                              if (source < 0 || target < 0) return template;
+                              const [moved] = order.splice(source, 1);
+                              order.splice(target, 0, moved);
+                              return { ...template, sectionOrder: order };
+                            })} disabled={index === 0} aria-label="Przenieś wyżej"><ArrowUp size={14} /></button>
+                            <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
+                              const order = [...template.sectionOrder];
+                              const source = order.indexOf(sectionId);
+                              const target = source + 1;
+                              if (source < 0 || target >= order.length) return template;
+                              const [moved] = order.splice(source, 1);
+                              order.splice(target, 0, moved);
+                              return { ...template, sectionOrder: order };
+                            })} disabled={index === (currentDocumentTemplate.sectionOrder ?? DEFAULT_SHARED_TEMPLATE_SECTION_ORDER).length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
+                          </div>
+                        </div>;
+                      })}
+                    </div>
+                  </div>}
+
+                  {activeAgreementTab === 'columns' && <div className="document-section-content">
+                    <div className="documents-subheader">
+                      <strong>Kolumny tabeli</strong>
+                    </div>
+                    <div className="document-column-list compact-column-list">
+                      {(currentDocumentTemplate.columns ?? []).map((column, index) => <div key={column.key} className="document-column-row compact">
+                        <label className="settings-check"><input type="checkbox" checked={column.enabled !== false} onChange={() => updateCurrentDocumentTemplate((template) => ({ ...template, columns: template.columns.map((item) => item.key === column.key ? { ...item, enabled: item.enabled === false } : item) }))} /><span>{column.label}</span></label>
                         <div className="dictionary-row-actions dictionary-icon-actions">
                           <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
-                            const order = [...template.sectionOrder];
-                            const source = order.indexOf(sectionId);
+                            const list = [...template.columns];
+                            const source = list.findIndex((item) => item.key === column.key);
                             const target = source - 1;
                             if (source < 0 || target < 0) return template;
-                            const [moved] = order.splice(source, 1);
-                            order.splice(target, 0, moved);
-                            return { ...template, sectionOrder: order };
+                            const [moved] = list.splice(source, 1);
+                            list.splice(target, 0, moved);
+                            return { ...template, columns: list };
                           })} disabled={index === 0} aria-label="Przenieś wyżej"><ArrowUp size={14} /></button>
                           <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
-                            const order = [...template.sectionOrder];
-                            const source = order.indexOf(sectionId);
+                            const list = [...template.columns];
+                            const source = list.findIndex((item) => item.key === column.key);
                             const target = source + 1;
-                            if (source < 0 || target >= order.length) return template;
-                            const [moved] = order.splice(source, 1);
-                            order.splice(target, 0, moved);
-                            return { ...template, sectionOrder: order };
-                          })} disabled={index === (currentDocumentTemplate.sectionOrder ?? DEFAULT_SHARED_TEMPLATE_SECTION_ORDER).length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
+                            if (source < 0 || target >= list.length) return template;
+                            const [moved] = list.splice(source, 1);
+                            list.splice(target, 0, moved);
+                            return { ...template, columns: list };
+                          })} disabled={index === currentDocumentTemplate.columns.length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
                         </div>
-                      </div>;
-                    })}
-                  </div>
-                </div>}
-
-                {activeAgreementTab === 'columns' && <div className="document-section-content">
-                  <div className="documents-subheader">
-                    <strong>Kolumny tabeli</strong>
-                  </div>
-                  <div className="document-column-list compact-column-list">
-                    {(currentDocumentTemplate.columns ?? []).map((column, index) => <div key={column.key} className="document-column-row compact">
-                      <label className="settings-check"><input type="checkbox" checked={column.enabled !== false} onChange={() => updateCurrentDocumentTemplate((template) => ({ ...template, columns: template.columns.map((item) => item.key === column.key ? { ...item, enabled: item.enabled === false } : item) }))} /><span>{column.label}</span></label>
-                      <div className="dictionary-row-actions dictionary-icon-actions">
-                        <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
-                          const list = [...template.columns];
-                          const source = list.findIndex((item) => item.key === column.key);
-                          const target = source - 1;
-                          if (source < 0 || target < 0) return template;
-                          const [moved] = list.splice(source, 1);
-                          list.splice(target, 0, moved);
-                          return { ...template, columns: list };
-                        })} disabled={index === 0} aria-label="Przenieś wyżej"><ArrowUp size={14} /></button>
-                        <button type="button" className="dictionary-icon-button" onClick={() => updateCurrentDocumentTemplate((template) => {
-                          const list = [...template.columns];
-                          const source = list.findIndex((item) => item.key === column.key);
-                          const target = source + 1;
-                          if (source < 0 || target >= list.length) return template;
-                          const [moved] = list.splice(source, 1);
-                          list.splice(target, 0, moved);
-                          return { ...template, columns: list };
-                        })} disabled={index === currentDocumentTemplate.columns.length - 1} aria-label="Przenieś niżej"><ArrowDown size={14} /></button>
-                      </div>
-                    </div>)}
-                  </div>
-                </div>}
-
-                {activeAgreementTab === 'variables' && <div className="document-section-content">
-                  <div className="documents-subheader">
-                    <strong>Dostępne zmienne</strong>
-                    {copiedTemplateVariable && <span className="muted">Skopiowano: {copiedTemplateVariable}</span>}
-                  </div>
-                  <div className="document-column-list compact-column-list">
-                    {currentTemplateType.variables.map((variable) => <button key={variable.key} type="button" className="backup-action-button template-variable-button" onClick={() => copyAgreementVariable(variable.key)}>
-                      <span><strong>{variable.key}</strong><small>{variable.description}</small></span>
-                    </button>)}
-                  </div>
-                </div>}
-
-                {activeAgreementTab === 'preview' && <div className="document-section-content document-preview-tab">
-                  <div className="documents-card-header-row">
-                    <div><strong>Podgląd i eksport</strong><p className="muted">Podgląd A4 w osobnym oknie z zoomem i pełną skalą.</p></div>
-                    <div className="settings-action-row">
-                      <AppButton variant="secondary" size="sm" onClick={() => setAgreementPreviewOpen(true)}><FileText size={14} />Podgląd</AppButton>
-                      <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}><FileText size={14} />Generuj PDF</AppButton>
-                      <AppButton variant="secondary" size="sm" onClick={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}><Printer size={14} />Drukuj</AppButton>
-                      <AppButton variant="primary" size="sm" onClick={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}><Download size={14} />Pobierz</AppButton>
+                      </div>)}
                     </div>
-                  </div>
-                </div>}
+                  </div>}
+
+                  {activeAgreementTab === 'variables' && <div className="document-section-content">
+                    <div className="documents-subheader">
+                      <strong>Dostępne zmienne</strong>
+                      {copiedTemplateVariable && <span className="muted">Skopiowano: {copiedTemplateVariable}</span>}
+                    </div>
+                    <div className="document-column-list compact-column-list">
+                      {currentTemplateType.variables.map((variable) => <button key={variable.key} type="button" className="backup-action-button template-variable-button" onClick={() => copyAgreementVariable(variable.key)}>
+                        <span><strong>{variable.key}</strong><small>{variable.description}</small></span>
+                      </button>)}
+                    </div>
+                  </div>}
+
+                  {activeAgreementTab === 'preview' && <div className="document-section-content document-preview-tab">
+                    <div className="documents-card-header-row">
+                      <div><strong>Podgląd i eksport</strong><p className="muted">Podgląd A4 w osobnym oknie z zoomem i pełną skalą.</p></div>
+                      <div className="settings-action-row">
+                        <AppButton variant="secondary" size="sm" onClick={() => setAgreementPreviewOpen(true)}><FileText size={14} />Podgląd</AppButton>
+                        <AppButton variant="secondary" size="sm" onClick={() => { printHtmlInIframe(currentDocumentTemplatePreviewHtml); addPdfArchiveRow({ type: currentTemplateType.label, number: templatePreviewContext.documentNumber, relation: 'Szablony dokumentów' }); }}><FileText size={14} />Generuj PDF</AppButton>
+                        <AppButton variant="secondary" size="sm" onClick={() => { printHtmlInIframe(currentDocumentTemplatePreviewHtml); addPdfArchiveRow({ type: currentTemplateType.label, number: templatePreviewContext.documentNumber, relation: 'Szablony dokumentów' }); }}><Printer size={14} />Drukuj</AppButton>
+                        <AppButton variant="primary" size="sm" onClick={() => { printHtmlInIframe(currentDocumentTemplatePreviewHtml); addPdfArchiveRow({ type: currentTemplateType.label, number: templatePreviewContext.documentNumber, relation: 'Szablony dokumentów' }); }}><Download size={14} />Pobierz</AppButton>
+                      </div>
+                    </div>
+                  </div>}
+                </div>
               </div>
-            </div>
+            </>}
 
             {agreementPreviewOpen && <DocumentPreviewModal
               title={`Podgląd: ${currentTemplateType.label}`}
               html={currentDocumentTemplatePreviewHtml}
               onClose={() => setAgreementPreviewOpen(false)}
-              onGeneratePdf={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}
-              onPrint={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}
-              onDownload={() => printHtmlInIframe(currentDocumentTemplatePreviewHtml)}
+              onGeneratePdf={() => { printHtmlInIframe(currentDocumentTemplatePreviewHtml); addPdfArchiveRow({ type: currentTemplateType.label, number: templatePreviewContext.documentNumber, relation: 'Podgląd szablonu' }); }}
+              onPrint={() => { printHtmlInIframe(currentDocumentTemplatePreviewHtml); addPdfArchiveRow({ type: currentTemplateType.label, number: templatePreviewContext.documentNumber, relation: 'Podgląd szablonu' }); }}
+              onDownload={() => { printHtmlInIframe(currentDocumentTemplatePreviewHtml); addPdfArchiveRow({ type: currentTemplateType.label, number: templatePreviewContext.documentNumber, relation: 'Podgląd szablonu' }); }}
             />}
           </section>}
 
-          {activeDocumentPanel === 'header' && <section className="settings-config-card documents-config-card">
-            <div className="settings-config-card-header"><div><p className="eyebrow">Dokumenty</p><h3>Nagłówek i logo</h3><p className="muted">Logo jest zarządzane w sekcji Firma. Tutaj decydujesz, czy pojawia się na dokumentach i jaki tekst nagłówka ma być użyty.</p></div><AppButton variant="primary" size="sm" onClick={saveCompanySettings}><Save size={14} />Zapisz</AppButton></div>
-            <div className="documents-header-layout">
-              <div className="settings-form-section">
-                <label className="firm-field firm-field-footer">Tekst nagłówka PDF<AppTextarea value={companyProfile.documentHeader} onChange={(event) => updateCompanyProfile('documentHeader', event.target.value)} rows={3} /></label>
-                <label className="settings-option-row"><input type="checkbox" checked={companyProfile.showLogoOnDocuments !== false} onChange={(event) => updateCompanyProfile('showLogoOnDocuments', event.target.checked)} /><span><strong>Pokazuj logo firmy na PDF</strong><small>Logo pochodzi z profilu firmy i nie jest przesyłane osobno w Dokumentach.</small></span></label>
-              </div>
-              <div className="settings-form-section">
-                <div className="settings-section-title"><h4>Podgląd danych firmy</h4><p className="muted">Źródłem danych jest sekcja Firma.</p></div>
-                <div className="firm-document-preview compact-document-preview">
-                  {companyProfile.logoDataUrl && companyProfile.showLogoOnDocuments !== false && <img src={companyProfile.logoDataUrl} alt="Logo firmy" />}
-                  <strong>{companyProfile.legalName || companyProfile.name || 'Dane firmy'}</strong>
-                  <span>{formatCompanyAddress(companyProfile) || 'Adres pobierany z zakładki Firma'}</span>
-                  <span>{formatCompanyContact(companyProfile) || 'Kontakt pobierany z zakładki Firma'}</span>
-                </div>
-              </div>
+          {effectiveDocumentPanel === 'designer' && <section className="settings-config-card documents-config-card documents-designer-launch-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">Projektant dokumentów</p><h3>Projektant A4</h3><p className="muted">Pełnoekranowy edytor z kartką A4 na środku, biblioteką elementów i panelem właściwości. Dokument jest zawsze głównym obszarem pracy.</p></div>
+              <AppButton variant="primary" size="sm" onClick={() => setDocumentsDesignerFullscreen(true)}><FileText size={14} />Otwórz projektant</AppButton>
             </div>
           </section>}
 
-          {activeDocumentPanel === 'footer' && <section className="settings-config-card documents-config-card">
-            <div className="settings-config-card-header"><div><p className="eyebrow">Dokumenty</p><h3>Stopka dokumentów</h3><p className="muted">Tekst widoczny na generowanych dokumentach, gdy szablon go wykorzystuje.</p></div><AppButton variant="primary" size="sm" onClick={saveCompanySettings}><Save size={14} />Zapisz</AppButton></div>
-            <label className="firm-field firm-field-footer">Tekst stopki PDF<AppTextarea value={companyProfile.documentFooter} onChange={(event) => updateCompanyProfile('documentFooter', event.target.value)} rows={4} /></label>
-            <div className="firm-preview document-footer-preview"><span>{companyProfile.documentFooter?.trim() || 'Stopka pojawi się na dokumentach po zapisaniu tekstu.'}</span></div>
-          </section>}
-
-          {activeDocumentPanel === 'exchange' && <section className="settings-config-card documents-config-card">
-            <div className="settings-config-card-header"><div><p className="eyebrow">Konfiguracja</p><h3>Import / eksport</h3><p className="muted">Format eksportu pozostaje zgodny z dotychczasową konfiguracją szablonu umowy.</p></div></div>
-            <div className="document-exchange-grid">
-              <button type="button" className="backup-action-button" onClick={exportRentalAgreementTemplate}><Download size={18} /><span><strong>Eksportuj szablon umowy</strong><small>Kolumny, kolejność i warunki umowy.</small></span></button>
-              <button type="button" className="backup-action-button" onClick={() => templateImportInputRef.current?.click()}><FolderOpen size={18} /><span><strong>Importuj szablon umowy</strong><small>Nadpisze bieżącą konfigurację w formularzu po potwierdzeniu.</small></span></button>
-              <button type="button" className="backup-action-button" onClick={exportRentalAgreementTerms}><Download size={18} /><span><strong>Eksportuj warunki</strong><small>Same punkty umowy, bez układu kolumn.</small></span></button>
-              <button type="button" className="backup-action-button" onClick={() => termsImportInputRef.current?.click()}><FolderOpen size={18} /><span><strong>Importuj warunki</strong><small>Podmieni listę punktów po potwierdzeniu.</small></span></button>
-              <input ref={templateImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTemplate} className="backup-file-input" />
-              <input ref={termsImportInputRef} type="file" accept="application/json,.json" onChange={importRentalAgreementTerms} className="backup-file-input" />
+          {effectiveDocumentPanel === 'archive' && <section className="settings-config-card documents-config-card">
+            <div className="settings-config-card-header">
+              <div><p className="eyebrow">Dokumenty</p><h3>Archiwum PDF</h3><p className="muted">Historia wygenerowanych dokumentów PDF z modułu Dokumenty.</p></div>
+            </div>
+            <div className="data-table-shell">
+              <table className="data-table">
+                <thead><tr><th>LP</th><th>Typ dokumentu</th><th>Numer</th><th>Data utworzenia</th><th>Powiązanie</th><th>Utworzył</th><th>Akcje</th></tr></thead>
+                <tbody>
+                  {pdfArchiveRows.length === 0 && <tr><td colSpan="7">Archiwum jest puste. Dodawanie wpisów następuje przy generowaniu PDF w module Dokumenty.</td></tr>}
+                  {pdfArchiveRows.map((row, index) => <tr key={row.id}>
+                    <td>{index + 1}</td>
+                    <td>{row.type}</td>
+                    <td>{row.number}</td>
+                    <td>{new Date(row.createdAt).toLocaleString('pl-PL')}</td>
+                    <td>{row.relation}</td>
+                    <td>{row.createdBy}</td>
+                    <td>
+                      <div className="settings-action-row">
+                        <AppButton variant="secondary" size="sm" onClick={() => setDocumentSettingsNotice('Podgląd PDF dla wpisów archiwalnych będzie dostępny po podłączeniu trwałego pliku.')}>Podgląd PDF</AppButton>
+                        <AppButton variant="secondary" size="sm" onClick={() => setDocumentSettingsNotice('Pobieranie PDF dla wpisów archiwalnych będzie dostępne po podłączeniu trwałego pliku.')}>Pobierz PDF</AppButton>
+                        <AppButton variant="danger" size="sm" onClick={() => deletePdfArchiveRow(row.id)}>Usuń</AppButton>
+                      </div>
+                    </td>
+                  </tr>)}
+                </tbody>
+              </table>
             </div>
           </section>}
         </div>
+        {documentsDesignerFullscreen && <div className="documents-designer-fullscreen">
+          <DocumentDesignerPanel
+            fullscreen
+            onClose={() => setDocumentsDesignerFullscreen(false)}
+            companyProfile={companyProfile}
+            previewContext={templatePreviewContext}
+            onNotice={setDocumentSettingsNotice}
+            onGeneratePdf={addPdfArchiveRow}
+          />
+        </div>}
       </div></DocumentsSettingsPanel>}
 
       {activeSection === 'system' && <SystemSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace settings-subsystem-workspace">
@@ -11280,6 +13090,18 @@ function SettingsV2({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onC
 
       </SettingsSectionShell>
     </div>
+    {pendingTemplateExitAction && <ModalFrame
+      className="confirm-dialog"
+      title="Masz niezapisane zmiany."
+      onClose={cancelTemplateExit}
+      footer={<>
+        <ButtonSecondary onClick={cancelTemplateExit}>Anuluj</ButtonSecondary>
+        <ButtonSecondary onClick={confirmTemplateExitWithDiscard}>Odrzuć</ButtonSecondary>
+        <ButtonPrimary onClick={confirmTemplateExitWithSave}>Zapisz</ButtonPrimary>
+      </>}
+    >
+      <p className="confirm-dialog-message">Przed opuszczeniem widoku zapisz zmiany albo je odrzuć.</p>
+    </ModalFrame>}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }

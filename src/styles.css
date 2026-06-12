@@ -2947,8 +2947,8 @@ th.expand-cell{cursor:default}
 }
 .rental-terms-grid{
   display:grid;
-  grid-template-columns:minmax(120px,.7fr) minmax(120px,.7fr) minmax(420px,2.8fr);
-  gap:6px 8px;
+  grid-template-columns:repeat(6, max-content);
+  gap:12px;
   align-items:end;
 }
 .rental-document-grid .ds-form-field,
@@ -4063,9 +4063,31 @@ th.expand-cell{cursor:default}
 }
 .rental-terms-grid{
   display:grid;
-  grid-template-columns:repeat(6, minmax(96px, 132px));
+  grid-template-columns:repeat(6, max-content);
   gap:12px;
   align-items:end;
+}
+.rental-terms-grid .rental-settlement-field{
+  width:132px;
+}
+.rental-terms-grid .rental-net-field,
+.rental-terms-grid .rental-vat-amount-field,
+.rental-terms-grid .rental-gross-field{
+  width:108px;
+}
+.rental-terms-grid .rental-vat-field,
+.rental-terms-grid .rental-deposit-field{
+  width:108px;
+}
+.rental-terms-grid .rental-settlement-field .app-select,
+.rental-terms-grid .rental-net-field .app-input,
+.rental-terms-grid .rental-vat-field .app-select,
+.rental-terms-grid .rental-vat-amount-field .app-input,
+.rental-terms-grid .rental-gross-field .app-input,
+.rental-terms-grid .rental-deposit-field .app-input{
+  width:100%;
+  max-width:100%;
+  box-sizing:border-box;
 }
 .rental-terms-grid .rental-settlement-field,
 .rental-terms-grid .rental-net-field,
@@ -4075,24 +4097,19 @@ th.expand-cell{cursor:default}
 .rental-terms-grid .rental-deposit-field{
   min-width:0;
 }
-.rental-terms-grid .money-input{
-  min-width:0;
-}
 .rental-item-price-input{
-  min-width:108px;
-  max-width:132px;
-}
-.rental-item-price-input .app-input{
-  min-width:0;
+  width:96px;
+  min-width:72px;
+  max-width:96px;
 }
 @media(max-width:1100px){
   .rental-terms-grid{
-    grid-template-columns:repeat(3, minmax(120px, 1fr));
+    grid-template-columns:repeat(3, max-content);
   }
 }
 @media(max-width:960px){
   .rental-terms-grid{
-    grid-template-columns:repeat(2, minmax(120px, 1fr));
+    grid-template-columns:repeat(2, max-content);
   }
 }
 .rental-terms-grid .app-textarea{
@@ -4265,9 +4282,6 @@ th.expand-cell{cursor:default}
   width:150px;
   min-width:150px;
   max-width:150px;
-}
-.rental-terms-grid{
-  grid-template-columns:minmax(150px,.75fr) minmax(140px,.65fr) minmax(320px,2fr);
 }
 .app-shell.theme-light .money-input span{
   background:rgba(241,245,249,.88);

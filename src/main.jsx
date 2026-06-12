@@ -4142,7 +4142,7 @@ function RentalAgreementModal({ rental, onClose }) {
   />;
 }
 
-function RentalItemPriceInput({ value, onChange, disabled = false, currency = 'zł' }) {
+function RentalItemPriceInput({ value, onChange, disabled = false }) {
   const [draft, setDraft] = useState(String(value ?? ''));
   const focusedRef = useRef(false);
 
@@ -4170,23 +4170,21 @@ function RentalItemPriceInput({ value, onChange, disabled = false, currency = 'z
   };
 
   return (
-    <div className="money-input rental-item-price-input">
-      <AppInput
-        value={draft}
-        disabled={disabled}
-        placeholder="—"
-        onFocus={() => {
-          focusedRef.current = true;
-          setDraft(String(value ?? ''));
-        }}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commitDraft}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur();
-        }}
-      />
-      <span>{currency}</span>
-    </div>
+    <AppInput
+      className="rental-item-price-input"
+      value={draft}
+      disabled={disabled}
+      placeholder="—"
+      onFocus={() => {
+        focusedRef.current = true;
+        setDraft(String(value ?? ''));
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commitDraft}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur();
+      }}
+    />
   );
 }
 
@@ -4294,7 +4292,6 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
           value={itemPrices[row.id] ?? ''}
           onChange={(next) => updateItemPrice(row.id, next)}
           disabled={settlementOptional}
-          currency={rentalSettings.currency || 'zł'}
         />
       )
     };
@@ -4304,7 +4301,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       priceColumn,
       ...RENTAL_SELECTED_EQUIPMENT_COLUMNS.slice(insertIndex)
     ];
-  }, [itemPrices, settlementOptional, rentalSettings.currency]);
+  }, [itemPrices, settlementOptional]);
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const chooseClient = (client) => {
@@ -4585,10 +4582,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
               </AppSelect>
             </FormField>
             <FormField className="rental-net-field" label="Suma netto">
-              <div className="money-input">
-                <AppInput value={formatTermsAmount(financialTotals.totalNet)} readOnly disabled={settlementOptional} placeholder="0,00" />
-                <span>{rentalSettings.currency || 'zł'}</span>
-              </div>
+              <AppInput value={formatTermsAmount(financialTotals.totalNet)} readOnly disabled={settlementOptional} placeholder="0,00" />
             </FormField>
             <FormField className="rental-vat-field" label="VAT">
               <AppSelect value={form.vat_rate} onChange={(event) => update('vat_rate', event.target.value)}>
@@ -4596,27 +4590,18 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
               </AppSelect>
             </FormField>
             <FormField className="rental-vat-amount-field" label="Kwota VAT">
-              <div className="money-input">
-                <AppInput value={formatTermsAmount(financialTotals.vatAmount)} readOnly disabled={settlementOptional} placeholder="0,00" />
-                <span>{rentalSettings.currency || 'zł'}</span>
-              </div>
+              <AppInput value={formatTermsAmount(financialTotals.vatAmount)} readOnly disabled={settlementOptional} placeholder="0,00" />
             </FormField>
             <FormField className="rental-gross-field" label="Razem brutto">
-              <div className="money-input">
-                <AppInput value={formatTermsAmount(financialTotals.totalGross)} readOnly disabled={settlementOptional} placeholder="0,00" />
-                <span>{rentalSettings.currency || 'zł'}</span>
-              </div>
+              <AppInput value={formatTermsAmount(financialTotals.totalGross)} readOnly disabled={settlementOptional} placeholder="0,00" />
             </FormField>
             <FormField className="rental-deposit-field" label="Kaucja">
-              <div className="money-input">
-                <AppInput
-                  value={form.total_deposit}
-                  onChange={(event) => update('total_deposit', event.target.value)}
-                  disabled={settlementOptional}
-                  placeholder={settlementOptional ? '0' : 'np. 500'}
-                />
-                <span>{rentalSettings.currency || 'zł'}</span>
-              </div>
+              <AppInput
+                value={form.total_deposit}
+                onChange={(event) => update('total_deposit', event.target.value)}
+                disabled={settlementOptional}
+                placeholder={settlementOptional ? '0' : 'np. 500'}
+              />
             </FormField>
           </div>
         </SectionPanel>

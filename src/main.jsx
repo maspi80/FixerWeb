@@ -14082,8 +14082,9 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     }
     setPendingTemplateExitAction(() => action);
   };
-  const confirmTemplateExitWithSave = () => {
-    saveDocumentTemplateDrafts('Zapisano szablon dokumentu.');
+  const confirmTemplateExitWithSave = async () => {
+    const saved = await saveDocumentTemplateDrafts('Zapisano szablon dokumentu.');
+    if (!saved) return;
     const pendingAction = pendingTemplateExitAction;
     setPendingTemplateExitAction(null);
     pendingAction?.();
@@ -14133,9 +14134,8 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     const autosaveTimer = window.setTimeout(() => {
       try {
         const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
-        const saved = saveDocumentTemplateLibrary(normalized);
-        setDocumentTemplateLibrary(saved);
-        setSavedDocumentTemplateLibrary(saved);
+        const savedDraft = saveDocumentTemplateLibrary(normalized);
+        setDocumentTemplateLibrary(savedDraft);
       } catch (error) {
         console.error('Document template autosave failed', error);
         setDocumentSettingsNotice('Nie udało się zapisać szablonu dokumentu. Spróbuj ponownie.');

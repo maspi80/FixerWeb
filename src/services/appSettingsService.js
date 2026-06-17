@@ -17,6 +17,7 @@ const LOCAL_STORAGE_KEYS = {
 };
 
 const cache = {};
+const hydrationSources = {};
 let hydrated = false;
 let hydratePromise = null;
 const listeners = new Set();
@@ -48,12 +49,65 @@ function notifyListeners() {
   });
 }
 
+function hasMeaningfulCompanyProfile(value) {
+  const profile = value ?? {};
+  return Boolean(
+    String(profile.name ?? '').trim()
+    || String(profile.legalName ?? '').trim()
+    || String(profile.nip ?? '').trim()
+    || String(profile.email ?? '').trim()
+    || String(profile.phone ?? '').trim()
+    || String(profile.logoDataUrl ?? '').trim()
+  );
+}
+
+/** Returns true when a stored value should be treated as authoritative (non-empty). */
+export function isAuthoritativeSettingValue(settingKey, value) {
+  if (value === null || value === undefined) return false;
+
+  if (settingKey === APP_SETTING_KEYS.companyProfile) {
+    return hasMeaningfulCompanyProfile(value);
+  }
+
+  if (settingKey === APP_SETTING_KEYS.rentalNumbering) {
+    return Boolean(String(value?.prefix ?? '').trim());
+  }
+
+  if (settingKey === APP_SETTING_KEYS.documentDesigner) {
+    return Array.isArray(value?.templates) && value.templates.length > 0;
+  }
+
+  if (settingKey === APP_SETTING_KEYS.documentSettings) {
+    return Boolean(
+      (value?.numbering && Object.keys(value.numbering).length > 0)
+      || (value?.documentTemplates && Object.keys(value.documentTemplates).length > 0)
+      || (value?.templates && Object.keys(value.templates).length > 0)
+    );
+  }
+
+  if (settingKey === APP_SETTING_KEYS.documentTemplates) {
+    return typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) return value.length > 0;
+    return Object.keys(value).length > 0;
+  }
+
+  return true;
+}
+
 function bootstrapCacheFromLocalStorage() {
+  // When Supabase is configured, never preload cache from localStorage.
+  // Remote hydration must run first so local cannot override Supabase.
+  if (isSupabaseConfigured) return;
+
   Object.keys(LOCAL_STORAGE_KEYS).forEach((settingKey) => {
     if (cache[settingKey] !== undefined) return;
     const localValue = readLocal(settingKey);
-    if (localValue !== null && localValue !== undefined) {
+    if (isAuthoritativeSettingValue(settingKey, localValue)) {
       cache[settingKey] = localValue;
+      hydrationSources[settingKey] = 'local';
     }
   });
 }
@@ -69,30 +123,42 @@ export function isAppSettingsHydrated() {
   return hydrated || !isSupabaseConfigured;
 }
 
+export function getAppSettingHydrationSource(settingKey) {
+  return hydrationSources[settingKey] ?? null;
+}
+
 export function getAppSetting(settingKey) {
   if (cache[settingKey] !== undefined) return cache[settingKey];
+
+  // Before Supabase hydration completes, do not read stale localStorage.
+  if (isSupabaseConfigured && !hydrated) return undefined;
+
   const localValue = readLocal(settingKey);
-  if (localValue !== null && localValue !== undefined) {
+  if (isAuthoritativeSettingValue(settingKey, localValue)) {
     cache[settingKey] = localValue;
+    hydrationSources[settingKey] = hydrationSources[settingKey] ?? 'local';
     return localValue;
   }
+
   return undefined;
 }
 
 export function setAppSettingCache(settingKey, value) {
   cache[settingKey] = value;
   writeLocal(settingKey, value);
+  hydrationSources[settingKey] = isSupabaseConfigured ? 'cache' : 'local';
   notifyListeners();
 }
 
 async function fetchRemoteSetting(settingKey) {
   const { data, error } = await supabase
     .from('app_settings')
-    .select('setting_value')
+    .select('setting_value, updated_at')
     .eq('setting_key', settingKey)
     .maybeSingle();
   if (error) throw error;
-  return data?.setting_value ?? null;
+  if (!data) return { value: null, updatedAt: null };
+  return { value: data.setting_value ?? null, updatedAt: data.updated_at ?? null };
 }
 
 async function upsertRemoteSetting(settingKey, value) {
@@ -106,56 +172,45 @@ async function upsertRemoteSetting(settingKey, value) {
   if (error) throw error;
 }
 
-function hasMeaningfulLocalValue(settingKey, value) {
-  if (value === null || value === undefined) return false;
-  if (settingKey === APP_SETTING_KEYS.companyProfile) {
-    const profile = value ?? {};
-    return Boolean(
-      String(profile.name ?? '').trim()
-      || String(profile.legalName ?? '').trim()
-      || String(profile.nip ?? '').trim()
-      || String(profile.email ?? '').trim()
-      || String(profile.phone ?? '').trim()
-      || String(profile.logoDataUrl ?? '').trim()
-    );
-  }
-  if (typeof value === 'object') {
-    if (Array.isArray(value)) return value.length > 0;
-    return Object.keys(value).length > 0;
-  }
-  return true;
-}
-
 async function resolveSettingValue(settingKey) {
   const localValue = readLocal(settingKey);
+
   if (!isSupabaseConfigured) {
-    if (localValue !== null && localValue !== undefined) return localValue;
-    return undefined;
+    if (isAuthoritativeSettingValue(settingKey, localValue)) {
+      return { value: localValue, source: 'local' };
+    }
+    return { value: undefined, source: null };
   }
 
   let remoteValue = null;
   try {
-    remoteValue = await fetchRemoteSetting(settingKey);
+    const remote = await fetchRemoteSetting(settingKey);
+    remoteValue = remote.value;
   } catch (error) {
     console.error(`Failed to fetch app setting "${settingKey}"`, error);
-    if (localValue !== null && localValue !== undefined) return localValue;
+    if (isAuthoritativeSettingValue(settingKey, localValue)) {
+      return { value: localValue, source: 'local-fallback' };
+    }
     throw error;
   }
 
-  if (remoteValue !== null && remoteValue !== undefined) {
-    return remoteValue;
+  // Priority 1: Supabase when it contains authoritative data.
+  if (isAuthoritativeSettingValue(settingKey, remoteValue)) {
+    return { value: remoteValue, source: 'supabase' };
   }
 
-  if (hasMeaningfulLocalValue(settingKey, localValue)) {
+  // Priority 2: one-time migration from localStorage when Supabase row is missing/empty.
+  if (isAuthoritativeSettingValue(settingKey, localValue)) {
     try {
       await upsertRemoteSetting(settingKey, localValue);
+      return { value: localValue, source: 'migrated-local' };
     } catch (error) {
       console.warn(`Failed to migrate local app setting "${settingKey}" to Supabase`, error);
+      return { value: localValue, source: 'local-unmigrated' };
     }
-    return localValue;
   }
 
-  return undefined;
+  return { value: undefined, source: null };
 }
 
 export async function hydrateAppSettings({ force = false } = {}) {
@@ -164,11 +219,13 @@ export async function hydrateAppSettings({ force = false } = {}) {
 
   hydratePromise = (async () => {
     const keys = Object.values(APP_SETTING_KEYS);
+
     if (!isSupabaseConfigured) {
       keys.forEach((settingKey) => {
         const localValue = readLocal(settingKey);
-        if (localValue !== null && localValue !== undefined) {
+        if (isAuthoritativeSettingValue(settingKey, localValue)) {
           cache[settingKey] = localValue;
+          hydrationSources[settingKey] = 'local';
         }
       });
       hydrated = true;
@@ -176,11 +233,19 @@ export async function hydrateAppSettings({ force = false } = {}) {
       return;
     }
 
+    // Clear pre-hydration cache so local bootstrap cannot win over Supabase.
+    keys.forEach((settingKey) => {
+      delete cache[settingKey];
+      delete hydrationSources[settingKey];
+    });
+
     await Promise.all(keys.map(async (settingKey) => {
       const resolved = await resolveSettingValue(settingKey);
-      if (resolved !== undefined) {
-        cache[settingKey] = resolved;
-        writeLocal(settingKey, resolved);
+      if (resolved.value !== undefined) {
+        cache[settingKey] = resolved.value;
+        hydrationSources[settingKey] = resolved.source;
+        // Sync localStorage to match authoritative layer (Supabase or post-migration).
+        writeLocal(settingKey, resolved.value);
       }
     }));
 
@@ -194,8 +259,15 @@ export async function hydrateAppSettings({ force = false } = {}) {
 }
 
 export async function persistAppSetting(settingKey, value) {
+  if (!isAuthoritativeSettingValue(settingKey, value)
+    && settingKey === APP_SETTING_KEYS.companyProfile) {
+    throw new Error('EMPTY_COMPANY_PROFILE');
+  }
+
   setAppSettingCache(settingKey, value);
   if (!isSupabaseConfigured) return value;
+
   await upsertRemoteSetting(settingKey, value);
+  hydrationSources[settingKey] = 'supabase';
   return value;
 }

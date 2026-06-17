@@ -8432,7 +8432,7 @@ function isEmptyCompanyProfile(profile = {}) {
 
 function getCompanyProfile() {
   const stored = getAppSetting(APP_SETTING_KEYS.companyProfile);
-  return { ...DEFAULT_COMPANY_PROFILE, ...(stored && typeof stored === 'object' ? stored : getStoredJson(COMPANY_PROFILE_STORAGE_KEY, {})) };
+  return { ...DEFAULT_COMPANY_PROFILE, ...(stored && typeof stored === 'object' ? stored : {}) };
 }
 
 function saveCompanyProfile(profile) {
@@ -9073,7 +9073,7 @@ function getDefaultDocumentTemplateLibrary() {
 
 function getDocumentTemplateLibrary() {
   const defaults = getDefaultDocumentTemplateLibrary();
-  const raw = getAppSetting(APP_SETTING_KEYS.documentTemplates) ?? getStoredJson(DOCUMENT_TEMPLATE_LIBRARY_STORAGE_KEY, {});
+  const raw = getAppSetting(APP_SETTING_KEYS.documentTemplates);
   if (!raw || typeof raw !== 'object') return defaults;
   const merged = { ...defaults };
   DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
@@ -9260,8 +9260,76 @@ const DOCUMENT_DESIGNER_LEGACY_MIGRATION_KEY = 'fixer:document-designer-legacy-m
 const DOCUMENT_DESIGNER_LAYOUT_VERSION = 2;
 const DOCUMENT_DESIGNER_PAGE = { width: 794, height: 1123 };
 const DOCUMENT_DESIGNER_MIN_SIZE = { width: 40, height: 18 };
+const DOCUMENT_DESIGNER_LINE_DEFAULT_HEIGHT = 18;
+
+function getDesignerElementMinSize(element = {}) {
+  if (element.kind === 'line') {
+    return { width: DOCUMENT_DESIGNER_MIN_SIZE.width, height: 1 };
+  }
+  return DOCUMENT_DESIGNER_MIN_SIZE;
+}
+
+function resolveDesignerElementHeight(element = {}, base = {}) {
+  const minSize = getDesignerElementMinSize(element);
+  const stored = Number(element.height);
+  if (Number.isFinite(stored) && stored > 0) {
+    return Math.max(minSize.height, stored);
+  }
+  if (element.kind === 'line') {
+    return DOCUMENT_DESIGNER_LINE_DEFAULT_HEIGHT;
+  }
+  const baseHeight = Number(base.height);
+  if (Number.isFinite(baseHeight) && baseHeight > 0) {
+    return Math.max(minSize.height, baseHeight);
+  }
+  return minSize.height;
+}
+
+function resolveDesignerElementWidth(element = {}, base = {}) {
+  const minSize = getDesignerElementMinSize(element);
+  const stored = Number(element.width);
+  if (Number.isFinite(stored) && stored > 0) {
+    return Math.max(minSize.width, stored);
+  }
+  const baseWidth = Number(base.width);
+  if (Number.isFinite(baseWidth) && baseWidth > 0) {
+    return Math.max(minSize.width, baseWidth);
+  }
+  return minSize.width;
+}
 const DESIGNER_MM_TO_PX = 3.7795275591;
 const DEFAULT_DESIGNER_MARGINS = { top: 22, right: 20, bottom: 18, left: 20 };
+const DOCUMENT_DESIGNER_LIBRARY_WIDTH = 250;
+const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY = 'fixer-document-designer-properties-width';
+const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_DEFAULT = 360;
+const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MIN = 280;
+const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MAX = 560;
+const DOCUMENT_DESIGNER_STAGE_MIN_WIDTH = 380;
+
+function clampDocumentDesignerPropertiesWidth(value, { viewportWidth = window.innerWidth, libraryCollapsed = false } = {}) {
+  const reservedLeft = libraryCollapsed ? 0 : DOCUMENT_DESIGNER_LIBRARY_WIDTH;
+  const maxByViewport = viewportWidth - reservedLeft - DOCUMENT_DESIGNER_STAGE_MIN_WIDTH - 48;
+  const max = Math.min(
+    DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MAX,
+    Math.max(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MIN, maxByViewport)
+  );
+  return Math.min(max, Math.max(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MIN, Math.round(value)));
+}
+
+function getSavedDocumentDesignerPropertiesWidth(libraryCollapsed = false) {
+  const saved = Number(localStorage.getItem(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY));
+  if (Number.isFinite(saved) && saved > 0) {
+    return clampDocumentDesignerPropertiesWidth(saved, { libraryCollapsed });
+  }
+  return DOCUMENT_DESIGNER_PROPERTIES_WIDTH_DEFAULT;
+}
+
+function getDocumentDesignerLayoutColumns({ libraryCollapsed, propertiesCollapsed, propertiesWidth }) {
+  const stage = 'minmax(0, 1fr)';
+  const properties = propertiesCollapsed ? null : `${propertiesWidth}px`;
+  const library = libraryCollapsed ? null : `${DOCUMENT_DESIGNER_LIBRARY_WIDTH}px`;
+  return [library, stage, properties].filter(Boolean).join(' ');
+}
 const DOCUMENT_DESIGNER_LIBRARY = [
   { id: 'logo', label: '🖼 Logo', kind: 'logo', width: 110, height: 58, hint: 'Element graficzny' },
   { id: 'companyName', label: '🏢 Nagłówek firmy', kind: 'text', width: 240, height: 24, text: '{{companyName}}', fontSize: 16, fontWeight: 700, hint: 'Nazwa w nagłówku' },
@@ -9346,10 +9414,13 @@ function getDesignerWorkArea(margins = DEFAULT_DESIGNER_MARGINS) {
 
 function clampDesignerElementToWorkArea(element = {}, margins = DEFAULT_DESIGNER_MARGINS) {
   const area = getDesignerWorkArea(margins);
-  const minW = DOCUMENT_DESIGNER_MIN_SIZE.width;
-  const minH = DOCUMENT_DESIGNER_MIN_SIZE.height;
-  let width = Math.max(minW, Math.min(area.width, Number(element.width) || minW));
-  let height = Math.max(minH, Math.min(area.height, Number(element.height) || minH));
+  const minSize = getDesignerElementMinSize(element);
+  const minW = minSize.width;
+  const minH = minSize.height;
+  const rawWidth = Number(element.width);
+  const rawHeight = Number(element.height);
+  let width = Math.max(minW, Math.min(area.width, Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : minW));
+  let height = Math.max(minH, Math.min(area.height, Number.isFinite(rawHeight) && rawHeight > 0 ? rawHeight : minH));
   let x = Number(element.x) || area.left;
   let y = Number(element.y) || area.top;
 
@@ -9602,14 +9673,14 @@ function createDefaultDocumentDesignerTemplate(documentTypeId, name = 'Domyślny
 
 function normalizeDocumentDesignerElement(element = {}) {
   const base = createDocumentDesignerElement(element.libraryId || 'customText');
+  const merged = { ...base, ...element };
   const sourceColumns = Array.isArray(element.columns) && element.columns.length ? element.columns : base.columns;
   return {
-    ...base,
-    ...element,
+    ...merged,
     x: Math.max(0, Number(element.x ?? base.x) || 0),
     y: Math.max(0, Number(element.y ?? base.y) || 0),
-    width: Math.max(DOCUMENT_DESIGNER_MIN_SIZE.width, Number(element.width ?? base.width) || base.width),
-    height: Math.max(DOCUMENT_DESIGNER_MIN_SIZE.height, Number(element.height ?? base.height) || base.height),
+    width: resolveDesignerElementWidth(merged, base),
+    height: resolveDesignerElementHeight(merged, base),
     fontSize: Math.max(8, Number(element.fontSize ?? base.fontSize) || base.fontSize),
     fontWeight: Number(element.fontWeight ?? base.fontWeight) >= 700 ? 700 : Number(element.fontWeight ?? base.fontWeight) >= 600 ? 600 : Number(element.fontWeight ?? base.fontWeight) >= 500 ? 500 : 400,
     align: ['left', 'center', 'right'].includes(String(element.align ?? base.align)) ? String(element.align ?? base.align) : 'left',
@@ -9703,7 +9774,7 @@ function migrateLegacyDocumentDesignerStorageOnce() {
 
 function getDocumentDesignerState() {
   migrateLegacyDocumentDesignerStorageOnce();
-  const stored = getAppSetting(APP_SETTING_KEYS.documentDesigner) ?? getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
+  const stored = getAppSetting(APP_SETTING_KEYS.documentDesigner);
   if (stored && Array.isArray(stored.templates) && stored.templates.length) {
     return normalizeDocumentDesignerState(stored);
   }
@@ -10239,7 +10310,7 @@ function normalizeDocumentSettings(settings) {
 
 function getDocumentSettings() {
   const stored = getAppSetting(APP_SETTING_KEYS.documentSettings);
-  return normalizeDocumentSettings(stored ?? getStoredJson(DOCUMENT_SETTINGS_STORAGE_KEY, DEFAULT_DOCUMENT_SETTINGS));
+  return normalizeDocumentSettings(stored ?? DEFAULT_DOCUMENT_SETTINGS);
 }
 
 function saveDocumentSettings(settings) {
@@ -10286,7 +10357,7 @@ const DEFAULT_CONFIG_DICTIONARIES = {
 };
 
 function getRentalNumberingSettings() {
-  const stored = getAppSetting(APP_SETTING_KEYS.rentalNumbering) ?? getStoredJson(RENTAL_NUMBERING_STORAGE_KEY, DEFAULT_RENTAL_NUMBERING);
+  const stored = getAppSetting(APP_SETTING_KEYS.rentalNumbering) ?? DEFAULT_RENTAL_NUMBERING;
   return {
     ...DEFAULT_RENTAL_NUMBERING,
     ...stored,
@@ -11296,6 +11367,53 @@ function InterfaceSettingsPanel({ children }) { return children; }
 function IntegrationsSettingsPanel({ children }) { return children; }
 function SystemSettingsPanel({ children }) { return children; }
 
+function isDesignerInlineTextEditable(element) {
+  return element?.kind === 'text';
+}
+
+function DocumentDesignerInlineTextEditor({
+  value,
+  onChange,
+  onCommit,
+  onCancel
+}) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const node = inputRef.current;
+    if (!node) return;
+    node.focus();
+    const length = node.value.length;
+    node.setSelectionRange(length, length);
+  }, []);
+
+  return <textarea
+    ref={inputRef}
+    className="document-designer-inline-text-editor"
+    value={value}
+    rows={1}
+    onChange={(event) => onChange(event.target.value)}
+    onMouseDown={(event) => event.stopPropagation()}
+    onDoubleClick={(event) => event.stopPropagation()}
+    onKeyDown={(event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+        return;
+      }
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onCommit();
+      }
+    }}
+    onBlur={() => onCommit()}
+    spellCheck={false}
+    aria-label="Edycja treści elementu"
+  />;
+}
+
 function DocumentDesignerDeferredNumberInput({
   elementId,
   value,
@@ -11377,13 +11495,23 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
   const [dragGuides, setDragGuides] = useState({ vertical: [], horizontal: [] });
   const [libraryCollapsed, setLibraryCollapsed] = useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = useState(false);
+  const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(() => getSavedDocumentDesignerPropertiesWidth(false));
   const [pendingTypeId, setPendingTypeId] = useState('');
   const [tableColumnResize, setTableColumnResize] = useState(null);
   const [elementActionsMenuOpen, setElementActionsMenuOpen] = useState(false);
+  const [toolbarMenuOpen, setToolbarMenuOpen] = useState(false);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const [saveFlash, setSaveFlash] = useState(false);
+  const [inlineTextEditId, setInlineTextEditId] = useState('');
+  const [inlineTextDraft, setInlineTextDraft] = useState('');
+  const inlineTextSkipBlurCommitRef = useRef(false);
+  const toolbarMenuRef = useRef(null);
+  const templateMenuRef = useRef(null);
   const importInputRef = useRef(null);
   const logoInputRef = useRef(null);
   const elementActionsMenuRef = useRef(null);
   const viewportRef = useRef(null);
+  const layoutRef = useRef(null);
   const pageRef = useRef(null);
   const designerStateRef = useRef(initialSavedState);
   const historyStoreRef = useRef({});
@@ -11500,6 +11628,16 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
 
   const canUndo = useMemo(() => getHistoryStacks().past.length > 0, [activeTypeId, activeTemplateId, historyTick]);
   const canRedo = useMemo(() => getHistoryStacks().future.length > 0, [activeTypeId, activeTemplateId, historyTick]);
+  const getDesignerAvailableWidth = () => {
+    const layoutWidth = layoutRef.current?.clientWidth;
+    if (Number.isFinite(layoutWidth) && layoutWidth > 0) return layoutWidth;
+    const viewportWidth = viewportRef.current?.clientWidth;
+    if (Number.isFinite(viewportWidth) && viewportWidth > 0) {
+      const reservedLeft = libraryCollapsed ? 0 : DOCUMENT_DESIGNER_LIBRARY_WIDTH;
+      return viewportWidth + reservedLeft + propertiesPanelWidth;
+    }
+    return window.innerWidth;
+  };
 
   useEffect(() => {
     if (activeTemplateId && activeTypeTemplates.some((template) => template.id === activeTemplateId)) return;
@@ -11514,6 +11652,33 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
   useEffect(() => {
     setElementActionsMenuOpen(false);
   }, [selectedElementId]);
+
+  useEffect(() => {
+    if (!toolbarMenuOpen && !templateMenuOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (toolbarMenuRef.current?.contains(event.target)) return;
+      if (templateMenuRef.current?.contains(event.target)) return;
+      setToolbarMenuOpen(false);
+      setTemplateMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [toolbarMenuOpen, templateMenuOpen]);
+
+  useEffect(() => {
+    if (hasUnsavedChanges) setSaveFlash(false);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!saveFlash) return undefined;
+    const timer = window.setTimeout(() => setSaveFlash(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [saveFlash]);
+
+  useEffect(() => {
+    setInlineTextEditId('');
+    setInlineTextDraft('');
+  }, [activeTemplateId, activeTypeId]);
 
   useEffect(() => {
     if (!elementActionsMenuOpen) return undefined;
@@ -11546,7 +11711,46 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
       observer.disconnect();
       window.removeEventListener('resize', computeFit);
     };
-  }, [libraryCollapsed, propertiesCollapsed, fullscreen]);
+  }, [libraryCollapsed, propertiesCollapsed, fullscreen, propertiesPanelWidth]);
+
+  useEffect(() => {
+    const onWindowResize = () => {
+      const availableWidth = getDesignerAvailableWidth();
+      setPropertiesPanelWidth((current) => {
+        const next = clampDocumentDesignerPropertiesWidth(current, { libraryCollapsed, viewportWidth: availableWidth });
+        if (next !== current) {
+          localStorage.setItem(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY, String(next));
+        }
+        return next;
+      });
+    };
+    window.addEventListener('resize', onWindowResize);
+    return () => window.removeEventListener('resize', onWindowResize);
+  }, [libraryCollapsed]);
+
+  useEffect(() => {
+    const availableWidth = getDesignerAvailableWidth();
+    setPropertiesPanelWidth((current) => clampDocumentDesignerPropertiesWidth(current, { libraryCollapsed, viewportWidth: availableWidth }));
+  }, [libraryCollapsed]);
+
+  useEffect(() => {
+    const node = layoutRef.current;
+    if (!node) return undefined;
+    const syncWidth = () => {
+      const availableWidth = getDesignerAvailableWidth();
+      setPropertiesPanelWidth((current) => {
+        const next = clampDocumentDesignerPropertiesWidth(current, { libraryCollapsed, viewportWidth: availableWidth });
+        if (next !== current) {
+          localStorage.setItem(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY, String(next));
+        }
+        return next;
+      });
+    };
+    syncWidth();
+    const observer = new ResizeObserver(syncWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [libraryCollapsed]);
 
   useEffect(() => {
     const node = viewportRef.current;
@@ -11635,6 +11839,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
       setSavedDesignerState(saved);
       designerStateRef.current = saved;
       setDesignerState(saved);
+      setSaveFlash(true);
       onNotice('Zapisano szablon dokumentu.');
     } catch (error) {
       console.error('Document designer save failed', error);
@@ -11908,7 +12113,91 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
     };
   };
 
+  const cancelInlineTextEdit = () => {
+    inlineTextSkipBlurCommitRef.current = true;
+    const snapshot = propertyEditSnapshotRef.current;
+    if (propertyCommitTimerRef.current) {
+      window.clearTimeout(propertyCommitTimerRef.current);
+      propertyCommitTimerRef.current = null;
+    }
+    propertyEditSnapshotRef.current = null;
+    if (snapshot) {
+      designerStateRef.current = snapshot;
+      setDesignerState(snapshot);
+    }
+    setInlineTextEditId('');
+    setInlineTextDraft('');
+  };
+
+  const commitInlineTextEdit = () => {
+    if (inlineTextSkipBlurCommitRef.current) {
+      inlineTextSkipBlurCommitRef.current = false;
+      return;
+    }
+    if (!inlineTextEditId) return;
+    commitPropertyEditSession();
+    setInlineTextEditId('');
+    setInlineTextDraft('');
+  };
+
+  const beginInlineTextEdit = (element) => {
+    if (!isDesignerInlineTextEditable(element)) return;
+    if (inlineTextEditId && inlineTextEditId !== element.id) {
+      commitInlineTextEdit();
+    }
+    commitPropertyEditSession();
+    beginPropertyEditSession();
+    setSelectedElementId(element.id);
+    setInlineTextEditId(element.id);
+    setInlineTextDraft(String(element.text ?? ''));
+  };
+
+  const handleInlineTextDraftChange = (value) => {
+    setInlineTextDraft(value);
+    if (!inlineTextEditId || !activeTemplate) return;
+    beginPropertyEditSession();
+    updateActiveTemplate((template) => ({
+      ...template,
+      elements: template.elements.map((element) => element.id === inlineTextEditId
+        ? normalizeAndClampElement(element, { text: value })
+        : element)
+    }), { trackHistory: false });
+    schedulePropertyEditCommit();
+  };
+
+  const startPropertiesPanelResize = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startWidth = propertiesPanelWidth;
+    let nextWidth = startWidth;
+    const onMouseMove = (moveEvent) => {
+      nextWidth = clampDocumentDesignerPropertiesWidth(startWidth - (moveEvent.clientX - startX), {
+        libraryCollapsed,
+        viewportWidth: getDesignerAvailableWidth()
+      });
+      setPropertiesPanelWidth(nextWidth);
+    };
+    const onMouseUp = () => {
+      localStorage.setItem(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY, String(nextWidth));
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.classList.remove('resizing-document-designer-properties');
+    };
+    document.body.classList.add('resizing-document-designer-properties');
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const designerLayoutColumns = getDocumentDesignerLayoutColumns({
+    libraryCollapsed,
+    propertiesCollapsed,
+    propertiesWidth: propertiesPanelWidth
+  });
+
   const startDrag = (event, element, mode = 'move') => {
+    if (inlineTextEditId === element.id && mode === 'move') return;
+    if (inlineTextEditId) commitInlineTextEdit();
     event.preventDefault();
     event.stopPropagation();
     commitPropertyEditSession();
@@ -11938,6 +12227,8 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
         const isEast = mode.includes('e');
         const isNorth = mode.includes('n');
         const isSouth = mode.includes('s');
+        const resizeTarget = activeTemplate.elements.find((element) => element.id === dragState.id);
+        const resizeMinSize = getDesignerElementMinSize(resizeTarget ?? {});
         const anchorLeft = dragState.originX;
         const anchorTop = dragState.originY;
         const anchorRight = dragState.originX + dragState.originWidth;
@@ -11948,10 +12239,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
         let nextTop = anchorTop;
         let nextBottom = anchorBottom;
 
-        if (isWest) nextLeft = clamp(anchorLeft + dx, area.left, anchorRight - DOCUMENT_DESIGNER_MIN_SIZE.width);
-        if (isEast) nextRight = clamp(anchorRight + dx, anchorLeft + DOCUMENT_DESIGNER_MIN_SIZE.width, area.right);
-        if (isNorth) nextTop = clamp(anchorTop + dy, area.top, anchorBottom - DOCUMENT_DESIGNER_MIN_SIZE.height);
-        if (isSouth) nextBottom = clamp(anchorBottom + dy, anchorTop + DOCUMENT_DESIGNER_MIN_SIZE.height, area.bottom);
+        if (isWest) nextLeft = clamp(anchorLeft + dx, area.left, anchorRight - resizeMinSize.width);
+        if (isEast) nextRight = clamp(anchorRight + dx, anchorLeft + resizeMinSize.width, area.right);
+        if (isNorth) nextTop = clamp(anchorTop + dy, area.top, anchorBottom - resizeMinSize.height);
+        if (isSouth) nextBottom = clamp(anchorBottom + dy, anchorTop + resizeMinSize.height, area.bottom);
 
         updateActiveTemplate((template) => ({
           ...template,
@@ -12104,63 +12395,142 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
 
   const tableColumnsForEditor = selectedElement?.kind === 'table' ? getSelectedTableColumns() : [];
 
+  const closeToolbarMenus = () => {
+    setToolbarMenuOpen(false);
+    setTemplateMenuOpen(false);
+  };
+
+  const runDesignerPdf = ({ preview = false, archive = true } = {}) => {
+    if (!activeTemplate) return;
+    printHtmlInIframe(buildDocumentDesignerHtml(activeTemplate, designerPreviewContext, { preview, company: companyProfile }));
+    if (archive) {
+      onGeneratePdf({
+        type: activeTypeId,
+        number: designerPreviewContext.documentNumber || 'DOC/DESIGNER',
+        relation: 'Projektant dokumentów'
+      });
+    }
+    closeToolbarMenus();
+  };
+
+  const openDesignerDocumentPreview = () => {
+    if (!activeTemplate) return;
+    const html = buildDocumentDesignerHtml(activeTemplate, designerPreviewContext, { preview: true, company: companyProfile });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    closeToolbarMenus();
+  };
+
   const pageSelected = !selectedElement;
+  const zoomPercentLabel = `${Math.round(activeScale * 100)}%`;
 
   return <div className={`document-designer-workspace ${fullscreen ? 'document-designer-workspace--fullscreen' : ''}`}>
     <div className="document-designer-top-toolbar">
-      <div className="document-designer-toolbar-actions">
-        <button type="button" className="document-designer-panel-toggle" onClick={() => setLibraryCollapsed((current) => !current)} title={libraryCollapsed ? 'Pokaż bibliotekę' : 'Ukryj bibliotekę'}>
-          <PanelLeft size={16} />
-        </button>
-        <AppButton variant="primary" size="sm" onClick={saveDraft} disabled={!hasUnsavedChanges}><Save size={14} />Zapisz</AppButton>
-        <AppButton variant="secondary" size="sm" onClick={undo} disabled={!canUndo}><RotateCcw size={14} />Cofnij</AppButton>
-        <AppButton variant="secondary" size="sm" onClick={redo} disabled={!canRedo}><History size={14} />Ponów</AppButton>
-        <span className="document-designer-toolbar-divider" />
-        <AppButton variant="secondary" size="sm" onClick={() => setZoomMode(String(Math.min(2, activeScale + 0.1).toFixed(2)))}><Plus size={14} /></AppButton>
-        <AppButton variant="secondary" size="sm" onClick={() => setZoomMode(String(Math.max(0.15, activeScale - 0.1).toFixed(2)))}><Minus size={14} /></AppButton>
-        <AppButton variant={zoomMode === 'fit' ? 'primary' : 'secondary'} size="sm" onClick={() => setZoomMode('fit')}>Dopasuj</AppButton>
-        <span className="document-designer-zoom-value">{Math.round(activeScale * 100)}%</span>
-        <span className="document-designer-toolbar-divider" />
-        <label className="document-designer-toolbar-check"><input type="checkbox" checked={showGrid} onChange={(event) => setShowGrid(event.target.checked)} />Siatka</label>
-        <label className="document-designer-toolbar-check"><input type="checkbox" checked={snapToGrid} onChange={(event) => setSnapToGrid(event.target.checked)} />Snap</label>
-        <label className="document-designer-toolbar-check"><input type="checkbox" checked={showGuides} onChange={(event) => setShowGuides(event.target.checked)} />Prowadnice</label>
-        <AppButton variant="primary" size="sm" onClick={() => {
-          printHtmlInIframe(buildDocumentDesignerHtml(activeTemplate, designerPreviewContext, { preview: false, company: companyProfile }));
-          onGeneratePdf({ type: activeTypeId, number: designerPreviewContext.documentNumber || 'DOC/DESIGNER', relation: 'Projektant dokumentów' });
-        }} disabled={!activeTemplate}><FileText size={14} />PDF</AppButton>
-        <AppButton variant="secondary" size="sm" onClick={resetTemplateLayout} disabled={!activeTemplate}><RotateCcw size={14} />Domyślny układ</AppButton>
-        {hasUnsavedChanges && <span className="document-designer-unsaved-dot" title="Niezapisane zmiany">●</span>}
-        {onClose && <AppButton variant="secondary" size="sm" onClick={onClose}>Zamknij</AppButton>}
-      </div>
-      <div className="document-designer-toolbar-right">
-        <label className="firm-field document-designer-toolbar-field">
-          Typ dokumentu
-          <AppSelect value={activeTypeId} onChange={(event) => requestTypeSwitch(event.target.value)}>
-            {DOCUMENT_TEMPLATE_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
-          </AppSelect>
-        </label>
-        <label className="firm-field document-designer-toolbar-field">
-          Szablon
-          <AppSelect value={activeTemplate?.id ?? ''} onChange={(event) => { commitPropertyEditSession(); setActiveTemplateId(event.target.value); }}>
-            {activeTypeTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-          </AppSelect>
-        </label>
-        <div className="document-designer-template-actions" aria-label="Akcje szablonu">
-          <button type="button" className="dictionary-icon-button" title="Nowy szablon" aria-label="Nowy szablon" onClick={createTemplate}><Plus size={14} /></button>
-          <button type="button" className="dictionary-icon-button" title="Duplikuj szablon" aria-label="Duplikuj szablon" onClick={duplicateTemplate} disabled={!activeTemplate}><Copy size={14} /></button>
-          <button type="button" className="dictionary-icon-button remove" title="Usuń szablon" aria-label="Usuń szablon" onClick={deleteTemplate} disabled={!activeTemplate}><Trash2 size={14} /></button>
-          <span className="document-designer-template-actions-divider" aria-hidden="true" />
-          <button type="button" className="dictionary-icon-button" title="Eksportuj szablony" aria-label="Eksportuj szablony" onClick={exportTemplates}><Download size={14} /></button>
-          <button type="button" className="dictionary-icon-button" title="Importuj szablony" aria-label="Importuj szablony" onClick={() => importInputRef.current?.click()}><FolderOpen size={14} /></button>
-          <input ref={importInputRef} type="file" accept="application/json,.json" onChange={importTemplates} className="backup-file-input" />
+      <div className="document-designer-toolbar-main">
+        {onClose && <button type="button" className="document-designer-panel-toggle document-designer-toolbar-icon-btn" onClick={onClose} title="Zamknij kreator" aria-label="Zamknij kreator"><X size={16} /></button>}
+
+        <div className="document-designer-toolbar-group">
+          <AppButton variant="primary" size="sm" onClick={saveDraft} disabled={!hasUnsavedChanges}><Save size={14} />Zapisz</AppButton>
+          {hasUnsavedChanges && <span className="document-designer-save-status is-dirty">Niezapisane zmiany</span>}
+          {!hasUnsavedChanges && saveFlash && <span className="document-designer-save-status is-saved">Zapisano</span>}
         </div>
-        <button type="button" className="document-designer-panel-toggle" onClick={() => setPropertiesCollapsed((current) => !current)} title={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'} aria-label={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'}>
-          <SlidersHorizontal size={16} />
-        </button>
+
+        <div className="document-designer-toolbar-group">
+          <AppButton variant="secondary" size="sm" onClick={undo} disabled={!canUndo} title="Cofnij" aria-label="Cofnij"><RotateCcw size={14} /></AppButton>
+          <AppButton variant="secondary" size="sm" onClick={redo} disabled={!canRedo} title="Ponów" aria-label="Ponów"><History size={14} /></AppButton>
+        </div>
+
+        <span className="document-designer-toolbar-divider" aria-hidden="true" />
+
+        <div className="document-designer-toolbar-group document-designer-zoom-group">
+          <AppButton variant="secondary" size="sm" onClick={() => setZoomMode(String(Math.max(0.15, activeScale - 0.1).toFixed(2)))} title="Pomniejsz" aria-label="Pomniejsz"><Minus size={14} /></AppButton>
+          <span className="document-designer-zoom-value" aria-live="polite">{zoomPercentLabel}</span>
+          <AppButton variant="secondary" size="sm" onClick={() => setZoomMode(String(Math.min(2, activeScale + 0.1).toFixed(2)))} title="Powiększ" aria-label="Powiększ"><Plus size={14} /></AppButton>
+          <AppButton variant={zoomMode === 'fit' ? 'primary' : 'secondary'} size="sm" onClick={() => setZoomMode('fit')}>Dopasuj</AppButton>
+        </div>
+
+        <span className="document-designer-toolbar-divider document-designer-toolbar-divider--view" aria-hidden="true" />
+
+        <div className="document-designer-toolbar-group document-designer-view-group" role="group" aria-label="Widok dokumentu">
+          <button type="button" className={`document-designer-toolbar-toggle${showGrid ? ' is-active' : ''}`} onClick={() => setShowGrid((current) => !current)} title="Siatka" aria-label="Siatka" aria-pressed={showGrid}><Grid3X3 size={14} /><span>Siatka</span></button>
+          <button type="button" className={`document-designer-toolbar-toggle${snapToGrid ? ' is-active' : ''}`} onClick={() => setSnapToGrid((current) => !current)} title="Snap do siatki" aria-label="Snap do siatki" aria-pressed={snapToGrid}><span>Snap</span></button>
+          <button type="button" className={`document-designer-toolbar-toggle${showGuides ? ' is-active' : ''}`} onClick={() => setShowGuides((current) => !current)} title="Prowadnice" aria-label="Prowadnice" aria-pressed={showGuides}><Columns3 size={14} /><span>Prowadnice</span></button>
+        </div>
+
+        <span className="document-designer-toolbar-spacer" aria-hidden="true" />
+
+        <div className="document-designer-toolbar-doc-group">
+          <label className="document-designer-toolbar-field">
+            <span className="document-designer-toolbar-field-label">Typ dokumentu</span>
+            <AppSelect value={activeTypeId} onChange={(event) => requestTypeSwitch(event.target.value)}>
+              {DOCUMENT_TEMPLATE_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+            </AppSelect>
+          </label>
+          <label className="document-designer-toolbar-field">
+            <span className="document-designer-toolbar-field-label">Szablon</span>
+            <AppSelect value={activeTemplate?.id ?? ''} onChange={(event) => { commitPropertyEditSession(); setActiveTemplateId(event.target.value); }}>
+              {activeTypeTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </AppSelect>
+          </label>
+
+          <div className="document-designer-toolbar-menu-host" ref={templateMenuRef}>
+            <button
+              type="button"
+              className="document-designer-toolbar-menu-trigger"
+              title="Akcje szablonu"
+              aria-label="Akcje szablonu"
+              aria-expanded={templateMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => { setTemplateMenuOpen((current) => !current); setToolbarMenuOpen(false); }}
+            ><FilePlus2 size={14} /><ChevronDown size={12} /></button>
+            {templateMenuOpen && <div className="document-designer-toolbar-menu" role="menu" aria-label="Akcje szablonu">
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => { createTemplate(); closeToolbarMenus(); }}><Plus size={14} /><span>Nowy szablon</span></button>
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => { duplicateTemplate(); closeToolbarMenus(); }} disabled={!activeTemplate}><Copy size={14} /><span>Duplikuj szablon</span></button>
+              <button type="button" className="document-designer-toolbar-menu-item is-danger" role="menuitem" onClick={() => { deleteTemplate(); closeToolbarMenus(); }} disabled={!activeTemplate}><Trash2 size={14} /><span>Usuń szablon</span></button>
+            </div>}
+          </div>
+
+          <div className="document-designer-toolbar-menu-host" ref={toolbarMenuRef}>
+            <button
+              type="button"
+              className="document-designer-toolbar-menu-trigger"
+              title="Więcej akcji"
+              aria-label="Więcej akcji"
+              aria-expanded={toolbarMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => { setToolbarMenuOpen((current) => !current); setTemplateMenuOpen(false); }}
+            ><MoreHorizontal size={14} /><span>Więcej</span><ChevronDown size={12} /></button>
+            {toolbarMenuOpen && <div className="document-designer-toolbar-menu" role="menu" aria-label="Więcej akcji kreatora">
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => runDesignerPdf({ preview: false })} disabled={!activeTemplate}><FileText size={14} /><span>Generuj PDF</span></button>
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={openDesignerDocumentPreview} disabled={!activeTemplate}><Printer size={14} /><span>Podgląd PDF</span></button>
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => runDesignerPdf({ preview: false })} disabled={!activeTemplate}><Download size={14} /><span>Pobierz PDF</span></button>
+              <span className="document-designer-toolbar-menu-divider" aria-hidden="true" />
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => { exportTemplates(); closeToolbarMenus(); }}><Download size={14} /><span>Eksportuj szablony</span></button>
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => { importInputRef.current?.click(); closeToolbarMenus(); }}><FolderOpen size={14} /><span>Importuj szablony</span></button>
+              <span className="document-designer-toolbar-menu-divider" aria-hidden="true" />
+              <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => { resetTemplateLayout(); closeToolbarMenus(); }} disabled={!activeTemplate}><RotateCcw size={14} /><span>Przywróć domyślny układ</span></button>
+              {hasUnsavedChanges && <button type="button" className="document-designer-toolbar-menu-item" role="menuitem" onClick={() => { discardDraft(); closeToolbarMenus(); }}><Eraser size={14} /><span>Odrzuć niezapisane zmiany</span></button>}
+            </div>}
+          </div>
+          <input ref={importInputRef} type="file" accept="application/json,.json" onChange={importTemplates} className="backup-file-input" />
+
+          <button type="button" className="document-designer-panel-toggle document-designer-toolbar-icon-btn" onClick={() => setLibraryCollapsed((current) => !current)} title={libraryCollapsed ? 'Pokaż bibliotekę' : 'Ukryj bibliotekę'} aria-label={libraryCollapsed ? 'Pokaż bibliotekę' : 'Ukryj bibliotekę'}>
+            <PanelLeft size={16} />
+          </button>
+          <button type="button" className="document-designer-panel-toggle document-designer-toolbar-icon-btn" onClick={() => setPropertiesCollapsed((current) => !current)} title={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'} aria-label={propertiesCollapsed ? 'Pokaż właściwości' : 'Ukryj właściwości'}>
+            <SlidersHorizontal size={16} />
+          </button>
+        </div>
       </div>
     </div>
 
-    <div className={`document-designer-layout ${libraryCollapsed ? 'library-collapsed' : ''} ${propertiesCollapsed ? 'properties-collapsed' : ''}`}>
+    <div
+      ref={layoutRef}
+      className={`document-designer-layout ${libraryCollapsed ? 'library-collapsed' : ''} ${propertiesCollapsed ? 'properties-collapsed' : ''}`}
+      style={{ gridTemplateColumns: designerLayoutColumns }}
+    >
       {!libraryCollapsed && <aside className="document-designer-library">
         <div className="document-designer-panel-head">
           <strong>Biblioteka elementów</strong>
@@ -12185,14 +12555,6 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
         {libraryCollapsed && <button type="button" className="document-designer-edge-toggle left" onClick={() => setLibraryCollapsed(false)} title="Pokaż bibliotekę"><PanelLeft size={16} /></button>}
         {propertiesCollapsed && <button type="button" className="document-designer-edge-toggle right" onClick={() => setPropertiesCollapsed(false)} title="Pokaż właściwości"><SlidersHorizontal size={16} /></button>}
 
-        {hasUnsavedChanges && <div className="document-designer-unsaved-bar">
-          <strong>Niezapisane zmiany</strong>
-          <div className="settings-action-row">
-            <AppButton variant="primary" size="sm" onClick={saveDraft}><Save size={14} />Zapisz</AppButton>
-            <AppButton variant="secondary" size="sm" onClick={discardDraft}>Odrzuć</AppButton>
-          </div>
-        </div>}
-
         <div ref={viewportRef} className={`document-designer-canvas ${isFitZoom ? 'document-designer-canvas--fit' : 'document-designer-canvas--manual'}`} onDragOver={handleCanvasDragOver} onDrop={handleCanvasDrop}>
           <div className="document-designer-canvas-center">
             {activeTemplate && <div className="document-designer-page-wrap" style={{ width: `${DOCUMENT_DESIGNER_PAGE.width * activeScale}px`, height: `${DOCUMENT_DESIGNER_PAGE.height * activeScale}px` }}>
@@ -12200,7 +12562,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
               ref={pageRef}
               className={`document-designer-page ${showGrid ? 'with-grid' : ''}`}
               style={{ transform: `scale(${activeScale})`, transformOrigin: 'top left' }}
-              onMouseDown={() => setSelectedElementId('')}
+              onMouseDown={() => {
+                commitInlineTextEdit();
+                setSelectedElementId('');
+              }}
             >
               <div
                 className="document-designer-margins-guide"
@@ -12219,9 +12584,10 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
                   : (element.columns ?? []).filter((column) => column.visible !== false);
                 const safeColumns = visibleColumns.length ? visibleColumns : [{ key: 'name', label: 'Kolumna', width: 160 }];
                 const selectedTable = selectedElementId === element.id && element.kind === 'table';
+                const isInlineEditing = inlineTextEditId === element.id;
                 return <div
                   key={element.id}
-                  className={`document-designer-element ${selectedElementId === element.id ? 'selected' : ''}`}
+                  className={`document-designer-element ${selectedElementId === element.id ? 'selected' : ''}${isInlineEditing ? ' is-inline-editing' : ''}`}
                   style={{
                     left: `${element.x}px`,
                     top: `${element.y}px`,
@@ -12233,7 +12599,17 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
                     fontWeight: element.fontWeight,
                     display: element.visible === false ? 'none' : 'block'
                   }}
-                  onMouseDown={(event) => startDrag(event, element, 'move')}
+                  onMouseDown={(event) => {
+                    if (isInlineEditing) {
+                      event.stopPropagation();
+                      return;
+                    }
+                    startDrag(event, element, 'move');
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    if (isDesignerInlineTextEditable(element)) beginInlineTextEdit(element);
+                  }}
                 >
                   {element.kind === 'logo' && <div className="document-designer-logo-preview">{(element.logoDataUrl || companyProfile.logoDataUrl) ? <img src={element.logoDataUrl || companyProfile.logoDataUrl} alt="Logo" /> : 'Logo'}</div>}
                   {element.kind === 'table' && <div className="document-designer-table-preview">
@@ -12270,10 +12646,16 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
                       })()}
                     </div>
                   </div>}
-                  {element.kind === 'line' && <div className="document-designer-line-preview" style={{ background: element.color, height: `${Math.max(1, element.height)}px` }} />}
+                  {element.kind === 'line' && <div className="document-designer-line-preview" style={{ background: element.color, height: '100%', minHeight: '1px' }} />}
                   {element.kind === 'signature' && <div className="document-designer-signature-preview"><strong>{applyDesignerTokens(element.text, designerPreviewContext)}</strong><em>podpis</em></div>}
-                  {!['logo', 'table', 'line', 'signature'].includes(element.kind) && <div className="document-designer-text-preview">{applyDesignerTokens(element.text, designerPreviewContext)}</div>}
-                  {selectedElementId === element.id && <>
+                  {isDesignerInlineTextEditable(element) && isInlineEditing && <DocumentDesignerInlineTextEditor
+                    value={inlineTextDraft}
+                    onChange={handleInlineTextDraftChange}
+                    onCommit={commitInlineTextEdit}
+                    onCancel={cancelInlineTextEdit}
+                  />}
+                  {!['logo', 'table', 'line', 'signature'].includes(element.kind) && !isInlineEditing && <div className="document-designer-text-preview">{applyDesignerTokens(element.text, designerPreviewContext)}</div>}
+                  {selectedElementId === element.id && !isInlineEditing && <>
                     <button type="button" className="document-designer-resize-handle top-left" onMouseDown={(event) => startDrag(event, element, 'resize-nw')} aria-label="Zmień rozmiar z lewego górnego rogu" />
                     <button type="button" className="document-designer-resize-handle top-right" onMouseDown={(event) => startDrag(event, element, 'resize-ne')} aria-label="Zmień rozmiar z prawego górnego rogu" />
                     <button type="button" className="document-designer-resize-handle bottom-left" onMouseDown={(event) => startDrag(event, element, 'resize-sw')} aria-label="Zmień rozmiar z lewego dolnego rogu" />
@@ -12288,6 +12670,14 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
       </div>
 
       {!propertiesCollapsed && <aside className="document-designer-properties">
+        <div
+          className="document-designer-properties-resizer"
+          onMouseDown={startPropertiesPanelResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Zmień szerokość panelu właściwości"
+          title="Zmień szerokość panelu właściwości"
+        />
         <div className={`document-designer-panel-head${selectedElement ? ' document-designer-panel-head--element' : ''}`}>
           <strong>{pageSelected ? 'Właściwości strony' : 'Właściwości elementu'}</strong>
           {selectedElement && <div className="document-designer-element-actions-bar" role="toolbar" aria-label="Akcje elementu">
@@ -12344,7 +12734,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
             <label className="firm-field">Pozycja X<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.x)} min={0} max={DOCUMENT_DESIGNER_PAGE.width} fallback={0} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ x: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Pozycja Y<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.y)} min={0} max={DOCUMENT_DESIGNER_PAGE.height} fallback={0} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ y: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Szerokość<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.width)} min={DOCUMENT_DESIGNER_MIN_SIZE.width} max={DOCUMENT_DESIGNER_PAGE.width} fallback={DOCUMENT_DESIGNER_MIN_SIZE.width} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ width: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
-            <label className="firm-field">Wysokość<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.height)} min={DOCUMENT_DESIGNER_MIN_SIZE.height} max={DOCUMENT_DESIGNER_PAGE.height} fallback={DOCUMENT_DESIGNER_MIN_SIZE.height} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ height: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
+            <label className="firm-field">Wysokość<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.height)} min={selectedElement.kind === 'line' ? 1 : DOCUMENT_DESIGNER_MIN_SIZE.height} max={DOCUMENT_DESIGNER_PAGE.height} fallback={selectedElement.kind === 'line' ? resolveDesignerElementHeight(selectedElement, getDesignerLibraryItem(selectedElement.libraryId)) : DOCUMENT_DESIGNER_MIN_SIZE.height} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ height: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Rozmiar<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={selectedElement.fontSize} min={8} max={72} fallback={10} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ fontSize: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Pogrubienie<AppSelect value={String(selectedElement.fontWeight)} onChange={(event) => updateSelectedElement({ fontWeight: Number(event.target.value) })}><option value="400">Normal</option><option value="500">Średni</option><option value="700">Mocny</option></AppSelect></label>
             <label className="firm-field">Kolor<AppInput type="color" value={selectedElement.color} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ color: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
@@ -12357,7 +12747,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
             <input ref={logoInputRef} type="file" accept="image/*" onChange={replaceLogoForSelectedElement} className="backup-file-input" />
           </>}
 
-          {!['logo', 'table', 'line', 'signature'].includes(selectedElement.kind) && <label className="firm-field">Treść<AppTextarea rows={5} value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
+          {!['logo', 'table', 'line', 'signature'].includes(selectedElement.kind) && <label className="firm-field document-designer-content-field-wrap">Treść<AppTextarea className="document-designer-content-field" resizeKey="fixer:textarea:document-designer:content" rows={10} value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
           {selectedElement.kind === 'signature' && <label className="firm-field">Nazwa podpisu<AppInput value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
           {selectedElement.kind === 'table' && <div className="document-designer-columns-editor">
             <strong>Kolumny tabeli</strong>

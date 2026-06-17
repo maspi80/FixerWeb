@@ -4298,11 +4298,29 @@ function DocumentPreviewModal({ html, title = 'Podgląd dokumentu', onClose, onP
 }
 
 function RentalAgreementModal({ rental, onClose }) {
-  const previewHtml = useMemo(() => buildRentalAgreementDocumentHtml(rental, { preview: true }), [rental]);
+  const documentSettingsReady = !isSupabaseConfigured || isAppSettingsHydrated();
+  const previewHtml = useMemo(
+    () => (documentSettingsReady ? buildRentalAgreementDocumentHtml(rental, { preview: true }) : ''),
+    [rental, documentSettingsReady]
+  );
   const printHtml = useMemo(
     () => prepareServiceDocumentPrintHtml(previewHtml, `Umowa_wypozyczenia_${normalizeFileNamePart(rental?.rental_number || 'DOC')}.pdf`),
     [previewHtml, rental]
   );
+  if (!documentSettingsReady) {
+    return <ResizableModalFrame
+      className="rental-agreement-modal"
+      storageKey="fixer-rental-agreement-modal"
+      defaultSize={{ width: 640, height: 420 }}
+      minSize={{ width: 480, height: 320 }}
+      eyebrow="Dokument"
+      title="Umowa wypożyczenia sprzętu"
+      onClose={onClose}
+      footer={<ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary>}
+    >
+      <EmptyState title="Ładowanie danych dokumentu" description="Poczekaj na synchronizację ustawień dokumentów z bazą, a następnie otwórz umowę ponownie." />
+    </ResizableModalFrame>;
+  }
   const disabled = !canCreateRentalAgreement(rental);
   const printDocument = () => printHtmlInIframe(printHtml);
 

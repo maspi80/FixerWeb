@@ -39,6 +39,12 @@ function writeLocal(settingKey, value) {
   localStorage.setItem(storageKey, JSON.stringify(value));
 }
 
+function clearLocal(settingKey) {
+  const storageKey = LOCAL_STORAGE_KEYS[settingKey];
+  if (!storageKey) return;
+  localStorage.removeItem(storageKey);
+}
+
 function notifyListeners() {
   listeners.forEach((listener) => {
     try {
@@ -130,8 +136,9 @@ export function getAppSettingHydrationSource(settingKey) {
 export function getAppSetting(settingKey) {
   if (cache[settingKey] !== undefined) return cache[settingKey];
 
-  // Before Supabase hydration completes, do not read stale localStorage.
-  if (isSupabaseConfigured && !hydrated) return undefined;
+  // With Supabase configured, app settings are remote-only.
+  // Never read localStorage as a data source, regardless of hydration state.
+  if (isSupabaseConfigured) return undefined;
 
   const localValue = readLocal(settingKey);
   if (isAuthoritativeSettingValue(settingKey, localValue)) {
@@ -188,9 +195,6 @@ async function resolveSettingValue(settingKey) {
     remoteValue = remote.value;
   } catch (error) {
     console.error(`Failed to fetch app setting "${settingKey}"`, error);
-    if (isAuthoritativeSettingValue(settingKey, localValue)) {
-      return { value: localValue, source: 'local-fallback' };
-    }
     throw error;
   }
 
@@ -199,17 +203,8 @@ async function resolveSettingValue(settingKey) {
     return { value: remoteValue, source: 'supabase' };
   }
 
-  // Priority 2: one-time migration from localStorage when Supabase row is missing/empty.
-  if (isAuthoritativeSettingValue(settingKey, localValue)) {
-    try {
-      await upsertRemoteSetting(settingKey, localValue);
-      return { value: localValue, source: 'migrated-local' };
-    } catch (error) {
-      console.warn(`Failed to migrate local app setting "${settingKey}" to Supabase`, error);
-      return { value: localValue, source: 'local-unmigrated' };
-    }
-  }
-
+  // When Supabase does not contain a saved value, caller uses in-code defaults.
+  // This prevents stale localStorage from diverging between environments/devices.
   return { value: undefined, source: null };
 }
 
@@ -240,12 +235,18 @@ export async function hydrateAppSettings({ force = false } = {}) {
     });
 
     await Promise.all(keys.map(async (settingKey) => {
-      const resolved = await resolveSettingValue(settingKey);
-      if (resolved.value !== undefined) {
-        cache[settingKey] = resolved.value;
-        hydrationSources[settingKey] = resolved.source;
-        // Sync localStorage to match authoritative layer (Supabase or post-migration).
-        writeLocal(settingKey, resolved.value);
+      try {
+        const resolved = await resolveSettingValue(settingKey);
+        if (resolved.value !== undefined) {
+          cache[settingKey] = resolved.value;
+          hydrationSources[settingKey] = resolved.source;
+          // Mirror remote value to local cache storage only.
+          writeLocal(settingKey, resolved.value);
+        } else {
+          clearLocal(settingKey);
+        }
+      } catch (error) {
+        console.warn(`Skipped hydrating app setting "${settingKey}"`, error);
       }
     }));
 

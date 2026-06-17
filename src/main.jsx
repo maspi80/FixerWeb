@@ -10196,23 +10196,37 @@ function renderDocumentDesignerPaginatedHtml(template, context = {}, company = g
       const pair = sortedAfter.filter((item) => item.kind === 'signature' && item.y === element.y);
       renderedSignatureY.add(element.y);
       const blockHeight = Math.max(...pair.map((item) => estimateDesignerFlowBlockHeight(item, context, company, contentWidth)));
-      ensureSpace(blockHeight);
+      const targetY = Math.max(padding.top, Number(element.y) || padding.top);
+      let marginTop = Math.max(0, targetY - cursorY);
+      ensureSpace(marginTop + blockHeight);
+      if (cursorY + marginTop + blockHeight > pageBottom) {
+        pushPage();
+        marginTop = Math.max(0, targetY - cursorY);
+        ensureSpace(marginTop + blockHeight);
+      }
       currentParts.push(`<div class="designer-doc-flow-signatures-row">${pair.map((item) => renderDocumentDesignerElementFlowHtml(item, context, company, {
-        marginTop: 0,
+        marginTop,
         marginLeft: Math.max(0, item.x - padding.left),
         contentWidth: Math.min(item.width, contentWidth)
       })).join('')}</div>`);
-      cursorY += blockHeight + DESIGNER_PRINT_BLOCK_GAP;
+      cursorY += marginTop + blockHeight + DESIGNER_PRINT_BLOCK_GAP;
       return;
     }
     const blockHeight = estimateDesignerFlowBlockHeight(element, context, company, contentWidth);
-    ensureSpace(blockHeight);
+    const targetY = Math.max(padding.top, Number(element.y) || padding.top);
+    let marginTop = Math.max(0, targetY - cursorY);
+    ensureSpace(marginTop + blockHeight);
+    if (cursorY + marginTop + blockHeight > pageBottom) {
+      pushPage();
+      marginTop = Math.max(0, targetY - cursorY);
+      ensureSpace(marginTop + blockHeight);
+    }
     currentParts.push(renderDocumentDesignerElementFlowHtml(element, context, company, {
-      marginTop: 0,
+      marginTop,
       marginLeft: Math.max(0, element.x - padding.left),
       contentWidth: Math.min(element.width, contentWidth)
     }));
-    cursorY += blockHeight + DESIGNER_PRINT_BLOCK_GAP;
+    cursorY += marginTop + blockHeight + DESIGNER_PRINT_BLOCK_GAP;
   });
 
   pageDrafts.push({ parts: currentParts, includeHeader: pageHasHeader });

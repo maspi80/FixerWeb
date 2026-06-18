@@ -889,13 +889,33 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('fixer-sidebar') === 'collapsed');
   const [globalSearch, setGlobalSearch] = useState('');
   const [themeCompact, setThemeCompact] = useState(() => localStorage.getItem('fixer-density') === 'compact');
-  const [colorTheme, setColorTheme] = useState(() => localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark');
+  const [colorTheme, setColorTheme] = useState(() => getInitialUiAppearance().colorTheme);
   const [tableVerticalLines, setTableVerticalLines] = useState(() => Boolean(readUiPreference('tableVerticalLines', false)));
   const [moduleIntent, setModuleIntent] = useState(null);
   const [statusColors, setStatusColors] = useState(getStatusColors);
-  const [activeUiTheme, setActiveUiTheme] = useState(() => getStoredActiveUiTheme(colorTheme === 'light' ? 'default-light' : 'default-dark'));
+  const [activeUiTheme, setActiveUiTheme] = useState(() => getInitialUiAppearance().activeUiTheme);
   const [appSettingsReady, setAppSettingsReady] = useState(() => !isSupabaseConfigured);
   const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens), [activeUiTheme.tokens]);
+
+  const handleColorThemeCollection = useCallback((mode) => {
+    setColorTheme(mode);
+    localStorage.setItem('fixer-color-theme', mode);
+    setActiveUiTheme((current) => syncActiveUiThemeToColorTheme(mode, current));
+  }, []);
+
+  const handleApplyUiThemePreset = useCallback((presetId) => {
+    const preset = getAllUiThemePresets().find((item) => item.id === presetId);
+    if (!preset) return;
+    const mode = getUiThemePresetColorMode(preset);
+    if (mode) {
+      setColorTheme(mode);
+      localStorage.setItem('fixer-color-theme', mode);
+    }
+    setActiveUiTheme({
+      presetId: preset.id,
+      tokens: normalizeUiThemeTokens(preset.tokens)
+    });
+  }, []);
 
   useEffect(() => {
     saveActiveUiTheme(activeUiTheme);
@@ -1005,10 +1025,7 @@ function App() {
           }}
           themeCompact={themeCompact}
           colorTheme={colorTheme}
-          onChangeColorTheme={(nextTheme) => {
-            setColorTheme(nextTheme);
-            localStorage.setItem('fixer-color-theme', nextTheme);
-          }}
+          onChangeColorTheme={handleColorThemeCollection}
           onNavigate={navigateToModule}
         />
         <section className="page-content">
@@ -1019,8 +1036,8 @@ function App() {
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} appSettingsReady={appSettingsReady} />}
-          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={(nextTheme) => { setColorTheme(nextTheme); localStorage.setItem('fixer-color-theme', nextTheme); }} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} />}
+          {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} appSettingsReady={appSettingsReady} />}
+          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} />}
         </section>
       </main>
     </div>
@@ -7936,15 +7953,15 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
   </ResizableModalFrame>;
 }
 
-function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
+function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} onPreferenceChange={onPreferenceChange} appSettingsReady={appSettingsReady} />
+    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} onApplyUiThemePreset={onApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} onPreferenceChange={onPreferenceChange} appSettingsReady={appSettingsReady} />
   </div>;
 }
 
-function DocumentsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, appSettingsReady = true }) {
+function DocumentsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, appSettingsReady = true }) {
   return <div className="module-page settings-module-page compact-settings-page documents-module-page">
-    <SettingsV2 mode="documents" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} appSettingsReady={appSettingsReady} />
+    <SettingsV2 mode="documents" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} onApplyUiThemePreset={onApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} appSettingsReady={appSettingsReady} />
   </div>;
 }
 function getStoredJson(key, fallback) {
@@ -8309,7 +8326,37 @@ const BUILTIN_UI_THEME_PRESETS = [
   }
 ];
 
-const DEFAULT_ACTIVE_THEME_ID = 'default-dark';
+const DEFAULT_LIGHT_THEME_ID = 'default-light';
+const DEFAULT_DARK_THEME_ID = 'default-dark';
+const DEFAULT_ACTIVE_THEME_ID = DEFAULT_DARK_THEME_ID;
+
+function getDefaultUiThemePresetIdForMode(mode) {
+  return mode === 'light' ? DEFAULT_LIGHT_THEME_ID : DEFAULT_DARK_THEME_ID;
+}
+
+function getUiThemePresetColorMode(preset) {
+  const group = String(preset?.group ?? '').toLowerCase();
+  if (group === 'light' || group === 'dark') return group;
+  return null;
+}
+
+function isUiThemePresetInCollection(preset, collectionMode, activePresetId) {
+  const presetMode = getUiThemePresetColorMode(preset);
+  if (presetMode) return presetMode === collectionMode;
+  return preset?.id === activePresetId;
+}
+
+function syncActiveUiThemeToColorTheme(colorTheme, activeUiTheme) {
+  const preset = getAllUiThemePresets().find((item) => item.id === activeUiTheme.presetId);
+  const presetMode = getUiThemePresetColorMode(preset);
+  if (presetMode === colorTheme) return activeUiTheme;
+  const defaultPresetId = getDefaultUiThemePresetIdForMode(colorTheme);
+  const defaultPreset = BUILTIN_UI_THEME_PRESETS.find((item) => item.id === defaultPresetId) ?? BUILTIN_UI_THEME_PRESETS[0];
+  return {
+    presetId: defaultPreset.id,
+    tokens: normalizeUiThemeTokens(defaultPreset.tokens)
+  };
+}
 
 function normalizeHexColor(value, fallback = '#000000') {
   const raw = String(value ?? '').trim();
@@ -8335,6 +8382,7 @@ function getUiThemeCustomPresets() {
       id: item?.id || `custom-${Date.now()}`,
       name: String(item?.name ?? '').trim(),
       builtIn: false,
+      group: item?.group === 'light' || item?.group === 'dark' ? item.group : undefined,
       tokens: normalizeUiThemeTokens(item?.tokens ?? {})
     }))
     .filter((item) => item.name);
@@ -8365,6 +8413,23 @@ function saveActiveUiTheme(state) {
     presetId: state?.presetId ?? 'custom-live',
     tokens: normalizeUiThemeTokens(state?.tokens ?? {})
   }));
+}
+
+let cachedInitialUiAppearance;
+
+function getInitialUiAppearance() {
+  if (cachedInitialUiAppearance) return cachedInitialUiAppearance;
+  const storedColorTheme = localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark';
+  let activeUiTheme = getStoredActiveUiTheme(getDefaultUiThemePresetIdForMode(storedColorTheme));
+  const preset = getAllUiThemePresets().find((item) => item.id === activeUiTheme.presetId);
+  const presetMode = getUiThemePresetColorMode(preset);
+  let colorTheme = presetMode ?? storedColorTheme;
+  activeUiTheme = syncActiveUiThemeToColorTheme(colorTheme, activeUiTheme);
+  if (colorTheme !== storedColorTheme) {
+    localStorage.setItem('fixer-color-theme', colorTheme);
+  }
+  cachedInitialUiAppearance = { colorTheme, activeUiTheme };
+  return cachedInitialUiAppearance;
 }
 
 function createUiThemeCssVariables(tokens) {
@@ -9324,7 +9389,7 @@ const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MIN = 280;
 const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MAX = 560;
 const DOCUMENT_DESIGNER_STAGE_MIN_WIDTH = 380;
 
-function clampDocumentDesignerPropertiesWidth(value, { viewportWidth = window.innerWidth, libraryCollapsed = false } = {}) {
+function clampDocumentDesignerPropertiesWidth(value, { viewportWidth = document.documentElement.clientWidth || window.innerWidth, libraryCollapsed = false } = {}) {
   const reservedLeft = libraryCollapsed ? 0 : DOCUMENT_DESIGNER_LIBRARY_WIDTH;
   const maxByViewport = viewportWidth - reservedLeft - DOCUMENT_DESIGNER_STAGE_MIN_WIDTH - 48;
   const max = Math.min(
@@ -9344,8 +9409,8 @@ function getSavedDocumentDesignerPropertiesWidth(libraryCollapsed = false) {
 
 function getDocumentDesignerLayoutColumns({ libraryCollapsed, propertiesCollapsed, propertiesWidth }) {
   const stage = 'minmax(0, 1fr)';
-  const properties = propertiesCollapsed ? null : `${propertiesWidth}px`;
-  const library = libraryCollapsed ? null : `${DOCUMENT_DESIGNER_LIBRARY_WIDTH}px`;
+  const properties = propertiesCollapsed ? null : `minmax(0, ${propertiesWidth}px)`;
+  const library = libraryCollapsed ? null : `minmax(0, ${DOCUMENT_DESIGNER_LIBRARY_WIDTH}px)`;
   return [library, stage, properties].filter(Boolean).join(' ');
 }
 const DOCUMENT_DESIGNER_LIBRARY = [
@@ -11661,14 +11726,12 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
   const canUndo = useMemo(() => getHistoryStacks().past.length > 0, [activeTypeId, activeTemplateId, historyTick]);
   const canRedo = useMemo(() => getHistoryStacks().future.length > 0, [activeTypeId, activeTemplateId, historyTick]);
   const getDesignerAvailableWidth = () => {
-    const layoutWidth = layoutRef.current?.clientWidth;
-    if (Number.isFinite(layoutWidth) && layoutWidth > 0) return layoutWidth;
-    const viewportWidth = viewportRef.current?.clientWidth;
-    if (Number.isFinite(viewportWidth) && viewportWidth > 0) {
-      const reservedLeft = libraryCollapsed ? 0 : DOCUMENT_DESIGNER_LIBRARY_WIDTH;
-      return viewportWidth + reservedLeft + propertiesPanelWidth;
+    const viewportCap = document.documentElement.clientWidth || window.innerWidth;
+    const workspaceWidth = layoutRef.current?.parentElement?.clientWidth;
+    if (Number.isFinite(workspaceWidth) && workspaceWidth > 0) {
+      return Math.min(workspaceWidth, viewportCap);
     }
-    return window.innerWidth;
+    return viewportCap;
   };
 
   useEffect(() => {
@@ -12463,10 +12526,17 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
       <div className="document-designer-toolbar-main">
         {onClose && <button type="button" className="document-designer-panel-toggle document-designer-toolbar-icon-btn" onClick={onClose} title="Zamknij kreator" aria-label="Zamknij kreator"><X size={16} /></button>}
 
-        <div className="document-designer-toolbar-group">
-          <AppButton variant="primary" size="sm" onClick={saveDraft} disabled={!hasUnsavedChanges}><Save size={14} />Zapisz</AppButton>
-          {hasUnsavedChanges && <span className="document-designer-save-status is-dirty">Niezapisane zmiany</span>}
-          {!hasUnsavedChanges && saveFlash && <span className="document-designer-save-status is-saved">Zapisano</span>}
+        <div className="document-designer-toolbar-group document-designer-toolbar-group--save">
+          <div className={`document-designer-save-button-wrap${hasUnsavedChanges ? ' is-dirty' : ''}`}>
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={saveDraft}
+              disabled={!hasUnsavedChanges}
+              title={hasUnsavedChanges ? 'Niezapisane zmiany — kliknij, aby zapisać' : saveFlash ? 'Zapisano' : 'Zapisz szablon dokumentu'}
+              aria-label={hasUnsavedChanges ? 'Zapisz — niezapisane zmiany' : 'Zapisz szablon dokumentu'}
+            ><Save size={14} />Zapisz</AppButton>
+          </div>
         </div>
 
         <div className="document-designer-toolbar-group">
@@ -12872,7 +12942,7 @@ function DocumentTemplateRowActions({ type, menuOpen, onToggleMenu, onEdit, onPr
   </div>;
 }
 
-function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
+function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
   const isDocumentsMode = mode === 'documents';
   const themeOptions = [
     { id: 'dark', label: 'Ciemny', icon: Moon },
@@ -12967,6 +13037,9 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   const [copiedTemplateVariable, setCopiedTemplateVariable] = useState('');
   const [documentTemplateLibrary, setDocumentTemplateLibrary] = useState(getDocumentTemplateLibrary);
   const [savedDocumentTemplateLibrary, setSavedDocumentTemplateLibrary] = useState(getDocumentTemplateLibrary);
+  const documentTemplateLibraryRef = useRef(documentTemplateLibrary);
+  const activeDocumentTemplateTypeRef = useRef(activeDocumentTemplateType);
+  const documentTemplateLibraryTouchedRef = useRef(false);
   const [pendingTemplateExitAction, setPendingTemplateExitAction] = useState(null);
   const [uiThemeNameInput, setUiThemeNameInput] = useState('');
   const [uiThemeNotice, setUiThemeNotice] = useState('');
@@ -12976,6 +13049,14 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setOrganizerCategoryItems(result.data ?? []);
   };
   useEffect(() => { loadOrganizerSettings(); }, []);
+
+  useEffect(() => {
+    documentTemplateLibraryRef.current = documentTemplateLibrary;
+  }, [documentTemplateLibrary]);
+
+  useEffect(() => {
+    activeDocumentTemplateTypeRef.current = activeDocumentTemplateType;
+  }, [activeDocumentTemplateType]);
 
   useEffect(() => {
     if (!templateRowMenuTypeId && !templateHeaderToolsOpen) return undefined;
@@ -13029,9 +13110,13 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setCompanyProfile(getCompanyProfile());
     setDocumentSettings(getDocumentSettings());
     setRentalNumbering(getRentalNumberingSettings());
-    const templates = getDocumentTemplateLibrary();
-    setDocumentTemplateLibrary(templates);
-    setSavedDocumentTemplateLibrary(templates);
+    const hydrated = getDocumentTemplateLibrary();
+    if (documentTemplateLibraryTouchedRef.current) {
+      setSavedDocumentTemplateLibrary(hydrated);
+    } else {
+      setDocumentTemplateLibrary(hydrated);
+      setSavedDocumentTemplateLibrary(hydrated);
+    }
     setCompanyFormSynced(true);
   }, [appSettingsReady, companyFormSynced]);
 
@@ -13092,6 +13177,14 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   const uiThemePresets = useMemo(() => [...BUILTIN_UI_THEME_PRESETS, ...uiThemeCustomPresets], [uiThemeCustomPresets]);
   const uiThemeLightPresets = useMemo(() => BUILTIN_UI_THEME_PRESETS.filter((item) => item.group === 'light'), []);
   const uiThemeDarkPresets = useMemo(() => BUILTIN_UI_THEME_PRESETS.filter((item) => item.group === 'dark'), []);
+  const uiThemeBuiltinPresetsForCollection = useMemo(
+    () => (colorTheme === 'light' ? uiThemeLightPresets : uiThemeDarkPresets),
+    [colorTheme, uiThemeLightPresets, uiThemeDarkPresets]
+  );
+  const uiThemeCustomPresetsForCollection = useMemo(
+    () => uiThemeCustomPresets.filter((preset) => isUiThemePresetInCollection(preset, colorTheme, activeUiTheme?.presetId)),
+    [uiThemeCustomPresets, colorTheme, activeUiTheme?.presetId]
+  );
   const selectedUiThemePreset = useMemo(
     () => uiThemePresets.find((item) => item.id === activeUiTheme?.presetId) ?? null,
     [uiThemePresets, activeUiTheme]
@@ -13137,10 +13230,21 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   }, [activeUiTheme]);
 
   const applyUiThemePreset = (presetId) => {
-    const preset = uiThemePresets.find((item) => item.id === presetId);
-    if (!preset) return;
-    onChangeActiveUiTheme({ presetId: preset.id, tokens: normalizeUiThemeTokens(preset.tokens) });
+    if (onApplyUiThemePreset) {
+      onApplyUiThemePreset(presetId);
+    } else {
+      const preset = uiThemePresets.find((item) => item.id === presetId);
+      if (!preset) return;
+      const presetMode = getUiThemePresetColorMode(preset);
+      if (presetMode) onChangeColorTheme(presetMode);
+      onChangeActiveUiTheme({ presetId: preset.id, tokens: normalizeUiThemeTokens(preset.tokens) });
+    }
     setUiThemeNotice('');
+  };
+
+  const applyUiThemeCollectionMode = (mode) => {
+    if (mode === colorTheme) return;
+    onChangeColorTheme(mode);
   };
 
   const updateUiThemeToken = (tokenKey, value) => {
@@ -13165,6 +13269,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       id: existing?.id ?? `custom-${Date.now()}`,
       name,
       builtIn: false,
+      group: colorTheme,
       tokens: normalizeUiThemeTokens(activeUiTheme?.tokens ?? {})
     };
     const nextCustom = existing
@@ -13189,7 +13294,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
         setConfirmDialog(null);
         const nextCustom = uiThemeCustomPresets.filter((item) => item.id !== presetId);
         saveUiThemeCustomPresets(nextCustom);
-        if (activeUiTheme?.presetId === presetId) applyUiThemePreset(DEFAULT_ACTIVE_THEME_ID);
+        if (activeUiTheme?.presetId === presetId) applyUiThemePreset(getDefaultUiThemePresetIdForMode(colorTheme));
         setUiThemeNotice('Preset został usunięty.');
       }
     });
@@ -13204,7 +13309,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       variant: 'warning',
       onConfirm: () => {
         setConfirmDialog(null);
-        applyUiThemePreset(DEFAULT_ACTIVE_THEME_ID);
+        applyUiThemePreset(getDefaultUiThemePresetIdForMode(colorTheme));
         setUiThemeNotice('Przywrócono domyślne kolory.');
       }
     });
@@ -14050,16 +14155,30 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   ]));
   const hasUnsavedTemplateChanges = Object.values(templateDirtyByType).some(Boolean);
   const currentTemplateHasUnsavedChanges = templateDirtyByType[activeDocumentTemplateType] === true;
+  const buildPersistableTemplateLibrary = (
+    library = documentTemplateLibraryRef.current,
+    activeTypeId = activeDocumentTemplateTypeRef.current
+  ) => {
+    const activeType = getDocumentTemplateTypeById(activeTypeId);
+    return normalizeTemplateLibraryState({
+      ...library,
+      [activeTypeId]: normalizeSharedDocumentTemplate(
+        library?.[activeTypeId],
+        activeType.defaultTemplate,
+        activeTypeId
+      )
+    });
+  };
   const saveDocumentTemplateDrafts = async (noticeMessage = 'Zapisano szablon dokumentu.') => {
     if (!appSettingsReady) {
       setDocumentSettingsNotice('Trwa ładowanie ustawień dokumentów. Spróbuj ponownie za chwilę.');
       return null;
     }
     try {
-      const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
-      const saved = await persistDocumentTemplateLibrary(normalized);
+      const saved = await persistDocumentTemplateLibrary(buildPersistableTemplateLibrary());
       setDocumentTemplateLibrary(saved);
       setSavedDocumentTemplateLibrary(saved);
+      documentTemplateLibraryTouchedRef.current = false;
       setDocumentSettingsNotice(noticeMessage);
       return saved;
     } catch (error) {
@@ -14123,6 +14242,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setActiveAgreementTab('content');
   };
   const updateCurrentDocumentTemplate = (updater) => {
+    documentTemplateLibraryTouchedRef.current = true;
     setDocumentTemplateLibrary((current) => {
       const base = normalizeSharedDocumentTemplate(current[activeDocumentTemplateType], currentTemplateType.defaultTemplate, activeDocumentTemplateType);
       const nextTemplate = normalizeSharedDocumentTemplate(typeof updater === 'function' ? updater(base) : updater, currentTemplateType.defaultTemplate, activeDocumentTemplateType);
@@ -14130,19 +14250,24 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     });
   };
   useEffect(() => {
-    if (!hasUnsavedTemplateChanges) return undefined;
-    const autosaveTimer = window.setTimeout(() => {
+    if (!hasUnsavedTemplateChanges || !appSettingsReady) return undefined;
+    let cancelled = false;
+    const autosaveTimer = window.setTimeout(async () => {
       try {
-        const normalized = normalizeTemplateLibraryState(documentTemplateLibrary);
-        const savedDraft = saveDocumentTemplateLibrary(normalized);
-        setDocumentTemplateLibrary(savedDraft);
+        const saved = await persistDocumentTemplateLibrary(buildPersistableTemplateLibrary());
+        if (cancelled) return;
+        setDocumentTemplateLibrary(saved);
+        setSavedDocumentTemplateLibrary(saved);
+        documentTemplateLibraryTouchedRef.current = false;
       } catch (error) {
-        console.error('Document template autosave failed', error);
-        setDocumentSettingsNotice('Nie udało się zapisać szablonu dokumentu. Spróbuj ponownie.');
+        if (!cancelled) console.error('Document template autosave failed', error);
       }
     }, 1400);
-    return () => window.clearTimeout(autosaveTimer);
-  }, [documentTemplateLibrary, hasUnsavedTemplateChanges]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(autosaveTimer);
+    };
+  }, [documentTemplateLibrary, hasUnsavedTemplateChanges, appSettingsReady]);
   const resetCurrentDocumentTemplate = () => {
     setDocumentTemplateLibrary((current) => {
       return { ...current, [activeDocumentTemplateType]: normalizeSharedDocumentTemplate(currentTemplateType.defaultTemplate, currentTemplateType.defaultTemplate, activeDocumentTemplateType) };
@@ -14488,7 +14613,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
           <div className="theme-choice-row interface-theme-switch">
             {themeOptions.map((option) => {
               const Icon = option.icon;
-              return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => onChangeColorTheme(option.id)}><Icon size={16} /><span>{option.label}</span></button>;
+              return <button key={option.id} type="button" className={`theme-choice-button ${colorTheme === option.id ? 'active' : ''}`} onClick={() => applyUiThemeCollectionMode(option.id)}><Icon size={16} /><span>{option.label}</span></button>;
             })}
           </div>
         </section>
@@ -14502,7 +14627,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
             <label className="firm-field">
               Preset kolorów
               <AppSelect
-                value={uiThemeLooksCustom ? 'custom-live' : (activeUiTheme?.presetId ?? DEFAULT_ACTIVE_THEME_ID)}
+                value={uiThemeLooksCustom ? 'custom-live' : (activeUiTheme?.presetId ?? getDefaultUiThemePresetIdForMode(colorTheme))}
                 onChange={(event) => {
                   const next = event.target.value;
                   if (next === 'custom-live') {
@@ -14515,15 +14640,12 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                   applyUiThemePreset(next);
                 }}
               >
-                <optgroup label="Jasne">
-                  {uiThemeLightPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-                </optgroup>
-                <optgroup label="Ciemne">
-                  {uiThemeDarkPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                <optgroup label={colorTheme === 'light' ? 'Jasne' : 'Ciemne'}>
+                  {uiThemeBuiltinPresetsForCollection.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </optgroup>
                 <optgroup label="Własne">
                   <option value="custom-live">Własny (bieżący)</option>
-                  {uiThemeCustomPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                  {uiThemeCustomPresetsForCollection.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </optgroup>
               </AppSelect>
             </label>
@@ -14799,7 +14921,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                 <div className="settings-action-row">
                   <AppButton variant="secondary" size="sm" onClick={requestReturnToTemplateList}><ChevronLeft size={14} />Wróć do listy</AppButton>
                   <AppButton variant="secondary" size="sm" onClick={resetCurrentDocumentTemplate}><RotateCcw size={13} />Przywróć domyślny</AppButton>
-                  <AppButton variant="primary" size="sm" onClick={() => saveDocumentTemplateDrafts('Zapisano szablon dokumentu.')} disabled={!currentTemplateHasUnsavedChanges}><Save size={13} />Zapisz szablon</AppButton>
+                  <AppButton variant="primary" size="sm" onClick={() => saveDocumentTemplateDrafts('Zapisano szablon dokumentu.')} disabled={!appSettingsReady || !currentTemplateHasUnsavedChanges}><Save size={13} />Zapisz szablon</AppButton>
                 </div>
               </div>
 

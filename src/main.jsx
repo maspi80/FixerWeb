@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard, LockKeyhole,
   LogOut, MessageSquare, MoreHorizontal, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Plus, Printer, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Pencil, Plus, Printer, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -82,6 +82,7 @@ import {
   fetchOrganizerTaskComments,
   fetchOrganizerTasks,
   createOrganizerTask,
+  updateOrganizerTaskComment,
   ORGANIZER_TASK_PRIORITIES,
   ORGANIZER_TASK_STATUSES,
   ORGANIZER_TERMINAL_STATUSES,
@@ -6591,6 +6592,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
   const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
+  const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadComments = async () => {
@@ -6629,6 +6631,34 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
     setEditingCommentId(null);
     setEditingCommentText('');
     await loadComments();
+  };
+
+  const startCommentEdit = (comment) => {
+    setCommentContextMenu(null);
+    setEditingCommentId(comment.id ?? comment.localId);
+    setEditingCommentText(comment.body);
+  };
+
+  const cancelCommentEdit = () => {
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  const openCommentContextMenu = (event, comment) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
+  };
+
+  const handleCommentEditKeyDown = (event, comment) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelCommentEdit();
+    }
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      saveCommentEdit(comment);
+    }
   };
 
   const removeComment = async (comment) => {
@@ -6709,26 +6739,35 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
         {commentsLoading && <div className="loading-line">Ładowanie komentarzy...</div>}
         {!commentsLoading && comments.map((c) => {
           const isEditing = editingCommentId === (c.id ?? c.localId);
-          return <div className="service-progress-row" key={c.id ?? c.localId}>
+          return <div
+            className={`service-progress-row project-comment-interactive-row ${isEditing ? 'is-editing' : ''}`}
+            key={c.id ?? c.localId}
+            onDoubleClick={() => !isEditing && startCommentEdit(c)}
+            onContextMenu={(event) => !isEditing && openCommentContextMenu(event, c)}
+          >
             <div className="service-progress-meta">
               <strong>{c.author || 'Operator'}</strong>
               <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>{c.type}</span>
               <span>{formatServiceDateTime(c.created_at)}</span>
             </div>
             {isEditing
-              ? <AppTextarea value={editingCommentText} onChange={(e) => setEditingCommentText(e.target.value)} rows={2} />
+              ? <AppTextarea value={editingCommentText} onChange={(e) => setEditingCommentText(e.target.value)} rows={2} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, c)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
               : <p style={{ margin: '4px 0' }}>{c.body}</p>}
-            <div className="service-inline-actions">
-              {isEditing
-                ? <><button type="button" className="project-icon-action primary-action" onClick={() => saveCommentEdit(c)} aria-label="Zapisz komentarz" title="Zapisz komentarz"><Save size={14} /></button><button type="button" className="project-icon-action" onClick={() => { setEditingCommentId(null); setEditingCommentText(''); }} aria-label="Anuluj edycję" title="Anuluj edycję"><X size={14} /></button></>
-                : <><button type="button" className="project-icon-action" onClick={() => { setEditingCommentId(c.id ?? c.localId); setEditingCommentText(c.body); }} aria-label="Edytuj komentarz" title="Edytuj komentarz">✎</button><button type="button" className="project-icon-action danger-action" onClick={() => removeComment(c)} aria-label="Usuń komentarz" title="Usuń komentarz"><Trash2 size={14} /></button></>}
-            </div>
           </div>;
         })}
         {!commentsLoading && !comments.length && <EmptyState title={task ? 'Brak komentarzy.' : 'Zapisz zadanie, aby dodać komentarze.'} />}
       </div>
     </div>}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
+    {commentContextMenu && <AppRowContextMenu
+      x={commentContextMenu.x}
+      y={commentContextMenu.y}
+      onClose={() => setCommentContextMenu(null)}
+      items={[
+        { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) },
+        { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) }
+      ]}
+    />}
   </ResizableModalFrame>;
 }
 
@@ -6794,8 +6833,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const [sections, setSections] = useState([]);
-  const [editingSectionId, setEditingSectionId] = useState(null);
-  const [editingSectionName, setEditingSectionName] = useState('');
+  const [sectionRenameTarget, setSectionRenameTarget] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
   const [commentCounts, setCommentCounts] = useState({});
   const [sectionMenu, setSectionMenu] = useState(null);
@@ -6914,12 +6952,24 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     window.requestAnimationFrame(() => projectTasksListRef.current?.focus?.());
   };
 
-  const saveSection = async (id) => {
-    if (!editingSectionName.trim()) return;
-    await updateProjectSection(id, editingSectionName);
-    setEditingSectionId(null);
-    setEditingSectionName('');
+  const saveSectionName = async (section, nextName) => {
+    const sid = section.id ?? section.localId;
+    const result = await updateProjectSection(sid, nextName, section);
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Nie udało się zapisać nazwy sekcji'));
+      return false;
+    }
+    setSections((prev) => prev.map((item) => (
+      String(item.id ?? item.localId) === String(sid) ? { ...item, name: nextName.trim() } : item
+    )));
+    setSectionRenameTarget(null);
     await loadTasks();
+    return true;
+  };
+
+  const openSectionRename = (section) => {
+    setSectionMenu(null);
+    setSectionRenameTarget(section);
   };
 
   const saveSectionColor = async (section, nextColor) => {
@@ -6950,16 +7000,28 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
   const removeSection = async (section) => {
     const sid = section.id ?? section.localId;
-    const hasTasks = tasks.some((t) => !t.archived && String(t.section_id) === String(sid));
+    const sectionTasks = tasks.filter((t) => !t.archived && String(t.section_id) === String(sid));
+    setSectionMenu(null);
+    if (sectionTasks.length > 0) {
+      setConfirmDialog({
+        title: 'Nie można usunąć sekcji',
+        message: 'Ta sekcja zawiera zadania. Przenieś lub usuń zadania przed usunięciem sekcji.',
+        confirmLabel: 'Rozumiem',
+        cancelLabel: 'Zamknij',
+        variant: 'secondary',
+        onConfirm: () => setConfirmDialog(null),
+        onCancel: () => setConfirmDialog(null)
+      });
+      return;
+    }
     setConfirmDialog({
       title: 'Usuń sekcję',
-      message: hasTasks ? 'Sekcja zawiera zadania. Usunięcie odłączy je od sekcji. Kontynuować?' : `Usunąć sekcję "${section.name}"?`,
+      message: `Usunąć sekcję "${section.name}"?`,
       confirmLabel: 'Usuń',
       cancelLabel: 'Anuluj',
       variant: 'danger',
       onConfirm: async () => {
         setConfirmDialog(null);
-        setSectionMenu(null);
         await deleteProjectSection(sid);
         await loadTasks();
       }
@@ -7099,16 +7161,17 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
             const sid = String(section.id ?? section.localId);
             const sectionTasks = tasksBySection(sid);
             const collapsed = collapsedSections.has(sid);
-            const isEditing = editingSectionId === sid;
             const skey = `pt-s${sid.slice(0,8)}-${projectId?.slice(0,8) ?? 'new'}`;
             return <div key={sid} className="project-section-block">
-              <div className="project-section-toggle" onClick={() => !isEditing && toggleSectionCollapse(sid)} onContextMenu={(e) => openSectionMenu(e, section)}>
+              <div
+                className="project-section-toggle"
+                title="Kliknij prawym przyciskiem, aby otworzyć menu sekcji"
+                onClick={() => toggleSectionCollapse(sid)}
+                onContextMenu={(e) => openSectionMenu(e, section)}
+              >
                 <span className="project-section-chevron">{collapsed ? '▸' : '▾'}</span>
-                {isEditing
-                  ? <><AppInput value={editingSectionName} onChange={(e) => setEditingSectionName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveSection(sid); if (e.key === 'Escape') { setEditingSectionId(null); setEditingSectionName(''); } }} onClick={(e) => e.stopPropagation()} autoFocus className="project-section-edit-input" />
-                    <button type="button" className="column-resizer-hint" onClick={(e) => { e.stopPropagation(); saveSection(sid); }} title="Zapisz"><Save size={12} /></button>
-                    <button type="button" className="column-resizer-hint" onClick={(e) => { e.stopPropagation(); setEditingSectionId(null); setEditingSectionName(''); }} title="Anuluj"><X size={12} /></button></>
-                  : <><span className="project-section-name">{section.name}</span><span className="project-section-count muted">({sectionTasks.length})</span></>}
+                <span className="project-section-name" onDoubleClick={(event) => { event.stopPropagation(); openSectionRename(section); }}>{section.name}</span>
+                <span className="project-section-count muted">({sectionTasks.length})</span>
               </div>
               {!collapsed && <DataTable
                 storageKey={skey}
@@ -7167,14 +7230,8 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
             setSectionMenu(null);
             openNewTask(sid);
           }}
-          onRename={() => {
-            const sid = sectionMenu.section.id ?? sectionMenu.section.localId;
-            setSectionMenu(null);
-            setEditingSectionId(sid);
-            setEditingSectionName(sectionMenu.section.name);
-          }}
+          onRename={() => openSectionRename(sectionMenu.section)}
           onDelete={() => removeSection(sectionMenu.section)}
-          showRename
         />}
       </div>}
 
@@ -7196,6 +7253,11 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
         <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
       </FormField>
     </ModalFrame>}
+    {sectionRenameTarget && <ProjectSectionRenameModal
+      section={sectionRenameTarget}
+      onClose={() => setSectionRenameTarget(null)}
+      onSave={(nextName) => saveSectionName(sectionRenameTarget, nextName)}
+    />}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </>;
 }
@@ -7305,6 +7367,87 @@ function clampProjectSectionMenuPosition(x, y, menuWidth = 232, menuHeight = 248
   };
 }
 
+function AppRowContextMenu({ x, y, title, items = [], onClose, colorTheme = 'dark' }) {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (menuRef.current?.contains(event.target)) return;
+      onClose?.();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  const visibleItems = items.filter((item) => item.visible !== false);
+  if (!visibleItems.length) return null;
+  const position = clampProjectSectionMenuPosition(x, y, 220, Math.max(72, 16 + visibleItems.length * 36));
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className={`row-context-menu${colorTheme === 'light' ? ' theme-light' : ''}`}
+      style={{ left: `${position.left}px`, top: `${position.top}px` }}
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.preventDefault()}
+      role="menu"
+      aria-label={title || 'Menu kontekstowe'}
+    >
+      {title && <div className="context-menu-title">{title}</div>}
+      {visibleItems.map((item) => (
+        <Fragment key={item.key}>
+          {item.separator && <div className="context-menu-separator" />}
+          <button type="button" className={item.className ?? ''} onClick={() => { onClose?.(); item.onClick?.(); }}>
+            {item.icon}{item.label}
+          </button>
+        </Fragment>
+      ))}
+    </div>,
+    document.body
+  );
+}
+
+function ProjectSectionRenameModal({ section, onClose, onSave }) {
+  const [name, setName] = useState(String(section?.name ?? ''));
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setError('Nazwa sekcji jest wymagana.'); return; }
+    if (trimmed.length > 100) { setError('Nazwa sekcji może mieć maksymalnie 100 znaków.'); return; }
+    if (trimmed === String(section?.name ?? '').trim()) { onClose?.(); return; }
+    setBusy(true);
+    const saved = await onSave(trimmed);
+    setBusy(false);
+    if (!saved) return;
+  };
+
+  return <ModalFrame
+    className="project-section-modal"
+    title="Zmień nazwę sekcji"
+    onClose={onClose}
+    footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary><ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />Zapisz</ButtonPrimary></>}
+  >
+    <FormField label="Nazwa sekcji" error={error}>
+      <AppInput
+        value={name}
+        onChange={(event) => { setName(event.target.value.slice(0, 100)); setError(''); }}
+        onKeyDown={(event) => { if (event.key === 'Enter') handleSave(); }}
+        maxLength={100}
+        autoFocus
+      />
+    </FormField>
+  </ModalFrame>;
+}
+
 const PROJECT_SECTION_PRESET_COLORS = PROJECT_SECTION_COLOR_PRESETS.map((preset) => preset.color.toUpperCase());
 
 function ProjectSectionContextMenu({
@@ -7317,8 +7460,7 @@ function ProjectSectionContextMenu({
   onAddTask,
   onRename,
   onDelete,
-  onClose,
-  showRename = false
+  onClose
 }) {
   const menuRef = useRef(null);
   const colorPickActiveRef = useRef(false);
@@ -7342,8 +7484,6 @@ function ProjectSectionContextMenu({
 
   if (!section) return null;
   const currentColor = resolveSectionHeaderColor(section);
-  const defaultColor = getDefaultProjectSectionAccentColor(section.name);
-  const hasStoredColor = Boolean(normalizeAccentColor(section?.header_color));
   const isCustomColor = !PROJECT_SECTION_PRESET_COLORS.includes(currentColor);
   const position = clampProjectSectionMenuPosition(x, y);
 
@@ -7365,20 +7505,23 @@ function ProjectSectionContextMenu({
     }, 250);
   };
 
+  const runAction = (action) => {
+    onClose?.();
+    action?.();
+  };
+
   return createPortal(
     <div
       ref={menuRef}
-      className={`project-section-context-menu${colorTheme === 'light' ? ' theme-light' : ''}`}
+      className={`project-section-context-menu row-context-menu${colorTheme === 'light' ? ' theme-light' : ''}`}
       style={{ left: `${position.left}px`, top: `${position.top}px` }}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.preventDefault()}
       role="menu"
       aria-label={`Menu sekcji ${section.name}`}
     >
-      <div className="project-section-menu-head">
-        <span className="project-section-menu-eyebrow">Sekcja</span>
-        <strong>{section.name}</strong>
-      </div>
+      <div className="context-menu-title">Sekcja · {section.name}</div>
 
       <div className="project-section-menu-color-block">
         <div className="project-section-menu-color-label">Kolor paska</div>
@@ -7416,23 +7559,13 @@ function ProjectSectionContextMenu({
             />
           </label>
         </div>
-        <button
-          type="button"
-          className="project-section-color-reset"
-          onClick={onResetColor}
-          disabled={!hasStoredColor && currentColor === defaultColor}
-        >
-          Przywróć domyślny
-        </button>
       </div>
 
-      <div className="project-section-menu-separator" aria-hidden="true" />
+      <div className="context-menu-separator" aria-hidden="true" />
 
-      <div className="project-section-menu-actions">
-        <button type="button" className="project-section-menu-action" onClick={onAddTask}><Plus size={14} />Dodaj zadanie</button>
-        {showRename && <button type="button" className="project-section-menu-action" onClick={onRename}>✎ Zmień nazwę</button>}
-        <button type="button" className="project-section-menu-action project-section-menu-danger" onClick={onDelete}><Trash2 size={14} />Usuń sekcję</button>
-      </div>
+      {onRename && <button type="button" onClick={() => runAction(onRename)}><Pencil size={14} />Zmień nazwę sekcji</button>}
+      <button type="button" onClick={() => runAction(onAddTask)}><Plus size={14} />Dodaj zadanie do sekcji</button>
+      <button type="button" className="danger-action" onClick={() => runAction(onDelete)}><Trash2 size={14} />Usuń sekcję</button>
     </div>,
     document.body
   );
@@ -7448,13 +7581,16 @@ function getSavedProjectDetailsCollapsed() {
   return localStorage.getItem(PROJECT_DETAILS_COLLAPSED_KEY) === 'true';
 }
 
-function ProjectTaskInlineComments({ task, onChanged }) {
+function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   const taskId = task?.id ?? task?.localId;
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [notice, setNotice] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadComments = async () => {
@@ -7478,6 +7614,7 @@ function ProjectTaskInlineComments({ task, onChanged }) {
   };
 
   const removeComment = async (comment) => {
+    setCommentContextMenu(null);
     setConfirmDialog({
       title: 'Usuń komentarz',
       message: 'Czy na pewno usunąć ten komentarz/postęp?',
@@ -7494,6 +7631,43 @@ function ProjectTaskInlineComments({ task, onChanged }) {
     });
   };
 
+  const saveCommentEdit = async (comment) => {
+    const result = await updateTaskComment(comment.id ?? comment.localId, editingCommentText, comment);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    setEditingCommentId(null);
+    setEditingCommentText('');
+    await loadComments();
+    onChanged?.();
+  };
+
+  const startCommentEdit = (comment) => {
+    setCommentContextMenu(null);
+    setEditingCommentId(comment.id ?? comment.localId);
+    setEditingCommentText(comment.body);
+  };
+
+  const cancelCommentEdit = () => {
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  const openCommentContextMenu = (event, comment) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
+  };
+
+  const handleCommentEditKeyDown = (event, comment) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelCommentEdit();
+    }
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      saveCommentEdit(comment);
+    }
+  };
+
   return <div className="project-task-inline-comments">
     {notice && <div className="notice">{notice}</div>}
     <div className="project-comments-add">
@@ -7503,24 +7677,46 @@ function ProjectTaskInlineComments({ task, onChanged }) {
     </div>
     <div className="project-comments-list">
       {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
-      {!loading && comments.map((comment) => <div className="project-comment-row" key={comment.id ?? comment.localId}>
-        <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
-        <button type="button" className="project-comment-delete" onClick={() => removeComment(comment)} aria-label="Usuń komentarz/postęp" title="Usuń komentarz/postęp"><Trash2 size={13} /></button>
-        <p>{comment.body}</p>
-      </div>)}
+      {!loading && comments.map((comment) => {
+        const isEditing = editingCommentId === (comment.id ?? comment.localId);
+        return <div
+          className={`project-comment-row project-comment-interactive-row ${isEditing ? 'is-editing' : ''}`}
+          key={comment.id ?? comment.localId}
+          onDoubleClick={() => !isEditing && startCommentEdit(comment)}
+          onContextMenu={(event) => !isEditing && openCommentContextMenu(event, comment)}
+        >
+          <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
+          {isEditing
+            ? <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
+            : <p>{comment.body}</p>}
+        </div>;
+      })}
       {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
     </div>
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
+    {commentContextMenu && <AppRowContextMenu
+      x={commentContextMenu.x}
+      y={commentContextMenu.y}
+      colorTheme={colorTheme}
+      onClose={() => setCommentContextMenu(null)}
+      items={[
+        { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) },
+        { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) }
+      ]}
+    />}
   </div>;
 }
 
-function SimpleTaskComments({ task, onChanged }) {
+function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   const taskId = task?.id ?? task?.localId;
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [notice, setNotice] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
 
   const loadComments = async () => {
@@ -7545,6 +7741,7 @@ function SimpleTaskComments({ task, onChanged }) {
   };
 
   const removeComment = async (comment) => {
+    setCommentContextMenu(null);
     setConfirmDialog({
       title: 'Usuń komentarz',
       message: 'Czy na pewno usunąć ten komentarz/postęp?',
@@ -7561,6 +7758,43 @@ function SimpleTaskComments({ task, onChanged }) {
     });
   };
 
+  const saveCommentEdit = async (comment) => {
+    const result = await updateOrganizerTaskComment(comment.id ?? comment.localId, editingCommentText, comment);
+    if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
+    setEditingCommentId(null);
+    setEditingCommentText('');
+    await loadComments();
+    onChanged?.();
+  };
+
+  const startCommentEdit = (comment) => {
+    setCommentContextMenu(null);
+    setEditingCommentId(comment.id ?? comment.localId);
+    setEditingCommentText(comment.body);
+  };
+
+  const cancelCommentEdit = () => {
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  const openCommentContextMenu = (event, comment) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
+  };
+
+  const handleCommentEditKeyDown = (event, comment) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelCommentEdit();
+    }
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      saveCommentEdit(comment);
+    }
+  };
+
   return <div className={`simple-task-comments ${comments.length > 0 ? 'has-comments' : ''}`}>
     <div className="simple-task-comments-title">Komentarze / postęp <span>({comments.length})</span></div>
     {notice && <div className="notice">{notice}</div>}
@@ -7571,14 +7805,33 @@ function SimpleTaskComments({ task, onChanged }) {
     </div>
     <div className="project-comments-list">
       {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
-      {!loading && comments.map((comment) => <div className="project-comment-row" key={comment.id ?? comment.localId}>
-        <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
-        <button type="button" className="project-comment-delete" onClick={() => removeComment(comment)} aria-label="Usuń komentarz/postęp" title="Usuń komentarz/postęp"><Trash2 size={13} /></button>
-        <p>{comment.body}</p>
-      </div>)}
+      {!loading && comments.map((comment) => {
+        const isEditing = editingCommentId === (comment.id ?? comment.localId);
+        return <div
+          className={`project-comment-row project-comment-interactive-row ${isEditing ? 'is-editing' : ''}`}
+          key={comment.id ?? comment.localId}
+          onDoubleClick={() => !isEditing && startCommentEdit(comment)}
+          onContextMenu={(event) => !isEditing && openCommentContextMenu(event, comment)}
+        >
+          <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
+          {isEditing
+            ? <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
+            : <p>{comment.body}</p>}
+        </div>;
+      })}
       {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
     </div>
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
+    {commentContextMenu && <AppRowContextMenu
+      x={commentContextMenu.x}
+      y={commentContextMenu.y}
+      colorTheme={colorTheme}
+      onClose={() => setCommentContextMenu(null)}
+      items={[
+        { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) },
+        { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) }
+      ]}
+    />}
   </div>;
 }
 
@@ -7600,6 +7853,8 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   const [newSectionName, setNewSectionName] = useState('');
   const [sectionNameError, setSectionNameError] = useState('');
   const [sectionMenu, setSectionMenu] = useState(null);
+  const [sectionRenameTarget, setSectionRenameTarget] = useState(null);
+  const [taskContextMenu, setTaskContextMenu] = useState(null);
   const sectionItemClickTimeoutRef = useRef(null);
 
   useEffect(() => () => {
@@ -7682,6 +7937,27 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     await loadPanelData();
   };
 
+  const saveSectionName = async (section, nextName) => {
+    const sid = section.id ?? section.localId;
+    const result = await updateProjectSection(sid, nextName, section);
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Nie udało się zapisać nazwy sekcji'));
+      return false;
+    }
+    setSections((prev) => prev.map((item) => (
+      String(item.id ?? item.localId) === String(sid) ? { ...item, name: nextName.trim() } : item
+    )));
+    setSectionRenameTarget(null);
+    await loadPanelData();
+    onRefreshProject?.();
+    return true;
+  };
+
+  const openSectionRename = (section) => {
+    setSectionMenu(null);
+    setSectionRenameTarget(section);
+  };
+
   const saveSectionColor = async (section, nextColor) => {
     const sid = section.id ?? section.localId;
     const normalized = normalizeAccentColor(nextColor);
@@ -7731,26 +8007,28 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
 
   const removeSection = async (section, sectionTasks = []) => {
     const sid = String(section.id ?? section.localId);
-    const hasTasks = sectionTasks.length > 0;
-    const message = hasTasks
-      ? 'Sekcja zawiera zadania. Usunięcie sekcji usunie również przypisane zadania i ich komentarze/postępy. Czy kontynuować?'
-      : `Czy na pewno usunąć sekcję "${section.name}"?`;
+    setSectionMenu(null);
+    if (sectionTasks.length > 0) {
+      setConfirmDialog({
+        title: 'Nie można usunąć sekcji',
+        message: 'Ta sekcja zawiera zadania. Przenieś lub usuń zadania przed usunięciem sekcji.',
+        confirmLabel: 'Rozumiem',
+        cancelLabel: 'Zamknij',
+        variant: 'secondary',
+        onConfirm: () => setConfirmDialog(null),
+        onCancel: () => setConfirmDialog(null)
+      });
+      return;
+    }
     setConfirmDialog({
       title: 'Usuń sekcję',
-      message,
+      message: `Czy na pewno usunąć sekcję "${section.name}"?`,
       confirmLabel: 'Usuń',
       cancelLabel: 'Anuluj',
       variant: 'danger',
       onConfirm: async () => {
         setConfirmDialog(null);
         setNotice('');
-        for (const task of sectionTasks) {
-          const result = await deleteProjectTask(task.id ?? task.localId, task);
-          if (result.error) {
-            setNotice(humanizeError(result.error, 'Nie udało się usunąć zadań sekcji'));
-            return;
-          }
-        }
         const result = await deleteProjectSection(section.id ?? section.localId);
         if (result.error) {
           setNotice(humanizeError(result.error, 'Nie udało się usunąć sekcji'));
@@ -7759,11 +8037,6 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         setCollapsedSections((current) => {
           const next = new Set(current);
           next.delete(sid);
-          return next;
-        });
-        setExpandedTasks((current) => {
-          const next = new Set(current);
-          sectionTasks.forEach((task) => next.delete(String(task.id ?? task.localId)));
           return next;
         });
         await loadPanelData();
@@ -7783,8 +8056,46 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   };
 
   const openEditSectionItem = (task) => {
+    setTaskContextMenu(null);
     setEditingTask(task);
     setTaskEditorOpen(true);
+  };
+
+  const openTaskContextMenu = (event, task) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTaskContextMenu({ x: event.clientX, y: event.clientY, task });
+  };
+
+  const addCommentToTask = (task) => {
+    const taskKey = String(task.id ?? task.localId);
+    setTaskContextMenu(null);
+    setExpandedTasks((current) => {
+      const next = new Set(current);
+      next.add(taskKey);
+      return next;
+    });
+  };
+
+  const deletePanelTask = (task) => {
+    setTaskContextMenu(null);
+    setConfirmDialog({
+      title: 'Usuń zadanie',
+      message: `Usunąć zadanie "${task.title}"?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const result = await deleteProjectTask(task.id ?? task.localId, task);
+        if (result.error) {
+          setNotice(humanizeError(result.error, 'Błąd usuwania zadania'));
+          return;
+        }
+        await loadPanelData();
+        onRefreshProject?.();
+      }
+    });
   };
 
   const handleSectionItemMainClick = (task) => {
@@ -7815,7 +8126,10 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const done = task.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(task.status);
     const expanded = expandedTasks.has(taskKey);
     return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''}`} key={taskKey}>
-      <div className="project-detail-task-row">
+      <div
+        className="project-detail-task-row"
+        onContextMenu={(event) => openTaskContextMenu(event, task)}
+      >
         <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskDone(task); }} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
           {done && <CheckCircle2 size={16} />}
         </button>
@@ -7824,18 +8138,16 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
           className="project-detail-task-main"
           onClick={() => handleSectionItemMainClick(task)}
           onDoubleClick={(event) => handleSectionItemMainDoubleClick(event, task)}
+          onKeyDown={(event) => { if (event.key === 'Enter') openEditSectionItem(task); }}
           aria-expanded={expanded}
+          title="Dwuklik — edycja, prawy klik — menu"
         >
           <strong>{task.title}</strong>
           <span>{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
         </button>
         <button type="button" className={`project-detail-task-comments ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
-        <div className="project-detail-task-actions">
-          <button type="button" className={`project-icon-action comment-action ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Komentarze" title="Komentarze / postęp"><MessageSquare size={14} /></button>
-          <button type="button" className="project-icon-action" onClick={(event) => { event.stopPropagation(); openEditSectionItem(task); }} aria-label="Edytuj zadanie" title="Edytuj">✎</button>
-        </div>
       </div>
-      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} />}
+      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} colorTheme={colorTheme} />}
     </div>;
   };
 
@@ -7874,10 +8186,11 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
             <div
               className="project-detail-section-head is-colored"
               style={getProjectSectionHeadStyle(section, colorTheme)}
+              title="Kliknij prawym przyciskiem, aby otworzyć menu sekcji"
               onContextMenu={(event) => openSectionMenu(event, section)}
             >
               <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection(sid)}>
-                <span>{sectionCollapsed ? '▸' : '▾'}</span><strong>{section.name}</strong><em>({sectionTasks.length})</em>
+                <span>{sectionCollapsed ? '▸' : '▾'}</span><strong onDoubleClick={(event) => { event.stopPropagation(); openSectionRename(section); }}>{section.name}</strong><em>({sectionTasks.length})</em>
               </button>
               <button type="button" className="project-detail-section-action" onClick={(event) => { event.stopPropagation(); openNewTask(sid); }} aria-label={`Dodaj zadanie do sekcji ${section.name}`} title="Dodaj zadanie do sekcji"><Plus size={13} /></button>
               <button type="button" className="project-detail-section-delete" onClick={(event) => { event.stopPropagation(); removeSection(section, sectionTasks); }} aria-label={`Usuń sekcję ${section.name}`} title="Usuń sekcję"><Trash2 size={13} /></button>
@@ -7915,19 +8228,55 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         setSectionMenu(null);
         openNewTask(sid);
       }}
+      onRename={() => openSectionRename(sectionMenu.section)}
       onDelete={() => {
         const section = sectionMenu.section;
-        setSectionMenu(null);
         removeSection(section, tasksBySection(String(section.id ?? section.localId)));
       }}
     />}
+    {sectionRenameTarget && <ProjectSectionRenameModal
+      section={sectionRenameTarget}
+      onClose={() => setSectionRenameTarget(null)}
+      onSave={(nextName) => saveSectionName(sectionRenameTarget, nextName)}
+    />}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
+    {taskContextMenu && <AppRowContextMenu
+      x={taskContextMenu.x}
+      y={taskContextMenu.y}
+      colorTheme={colorTheme}
+      onClose={() => setTaskContextMenu(null)}
+      items={[
+        { key: 'edit', label: 'Edytuj', icon: <Pencil size={14} />, onClick: () => openEditSectionItem(taskContextMenu.task) },
+        { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => addCommentToTask(taskContextMenu.task) },
+        {
+          key: 'toggle-done',
+          label: (taskContextMenu.task?.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(taskContextMenu.task?.status)) ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
+          icon: <CheckCheck size={14} />,
+          onClick: () => toggleTaskDone(taskContextMenu.task)
+        },
+        { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => deletePanelTask(taskContextMenu.task) }
+      ]}
+    />}
   </aside>;
 }
 
-function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onEditTask, onStatusChange, onChanged }) {
+function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onEditTask, onStatusChange, onDeleteTask, onChanged, colorTheme = 'dark' }) {
   const done = Boolean(task?.archived) || ORGANIZER_TERMINAL_STATUSES.includes(task?.status);
   const title = String(task?.title ?? '').trim() || 'Zadanie bez tytułu';
+  const [taskContextMenu, setTaskContextMenu] = useState(null);
+
+  const openTaskContextMenu = (event) => {
+    if (!task) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setTaskContextMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleDeleteTask = () => {
+    if (!task) return;
+    setTaskContextMenu(null);
+    onDeleteTask?.(task);
+  };
 
   if (collapsed) {
     return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
@@ -7951,10 +8300,16 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
         <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => onStatusChange(task, done ? ORGANIZER_TASK_STATUSES[0] : 'Zrobione')} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
           {done && <CheckCircle2 size={16} />}
         </button>
-        <button type="button" className="project-icon-action" onClick={() => onEditTask(task)} aria-label="Edytuj zadanie" title="Edytuj zadanie">✎</button>
       </div>
       <div className="project-details-body-scroll">
-        <div className={`simple-task-details-card ${done ? 'is-done' : ''}`}>
+        <div
+          className={`simple-task-details-card ${done ? 'is-done' : ''} project-comment-interactive-row`}
+          onDoubleClick={() => onEditTask(task)}
+          onContextMenu={openTaskContextMenu}
+          onKeyDown={(event) => { if (event.key === 'Enter') onEditTask(task); }}
+          tabIndex={0}
+          title="Dwuklik — edycja, prawy klik — menu"
+        >
           <strong>{title}</strong>
           <dl>
             <div><dt>Status</dt><dd>{task.status || '—'}</dd></div>
@@ -7966,9 +8321,26 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
           </dl>
           <p>{task.description || 'Brak opisu.'}</p>
         </div>
-        <SimpleTaskComments task={task} onChanged={onChanged} />
+        <SimpleTaskComments task={task} onChanged={onChanged} colorTheme={colorTheme} />
       </div>
     </div>}
+    {taskContextMenu && <AppRowContextMenu
+      x={taskContextMenu.x}
+      y={taskContextMenu.y}
+      colorTheme={colorTheme}
+      onClose={() => setTaskContextMenu(null)}
+      items={[
+        { key: 'edit', label: 'Edytuj', icon: <Pencil size={14} />, onClick: () => onEditTask(task) },
+        { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => setTaskContextMenu(null) },
+        {
+          key: 'toggle-done',
+          label: done ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
+          icon: <CheckCheck size={14} />,
+          onClick: () => onStatusChange(task, done ? ORGANIZER_TASK_STATUSES[0] : 'Zrobione')
+        },
+        { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: handleDeleteTask }
+      ]}
+    />}
   </aside>;
 }
 
@@ -8345,7 +8717,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         </AppSection>
       </div>
       {selectedSimpleTask
-        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onChanged={loadData} />
+        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
         : <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} colorTheme={colorTheme} />}
     </div>
 

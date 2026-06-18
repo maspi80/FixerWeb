@@ -10463,6 +10463,27 @@ body.rental-items-section-resizing *{
   box-shadow:var(--fw-shadow-panel);
   overflow:hidden;
 }
+.project-section-context-menu.row-context-menu{
+  display:block;
+  min-width:232px;
+  gap:0;
+}
+.project-section-context-menu.row-context-menu .context-menu-title{
+  margin:0;
+  padding:8px 10px 7px;
+  border-bottom:1px solid var(--fw-color-border);
+}
+.project-section-context-menu.row-context-menu > button{
+  margin:0 6px;
+}
+.project-section-context-menu.row-context-menu > button:last-child{
+  margin-bottom:6px;
+}
+.project-section-toggle,
+.project-detail-section-head{
+  cursor:context-menu;
+  user-select:none;
+}
 .project-section-menu-head{
   padding:10px 12px 8px;
   border-bottom:1px solid var(--fw-color-border);
@@ -10701,11 +10722,12 @@ body.rental-items-section-resizing *{
 .project-detail-task-row{
   min-height:36px;
   display:grid;
-  grid-template-columns:24px minmax(0,1fr) 28px auto;
+  grid-template-columns:24px minmax(0,1fr) 28px;
   gap:6px;
   align-items:center;
   padding:5px 6px;
   border-radius:9px;
+  cursor:context-menu;
 }
 .project-task-done-toggle{
   width:20px;
@@ -10851,7 +10873,7 @@ body.rental-items-section-resizing *{
   border:1px solid rgba(148,163,184,.12);
   border-radius:12px;
   background:rgba(148,163,184,.06);
-  padding:8px 38px 8px 10px;
+  padding:8px 10px;
 }
 .project-comment-row strong,
 .project-comment-row span{
@@ -10895,6 +10917,40 @@ body.rental-items-section-resizing *{
   border-color:rgba(248,113,113,.36);
   background:rgba(248,113,113,.14);
   color:#fecaca;
+}
+.project-comment-interactive-row{
+  cursor:context-menu;
+  user-select:none;
+}
+.project-comment-interactive-row.is-editing{
+  cursor:text;
+  user-select:text;
+}
+.project-comment-interactive-row:not(.is-editing):hover{
+  background:rgba(96,165,250,.08);
+}
+.row-context-menu.theme-light{
+  background:#fff;
+  border-color:rgba(15,23,42,.12);
+  box-shadow:0 24px 70px rgba(15,23,42,.18);
+}
+.row-context-menu.theme-light button{
+  color:#334155;
+}
+.row-context-menu.theme-light button:hover{
+  background:rgba(37,99,235,.08);
+}
+.row-context-menu.theme-light .danger-action{
+  color:var(--fw-color-danger);
+}
+.row-context-menu.theme-light .danger-action:hover{
+  background:rgba(225,29,72,.08);
+}
+.simple-task-details-card.project-comment-interactive-row{
+  outline:none;
+}
+.simple-task-details-card.project-comment-interactive-row:focus-visible{
+  box-shadow:0 0 0 2px rgba(96,165,250,.35);
 }
 .simple-task-comments{
   display:grid;
@@ -11042,6 +11098,20 @@ body.rental-items-section-resizing *{
   --fw-color-danger-bg:rgba(225,29,72,.08);
   --fw-shadow-panel:0 18px 50px rgba(15,23,42,.09);
 }
+.project-section-context-menu.theme-light.row-context-menu > button{
+  color:var(--fw-color-text-soft);
+}
+.project-section-context-menu.theme-light.row-context-menu > button:hover{
+  background:var(--fw-color-primary-soft);
+  color:var(--fw-color-text-strong);
+}
+.project-section-context-menu.theme-light.row-context-menu > button.danger-action{
+  color:var(--fw-color-danger-text);
+}
+.project-section-context-menu.theme-light.row-context-menu > button.danger-action:hover{
+  background:var(--fw-color-danger-bg);
+  color:var(--fw-color-danger-text);
+}
 .app-shell.theme-light .project-detail-section-delete{
   border-color:rgba(225,29,72,.16);
   background:rgba(225,29,72,.05);
@@ -11138,6 +11208,9 @@ body.rental-items-section-resizing *{
 }
 .app-shell.theme-light .project-detail-task-row:hover{
   background:rgba(37,99,235,.07);
+}
+.app-shell.theme-light .project-comment-interactive-row:not(.is-editing):hover{
+  background:rgba(37,99,235,.05);
 }
 .app-shell.theme-light .project-detail-task-item.is-expanded{
   background:rgba(15,23,42,.035);

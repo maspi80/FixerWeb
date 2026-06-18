@@ -135,6 +135,25 @@ export async function createOrganizerTaskComment(taskId, body, type = 'Komentarz
   return { data, error, local: false };
 }
 
+export async function updateOrganizerTaskComment(id, body, comment = null) {
+  if (!body?.trim()) return { data: null, error: new Error('Treść komentarza jest wymagana.'), local: false };
+  if (!isSupabaseConfigured || comment?.localId) {
+    const now = new Date().toISOString();
+    const next = readLocal(LOCAL_COMMENTS_KEY).map((row) => (
+      String(row.id ?? row.localId) === String(id) ? { ...row, body: body.trim(), updated_at: now } : row
+    ));
+    writeLocal(LOCAL_COMMENTS_KEY, next);
+    return { data: next.find((row) => String(row.id ?? row.localId) === String(id)) ?? null, error: null, local: true };
+  }
+  const { data, error } = await supabase
+    .from('organizer_task_comments')
+    .update({ body: body.trim(), updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single();
+  return { data, error, local: false };
+}
+
 export async function deleteOrganizerTaskComment(id, comment = null) {
   if (!id) return { error: new Error('ID komentarza jest wymagane.'), local: false };
   if (!isSupabaseConfigured || comment?.localId) {

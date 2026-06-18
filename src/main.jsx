@@ -2027,7 +2027,7 @@ const EQUIPMENT_TABLE_COLUMNS = [
   { key: 'model', label: 'Model' },
   { key: 'serial', label: 'Numer seryjny' },
   { key: 'inventory_number', label: 'Nr inw.' },
-  { key: 'status', label: 'Status' },
+  { key: 'status', label: 'Status', renderCell: renderEquipmentStatusCell },
   { key: 'location', label: 'Lokalizacja' },
   { key: 'set_items_count', label: 'Składniki' }
 ];
@@ -5066,7 +5066,7 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
     { key: 'model', label: 'Model' },
     { key: 'serial', label: 'Numer seryjny' },
     { key: 'code_display', label: 'Kod' },
-    { key: 'status', label: 'Status', renderCell: (item) => <StatusPill value={item.status} /> },
+    { key: 'status', label: 'Status', renderCell: renderEquipmentStatusCell },
     { key: 'location', label: 'Lokalizacja' }
   ];
 
@@ -12057,16 +12057,59 @@ function injectStatusColorStyles(colorMap) {
   el.textContent = rules.join('');
 }
 
+function resolveStatusColorHex(value) {
+  const text = formatSystemStatusLabel(value);
+  const colors = getStatusColors();
+  const candidates = [text.toLowerCase().trim(), String(value ?? '').toLowerCase().trim()];
+  for (const candidate of candidates) {
+    if (candidate && colors[candidate]) return colors[candidate];
+  }
+  return null;
+}
+
+function buildStatusPillInlineStyle(value) {
+  const hex = resolveStatusColorHex(value);
+  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  if ([r, g, b].some(Number.isNaN)) return null;
+  const isLight = typeof document !== 'undefined' && document.querySelector('.app-shell.theme-light');
+  if (isLight) {
+    const rd = Math.round(r * 0.65);
+    const gd = Math.round(g * 0.65);
+    const bd = Math.round(b * 0.65);
+    return {
+      background: `rgba(${r}, ${g}, ${b}, 0.12)`,
+      color: `rgb(${rd}, ${gd}, ${bd})`
+    };
+  }
+  return {
+    background: `rgba(${r}, ${g}, ${b}, 0.17)`,
+    color: hex
+  };
+}
+
+function getStatusPillTone(value) {
+  const text = formatSystemStatusLabel(value);
+  const lower = text.toLowerCase();
+  if (lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('zagub') || lower.includes('uszk') || lower.includes('wybrak')) return 'danger';
+  if (lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly')) return 'success';
+  if (lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy')) return 'warning';
+  if (lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') || lower.includes('wydany')) return 'info';
+  return 'neutral';
+}
+
 function StatusPill({ value }) {
   const text = formatSystemStatusLabel(value);
   const cssClass = statusToCssClass(text);
-  const lower = text.toLowerCase();
-  const tone = lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('zagub') || lower.includes('uszk') ? 'danger'
-    : lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly') ? 'success'
-    : lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy') ? 'warning'
-    : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') || lower.includes('wydany') ? 'info'
-    : 'neutral';
-  return <span className={`status-pill ${cssClass} ${tone}`}>{text}</span>;
+  const inlineStyle = buildStatusPillInlineStyle(value);
+  const tone = inlineStyle ? '' : getStatusPillTone(value);
+  return <span className={`status-pill ${cssClass}${tone ? ` ${tone}` : ''}`.trim()} style={inlineStyle ?? undefined}>{text}</span>;
+}
+
+function renderEquipmentStatusCell(row) {
+  return <StatusPill value={row?.status ?? ''} />;
 }
 
 function StatusColorPicker({ statusName, currentHex, onSelect }) {

@@ -1,4 +1,6 @@
 import React, { useRef, useEffect } from 'react';
+import { X } from 'lucide-react';
+import { usePersistentElementSize } from './uiResize.js';
 
 export function joinClassNames(...parts) {
   return parts.filter(Boolean).join(' ');
@@ -19,46 +21,20 @@ export function AppSelect({ className = '', children, ...props }) {
 /**
  * AppTextarea — textarea with optional size persistence.
  *
- * Pass resizeKey="fixer:textarea:<module>:<field>" to automatically save and
- * restore the user-dragged height across sessions via localStorage.
- * One entry per field-type per module (not per record).
- * Heights are clamped to [64 px … 65 % of viewport height] for safety.
+ * Pass resizeKey="fixer:ui-resize:<windowKey>:<elementKey>" to save and restore
+ * the user-dragged height across sessions via localStorage.
  */
-export function AppTextarea({ className = '', resizeKey, ...props }) {
-  const elRef = useRef(null);
+export const AppTextarea = React.forwardRef(function AppTextarea({ className = '', resizeKey, resizeConstraints, ...props }, forwardedRef) {
+  const resizeRef = usePersistentElementSize(resizeKey, { constraints: resizeConstraints });
 
-  useEffect(() => {
-    if (!resizeKey) return;
-    const el = elRef.current;
-    if (!el) return;
+  const setRefs = (node) => {
+    resizeRef.current = node;
+    if (typeof forwardedRef === 'function') forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  };
 
-    // Restore persisted height on mount
-    try {
-      const saved = localStorage.getItem(resizeKey);
-      if (saved) {
-        const h = parseInt(saved, 10);
-        if (Number.isFinite(h) && h >= 64) {
-          const safeMax = Math.floor(window.innerHeight * 0.65);
-          el.style.height = `${Math.min(h, safeMax)}px`;
-        }
-      }
-    } catch { /* storage unavailable */ }
-
-    // Persist new height when user finishes resizing (mouseup after height change)
-    let lastH = el.offsetHeight;
-    const onMouseUp = () => {
-      const h = el.offsetHeight;
-      if (h !== lastH && h >= 64) {
-        lastH = h;
-        try { localStorage.setItem(resizeKey, String(h)); } catch { /* ignore */ }
-      }
-    };
-    window.addEventListener('mouseup', onMouseUp);
-    return () => window.removeEventListener('mouseup', onMouseUp);
-  }, [resizeKey]);
-
-  return <textarea ref={elRef} className={joinClassNames('app-input app-textarea', className)} {...props} />;
-}
+  return <textarea ref={setRefs} className={joinClassNames('app-input app-textarea', className)} {...props} />;
+});
 
 export function AppTabs({ className = '', children, ...props }) {
   return <div className={joinClassNames('app-tabs', className)} role="tablist" {...props}>{children}</div>;
@@ -95,7 +71,7 @@ export function AppModal({ className = '', eyebrow, title, description, onClose,
           {title && <h2>{title}</h2>}
           {description && <p className="app-muted">{description}</p>}
         </div>
-        {onClose && <IconButton label="Zamknij" onClick={onClose}>×</IconButton>}
+        {onClose && <ModalCloseButton onClick={onClose} />}
       </div>
       <div className="app-modal-content">{children}</div>
       {footer && <div className="app-modal-footer">{footer}</div>}
@@ -123,6 +99,12 @@ export function IconButton({ className = '', type = 'button', label, children, .
   return <button type={type} className={joinClassNames('ds-icon-button', className)} aria-label={label} title={label} {...props}>{children}</button>;
 }
 
+export function ModalCloseButton({ className = '', type = 'button', label = 'Zamknij', onClick }) {
+  return <button type={type} className={joinClassNames('ds-modal-close-button', className)} onClick={onClick} aria-label={label} title={label}>
+    <X size={16} aria-hidden="true" />
+  </button>;
+}
+
 export function SectionPanel({ className = '', title, actions = null, children }) {
   return <AppSection className={className} title={title} actions={actions}>{children}</AppSection>;
 }
@@ -136,7 +118,7 @@ export function ModalFrame({ className = '', eyebrow, title, description, onClos
           {title && <h2>{title}</h2>}
           {description && <p className="ds-muted">{description}</p>}
         </div>
-        {onClose && <IconButton label="Zamknij" onClick={onClose}>×</IconButton>}
+        {onClose && <ModalCloseButton onClick={onClose} />}
       </div>
       <div className="ds-modal-content">{children}</div>
       {footer && <div className="ds-modal-footer">{footer}</div>}

@@ -89,6 +89,39 @@
   background: rgba(15, 23, 42, .95);
 }
 
+.ds-modal-close-button {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--fw-color-border);
+  border-radius: var(--fw-radius-xs);
+  background: transparent;
+  color: var(--fw-color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ds-modal-close-button:hover {
+  border-color: var(--fw-color-primary-border);
+  background: var(--fw-color-primary-soft);
+  color: var(--fw-color-text-strong);
+}
+
+.ds-modal-close-button:focus-visible {
+  outline: 0;
+  border-color: var(--fw-color-primary-border);
+  box-shadow: 0 0 0 3px var(--fw-color-primary-soft);
+}
+
+.app-modal-header .ds-modal-close-button,
+.ds-modal-header .ds-modal-close-button {
+  margin-top: 2px;
+}
+
 .app-section,
 .ds-section-panel {
   border: 1px solid var(--fw-color-border);
@@ -214,13 +247,11 @@
   line-height: 1.25;
 }
 
-.confirm-dialog .ds-modal-header .ds-icon-button,
-.select-status-dialog .ds-modal-header .ds-icon-button {
-  width: var(--fw-icon-button-size);
-  height: var(--fw-icon-button-size);
+.confirm-dialog .ds-modal-header .ds-modal-close-button,
+.select-status-dialog .ds-modal-header .ds-modal-close-button {
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  font-size: 18px;
-  line-height: 1;
 }
 
 .confirm-dialog .ds-modal-content,
@@ -470,6 +501,18 @@
 .app-shell.theme-light .ds-icon-button {
   background: rgba(255, 255, 255, .92);
   color: var(--fw-color-text-soft);
+}
+
+.app-shell.theme-light .ds-modal-close-button {
+  background: transparent;
+  color: var(--fw-color-text-muted);
+  border-color: var(--fw-color-border);
+}
+
+.app-shell.theme-light .ds-modal-close-button:hover {
+  background: var(--fw-color-primary-soft);
+  color: var(--fw-color-text-strong);
+  border-color: var(--fw-color-primary-border);
 }
 
 .app-shell.theme-light .app-input,

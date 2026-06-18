@@ -1,5 +1,11 @@
 export { dsTokens } from './tokens.js';
 export {
+  buildUiResizeStorageKey,
+  readPersistedUiSize,
+  writePersistedUiSize,
+  usePersistentElementSize
+} from './uiResize.js';
+export {
   AppModal,
   AppButton,
   AppInput,
@@ -15,6 +21,7 @@ export {
   ButtonDanger,
   ButtonGhost,
   IconButton,
+  ModalCloseButton,
   SectionPanel,
   ModalFrame,
   FormField,

@@ -19,11 +19,15 @@ import {
   ButtonSecondary,
   ButtonGhost,
   ModalFrame,
+  ModalCloseButton,
   FormField,
   SectionPanel,
   StatusPill as DSStatusPill,
   EmptyState,
-  AppNotice
+  AppNotice,
+  buildUiResizeStorageKey,
+  readPersistedUiSize,
+  writePersistedUiSize
 } from './design-system';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
@@ -93,6 +97,7 @@ import {
   fetchAllProjectTasks, fetchProjectAllComments, fetchProjects, fetchProjectTasks,
   PROJECT_PRIORITIES, PROJECT_STATUSES, PROJECT_TASK_PRIORITIES,
   PROJECT_TASK_STATUSES, PROJECT_TASK_TERMINAL_STATUSES, PROJECT_TASK_COMMENT_TYPES, PROJECT_TERMINAL_STATUSES,
+  normalizeAccentColor,
   updateProject, updateProjectTask
 } from './services/projectsService';
 import { searchGlobalRecords } from './services/globalSearchService';
@@ -377,7 +382,7 @@ function useFloatingModalGeometry(storageKey, defaultSize, minSize) {
   return { modalSize, visibleModalPosition, startDrag, startResize };
 }
 
-const RENTAL_ITEMS_SECTION_HEIGHT_KEY = 'fixer-rental-modal:items-section-height';
+const RENTAL_ITEMS_SECTION_HEIGHT_KEY = buildUiResizeStorageKey('rental-editor', 'itemsSection');
 const RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT = 500;
 const RENTAL_ITEMS_SECTION_MIN_HEIGHT = 180;
 
@@ -390,10 +395,11 @@ function clampRentalItemsSectionHeight(value, maxHeight) {
 
 function getSavedRentalItemsSectionHeight() {
   if (typeof window === 'undefined') return RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT;
-  try {
-    const parsed = Number(JSON.parse(localStorage.getItem(RENTAL_ITEMS_SECTION_HEIGHT_KEY) || 'null'));
-    if (Number.isFinite(parsed)) return Math.max(RENTAL_ITEMS_SECTION_MIN_HEIGHT, Math.round(parsed));
-  } catch {}
+  const saved = readPersistedUiSize(RENTAL_ITEMS_SECTION_HEIGHT_KEY, {
+    minHeight: RENTAL_ITEMS_SECTION_MIN_HEIGHT,
+    maxHeight: RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT
+  });
+  if (saved?.height) return Math.max(RENTAL_ITEMS_SECTION_MIN_HEIGHT, Math.round(saved.height));
   return RENTAL_ITEMS_SECTION_DEFAULT_HEIGHT;
 }
 
@@ -421,7 +427,7 @@ function useRentalItemsSectionHeight(layoutRef) {
 
   useEffect(() => {
     heightRef.current = height;
-    localStorage.setItem(RENTAL_ITEMS_SECTION_HEIGHT_KEY, JSON.stringify(height));
+    writePersistedUiSize(RENTAL_ITEMS_SECTION_HEIGHT_KEY, { height });
   }, [height]);
 
   useEffect(() => {
@@ -488,7 +494,7 @@ function ResizableModalFrame({ className = '', storageKey, defaultSize, minSize,
           {title && <h2>{title}</h2>}
           {description && <p className="ds-muted muted">{description}</p>}
         </div>
-        {onClose && <button type="button" className="icon-button" onClick={onClose} aria-label="Zamknij"><X size={18} /></button>}
+        {onClose && <ModalCloseButton onClick={onClose} />}
       </div>
       <div className="ds-modal-content">{children}</div>
       {footer && <div className="modal-actions ds-modal-footer">{footer}</div>}
@@ -1035,7 +1041,7 @@ function App() {
           {activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
-          {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} />}
           {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} appSettingsReady={appSettingsReady} />}
           {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} />}
         </section>
@@ -1995,7 +2001,7 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
         {activeTab === 'notes' && <div className="notes-panel">
           <div className="form-section notes-section">
             <div className="section-title">Notatki</div>
-            <FormField label="Informacje wewnętrzne o kliencie"><AppTextarea resizeKey="fixer:textarea:client:notes" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField>
+            <FormField label="Informacje wewnętrzne o kliencie"><AppTextarea resizeKey="fixer:ui-resize:client-editor:notes" value={form.notes} onChange={(event) => update('notes', event.target.value)} /></FormField>
           </div>
         </div>}
         {activeTab === 'history' && <div className="history-panel">
@@ -2719,7 +2725,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
               <FormField label="Status"><AppInput value={calculatedSetStatus} readOnly className="readonly-input" /></FormField>
               <FormField label="Lokalizacja"><AppSelect value={form.location} onChange={(event) => update('location', event.target.value)}>{safeLocations.map((location) => <option key={location} value={location}>{location}</option>)}</AppSelect></FormField>
               <FormField label="Stan techniczny"><AppSelect value={form.condition} onChange={(event) => update('condition', event.target.value)}>{safeConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
-              <FormField className="set-description-field" label="Opis zestawu"><AppTextarea resizeKey="fixer:textarea:set:description" value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></FormField>
+              <FormField className="set-description-field" label="Opis zestawu"><AppTextarea resizeKey="fixer:ui-resize:set-editor:description" value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Krótki opis, przeznaczenie lub zawartość zestawu." /></FormField>
             </div>
           </div>
           <div className="equipment-section-panel set-builder-panel set-card-components-panel">
@@ -2778,7 +2784,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
           <FormField label="Kaucja"><AppInput value={form.deposit} onChange={(event) => update('deposit', event.target.value)} placeholder="np. 500" /></FormField>
           <FormField label="Cena / dzień"><AppInput value={form.price_day} onChange={(event) => update('price_day', event.target.value)} placeholder="np. 120" /></FormField>
           <FormField label="Cena / tydzień"><AppInput value={form.price_week} onChange={(event) => update('price_week', event.target.value)} placeholder="np. 600" /></FormField>
-          <FormField className="equipment-description-field" label="Opis / zawartość"><AppTextarea resizeKey="fixer:textarea:equipment:description" value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
+          <FormField className="equipment-description-field" label="Opis / zawartość"><AppTextarea resizeKey="fixer:ui-resize:equipment-editor:description" value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
         </div>}
         {activeTab === 'gallery' && <div className="equipment-section-panel">
           <div className="section-title">Galeria sprzętu</div>
@@ -2796,11 +2802,11 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
         </div>}
         {activeTab === 'history' && <div className="equipment-section-panel">
           <div className="section-title">Historia sprzętu</div>
-          <AppTextarea resizeKey="fixer:textarea:equipment:history_notes" className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
+          <AppTextarea resizeKey="fixer:ui-resize:equipment-editor:historyNotes" className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
         </div>}
         {activeTab === 'service' && <div className="equipment-section-panel">
           <div className="section-title">Serwis</div>
-          <AppTextarea resizeKey="fixer:textarea:equipment:service_notes" className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
+          <AppTextarea resizeKey="fixer:ui-resize:equipment-editor:serviceNotes" className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
         </div>}
         {activeTab === 'relations' && <div className="equipment-section-panel">
           <div className="section-title">Powiązania / zestawy</div>
@@ -2817,6 +2823,7 @@ function EquipmentSetPicker({ availableItems, onClose, onConfirm }) {
 }
 const RENTALS_TABLE_KEY = 'rentals-table';
 const RENTAL_SELECTED_EQUIPMENT_TABLE_KEY = 'rental-selected-equipment-table';
+const RENTAL_EXPANDED_ITEMS_TABLE_KEY = 'rental-expanded-items-table';
 
 function getRentalItemBrand(item) {
   return item?.brand_snapshot ?? item?.brand ?? item?.equipment?.brand ?? '';
@@ -2857,6 +2864,16 @@ const RENTAL_SELECTED_EQUIPMENT_COLUMNS = [
   { key: 'category', label: 'Kategoria' },
   { key: 'location', label: 'Lokalizacja' },
   { key: 'issue_status', label: 'Status', renderCell: (row) => <DSStatusPill value={row.issue_status} /> }
+];
+
+const RENTAL_EXPANDED_ITEMS_COLUMNS = [
+  { key: 'item_type', label: 'Typ' },
+  { key: 'name', label: 'Nazwa', renderCell: (row) => <strong title={row.name}>{row.name}</strong> },
+  { key: 'brand', label: 'Marka' },
+  { key: 'model', label: 'Model' },
+  { key: 'serial', label: 'Numer seryjny' },
+  { key: 'code_display', label: 'Kod / nr inw.' },
+  { key: 'status', label: 'Status' }
 ];
 
 function formatRentalStatus(status) {
@@ -3421,6 +3438,22 @@ function formatRentalItemType(itemType = '') {
   if (itemType === 'set') return 'Zestaw';
   if (itemType === 'set_component') return 'Składnik';
   return 'Sprzęt';
+}
+
+function buildRentalExpandedItemRows(items = []) {
+  return items.map((item, index) => {
+    const equipment = item?.equipment ?? {};
+    return {
+      id: item.id ?? item.equipment_id ?? `rental-item-${index}`,
+      item_type: formatRentalItemType(item.item_type),
+      name: item.name_snapshot || equipment.name || 'Sprzęt',
+      brand: getRentalItemBrand(item) || '—',
+      model: getRentalItemModel(item) || '—',
+      serial: item.serial_snapshot || equipment.serial || '—',
+      code_display: item.barcode_snapshot || item.inventory_number_snapshot || '—',
+      status: formatRentalItemStatus(item.status)
+    };
+  });
 }
 
 function formatDocumentTableCell(value) {
@@ -4016,10 +4049,14 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     if (!items.length) return <div className="expanded-set-empty">Brak pozycji w wypożyczeniu.</div>;
     return <div className="expanded-set-panel">
       <div className="expanded-set-header"><strong>Pozycje wypożyczenia</strong><span>{items.length} pozycji</span></div>
-      <table className="expanded-set-table">
-        <thead><tr><th>Typ</th><th>Nazwa</th><th>Marka</th><th>Model</th><th>Numer seryjny</th><th>Kod / Nr inw.</th><th>Status</th></tr></thead>
-        <tbody>{items.map((item, index) => <tr key={`${item.id ?? item.equipment_id}-${index}`}><td>{item.item_type === 'set' ? 'Zestaw' : item.item_type === 'set_component' ? 'Składnik' : 'Sprzęt'}</td><td><strong>{item.name_snapshot}</strong></td><td>{getRentalItemBrand(item) || '—'}</td><td>{getRentalItemModel(item) || '—'}</td><td>{item.serial_snapshot || '—'}</td><td>{item.barcode_snapshot || item.inventory_number_snapshot || '—'}</td><td><StatusPill value={formatRentalItemStatus(item.status)} /></td></tr>)}</tbody>
-      </table>
+      <DataTable
+        nested
+        showLpColumn={false}
+        enableSelectionActions={false}
+        storageKey={RENTAL_EXPANDED_ITEMS_TABLE_KEY}
+        columns={RENTAL_EXPANDED_ITEMS_COLUMNS}
+        rows={buildRentalExpandedItemRows(items)}
+      />
     </div>;
   };
 
@@ -5807,13 +5844,13 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
             </div>
             <div className="service-intake-fields-grid">
               <FormField label="Stan przyjęcia"><AppSelect value={form.intake_condition} onChange={(event) => update('intake_condition', event.target.value)}>{conditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</AppSelect></FormField>
-              <FormField label="Akcesoria"><AppTextarea resizeKey="fixer:textarea:service:intake_accessories" value={form.intake_accessories} onChange={(event) => update('intake_accessories', event.target.value)} placeholder="np. zasilacz, futerał, karta pamięci" /></FormField>
-              <FormField label="Opis wizualny / uwagi"><AppTextarea resizeKey="fixer:textarea:service:intake_visual_notes" value={form.intake_visual_notes} onChange={(event) => update('intake_visual_notes', event.target.value)} placeholder="np. rysy na obudowie, brak zaślepki, ślady zalania" /></FormField>
+              <FormField label="Akcesoria"><AppTextarea resizeKey="fixer:ui-resize:service-editor:intakeAccessories" value={form.intake_accessories} onChange={(event) => update('intake_accessories', event.target.value)} placeholder="np. zasilacz, futerał, karta pamięci" /></FormField>
+              <FormField label="Opis wizualny / uwagi"><AppTextarea resizeKey="fixer:ui-resize:service-editor:intakeVisualNotes" value={form.intake_visual_notes} onChange={(event) => update('intake_visual_notes', event.target.value)} placeholder="np. rysy na obudowie, brak zaślepki, ślady zalania" /></FormField>
             </div>
           </div>
         </SectionPanel>
         <SectionPanel className="service-record-section service-fault-section" title="Opis usterki">
-          <FormField label="Opis usterki"><AppTextarea resizeKey="fixer:textarea:service:fault_description" value={form.fault_description} onChange={(event) => update('fault_description', event.target.value)} placeholder="Co zgłasza klient / operator?" /></FormField>
+          <FormField label="Opis usterki"><AppTextarea resizeKey="fixer:ui-resize:service-editor:faultDescription" value={form.fault_description} onChange={(event) => update('fault_description', event.target.value)} placeholder="Co zgłasza klient / operator?" /></FormField>
         </SectionPanel>
       </div>}
 
@@ -5825,7 +5862,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
             <FormField label="Data wysłania"><AppInput type="date" value={form.external_sent_date || ''} onChange={(event) => update('external_sent_date', event.target.value)} /></FormField>
             <FormField label="Data powrotu"><AppInput type="date" value={form.external_return_date || ''} onChange={(event) => update('external_return_date', event.target.value)} /></FormField>
             <FormField label="Koszt zewnętrzny"><div className="money-input"><AppInput value={form.external_cost} onChange={(event) => update('external_cost', event.target.value)} placeholder="0,00" /><span>zł</span></div></FormField>
-            <FormField className="service-external-notes-field" label="Uwagi do serwisu zewnętrznego"><AppTextarea resizeKey="fixer:textarea:service:external_notes" value={form.external_notes} onChange={(event) => update('external_notes', event.target.value)} /></FormField>
+            <FormField className="service-external-notes-field" label="Uwagi do serwisu zewnętrznego"><AppTextarea resizeKey="fixer:ui-resize:service-editor:externalNotes" value={form.external_notes} onChange={(event) => update('external_notes', event.target.value)} /></FormField>
           </div>
         </SectionPanel>
       </div>}
@@ -5877,7 +5914,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
 
       {activeTab === 'notes' && <div className="service-tab-content">
         <SectionPanel className="service-record-section" title="Notatki wewnętrzne">
-          <FormField label="Notatki operatora"><AppTextarea resizeKey="fixer:textarea:service:internal_notes" className="large-notes" value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} placeholder="Wewnętrzne informacje dla obsługi. Nie mieszać z postępami serwisowymi." /></FormField>
+          <FormField label="Notatki operatora"><AppTextarea resizeKey="fixer:ui-resize:service-editor:internalNotes" className="large-notes" value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} placeholder="Wewnętrzne informacje dla obsługi. Nie mieszać z postępami serwisowymi." /></FormField>
         </SectionPanel>
         <SectionPanel className="service-record-section" title="Zdjęcia i załączniki">
           <div className="attachment-add-grid service-attachment-add-grid">
@@ -6626,7 +6663,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
         <AppInput value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Tytuł zadania" autoFocus />
       </FormField>
       <FormField label="Opis">
-        <AppTextarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis lub notatki do zadania" />
+        <AppTextarea resizeKey="fixer:ui-resize:task-editor:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis lub notatki do zadania" />
       </FormField>
       <div className="project-task-meta-grid">
         <div className="project-task-meta-column">
@@ -6695,7 +6732,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
   </ResizableModalFrame>;
 }
 
-function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, onClose, onSave }) {
+function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, onClose, onSave, colorTheme = 'dark' }) {
   const isNew = !project;
   const [activeTab, setActiveTab] = useState('data');
   const projectTasksListRef = useRef(null);
@@ -6711,6 +6748,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
       start_date: safeProject.start_date ?? '',
       due_date: safeProject.due_date ?? '',
       notes: String(safeProject.notes ?? ''),
+      accent_color: resolveProjectAccentColor(safeProject) ?? '',
       archived: Boolean(safeProject.archived),
       completed_at: safeProject.completed_at ?? null,
       ...(project ? { id: project.id, localId: project.localId, created_at: project.created_at } : {})
@@ -6785,14 +6823,6 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   useEffect(() => { if (activeTab === 'tasks') loadTasks(); }, [activeTab, projectId]);
-
-  useEffect(() => {
-    if (!sectionMenu) return;
-    const close = () => setSectionMenu(null);
-    window.addEventListener('click', close);
-    window.addEventListener('keydown', close);
-    return () => { window.removeEventListener('click', close); window.removeEventListener('keydown', close); };
-  }, [sectionMenu]);
 
   const handleSave = async () => {
     if (!form.name.trim()) { setNotice('Nazwa projektu jest wymagana.'); return; }
@@ -6873,7 +6903,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     if (!sectionName) { setSectionNameError('Podaj nazwę sekcji.'); return; }
     if (sectionName.length > 100) { setSectionNameError('Nazwa sekcji może mieć maksymalnie 100 znaków.'); return; }
     if (!projectId) { setNotice('Najpierw zapisz projekt.'); return; }
-    await createProjectSection(projectId, sectionName, (sections.length + 1) * 10);
+    await createProjectSection(projectId, sectionName, (sections.length + 1) * 10, getDefaultProjectSectionAccentColor(sectionName));
     setNewSectionName('');
     setSectionModalOpen(false);
     await loadTasks();
@@ -6885,6 +6915,32 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     await updateProjectSection(id, editingSectionName);
     setEditingSectionId(null);
     setEditingSectionName('');
+    await loadTasks();
+  };
+
+  const saveSectionColor = async (section, nextColor) => {
+    const sid = section.id ?? section.localId;
+    const normalized = normalizeAccentColor(nextColor);
+    if (!normalized) return;
+    setSections((prev) => prev.map((item) => (
+      String(item.id ?? item.localId) === String(sid) ? { ...item, header_color: normalized } : item
+    )));
+    setSectionMenu((prev) => (
+      prev && String(prev.section.id ?? prev.section.localId) === String(sid)
+        ? { ...prev, section: { ...prev.section, header_color: normalized } }
+        : prev
+    ));
+    const result = await updateProjectSection(sid, { header_color: normalized }, section);
+    if (result.error) { setNotice(humanizeError(result.error, 'Nie udało się zapisać koloru sekcji')); return; }
+    setSectionMenu(null);
+    await loadTasks();
+  };
+
+  const resetSectionColor = async (section) => {
+    const sid = section.id ?? section.localId;
+    const result = await updateProjectSection(sid, { header_color: null }, section);
+    if (result.error) { setNotice(humanizeError(result.error, 'Nie udało się przywrócić koloru sekcji')); return; }
+    setSectionMenu(null);
     await loadTasks();
   };
 
@@ -6995,6 +7051,28 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
         <FormField label="Nazwa projektu *">
           <AppInput value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nazwa projektu" autoFocus={isNew} />
         </FormField>
+        <FormField label="Kolor projektu">
+          <div className="project-accent-field">
+            <label
+              className="project-accent-color-swatch"
+              style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }}
+              title="Wybierz kolor projektu"
+            >
+              <input
+                type="color"
+                className="project-accent-color-input"
+                value={normalizeAccentColor(form.accent_color) || '#2563EB'}
+                onChange={(event) => set('accent_color', event.target.value.toUpperCase())}
+                aria-label="Wybierz kolor projektu"
+              />
+            </label>
+            <AppInput
+              value={form.accent_color ?? ''}
+              onChange={(event) => set('accent_color', event.target.value)}
+              placeholder="Domyślny akcent motywu"
+            />
+          </div>
+        </FormField>
         <FormField label="Klient">
           <div className="client-choice-row">
             {selectedClient
@@ -7003,7 +7081,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
           </div>
         </FormField>
         <FormField label="Opis">
-          <AppTextarea resizeKey="fixer:textarea:project:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." />
+          <AppTextarea resizeKey="fixer:ui-resize:project-editor:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." />
         </FormField>
       </div>}
 
@@ -7073,18 +7151,33 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
             customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: PROJECT_TASK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }]}
           />
         </details>}
-        {sectionMenu && <div className="row-context-menu" style={{ left: sectionMenu.x, top: sectionMenu.y }} onClick={(e) => e.stopPropagation()}>
-          <div className="context-menu-title">Sekcja: {sectionMenu.section.name}</div>
-          <button type="button" onClick={() => { const sid = sectionMenu.section.id ?? sectionMenu.section.localId; setSectionMenu(null); openNewTask(sid); }}><Plus size={14} />Dodaj zadanie</button>
-          <button type="button" onClick={() => { const sid = sectionMenu.section.id ?? sectionMenu.section.localId; setSectionMenu(null); setEditingSectionId(sid); setEditingSectionName(sectionMenu.section.name); }}>✎ Zmień nazwę</button>
-          <div className="context-menu-separator" />
-          <button type="button" className="danger-action" onClick={() => removeSection(sectionMenu.section)}><Trash2 size={14} />Usuń sekcję</button>
-        </div>}
+        {sectionMenu && <ProjectSectionContextMenu
+          section={sectionMenu.section}
+          x={sectionMenu.x}
+          y={sectionMenu.y}
+          colorTheme={colorTheme}
+          onClose={() => setSectionMenu(null)}
+          onChangeColor={(nextColor) => saveSectionColor(sectionMenu.section, nextColor)}
+          onResetColor={() => resetSectionColor(sectionMenu.section)}
+          onAddTask={() => {
+            const sid = sectionMenu.section.id ?? sectionMenu.section.localId;
+            setSectionMenu(null);
+            openNewTask(sid);
+          }}
+          onRename={() => {
+            const sid = sectionMenu.section.id ?? sectionMenu.section.localId;
+            setSectionMenu(null);
+            setEditingSectionId(sid);
+            setEditingSectionName(sectionMenu.section.name);
+          }}
+          onDelete={() => removeSection(sectionMenu.section)}
+          showRename
+        />}
       </div>}
 
       {activeTab === 'notes' && <div className="service-order-form-body">
         <FormField label="Notatki">
-          <AppTextarea resizeKey="fixer:textarea:project:notes" value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={10} placeholder="Notatki do projektu..." />
+          <AppTextarea resizeKey="fixer:ui-resize:project-editor:notes" value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={10} placeholder="Notatki do projektu..." />
         </FormField>
       </div>}
     </ResizableModalFrame>
@@ -7107,6 +7200,240 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 const PROJECT_DETAILS_WIDTH_KEY = 'fixer-project-details-panel-width';
 const PROJECT_DETAILS_COLLAPSED_KEY = 'fixer.projects.detailsPanelCollapsed';
 const PROJECT_DETAILS_SELECTED_KEY = 'fixer.projects.selectedProjectId';
+
+function resolveProjectAccentColor(project) {
+  return normalizeAccentColor(project?.accent_color);
+}
+
+function ProjectAccentDot({ color, className = '' }) {
+  return <span className={`project-accent-dot ${color ? 'is-custom' : ''} ${className}`.trim()} style={color ? { backgroundColor: color } : undefined} aria-hidden="true" />;
+}
+
+function ProjectTableTitle({ project, title, titleClassName = '' }) {
+  const accentColor = resolveProjectAccentColor(project);
+  return <span className="project-table-title">
+    <ProjectAccentDot color={accentColor} />
+    <span className={titleClassName}>{title}</span>
+  </span>;
+}
+
+const PROJECT_SECTION_TYPE_ACCENTS = {
+  equipment: '#14B8A6',
+  tasks: '#8B5CF6'
+};
+
+const PROJECT_SECTION_NEUTRAL_ACCENTS = {
+  default: '#475569',
+  unsectioned: '#64748B'
+};
+
+const PROJECT_SECTION_TYPE_MATCHERS = [
+  { type: 'equipment', labels: ['sprzęt', 'sprzet'] },
+  { type: 'tasks', labels: ['zadania', 'zadanie'] }
+];
+
+function resolveProjectSectionType(sectionName, { unsectioned = false } = {}) {
+  if (unsectioned) return 'default';
+  const normalized = String(sectionName ?? '').trim().toLocaleLowerCase('pl-PL');
+  const folded = normalized.normalize('NFD').replace(/\p{M}/gu, '');
+  const match = PROJECT_SECTION_TYPE_MATCHERS.find((matcher) =>
+    matcher.labels.some((label) => normalized === label || folded === label)
+  );
+  return match?.type ?? 'default';
+}
+
+function getDefaultProjectSectionAccentColor(sectionName, options = {}) {
+  if (options.unsectioned) return PROJECT_SECTION_NEUTRAL_ACCENTS.unsectioned;
+  const type = resolveProjectSectionType(sectionName, options);
+  return PROJECT_SECTION_TYPE_ACCENTS[type] ?? PROJECT_SECTION_NEUTRAL_ACCENTS.default;
+}
+
+function resolveSectionHeaderColor(section, options = {}) {
+  const stored = normalizeAccentColor(section?.header_color);
+  if (stored) return stored;
+  return getDefaultProjectSectionAccentColor(section?.name ?? section, options);
+}
+
+function getAccentRelativeLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const rl = channelToLinear(r);
+  const gl = channelToLinear(g);
+  const bl = channelToLinear(b);
+  return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+}
+
+function getProjectSectionHeadStyle(section, colorTheme = 'dark', options = {}) {
+  const accent = resolveSectionHeaderColor(section, options);
+  const isLight = colorTheme === 'light';
+  const background = isLight
+    ? `color-mix(in srgb, ${accent} 44%, #ffffff)`
+    : `color-mix(in srgb, ${accent} 56%, #0f172a)`;
+  const accentLum = getAccentRelativeLuminance(accent);
+  const text = (isLight ? accentLum > 0.58 : accentLum > 0.42) ? '#0f172a' : '#f8fafc';
+  const muted = text === '#f8fafc' ? 'rgba(248,250,252,.78)' : 'rgba(15,23,42,.62)';
+  return {
+    '--project-section-header-bg': background,
+    '--project-section-header-text': text,
+    '--project-section-header-muted': muted,
+    '--project-section-header-action-bg': text === '#f8fafc' ? 'rgba(255,255,255,.14)' : 'rgba(15,23,42,.08)',
+    '--project-section-header-action-border': text === '#f8fafc' ? 'rgba(255,255,255,.28)' : 'rgba(15,23,42,.16)',
+    '--project-section-header-delete-bg': text === '#f8fafc' ? 'rgba(248,113,113,.22)' : 'rgba(248,113,113,.14)',
+    '--project-section-header-delete-border': text === '#f8fafc' ? 'rgba(254,202,202,.34)' : 'rgba(248,113,113,.28)'
+  };
+}
+
+const PROJECT_SECTION_COLOR_PRESETS = [
+  { color: '#14B8A6', label: 'Sprzęt' },
+  { color: '#8B5CF6', label: 'Zadania' },
+  { color: '#3B82F6', label: 'Niebieski' },
+  { color: '#22C55E', label: 'Zielony' },
+  { color: '#F97316', label: 'Pomarańczowy' },
+  { color: '#F43F5E', label: 'Różowy' },
+  { color: '#64748B', label: 'Neutralny' }
+];
+
+function clampProjectSectionMenuPosition(x, y, menuWidth = 232, menuHeight = 248) {
+  const margin = 12;
+  const maxX = Math.max(margin, window.innerWidth - menuWidth - margin);
+  const maxY = Math.max(margin, window.innerHeight - menuHeight - margin);
+  return {
+    left: Math.min(Math.max(margin, x), maxX),
+    top: Math.min(Math.max(margin, y), maxY)
+  };
+}
+
+const PROJECT_SECTION_PRESET_COLORS = PROJECT_SECTION_COLOR_PRESETS.map((preset) => preset.color.toUpperCase());
+
+function ProjectSectionContextMenu({
+  section,
+  x,
+  y,
+  colorTheme = 'dark',
+  onChangeColor,
+  onResetColor,
+  onAddTask,
+  onRename,
+  onDelete,
+  onClose,
+  showRename = false
+}) {
+  const menuRef = useRef(null);
+  const colorPickActiveRef = useRef(false);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (colorPickActiveRef.current) return;
+      if (menuRef.current?.contains(event.target)) return;
+      onClose?.();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  if (!section) return null;
+  const currentColor = resolveSectionHeaderColor(section);
+  const defaultColor = getDefaultProjectSectionAccentColor(section.name);
+  const hasStoredColor = Boolean(normalizeAccentColor(section?.header_color));
+  const isCustomColor = !PROJECT_SECTION_PRESET_COLORS.includes(currentColor);
+  const position = clampProjectSectionMenuPosition(x, y);
+
+  const handleColorPickStart = (event) => {
+    event.stopPropagation();
+    colorPickActiveRef.current = true;
+  };
+
+  const handleColorPickChange = (event) => {
+    event.stopPropagation();
+    const color = normalizeAccentColor(event.target.value);
+    colorPickActiveRef.current = false;
+    if (color) onChangeColor(color);
+  };
+
+  const handleColorPickEnd = () => {
+    window.setTimeout(() => {
+      colorPickActiveRef.current = false;
+    }, 250);
+  };
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className={`project-section-context-menu${colorTheme === 'light' ? ' theme-light' : ''}`}
+      style={{ left: `${position.left}px`, top: `${position.top}px` }}
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      role="menu"
+      aria-label={`Menu sekcji ${section.name}`}
+    >
+      <div className="project-section-menu-head">
+        <span className="project-section-menu-eyebrow">Sekcja</span>
+        <strong>{section.name}</strong>
+      </div>
+
+      <div className="project-section-menu-color-block">
+        <div className="project-section-menu-color-label">Kolor paska</div>
+        <div className="project-section-color-palette" role="group" aria-label="Presety koloru paska">
+          {PROJECT_SECTION_COLOR_PRESETS.map((preset) => {
+            const presetColor = preset.color.toUpperCase();
+            const isActive = currentColor === presetColor;
+            return <button
+              key={presetColor}
+              type="button"
+              className={`project-section-color-chip ${isActive ? 'is-active' : ''}`}
+              style={{ backgroundColor: presetColor }}
+              onClick={() => onChangeColor(presetColor)}
+              title={preset.label}
+              aria-label={`Kolor: ${preset.label}`}
+              aria-pressed={isActive}
+            />;
+          })}
+          <label
+            className={`project-section-color-add${isCustomColor ? ' is-active' : ''}`}
+            style={isCustomColor ? { '--project-section-color-add-accent': currentColor } : undefined}
+            title="Własny kolor"
+            onMouseDown={handleColorPickStart}
+          >
+            <Plus size={14} aria-hidden="true" />
+            <input
+              type="color"
+              className="project-section-color-input"
+              value={currentColor}
+              onClick={handleColorPickStart}
+              onFocus={handleColorPickStart}
+              onChange={handleColorPickChange}
+              onBlur={handleColorPickEnd}
+              aria-label="Wybierz własny kolor paska"
+            />
+          </label>
+        </div>
+        <button
+          type="button"
+          className="project-section-color-reset"
+          onClick={onResetColor}
+          disabled={!hasStoredColor && currentColor === defaultColor}
+        >
+          Przywróć domyślny
+        </button>
+      </div>
+
+      <div className="project-section-menu-separator" aria-hidden="true" />
+
+      <div className="project-section-menu-actions">
+        <button type="button" className="project-section-menu-action" onClick={onAddTask}><Plus size={14} />Dodaj zadanie</button>
+        {showRename && <button type="button" className="project-section-menu-action" onClick={onRename}>✎ Zmień nazwę</button>}
+        <button type="button" className="project-section-menu-action project-section-menu-danger" onClick={onDelete}><Trash2 size={14} />Usuń sekcję</button>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 function getSavedProjectDetailsWidth() {
   const saved = Number(localStorage.getItem(PROJECT_DETAILS_WIDTH_KEY));
@@ -7252,9 +7579,10 @@ function SimpleTaskComments({ task, onChanged }) {
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onRefreshProject }) {
+function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onRefreshProject, colorTheme = 'dark' }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
+  const projectAccentColor = resolveProjectAccentColor(project);
   const [tasks, setTasks] = useState([]);
   const [sections, setSections] = useState([]);
   const [commentCounts, setCommentCounts] = useState({});
@@ -7268,6 +7596,12 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   const [sectionModalOpen, setSectionModalOpen] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
   const [sectionNameError, setSectionNameError] = useState('');
+  const [sectionMenu, setSectionMenu] = useState(null);
+  const sectionItemClickTimeoutRef = useRef(null);
+
+  useEffect(() => () => {
+    if (sectionItemClickTimeoutRef.current) window.clearTimeout(sectionItemClickTimeoutRef.current);
+  }, []);
 
   const loadPanelData = async () => {
     if (!projectId || collapsed) return;
@@ -7333,11 +7667,54 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const sectionName = newSectionName.trim();
     if (!sectionName) { setSectionNameError('Podaj nazwę sekcji.'); return; }
     if (sectionName.length > 100) { setSectionNameError('Nazwa sekcji może mieć maksymalnie 100 znaków.'); return; }
-    const result = await createProjectSection(projectId, sectionName, (sections.length + 1) * 10);
+    const result = await createProjectSection(
+      projectId,
+      sectionName,
+      (sections.length + 1) * 10,
+      getDefaultProjectSectionAccentColor(sectionName)
+    );
     if (result.error) { setSectionNameError(result.error.message); return; }
     setNewSectionName('');
     setSectionModalOpen(false);
     await loadPanelData();
+  };
+
+  const saveSectionColor = async (section, nextColor) => {
+    const sid = section.id ?? section.localId;
+    const normalized = normalizeAccentColor(nextColor);
+    if (!normalized) return;
+    setSections((prev) => prev.map((item) => (
+      String(item.id ?? item.localId) === String(sid) ? { ...item, header_color: normalized } : item
+    )));
+    setSectionMenu((prev) => (
+      prev && String(prev.section.id ?? prev.section.localId) === String(sid)
+        ? { ...prev, section: { ...prev.section, header_color: normalized } }
+        : prev
+    ));
+    const result = await updateProjectSection(sid, { header_color: normalized }, section);
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Nie udało się zapisać koloru sekcji'));
+      return;
+    }
+    setSectionMenu(null);
+    await loadPanelData();
+  };
+
+  const resetSectionColor = async (section) => {
+    const sid = section.id ?? section.localId;
+    const result = await updateProjectSection(sid, { header_color: null }, section);
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Nie udało się przywrócić koloru sekcji'));
+      return;
+    }
+    setSectionMenu(null);
+    await loadPanelData();
+  };
+
+  const openSectionMenu = (event, section) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSectionMenu({ x: event.clientX, y: event.clientY, section });
   };
 
   const toggleSection = (key) => {
@@ -7402,6 +7779,32 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     });
   };
 
+  const openEditSectionItem = (task) => {
+    setEditingTask(task);
+    setTaskEditorOpen(true);
+  };
+
+  const handleSectionItemMainClick = (task) => {
+    if (sectionItemClickTimeoutRef.current) {
+      window.clearTimeout(sectionItemClickTimeoutRef.current);
+      sectionItemClickTimeoutRef.current = null;
+    }
+    sectionItemClickTimeoutRef.current = window.setTimeout(() => {
+      sectionItemClickTimeoutRef.current = null;
+      toggleTaskExpanded(task);
+    }, 250);
+  };
+
+  const handleSectionItemMainDoubleClick = (event, task) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (sectionItemClickTimeoutRef.current) {
+      window.clearTimeout(sectionItemClickTimeoutRef.current);
+      sectionItemClickTimeoutRef.current = null;
+    }
+    openEditSectionItem(task);
+  };
+
   const renderTask = (task) => {
     const taskKey = String(task.id ?? task.localId);
     const comments = commentCounts[taskKey] ?? 0;
@@ -7413,14 +7816,20 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskDone(task); }} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
           {done && <CheckCircle2 size={16} />}
         </button>
-        <button type="button" className="project-detail-task-main" onClick={() => toggleTaskExpanded(task)} aria-expanded={expanded}>
+        <button
+          type="button"
+          className="project-detail-task-main"
+          onClick={() => handleSectionItemMainClick(task)}
+          onDoubleClick={(event) => handleSectionItemMainDoubleClick(event, task)}
+          aria-expanded={expanded}
+        >
           <strong>{task.title}</strong>
           <span>{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
         </button>
         <button type="button" className={`project-detail-task-comments ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
         <div className="project-detail-task-actions">
           <button type="button" className={`project-icon-action comment-action ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Komentarze" title="Komentarze / postęp"><MessageSquare size={14} /></button>
-          <button type="button" className="project-icon-action" onClick={(event) => { event.stopPropagation(); setEditingTask(task); setTaskEditorOpen(true); }} aria-label="Edytuj zadanie" title="Edytuj">✎</button>
+          <button type="button" className="project-icon-action" onClick={(event) => { event.stopPropagation(); openEditSectionItem(task); }} aria-label="Edytuj zadanie" title="Edytuj">✎</button>
         </div>
       </div>
       {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} />}
@@ -7433,31 +7842,37 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     </aside>;
   }
 
-  return <aside className="project-details-panel" style={{ width: `${width}px` }}>
+  return <aside className="project-details-panel" style={{ width: `${width}px`, ...(projectAccentColor ? { '--project-accent-color': projectAccentColor } : {}) }}>
     <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
+    {projectAccentColor && <div className="project-accent-bar" aria-hidden="true" />}
     <div className="project-details-header">
       <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
       <div>
         <span className="project-details-type">Projekt</span>
-        <strong>{project ? projectTitle : 'Wybierz projekt'}</strong>
+        <strong className="project-details-title"><ProjectAccentDot color={projectAccentColor} /><span>{project ? projectTitle : 'Wybierz projekt'}</span></strong>
         {project && <span>{project.status || '—'} · Termin: {project.due_date || 'brak'}</span>}
       </div>
     </div>
     {!project && <EmptyState title="Wybierz projekt z listy." description="Pojedynczy klik pokazuje zadania i sekcje. Dwuklik otwiera kartotekę." />}
     {project && <div className="project-details-body">
-      {notice && <div className="notice">{notice}</div>}
       <div className="project-details-toolbar">
         <button type="button" className="project-icon-action primary-action" onClick={() => openNewTask(null)} aria-label="Dodaj zadanie" title="Dodaj zadanie"><Plus size={15} /></button>
         <button type="button" className="project-icon-action" onClick={() => { setNewSectionName(''); setSectionNameError(''); setSectionModalOpen(true); }} aria-label="Dodaj sekcję" title="Dodaj sekcję"><Columns3 size={15} /></button>
       </div>
-      {loading && <div className="loading-line">Ładowanie szczegółów projektu...</div>}
-      {!loading && <div className="project-detail-sections">
+      <div className="project-details-body-scroll">
+        {notice && <div className="notice">{notice}</div>}
+        {loading && <div className="loading-line">Ładowanie szczegółów projektu...</div>}
+        {!loading && <div className="project-detail-sections">
         {sections.map((section) => {
           const sid = String(section.id ?? section.localId);
           const sectionTasks = tasksBySection(sid);
           const sectionCollapsed = collapsedSections.has(sid);
           return <section className="project-detail-section" key={sid}>
-            <div className="project-detail-section-head">
+            <div
+              className="project-detail-section-head is-colored"
+              style={getProjectSectionHeadStyle(section, colorTheme)}
+              onContextMenu={(event) => openSectionMenu(event, section)}
+            >
               <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection(sid)}>
                 <span>{sectionCollapsed ? '▸' : '▾'}</span><strong>{section.name}</strong><em>({sectionTasks.length})</em>
               </button>
@@ -7468,7 +7883,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
           </section>;
         })}
         {(sections.length === 0 || unsectionedTasks.length > 0) && <section className="project-detail-section">
-          <div className="project-detail-section-head">
+          <div className="project-detail-section-head is-colored" style={getProjectSectionHeadStyle({ name: 'Bez sekcji' }, colorTheme, { unsectioned: true })}>
             <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection('__unsectioned__')}>
               <span>{collapsedSections.has('__unsectioned__') ? '▸' : '▾'}</span><strong>Bez sekcji</strong><em>({unsectionedTasks.length})</em>
             </button>
@@ -7476,6 +7891,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
           {!collapsedSections.has('__unsectioned__') && <div className="project-detail-task-list">{unsectionedTasks.map(renderTask)}{!unsectionedTasks.length && <div className="project-detail-empty">Brak zadań.</div>}</div>}
         </section>}
       </div>}
+      </div>
     </div>}
     {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
     {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={() => setSectionModalOpen(false)} footer={<><ButtonSecondary onClick={() => setSectionModalOpen(false)}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
@@ -7483,6 +7899,25 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
       </FormField>
     </ModalFrame>}
+    {sectionMenu && <ProjectSectionContextMenu
+      section={sectionMenu.section}
+      x={sectionMenu.x}
+      y={sectionMenu.y}
+      colorTheme={colorTheme}
+      onClose={() => setSectionMenu(null)}
+      onChangeColor={(nextColor) => saveSectionColor(sectionMenu.section, nextColor)}
+      onResetColor={() => resetSectionColor(sectionMenu.section)}
+      onAddTask={() => {
+        const sid = sectionMenu.section.id ?? sectionMenu.section.localId;
+        setSectionMenu(null);
+        openNewTask(sid);
+      }}
+      onDelete={() => {
+        const section = sectionMenu.section;
+        setSectionMenu(null);
+        removeSection(section, tasksBySection(String(section.id ?? section.localId)));
+      }}
+    />}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </aside>;
 }
@@ -7515,24 +7950,26 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
         </button>
         <button type="button" className="project-icon-action" onClick={() => onEditTask(task)} aria-label="Edytuj zadanie" title="Edytuj zadanie">✎</button>
       </div>
-      <div className={`simple-task-details-card ${done ? 'is-done' : ''}`}>
-        <strong>{title}</strong>
-        <dl>
-          <div><dt>Status</dt><dd>{task.status || '—'}</dd></div>
-          <div><dt>Priorytet</dt><dd>{task.priority || '—'}</dd></div>
-          <div><dt>Termin</dt><dd>{task.due_date || 'brak'}</dd></div>
-          <div><dt>Przypomnienie</dt><dd>{task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'brak'}</dd></div>
-          {task.category && <div><dt>Kategoria</dt><dd>{task.category}</dd></div>}
-          {task.linked_label && <div><dt>Powiązanie</dt><dd>{task.linked_label}</dd></div>}
-        </dl>
-        <p>{task.description || 'Brak opisu.'}</p>
+      <div className="project-details-body-scroll">
+        <div className={`simple-task-details-card ${done ? 'is-done' : ''}`}>
+          <strong>{title}</strong>
+          <dl>
+            <div><dt>Status</dt><dd>{task.status || '—'}</dd></div>
+            <div><dt>Priorytet</dt><dd>{task.priority || '—'}</dd></div>
+            <div><dt>Termin</dt><dd>{task.due_date || 'brak'}</dd></div>
+            <div><dt>Przypomnienie</dt><dd>{task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'brak'}</dd></div>
+            {task.category && <div><dt>Kategoria</dt><dd>{task.category}</dd></div>}
+            {task.linked_label && <div><dt>Powiązanie</dt><dd>{task.linked_label}</dd></div>}
+          </dl>
+          <p>{task.description || 'Brak opisu.'}</p>
+        </div>
+        <SimpleTaskComments task={task} onChanged={onChanged} />
       </div>
-      <SimpleTaskComments task={task} onChanged={onChanged} />
     </div>}
   </aside>;
 }
 
-function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
+function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme = 'dark' }) {
   const [rows, setRows] = useState([]);
   const [organizerRows, setOrganizerRows] = useState([]);
   const [clients, setClients] = useState([]);
@@ -7745,7 +8182,13 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   const activeColumns = [
     { key: 'type_label', label: 'Typ', align: 'center', renderCell: (row) => <span className={`work-type-pill ${row._workType}`}>{row.type_label}</span> },
-    { key: 'displayTitle', label: 'Nazwa', renderCell: (row) => <span className={`${row._workType === 'project' ? 'work-title-project' : ''} ${row._workType === 'task' && row._source?.archived ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span> },
+    {
+      key: 'displayTitle',
+      label: 'Nazwa',
+      renderCell: (row) => row._workType === 'project'
+        ? <ProjectTableTitle project={row._source} title={row.displayTitle} titleClassName="work-title-project" />
+        : <span className={`${row._workType === 'task' && row._source?.archived ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span>
+    },
     { key: 'client_name', label: 'Klient / powiązanie' },
     { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={row._workType === 'project' ? PROJECT_STATUSES : ORGANIZER_TASK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> },
     { key: 'priority', label: 'Priorytet', renderCell: (row) => <ServiceStatusCell value={row.priority} statuses={row._workType === 'project' ? PROJECT_PRIORITIES : ORGANIZER_TASK_PRIORITIES} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> },
@@ -7754,7 +8197,11 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
 
   const historyColumns = [
     { key: 'project_number', label: 'Numer' },
-    { key: 'displayTitle', label: 'Nazwa' },
+    {
+      key: 'displayTitle',
+      label: 'Nazwa',
+      renderCell: (row) => <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName="work-title-project" />
+    },
     { key: 'client_name', label: 'Klient' },
     { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_STATUSES} onStatusChange={(status) => setProjectStatus(row._project ?? row, status)} /> },
     { key: 'priority', label: 'Priorytet' },
@@ -7896,10 +8343,10 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       </div>
       {selectedSimpleTask
         ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onChanged={loadData} />
-        : <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} />}
+        : <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} colorTheme={colorTheme} />}
     </div>
 
-    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
+    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
     {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
@@ -7935,7 +8382,7 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
   >
     <div className="organizer-task-fields organizer-task-compact-form">
       <FormField label="Tytuł *"><AppInput value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Co trzeba zrobić?" /></FormField>
-      <FormField label="Opis"><AppTextarea value={form.description} onChange={(e) => update('description', e.target.value)} rows={3} placeholder="Opcjonalne szczegóły, notatki, instrukcje..." /></FormField>
+      <FormField label="Opis"><AppTextarea resizeKey="fixer:ui-resize:organizer-task-editor:description" value={form.description} onChange={(e) => update('description', e.target.value)} rows={3} placeholder="Opcjonalne szczegóły, notatki, instrukcje..." /></FormField>
       <div className="organizer-task-meta-grid">
         <div className="organizer-task-meta-column">
           <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{ORGANIZER_TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></FormField>
@@ -9383,7 +9830,7 @@ function resolveDesignerElementWidth(element = {}, base = {}) {
 const DESIGNER_MM_TO_PX = 3.7795275591;
 const DEFAULT_DESIGNER_MARGINS = { top: 22, right: 20, bottom: 18, left: 20 };
 const DOCUMENT_DESIGNER_LIBRARY_WIDTH = 250;
-const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY = 'fixer-document-designer-properties-width';
+const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY = buildUiResizeStorageKey('document-designer', 'right-panel');
 const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_DEFAULT = 360;
 const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MIN = 280;
 const DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MAX = 560;
@@ -9400,9 +9847,13 @@ function clampDocumentDesignerPropertiesWidth(value, { viewportWidth = document.
 }
 
 function getSavedDocumentDesignerPropertiesWidth(libraryCollapsed = false) {
-  const saved = Number(localStorage.getItem(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY));
-  if (Number.isFinite(saved) && saved > 0) {
-    return clampDocumentDesignerPropertiesWidth(saved, { libraryCollapsed });
+  const saved = readPersistedUiSize(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY, {
+    minWidth: DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MIN,
+    maxWidth: DOCUMENT_DESIGNER_PROPERTIES_WIDTH_MAX,
+    defaultWidth: DOCUMENT_DESIGNER_PROPERTIES_WIDTH_DEFAULT
+  });
+  if (saved?.width) {
+    return clampDocumentDesignerPropertiesWidth(saved.width, { libraryCollapsed });
   }
   return DOCUMENT_DESIGNER_PROPERTIES_WIDTH_DEFAULT;
 }
@@ -10569,7 +11020,7 @@ function formatCompanyContact(profile) {
   return formatCompanyContactLines(profile).join('\n');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true, getRowClassName = null }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true, getRowClassName = null, nested = false, showLpColumn = true }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -10578,8 +11029,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     columnAlignments: {},
     sortKey: null,
     sortDir: 'asc',
-    lpVisible: true
-  }), [columnsSignature]);
+    lpVisible: showLpColumn
+  }), [columnsSignature, showLpColumn]);
   const initialPreference = getLocalTablePreference(storageKey, defaultPreference);
   const [sortKey, setSortKey] = useState(initialPreference.sortKey);
   const [sortDir, setSortDir] = useState(initialPreference.sortDir ?? 'asc');
@@ -10969,7 +11420,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   };
 
   return (
-    <div className="table-shell">
+    <div className={`table-shell${nested ? ' table-shell-nested' : ''}`} onClick={nested ? (event) => event.stopPropagation() : undefined} onContextMenu={nested ? (event) => event.stopPropagation() : undefined}>
       {loading && <div className="loading-line">Ładowanie danych...</div>}
       {selectedRows.length > 0 && <div className="bulk-actions-bar">
         <strong>{selectedRows.length} zaznaczono</strong>
@@ -12274,7 +12725,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
       setPropertiesPanelWidth(nextWidth);
     };
     const onMouseUp = () => {
-      localStorage.setItem(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY, String(nextWidth));
+      writePersistedUiSize(DOCUMENT_DESIGNER_PROPERTIES_WIDTH_KEY, { width: nextWidth });
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       document.body.classList.remove('resizing-document-designer-properties');
@@ -12849,7 +13300,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
             <input ref={logoInputRef} type="file" accept="image/*" onChange={replaceLogoForSelectedElement} className="backup-file-input" />
           </>}
 
-          {!['logo', 'table', 'line', 'signature'].includes(selectedElement.kind) && <label className="firm-field document-designer-content-field-wrap">Treść<AppTextarea className="document-designer-content-field" resizeKey="fixer:textarea:document-designer:content" rows={10} value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
+          {!['logo', 'table', 'line', 'signature'].includes(selectedElement.kind) && <label className="firm-field document-designer-content-field-wrap">Treść<AppTextarea className="document-designer-content-field" resizeKey="fixer:ui-resize:document-designer:content" rows={10} value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
           {selectedElement.kind === 'signature' && <label className="firm-field">Nazwa podpisu<AppInput value={selectedElement.text} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ text: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>}
           {selectedElement.kind === 'table' && <div className="document-designer-columns-editor">
             <strong>Kolumny tabeli</strong>

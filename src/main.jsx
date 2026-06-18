@@ -6827,7 +6827,11 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   const handleSave = async () => {
     if (!form.name.trim()) { setNotice('Nazwa projektu jest wymagana.'); return; }
     setBusy(true);
-    await onSave({ ...form, client_id: form.client_id || null });
+    await onSave({
+      ...form,
+      project_number: String(form.project_number ?? '').trim() || generateNextProjectNumber(allProjects, documentSettings),
+      client_id: form.client_id || null
+    });
     setBusy(false);
   };
 
@@ -7029,10 +7033,10 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
       </div>
 
       {activeTab === 'data' && <div className="service-order-form-body">
+        <FormField label="Nazwa projektu *">
+          <AppInput value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nazwa projektu" autoFocus={isNew} />
+        </FormField>
         <div className="service-order-strip project-main-strip">
-          <FormField label="Numer projektu">
-            <AppInput value={form.project_number} onChange={(e) => set('project_number', e.target.value)} placeholder="np. PRJ/001/..." />
-          </FormField>
           <FormField label="Status">
             <AppSelect value={form.status} onChange={(e) => set('status', e.target.value)}>
               {PROJECT_STATUSES.map((s) => <option key={s}>{s}</option>)}
@@ -7048,38 +7052,37 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
           <FormField label="Start"><AppInput type="date" value={form.start_date} onChange={(e) => set('start_date', e.target.value)} /></FormField>
           <FormField label="Termin"><AppInput type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} /></FormField>
         </div>
-        <FormField label="Nazwa projektu *">
-          <AppInput value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nazwa projektu" autoFocus={isNew} />
-        </FormField>
-        <FormField label="Kolor projektu">
-          <div className="project-accent-field">
-            <label
-              className="project-accent-color-swatch"
-              style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }}
-              title="Wybierz kolor projektu"
-            >
-              <input
-                type="color"
-                className="project-accent-color-input"
-                value={normalizeAccentColor(form.accent_color) || '#2563EB'}
-                onChange={(event) => set('accent_color', event.target.value.toUpperCase())}
-                aria-label="Wybierz kolor projektu"
+        <div className="project-meta-row">
+          <FormField label="Kolor projektu">
+            <div className="project-accent-field">
+              <label
+                className="project-accent-color-swatch"
+                style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }}
+                title="Wybierz kolor projektu"
+              >
+                <input
+                  type="color"
+                  className="project-accent-color-input"
+                  value={normalizeAccentColor(form.accent_color) || '#2563EB'}
+                  onChange={(event) => set('accent_color', event.target.value.toUpperCase())}
+                  aria-label="Wybierz kolor projektu"
+                />
+              </label>
+              <AppInput
+                value={form.accent_color ?? ''}
+                onChange={(event) => set('accent_color', event.target.value)}
+                placeholder="Domyślny akcent motywu"
               />
-            </label>
-            <AppInput
-              value={form.accent_color ?? ''}
-              onChange={(event) => set('accent_color', event.target.value)}
-              placeholder="Domyślny akcent motywu"
-            />
-          </div>
-        </FormField>
-        <FormField label="Klient">
-          <div className="client-choice-row">
-            {selectedClient
-              ? <span className="project-client-chip"><strong>{selectedClient.name}</strong><span className="project-client-actions"><button type="button" className="project-icon-action" onClick={() => setClientPickerOpen(true)} aria-label="Zmień klienta" title="Zmień klienta"><Search size={14} /></button><button type="button" className="project-icon-action danger-action" onClick={() => set('client_id', '')} aria-label="Usuń powiązanie klienta" title="Usuń powiązanie klienta"><X size={14} /></button></span></span>
-              : <ButtonSecondary size="sm" onClick={() => setClientPickerOpen(true)}>Wybierz klienta</ButtonSecondary>}
-          </div>
-        </FormField>
+            </div>
+          </FormField>
+          <FormField label="Klient">
+            <div className="client-choice-row">
+              {selectedClient
+                ? <span className="project-client-chip"><strong>{selectedClient.name}</strong><span className="project-client-actions"><button type="button" className="project-icon-action" onClick={() => setClientPickerOpen(true)} aria-label="Zmień klienta" title="Zmień klienta"><Search size={14} /></button><button type="button" className="project-icon-action danger-action" onClick={() => set('client_id', '')} aria-label="Usuń powiązanie klienta" title="Usuń powiązanie klienta"><X size={14} /></button></span></span>
+                : <ButtonSecondary size="sm" onClick={() => setClientPickerOpen(true)}>Wybierz klienta</ButtonSecondary>}
+            </div>
+          </FormField>
+        </div>
         <FormField label="Opis">
           <AppTextarea resizeKey="fixer:ui-resize:project-editor:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." />
         </FormField>

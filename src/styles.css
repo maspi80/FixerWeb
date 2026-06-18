@@ -9769,7 +9769,10 @@ body.rental-items-section-resizing *{
   width:auto;
 }
 .project-main-strip{
-  grid-template-columns:minmax(160px,1fr) minmax(140px,.75fr) minmax(140px,.75fr);
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:10px;
+  align-items:end;
 }
 .project-task-form{
   display:grid;
@@ -10018,6 +10021,12 @@ body.rental-items-section-resizing *{
   gap:10px;
   align-items:end;
 }
+.project-meta-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:10px;
+  align-items:end;
+}
 .project-client-chip{
   min-height:38px;
   width:100%;
@@ -10127,7 +10136,8 @@ body.rental-items-section-resizing *{
 .app-shell.theme-light .project-section-block{border-color:rgba(15,23,42,.10)}
 @media(max-width:780px){
   .project-main-strip,
-  .project-date-row{
+  .project-date-row,
+  .project-meta-row{
     grid-template-columns:1fr 1fr;
   }
 }

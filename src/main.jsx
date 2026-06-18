@@ -3797,10 +3797,25 @@ function equipmentMatchesScannerCode(item, code) {
   return getEquipmentScannerFields(item).some((value) => normalizeScannerCode(value) === normalized);
 }
 
-function getScannerUnavailableReason(item) {
-  const status = String(item?.status ?? '').trim().toLocaleLowerCase('pl');
-  if (['wypożyczony', 'w serwisie', 'uszkodzony', 'wycofany'].includes(status)) return 'unavailable';
-  return '';
+function getRentalEquipmentAvailabilityStatus(item) {
+  if (!item) return '';
+  if (isEquipmentSet(item)) return getEquipmentSetStatus(item.set_items ?? []);
+  return String(item?.status ?? '').trim();
+}
+
+function isEquipmentAvailableForRental(item) {
+  return getRentalEquipmentAvailabilityStatus(item) === EQUIPMENT_AVAILABLE_STATUS;
+}
+
+function getEquipmentUnavailableForRentalMessage(item) {
+  const status = getRentalEquipmentAvailabilityStatus(item);
+  if (!status) return 'Nie można wypożyczyć tego sprzętu. Brak poprawnego statusu dostępności.';
+  return `Nie można wypożyczyć tego sprzętu. Aktualny status: ${status}.`;
+}
+
+function findUnavailableRentalEquipment(equipmentItems, originalEquipmentIds = new Set()) {
+  const items = Array.isArray(equipmentItems) ? equipmentItems : [];
+  return items.find((item) => !originalEquipmentIds.has(item.id) && !isEquipmentAvailableForRental(item)) ?? null;
 }
 
 function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
@@ -3878,6 +3893,11 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     const selectedEquipment = equipmentRows.filter((item) => selectedEquipmentIds.includes(item.id));
     if (!rental.client_id) return { error: new Error('Wybierz klienta.') };
     if (!selectedEquipment.length) return { error: new Error('Wybierz przynajmniej jedną pozycję sprzętu.') };
+    const originalEquipmentIds = new Set(
+      rental?.id ? getRentalBaseItems(rental).map(getRentalItemEquipmentId).filter(Boolean) : []
+    );
+    const unavailableEquipment = findUnavailableRentalEquipment(selectedEquipment, originalEquipmentIds);
+    if (unavailableEquipment) return { error: new Error(getEquipmentUnavailableForRentalMessage(unavailableEquipment)) };
     const items = buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows, itemPrices);
     const rentalToSave = {
       ...rental,
@@ -4486,6 +4506,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const rentalRecordLayoutRef = useRef(null);
   const { itemsSectionHeight, startItemsSectionResize } = useRentalItemsSectionHeight(rentalRecordLayoutRef);
   const [editorError, setEditorError] = useState('');
+  const [equipmentBlockedDialog, setEquipmentBlockedDialog] = useState(null);
 
   const availableEquipment = equipmentRows.filter((item) => {
     if (!item.id) return false;
@@ -4612,8 +4633,22 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     setSelectedClient(result.data);
     update('client_id', result.data.id);
   };
+  const showEquipmentBlockedDialog = (item) => {
+    setEquipmentBlockedDialog({ message: getEquipmentUnavailableForRentalMessage(item) });
+  };
   const addEquipment = (items) => {
-    const ids = items.map((item) => item.id).filter(Boolean);
+    const newItems = items.filter((item) => item.id && !selectedEquipmentIds.includes(item.id));
+    const unavailable = newItems.filter((item) => !isEquipmentAvailableForRental(item));
+    if (unavailable.length) {
+      showEquipmentBlockedDialog(unavailable[0]);
+      return;
+    }
+    if (!newItems.length) {
+      setEquipmentPickerOpen(false);
+      setEquipmentPickerInitialQuery('');
+      return;
+    }
+    const ids = newItems.map((item) => item.id);
     setSelectedEquipmentIds((current) => [...new Set([...current, ...ids])]);
     applyDefaultPricesForEquipment(ids);
     setEquipmentPickerOpen(false);
@@ -4656,8 +4691,8 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       focusIssueScanner();
       return;
     }
-    if (getScannerUnavailableReason(item)) {
-      showIssueScanNotice('Sprzęt nie jest dostępny do wypożyczenia.', 'error');
+    if (!isEquipmentAvailableForRental(item)) {
+      setEquipmentBlockedDialog({ message: getEquipmentUnavailableForRentalMessage(item) });
       focusIssueScanner();
       return;
     }
@@ -4721,8 +4756,19 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       setEditorError('Wybierz przynajmniej jedną pozycję sprzętu.');
       return;
     }
+    const originalEquipmentIds = new Set(selectedBaseItems.map(getRentalItemEquipmentId).filter(Boolean));
+    const unavailableEquipment = findUnavailableRentalEquipment(selectedEquipment, originalEquipmentIds);
+    if (unavailableEquipment) {
+      setEquipmentBlockedDialog({ message: getEquipmentUnavailableForRentalMessage(unavailableEquipment) });
+      return;
+    }
     const result = await onSave({ rental: form, selectedEquipmentIds, itemPrices });
     if (result?.error) {
+      const message = String(result.error?.message ?? '');
+      if (message.startsWith('Nie można wypożyczyć')) {
+        setEquipmentBlockedDialog({ message });
+        return;
+      }
       setEditorError(humanizeError(result.error, 'rental'));
     }
   };
@@ -4764,7 +4810,19 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   }
 
   if (equipmentPickerOpen) {
-    return <EquipmentPickerModal title="Wybierz sprzęt do wypożyczenia" availableItems={availableEquipment} selectedIds={selectedEquipmentIds} initialQuery={equipmentPickerInitialQuery} onClose={() => { setEquipmentPickerOpen(false); setEquipmentPickerInitialQuery(''); }} onConfirm={addEquipment} />;
+    return <>
+      <EquipmentPickerModal
+        title="Wybierz sprzęt do wypożyczenia"
+        availableItems={availableEquipment}
+        selectedIds={selectedEquipmentIds}
+        initialQuery={equipmentPickerInitialQuery}
+        onClose={() => { setEquipmentPickerOpen(false); setEquipmentPickerInitialQuery(''); }}
+        onConfirm={addEquipment}
+        onBeforeSelectItem={isEquipmentAvailableForRental}
+        onSelectBlocked={showEquipmentBlockedDialog}
+      />
+      {equipmentBlockedDialog && <RentalEquipmentBlockedDialog message={equipmentBlockedDialog.message} onClose={() => setEquipmentBlockedDialog(null)} />}
+    </>;
   }
 
   if (previewEquipment) {
@@ -4889,6 +4947,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       {selectedRentalItemIds.size > 1 && <button type="button" className="danger-action" onClick={() => runRentalItemAction('removeSelected')}><Trash2 size={14} />Usuń zaznaczone</button>}
       <button type="button" className="danger-action" onClick={() => runRentalItemAction('remove')}><Trash2 size={14} />Usuń pozycję</button>
     </div>}
+    {equipmentBlockedDialog && <RentalEquipmentBlockedDialog message={equipmentBlockedDialog.message} onClose={() => setEquipmentBlockedDialog(null)} />}
   </>;
 }
 
@@ -4965,7 +5024,7 @@ function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm, onCr
     </ResizableModalFrame>;
 }
 
-function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], initialQuery = '', onClose, onConfirm }) {
+function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], initialQuery = '', onClose, onConfirm, onBeforeSelectItem, onSelectBlocked }) {
   const [filters, setFilters] = useStoredState('fixer-equipment-picker-filters', { query: '', category: 'all', status: 'all', location: 'all', sort: 'name' });
   const [selectedKeys, setSelectedKeys] = useState(() => new Set(selectedIds.map(String)));
 
@@ -5014,20 +5073,44 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
   const toggleItem = (item) => {
     const key = String(getEquipmentKey(item));
     setSelectedKeys((current) => {
+      if (current.has(key)) {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      }
+      if (onBeforeSelectItem && !onBeforeSelectItem(item)) {
+        queueMicrotask(() => onSelectBlocked?.(item));
+        return current;
+      }
       const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      next.add(key);
       return next;
     });
   };
 
   const toggleVisible = () => {
+    if (visibleAllSelected) {
+      setSelectedKeys((current) => {
+        const next = new Set(current);
+        filteredItems.forEach((item) => next.delete(String(getEquipmentKey(item))));
+        return next;
+      });
+      return;
+    }
+    const blockedItem = filteredItems.find((item) => {
+      const itemKey = String(getEquipmentKey(item));
+      return !selectedKeys.has(itemKey) && onBeforeSelectItem && !onBeforeSelectItem(item);
+    });
+    if (blockedItem) {
+      onSelectBlocked?.(blockedItem);
+    }
     setSelectedKeys((current) => {
       const next = new Set(current);
       filteredItems.forEach((item) => {
-        const key = String(getEquipmentKey(item));
-        if (visibleAllSelected) next.delete(key);
-        else next.add(key);
+        const itemKey = String(getEquipmentKey(item));
+        if (next.has(itemKey)) return;
+        if (onBeforeSelectItem && !onBeforeSelectItem(item)) return;
+        next.add(itemKey);
       });
       return next;
     });
@@ -5062,6 +5145,17 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
     </ResizableModalFrame>;
 }
 const SERVICE_TABLE_KEY = 'service-orders-table';
+
+function RentalEquipmentBlockedDialog({ message, onClose }) {
+  return <ModalFrame
+    className="confirm-dialog"
+    title="Sprzęt niedostępny"
+    onClose={onClose}
+    footer={<ButtonPrimary size="sm" onClick={onClose}>Rozumiem</ButtonPrimary>}
+  >
+    {message && <p className="confirm-dialog-message">{message}</p>}
+  </ModalFrame>;
+}
 
 function ConfirmDialog({ title, message, confirmLabel = 'Tak', cancelLabel = 'Anuluj', variant = 'danger', onConfirm, onCancel }) {
   return <ModalFrame

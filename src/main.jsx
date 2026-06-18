@@ -5066,7 +5066,7 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
     { key: 'model', label: 'Model' },
     { key: 'serial', label: 'Numer seryjny' },
     { key: 'code_display', label: 'Kod' },
-    { key: 'status', label: 'Status', renderCell: (item) => <DSStatusPill value={item.status} /> },
+    { key: 'status', label: 'Status', renderCell: (item) => <StatusPill value={item.status} /> },
     { key: 'location', label: 'Lokalizacja' }
   ];
 

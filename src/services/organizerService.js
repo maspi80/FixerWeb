@@ -1,8 +1,10 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { WORK_STATUSES, WORK_TERMINAL_STATUSES, normalizeWorkStatus } from './projectsService';
+import { DEFAULT_WORK_PRIORITIES, normalizeWorkPriority } from './workDictionariesService';
 
-export const ORGANIZER_TASK_STATUSES = ['Do zrobienia', 'W trakcie', 'Oczekuje', 'Zrobione', 'Anulowane'];
-export const ORGANIZER_TASK_PRIORITIES = ['Niski', 'Normalny', 'Wysoki', 'Pilne'];
-export const ORGANIZER_TERMINAL_STATUSES = ['Zrobione', 'Anulowane'];
+export const ORGANIZER_TASK_STATUSES = WORK_STATUSES;
+export const ORGANIZER_TASK_PRIORITIES = DEFAULT_WORK_PRIORITIES;
+export const ORGANIZER_TERMINAL_STATUSES = WORK_TERMINAL_STATUSES;
 export const DEFAULT_ORGANIZER_CATEGORIES = ['Ogólne', 'Serwis', 'Wypożyczenia', 'Klienci', 'Administracja'];
 
 const LOCAL_TASKS_KEY = 'fixer-organizer-tasks';
@@ -33,8 +35,8 @@ function normalizeTask(task) {
   return {
     title: String(task.title ?? '').trim(),
     description: String(task.description ?? '').trim(),
-    status: ORGANIZER_TASK_STATUSES.includes(task.status) ? task.status : 'Do zrobienia',
-    priority: ORGANIZER_TASK_PRIORITIES.includes(task.priority) ? task.priority : 'Normalny',
+    status: normalizeWorkStatus(task.status),
+    priority: normalizeWorkPriority(task.priority),
     due_date: task.due_date || null,
     reminder_at: task.reminder_at || null,
     category: String(task.category ?? '').trim() || null,

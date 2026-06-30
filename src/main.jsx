@@ -83,26 +83,35 @@ import {
   fetchOrganizerTasks,
   createOrganizerTask,
   updateOrganizerTaskComment,
-  ORGANIZER_TASK_PRIORITIES,
-  ORGANIZER_TASK_STATUSES,
-  ORGANIZER_TERMINAL_STATUSES,
   resetOrganizerCategories,
   updateOrganizerCategory,
   updateOrganizerTask
 } from './services/organizerService';
-import { createNote, deleteNote, fetchNotes, NOTE_PRIORITIES, NOTE_STATUSES, updateNote } from './services/notesService';
+import { createNote, deleteNote, fetchNotes, NOTE_COLORS, NOTE_STATUSES, updateNote } from './services/notesService';
+import NoteRichTextEditor from './components/NoteRichTextEditor.jsx';
+import { noteContentPreviewText, noteMatchesSearch } from './utils/noteContent.js';
 import { createCalendarManualEvent, deleteCalendarManualEvent, fetchCalendarManualEvents, updateCalendarManualEvent } from './services/calendarService';
 import {
   createProject, createProjectTask, deleteProject, deleteProjectTask,
   createProjectSection, updateProjectSection, deleteProjectSection, fetchProjectSections,
   createTaskComment, updateTaskComment, deleteTaskComment, fetchTaskComments,
   fetchAllProjectTasks, fetchProjectAllComments, fetchProjects, fetchProjectTasks,
-  PROJECT_PRIORITIES, PROJECT_STATUSES, PROJECT_TASK_PRIORITIES,
-  PROJECT_TASK_STATUSES, PROJECT_TASK_TERMINAL_STATUSES, PROJECT_TASK_COMMENT_TYPES, PROJECT_TERMINAL_STATUSES, isCompletedStatus,
+  PROJECT_TASK_COMMENT_TYPES, WORK_STATUSES, WORK_DONE_STATUS, WORK_TERMINAL_STATUSES,
+  displayWorkStatus, getDefaultWorkPriority, isCompletedStatus, normalizeWorkPriority, normalizeWorkStatus,
   normalizeAccentColor,
   updateProject, updateProjectTask
 } from './services/projectsService';
-import { searchGlobalRecords } from './services/globalSearchService';
+import {
+  addWorkDictionaryRecord,
+  DEFAULT_WORK_PRIORITIES,
+  deleteWorkDictionaryRecord,
+  fetchWorkDictionary,
+  reorderWorkDictionaryRecords,
+  resetWorkDictionaryRecords,
+  toggleWorkDictionaryRecordActive,
+  updateWorkDictionaryRecord,
+  WORK_DICTIONARY_TYPES
+} from './services/workDictionariesService';
 import { BACKUP_FULL_ERROR_MESSAGE, BACKUP_INCLUDED_TABLES, createBackupArchive, createCsvExport, parseBackupText, restoreBackupArchive } from './services/backupService';
 import {
   APP_SETTING_KEYS,
@@ -3046,7 +3055,7 @@ async function buildOperatorNotifications() {
       }));
   });
 
-  (organizerResult.data ?? []).filter((task) => !task.archived && !ORGANIZER_TERMINAL_STATUSES.includes(task.status)).forEach((task) => {
+  (organizerResult.data ?? []).filter((task) => !task.archived && !isCompletedStatus(task.status)).forEach((task) => {
     const taskId = task.id ?? task.localId;
     const due = String(task.due_date ?? '').slice(0, 10);
     const reminder = String(task.reminder_at ?? '').slice(0, 10);
@@ -3081,7 +3090,7 @@ async function buildOperatorNotifications() {
     else if (due === tomorrow) pushNotification(notifications, { ...base, id: `projects:tomorrow:${projectId}:${due}`, title: 'Termin projektu jutro', detail: project.priority || 'Termin jutro', tone: 'info', priority: 3 });
   });
 
-  (projectTasksResult.data ?? []).filter((task) => !task.archived && !PROJECT_TASK_TERMINAL_STATUSES.includes(task.status)).forEach((task) => {
+  (projectTasksResult.data ?? []).filter((task) => !task.archived && !isCompletedStatus(task.status)).forEach((task) => {
     const taskId = task.id ?? task.localId;
     const due = String(task.due_date ?? '').slice(0, 10);
     const reminder = String(task.reminder_at ?? '').slice(0, 10);
@@ -5466,7 +5475,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     { key: 'model_display', label: 'Model', renderCell: (row) => row.model_display || '—' },
     { key: 'category_display', label: 'Kategoria' },
     { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={serviceStatuses} onStatusChange={(newStatus) => setServiceOrderStatus(row, newStatus)} /> },
-    { key: 'priority', label: 'Priorytet' },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'accepted_date_display', label: 'Przyjęcie' },
     { key: 'planned_date_display', label: 'Planowany termin' },
     { key: 'external_service', label: 'Serwis zewnętrzny', renderCell: (row) => row.external_service || '—' },
@@ -5481,7 +5490,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     { key: 'model_display', label: 'Model', renderCell: (row) => row.model_display || '—' },
     { key: 'category_display', label: 'Kategoria' },
     { key: 'status', label: 'Status' },
-    { key: 'priority', label: 'Priorytet' },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'accepted_date_display', label: 'Przyjęcie' },
     { key: 'completed_date_display', label: 'Zakończone' },
     { key: 'external_service', label: 'Serwis zewnętrzny', renderCell: (row) => row.external_service || '—' },
@@ -6169,7 +6178,7 @@ function getCalendarEventColor(event, statusColors = getStatusColors(), sourceSe
   if (event.source === 'rentals') return statusColors['aktywne'] ?? sourceSettings?.rentals?.color ?? '#3b82f6';
   if (event.source === 'service') return statusColors['serwis'] ?? sourceSettings?.service?.color ?? '#6366f1';
   if (event.source === 'organizer') return statusColors['do zrobienia'] ?? sourceSettings?.organizer?.color ?? '#3b82f6';
-  if (event.source === 'projects') return statusColors['planowany'] ?? sourceSettings?.projects?.color ?? '#6366f1';
+  if (event.source === 'projects') return statusColors['do zrobienia'] ?? sourceSettings?.projects?.color ?? '#6366f1';
   return event.color || sourceSettings?.[event.source]?.color || '#14b8a6';
 }
 
@@ -6668,14 +6677,14 @@ function generateNextProjectNumber(projectsList, documentSettings) {
   return formatDocumentNumber(settings, getNextProjectSequence(projectsList, settings));
 }
 
-function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) {
+function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave }) {
   const taskId = task?.id ?? task?.localId;
   const [activeTab, setActiveTab] = useState('data');
   const [form, setForm] = useState(() => ({
     title: task?.title ?? '',
     description: task?.description ?? '',
-    status: task?.status ?? PROJECT_TASK_STATUSES[0],
-    priority: task?.priority ?? 'Normalny',
+    status: normalizeWorkStatus(task?.status) || WORK_STATUSES[0],
+    priority: normalizeWorkPriority(task?.priority) || getDefaultWorkPriority(),
     due_date: task?.due_date ?? '',
     reminder_at: task?.reminder_at ? String(task.reminder_at).slice(0, 16) : '',
     section_id: task?.section_id ?? '',
@@ -6796,13 +6805,13 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
       <div className="project-task-meta-grid">
         <div className="project-task-meta-column">
           <FormField label="Status">
-            <AppSelect value={form.status} onChange={(e) => set('status', e.target.value)}>
-              {PROJECT_TASK_STATUSES.map((s) => <option key={s}>{s}</option>)}
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(e) => set('status', e.target.value)}>
+              {WORK_STATUSES.map((s) => <option key={s}>{s}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={form.priority} onChange={(e) => set('priority', e.target.value)}>
-              {PROJECT_TASK_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(e) => set('priority', e.target.value)}>
+              {workPriorities.map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
           </FormField>
           {sections.length > 0 && <FormField label="Sekcja">
@@ -6869,7 +6878,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], onClose, onSave }) 
   </ResizableModalFrame>;
 }
 
-function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, onClose, onSave, colorTheme = 'dark' }) {
+function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, colorTheme = 'dark' }) {
   const isNew = !project;
   const [activeTab, setActiveTab] = useState('data');
   const projectTasksListRef = useRef(null);
@@ -6880,8 +6889,8 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
       name: String(safeProject.name ?? ''),
       description: String(safeProject.description ?? ''),
       client_id: safeProject.client_id ?? '',
-      status: safeProject.status ?? 'Planowany',
-      priority: safeProject.priority ?? 'Normalny',
+      status: normalizeWorkStatus(safeProject.status) || WORK_STATUSES[0],
+      priority: normalizeWorkPriority(safeProject.priority) || getDefaultWorkPriority(),
       start_date: safeProject.start_date ?? '',
       due_date: safeProject.due_date ?? '',
       notes: String(safeProject.notes ?? ''),
@@ -7150,9 +7159,9 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     },
     {
       key: 'status', label: 'Status',
-      renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_TASK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} />
+      renderCell: (row) => <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} />
     },
-    { key: 'priority', label: 'Priorytet' },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'due_date', label: 'Termin' },
     { key: 'comment_count', label: 'Kom.', align: 'right' },
     { key: 'created_display', label: 'Utworzono' }
@@ -7166,13 +7175,13 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   }));
 
   const taskCustomActions = [
-    { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCheck, visible: (row) => !isCompletedStatus(row.status), onClick: (row) => setTaskStatus(row._task, 'Zrobione') }
+    { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCheck, visible: (row) => !isCompletedStatus(row.status), onClick: (row) => setTaskStatus(row._task, WORK_DONE_STATUS) }
   ];
 
   const historyTaskColumns = [
     { key: 'title', label: 'Nazwa' },
     { key: 'status', label: 'Status' },
-    { key: 'priority', label: 'Priorytet' },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'due_date', label: 'Termin' }
   ];
   const historyTaskRows = historyTasks.map((t) => ({ ...t, _task: t }));
@@ -7197,13 +7206,13 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
         </FormField>
         <div className="service-order-strip project-main-strip">
           <FormField label="Status">
-            <AppSelect value={form.status} onChange={(e) => set('status', e.target.value)}>
-              {PROJECT_STATUSES.map((s) => <option key={s}>{s}</option>)}
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(e) => set('status', e.target.value)}>
+              {WORK_STATUSES.map((s) => <option key={s}>{s}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={form.priority} onChange={(e) => set('priority', e.target.value)}>
-              {PROJECT_PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(e) => set('priority', e.target.value)}>
+              {workPriorities.map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
           </FormField>
         </div>
@@ -7311,7 +7320,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
           <summary className="history-toggle">Historia zadań ({historyTaskRows.length})</summary>
           <DataTable storageKey={`pt-hist-${projectId?.slice(0,8) ?? 'new'}`} columns={historyTaskColumns} rows={historyTaskRows} enableSelectionActions={false}
             onOpen={openEditTask} openLabel="Podgląd zadania"
-            customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: PROJECT_TASK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }]}
+            customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: WORK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }]}
           />
         </details>}
         {sectionMenu && <ProjectSectionContextMenu
@@ -7343,7 +7352,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
     {clientEditorOpen && <ClientEditor client={null} initialTab="data" onClose={() => { setClientEditorOpen(false); setClientPickerOpen(true); }} onSave={saveNewClientFromProject} />}
 
-    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
 
     {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={closeSectionModal} footer={<><ButtonSecondary onClick={closeSectionModal}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
       <FormField label="Nazwa sekcji" error={sectionNameError}>
@@ -7944,7 +7953,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onRefreshProject, colorTheme = 'dark' }) {
+function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -8025,8 +8034,8 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const tid = task.id ?? task.localId;
     const done = isCompletedStatus(task.status);
     await updateProjectTask(tid, done
-      ? { ...task, status: PROJECT_TASK_STATUSES[0], archived: false, completed_at: null }
-      : { ...task, status: 'Zrobione', archived: false, completed_at: task.completed_at || new Date().toISOString() });
+      ? { ...task, status: WORK_STATUSES[0], archived: false, completed_at: null }
+      : { ...task, status: WORK_DONE_STATUS, archived: false, completed_at: task.completed_at || new Date().toISOString() });
     await loadPanelData();
   };
 
@@ -8322,7 +8331,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
       </div>}
       </div>
     </div>}
-    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
     {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={() => setSectionModalOpen(false)} footer={<><ButtonSecondary onClick={() => setSectionModalOpen(false)}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
       <FormField label="Nazwa sekcji" error={sectionNameError}>
         <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
@@ -8410,7 +8419,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
     {!task && <EmptyState title="Wybierz zadanie lub projekt z listy." />}
     {task && <div className="project-details-body">
       <div className="project-details-toolbar">
-        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => onStatusChange(task, done ? ORGANIZER_TASK_STATUSES[0] : 'Zrobione')} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
+        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
           {done && <CheckCircle2 size={16} />}
         </button>
       </div>
@@ -8426,7 +8435,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
           <strong>{title}</strong>
           <dl>
             <div><dt>Status</dt><dd>{task.status || '—'}</dd></div>
-            <div><dt>Priorytet</dt><dd>{task.priority || '—'}</dd></div>
+            <div><dt>Priorytet</dt><dd>{task.priority ? <StatusPill value={task.priority} /> : '—'}</dd></div>
             <div><dt>Termin</dt><dd>{task.due_date || 'brak'}</dd></div>
             <div><dt>Przypomnienie</dt><dd>{task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'brak'}</dd></div>
             {task.category && <div><dt>Kategoria</dt><dd>{task.category}</dd></div>}
@@ -8449,7 +8458,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
           key: 'toggle-done',
           label: done ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
           icon: <CheckCheck size={14} />,
-          onClick: () => onStatusChange(task, done ? ORGANIZER_TASK_STATUSES[0] : 'Zrobione')
+          onClick: () => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)
         },
         { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: handleDeleteTask }
       ]}
@@ -8476,15 +8485,24 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const [selectedProjectKey, setSelectedProjectKey] = useState(() => localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY));
   const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedProjectDetailsCollapsed);
   const [detailsWidth, setDetailsWidth] = useState(getSavedProjectDetailsWidth);
+  const [workPriorityNames, setWorkPriorityNames] = useState(DEFAULT_WORK_PRIORITIES);
   const documentSettings = getDocumentSettings();
 
   const loadData = async () => {
     setLoading(true);
-    const [projectsResult, clientsResult, tasksResult, catsResult] = await Promise.all([fetchProjects(), fetchClients(), fetchOrganizerTasks(), fetchOrganizerCategories()]);
+    const [projectsResult, clientsResult, tasksResult, catsResult, prioritiesResult] = await Promise.all([
+      fetchProjects(),
+      fetchClients(),
+      fetchOrganizerTasks(),
+      fetchOrganizerCategories(),
+      fetchWorkDictionary(WORK_DICTIONARY_TYPES.priority)
+    ]);
     setRows(projectsResult.data ?? []);
     setClients(clientsResult.data ?? []);
     setOrganizerRows(tasksResult.data ?? []);
     setCategories((catsResult.data ?? []).map((item) => item.name).filter(Boolean));
+    const names = (prioritiesResult.data ?? []).filter((row) => row.active !== false).map((row) => row.name);
+    setWorkPriorityNames(names.length ? names : DEFAULT_WORK_PRIORITIES);
     if (projectsResult.error) setNotice(`Nie udało się pobrać projektów: ${humanizeError(projectsResult.error)}`);
     else if (tasksResult.error) setNotice(`Nie udało się pobrać prostych zadań: ${humanizeError(tasksResult.error)}`);
     setLoading(false);
@@ -8580,7 +8598,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const handleRestore = async (project) => {
     if (!project) return;
-    await updateProject(project.id ?? project.localId, { ...project, archived: false, status: 'Planowany', completed_at: null });
+    await updateProject(project.id ?? project.localId, { ...project, archived: false, status: WORK_STATUSES[0], completed_at: null });
     await loadData();
   };
 
@@ -8687,8 +8705,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         : <span className={`${row._workType === 'task' && (row._source?.archived || isCompletedStatus(row._source?.status)) ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span>
     },
     { key: 'client_name', label: 'Klient / powiązanie' },
-    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={row._workType === 'project' ? PROJECT_STATUSES : ORGANIZER_TASK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> },
-    { key: 'priority', label: 'Priorytet', renderCell: (row) => <ServiceStatusCell value={row.priority} statuses={row._workType === 'project' ? PROJECT_PRIORITIES : ORGANIZER_TASK_PRIORITIES} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => <ServiceStatusCell value={row.priority} statuses={workPriorityNames} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> },
     { key: 'due_date', label: 'Termin' }
   ];
 
@@ -8702,8 +8720,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         : <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName="work-title-project" />
     },
     { key: 'client_name', label: 'Klient' },
-    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={row._workType === 'task' ? ORGANIZER_TASK_STATUSES : PROJECT_STATUSES} onStatusChange={(status) => row._workType === 'task' ? setSimpleTaskStatus(row._source ?? row, status) : setProjectStatus(row._project ?? row, status)} /> },
-    { key: 'priority', label: 'Priorytet' },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'task' ? setSimpleTaskStatus(row._source ?? row, status) : setProjectStatus(row._project ?? row, status)} /> },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'due_date', label: 'Termin' },
     { key: 'completed_display', label: 'Zakończono' }
   ];
@@ -8741,8 +8759,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const filterWorkRows = (source) => source.filter((row) => {
     const q = (filters.search ?? '').toLowerCase().trim();
     if ((filters.type ?? 'all') !== 'all' && row._workType !== filters.type) return false;
-    if (filters.status && row.status !== filters.status) return false;
-    if (filters.priority && row.priority !== filters.priority) return false;
+    if (filters.status && normalizeWorkStatus(row.status) !== filters.status) return false;
+    if (filters.priority && normalizeWorkPriority(row.priority) !== filters.priority) return false;
     if (q && !`${row.displayTitle} ${row.project_number ?? ''} ${row.client_name ?? ''} ${row.description ?? ''} ${row.status ?? ''} ${row.priority ?? ''}`.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -8831,12 +8849,11 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
             <AppInput placeholder="Szukaj..." value={filters.search ?? ''} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
             <AppSelect value={filters.status ?? ''} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
               <option value="">Wszystkie statusy</option>
-              {PROJECT_STATUSES.filter((s) => !PROJECT_TERMINAL_STATUSES.includes(s)).map((s) => <option key={s}>{s}</option>)}
-              {ORGANIZER_TASK_STATUSES.filter((s) => !PROJECT_STATUSES.includes(s)).map((s) => <option key={s}>{s}</option>)}
+              {WORK_STATUSES.map((s) => <option key={s}>{s}</option>)}
             </AppSelect>
             <AppSelect value={filters.priority ?? ''} onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value }))}>
               <option value="">Wszystkie priorytety</option>
-              {[...new Set([...PROJECT_PRIORITIES, ...ORGANIZER_TASK_PRIORITIES])].map((p) => <option key={p}>{p}</option>)}
+              {workPriorityNames.map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
           </div>
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
@@ -8859,40 +8876,120 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       </div>
       {selectedSimpleTask
         ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
-        : <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} colorTheme={colorTheme} />}
+        : <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} workPriorities={workPriorityNames} colorTheme={colorTheme} />}
     </div>
 
-    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
-    {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
+    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
+    {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} workPriorities={workPriorityNames} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }
 
-function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleCollapse, onSave, onDelete, onTogglePin, onToggleArchive, busy = false }) {
+function NoteColorPicker({ value, onChange, disabled = false }) {
+  return <div className="notes-color-picker" role="radiogroup" aria-label="Kolor notatki">
+    {NOTE_COLORS.map((color) => <button
+      key={color.id}
+      type="button"
+      role="radio"
+      aria-checked={value === color.id}
+      aria-label={color.label}
+      title={color.label}
+      disabled={disabled}
+      className={`notes-color-swatch notes-color-swatch-${color.id} ${value === color.id ? 'is-selected' : ''}`.trim()}
+      onClick={() => onChange(color.id)}
+    />)}
+  </div>;
+}
+
+function noteColorClass(noteColor, prefix) {
+  const color = NOTE_COLORS.some((item) => item.id === noteColor) ? noteColor : 'default';
+  return `${prefix}-${color}`;
+}
+
+function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleCollapse, onSave, onDelete, onRegisterSave, busy = false }) {
   const [form, setForm] = useState(() => ({
     title: note?.title ?? '',
     content: note?.content ?? '',
     status: note?.status ?? NOTE_STATUSES[0],
-    priority: note?.priority ?? 'Normalny',
-    pinned: Boolean(note?.pinned)
+    pinned: Boolean(note?.pinned),
+    note_color: note?.note_color ?? 'default'
   }));
+  const [saveStatus, setSaveStatus] = useState('idle');
   const noteKey = String(note?.id ?? note?.localId ?? '');
+  const formRef = useRef(form);
+  const skipAutosaveRef = useRef(true);
+  formRef.current = form;
 
   useEffect(() => {
+    skipAutosaveRef.current = true;
+    setSaveStatus('idle');
     setForm({
       title: note?.title ?? '',
       content: note?.content ?? '',
       status: note?.status ?? NOTE_STATUSES[0],
-      priority: note?.priority ?? 'Normalny',
-      pinned: Boolean(note?.pinned)
+      pinned: Boolean(note?.pinned),
+      note_color: note?.note_color ?? 'default'
     });
-  }, [noteKey, note?.title, note?.content, note?.status, note?.priority, note?.pinned]);
+  }, [noteKey]);
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-  const handleSave = () => {
-    if (!note) return;
-    if (!String(form.title ?? '').trim()) { alert('Tytuł notatki jest wymagany.'); return; }
-    onSave?.({ ...note, ...form });
+
+  const buildPayload = () => ({
+    ...note,
+    ...formRef.current,
+    priority: note?.priority ?? 'Normalny'
+  });
+
+  const persistNote = async ({ autosave = false } = {}) => {
+    if (!note) return null;
+    if (!String(formRef.current.title ?? '').trim()) {
+      if (!autosave) alert('Tytuł notatki jest wymagany.');
+      return null;
+    }
+    setSaveStatus('saving');
+    const result = await onSave?.(buildPayload(), { autosave });
+    if (result?.error) {
+      setSaveStatus('error');
+      return result;
+    }
+    setSaveStatus('saved');
+    return result;
+  };
+
+  useEffect(() => {
+    if (!onRegisterSave) return undefined;
+    onRegisterSave(() => persistNote({ autosave: false }));
+    return () => onRegisterSave(null);
+  }, [noteKey, onRegisterSave]);
+
+  useEffect(() => {
+    if (!note) return undefined;
+    if (skipAutosaveRef.current) {
+      skipAutosaveRef.current = false;
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      if (!String(formRef.current.title ?? '').trim()) return;
+      persistNote({ autosave: true });
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [form, note, noteKey]);
+
+  useEffect(() => {
+    if (saveStatus !== 'saved') return undefined;
+    const timer = window.setTimeout(() => setSaveStatus('idle'), 2000);
+    return () => window.clearTimeout(timer);
+  }, [saveStatus]);
+
+  const toggleArchive = () => {
+    setForm((current) => {
+      const nextStatus = current.status === 'Archiwum' ? 'Aktywna' : 'Archiwum';
+      return {
+        ...current,
+        status: nextStatus,
+        pinned: nextStatus === 'Archiwum' ? false : current.pinned
+      };
+    });
   };
 
   if (collapsed) {
@@ -8911,28 +9008,37 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
         {note && <span>{note.status || '—'} · Edycja: {note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</span>}
       </div>
     </div>
-    {!note && <div className="notes-details-empty"><EmptyState title="Wybierz notatkę z listy lub tablicy." /></div>}
+    {!note && <div className="notes-details-empty"><EmptyState title="Wybierz notatkę z listy lub kart." /></div>}
     {note && <div className="project-details-body notes-details-body">
       <div className="project-details-toolbar">
-        <button type="button" className={`project-icon-action ${form.pinned ? 'is-active' : ''}`} onClick={() => onTogglePin?.(note)} aria-label={form.pinned ? 'Odepnij notatkę' : 'Przypnij notatkę'} title={form.pinned ? 'Odepnij' : 'Przypnij'}><Pin size={15} /></button>
-        <button type="button" className="project-icon-action" onClick={() => onToggleArchive?.(note)} aria-label={form.status === 'Archiwum' ? 'Przywróć do aktywnych' : 'Przenieś do archiwum'} title={form.status === 'Archiwum' ? 'Przywróć' : 'Archiwizuj'}><ArchiveIcon status={form.status} /></button>
+        <button type="button" className={`project-icon-action ${form.pinned ? 'is-active' : ''}`} onClick={() => update('pinned', !form.pinned)} aria-label={form.pinned ? 'Odepnij notatkę' : 'Przypnij notatkę'} title={form.pinned ? 'Odepnij' : 'Przypnij'}><Pin size={15} /></button>
+        <button type="button" className="project-icon-action" onClick={toggleArchive} aria-label={form.status === 'Archiwum' ? 'Przywróć do aktywnych' : 'Przenieś do archiwum'} title={form.status === 'Archiwum' ? 'Przywróć' : 'Archiwizuj'}><ArchiveIcon status={form.status} /></button>
       </div>
-      <div className="notes-details-form-scroll">
+      <div className="notes-details-fields">
         <FormField label="Tytuł *"><AppInput value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Tytuł notatki" /></FormField>
-        <FormField label="Treść"><AppTextarea resizeKey="fixer:ui-resize:notes-editor:content" value={form.content} onChange={(e) => update('content', e.target.value)} rows={12} placeholder="Treść notatki..." /></FormField>
-        <div className="notes-details-meta-grid">
+        <FormField label="Treść" className="notes-details-content-field">
+          <NoteRichTextEditor
+            noteKey={noteKey}
+            value={form.content}
+            onChange={(content) => update('content', content)}
+            disabled={busy}
+            placeholder="Treść notatki..."
+          />
+        </FormField>
+        <div className="notes-details-meta-grid notes-details-meta-grid-single">
           <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{NOTE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
-          <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(e) => update('priority', e.target.value)}>{NOTE_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></FormField>
+          <NoteColorPicker value={form.note_color} onChange={(note_color) => update('note_color', note_color)} disabled={busy} />
         </div>
+        <div className="notes-details-spacer" aria-hidden="true" />
       </div>
       <div className="notes-details-footer">
-        <dl className="notes-details-dates">
-          <div><dt>Utworzono</dt><dd>{note.created_at ? formatDashboardDate(note.created_at) : '—'}</dd></div>
-          <div><dt>Ostatnia edycja</dt><dd>{note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</dd></div>
-        </dl>
         <div className="notes-details-actions">
-          <ButtonSecondary className="notes-form-action-button" onClick={() => onDelete?.(note)} disabled={busy}><Trash2 size={16} />Usuń</ButtonSecondary>
-          <ButtonPrimary className="notes-form-action-button" onClick={handleSave} disabled={busy}><Save size={16} />Zapisz</ButtonPrimary>
+          <span className="notes-save-status" aria-live="polite">
+            {saveStatus === 'saving' && 'Zapisywanie…'}
+            {saveStatus === 'saved' && 'Zapisano'}
+          </span>
+          <ButtonSecondary className="notes-form-action-button" onClick={() => onDelete?.(note)} disabled={busy || saveStatus === 'saving'}><Trash2 size={16} />Usuń</ButtonSecondary>
+          <ButtonPrimary className="notes-form-action-button" onClick={() => persistNote({ autosave: false })} disabled={busy || saveStatus === 'saving'}><Save size={16} />Zapisz</ButtonPrimary>
         </div>
       </div>
     </div>}
@@ -8945,8 +9051,8 @@ function ArchiveIcon({ status }) {
 
 function NotesBoardCard({ note, selected, onSelect }) {
   const title = String(note.title ?? '').trim() || 'Notatka bez tytułu';
-  const preview = String(note.content ?? '').trim().replace(/\s+/g, ' ').slice(0, 120);
-  return <button type="button" className={`notes-board-card ${selected ? 'is-selected' : ''}`.trim()} onClick={() => onSelect(note)}>
+  const preview = noteContentPreviewText(note.content).slice(0, 120);
+  return <button type="button" className={`notes-board-card ${noteColorClass(note.note_color, 'notes-card-color')} ${selected ? 'is-selected' : ''}`.trim()} onClick={() => onSelect(note)}>
     <strong>{title}</strong>
     {preview && <span>{preview}</span>}
     <em>{note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</em>
@@ -8954,16 +9060,14 @@ function NotesBoardCard({ note, selected, onSelect }) {
 }
 
 function NotesBoardView({ notes, selectedNoteId, onSelectNote }) {
-  const pinnedNotes = notes.filter((note) => note.pinned && note.status !== 'Archiwum');
-  const activeNotes = notes.filter((note) => !note.pinned && note.status === 'Aktywna');
-  const archiveNotes = notes.filter((note) => note.status === 'Archiwum');
+  const pinnedNotes = notes.filter((note) => note.pinned);
+  const remainingNotes = notes.filter((note) => !note.pinned);
   const columns = [
-    { id: 'pinned', label: 'Przypięte', items: pinnedNotes },
-    { id: 'active', label: 'Aktywne', items: activeNotes },
-    { id: 'archive', label: 'Archiwum', items: archiveNotes }
+    { id: 'pinned', label: '📌 Przypięte', items: pinnedNotes },
+    { id: 'remaining', label: '📝 Pozostałe', items: remainingNotes }
   ];
 
-  return <div className="notes-board">
+  return <div className="notes-board notes-board-two-columns">
     {columns.map((column) => <section className="notes-board-column" key={column.id}>
       <header><strong>{column.label}</strong><span>{column.items.length}</span></header>
       <div className="notes-board-column-list">
@@ -8984,6 +9088,8 @@ function NotatkiModule() {
   const [selectedNoteId, setSelectedNoteId] = useState(() => localStorage.getItem(NOTES_DETAILS_SELECTED_KEY));
   const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedNotesDetailsCollapsed);
   const [detailsWidth, setDetailsWidth] = useState(getSavedNotesDetailsWidth);
+  const searchInputRef = useRef(null);
+  const saveCurrentNoteRef = useRef(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -9006,11 +9112,8 @@ function NotatkiModule() {
   }, [selectedNoteId]);
 
   const filteredRows = useMemo(() => {
-    const q = String(filters.search ?? '').toLowerCase().trim();
-    return rows.filter((row) => {
-      if (!q) return true;
-      return `${row.title ?? ''} ${row.content ?? ''} ${row.status ?? ''} ${row.priority ?? ''}`.toLowerCase().includes(q);
-    });
+    const q = String(filters.search ?? '').trim();
+    return rows.filter((row) => noteMatchesSearch(row, q));
   }, [rows, filters.search]);
 
   const sortedRows = useMemo(() => [...filteredRows].sort((a, b) => {
@@ -9023,7 +9126,7 @@ function NotatkiModule() {
     _note: note,
     note_key: String(note.id ?? note.localId),
     title_display: String(note.title ?? '').trim() || 'Notatka bez tytułu',
-    pinned_display: note.pinned ? 'Tak' : '—',
+    note_color: note.note_color ?? 'default',
     created_display: note.created_at ? formatDashboardDate(note.created_at) : '—',
     updated_display: note.updated_at ? formatDashboardDate(note.updated_at) : '—'
   })), [sortedRows]);
@@ -9059,18 +9162,25 @@ function NotatkiModule() {
 
   const handleCreate = async () => {
     setBusy(true);
-    const result = await createNote({ title: 'Nowa notatka', content: '', status: 'Aktywna', priority: 'Normalny', pinned: false });
+    const result = await createNote({ title: 'Nowa notatka', content: '', status: 'Aktywna', priority: 'Normalny', pinned: false, note_color: 'default' });
     setBusy(false);
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd tworzenia notatki')); return; }
     upsertRow(result.data);
   };
 
-  const handleSave = async (note) => {
-    setBusy(true);
+  const handleSave = async (note, { autosave = false } = {}) => {
+    if (!String(note.title ?? '').trim()) {
+      return { error: new Error('Tytuł notatki jest wymagany.') };
+    }
+    if (!autosave) setBusy(true);
     const result = await updateNote(note.id ?? note.localId, note);
-    setBusy(false);
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu notatki')); return; }
+    if (!autosave) setBusy(false);
+    if (result.error) {
+      if (!autosave) setNotice(humanizeError(result.error, 'Błąd zapisu notatki'));
+      return result;
+    }
     upsertRow(result.data);
+    return result;
   };
 
   const handleDelete = (note) => {
@@ -9091,22 +9201,34 @@ function NotatkiModule() {
     });
   };
 
-  const handleTogglePin = async (note) => {
-    setBusy(true);
-    const result = await updateNote(note.id ?? note.localId, { ...note, pinned: !note.pinned });
-    setBusy(false);
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany przypięcia')); return; }
-    upsertRow(result.data);
-  };
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const key = event.key.toLowerCase();
+      const inTiptap = Boolean(event.target?.closest?.('.notes-rich-text-editor .ProseMirror'));
 
-  const handleToggleArchive = async (note) => {
-    const nextStatus = note.status === 'Archiwum' ? 'Aktywna' : 'Archiwum';
-    setBusy(true);
-    const result = await updateNote(note.id ?? note.localId, { ...note, status: nextStatus, pinned: nextStatus === 'Archiwum' ? false : note.pinned });
-    setBusy(false);
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany statusu notatki')); return; }
-    upsertRow(result.data);
-  };
+      if (key === 's') {
+        if (selectedNote && saveCurrentNoteRef.current) {
+          event.preventDefault();
+          saveCurrentNoteRef.current();
+        }
+        return;
+      }
+
+      if (inTiptap) return;
+
+      if (key === 'n') {
+        event.preventDefault();
+        handleCreate();
+      } else if (key === 'f') {
+        event.preventDefault();
+        searchInputRef.current?.focus?.();
+        searchInputRef.current?.select?.();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedNote]);
 
   const startDetailsResize = (event) => {
     event.preventDefault();
@@ -9131,11 +9253,11 @@ function NotatkiModule() {
     {
       key: 'title_display',
       label: 'Tytuł',
-      renderCell: (row) => <span className={row.pinned ? 'notes-title-pinned' : ''}>{row.pinned && <Pin size={14} aria-hidden="true" />}<span>{row.title_display}</span></span>
+      renderCell: (row) => row.pinned
+        ? <span className="notes-title-pinned"><Pin size={14} aria-hidden="true" /><span>{row.title_display}</span></span>
+        : row.title_display
     },
     { key: 'status', label: 'Status' },
-    { key: 'priority', label: 'Priorytet' },
-    { key: 'pinned_display', label: 'Przypięta', align: 'center' },
     { key: 'updated_display', label: 'Edycja' },
     { key: 'created_display', label: 'Utworzono' }
   ];
@@ -9148,7 +9270,7 @@ function NotatkiModule() {
             <AppButton variant="primary" className="module-action-button" onClick={handleCreate} disabled={busy}><Plus size={16} />Notatka</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={loadData} disabled={loading}>Odśwież</AppButton>
             <div className="work-type-switch notes-view-switch" role="group" aria-label="Widok notatek">
-              {[['list', 'Lista', List], ['board', 'Tablica', Columns3]].map(([value, label, Icon]) => (
+              {[['list', 'Lista', List], ['board', 'Karty', Columns3]].map(([value, label, Icon]) => (
                 <button key={value} type="button" className={(filters.view ?? 'list') === value ? 'active' : ''} onClick={() => setFilters((current) => ({ ...current, view: value }))}><Icon size={14} />{label}</button>
               ))}
             </div>
@@ -9160,17 +9282,21 @@ function NotatkiModule() {
           <div className="rentals-section-heading">
             <div>
               <p className="eyebrow">Notatki</p>
-              <h3>{(filters.view ?? 'list') === 'board' ? 'Tablica notatek' : 'Lista notatek'}</h3>
+              <h3>{(filters.view ?? 'list') === 'board' ? 'Karty notatek' : 'Lista notatek'}</h3>
             </div>
             <span>{sortedRows.length} pozycji</span>
           </div>
           <div className="module-filters project-filter-bar">
-            <AppInput placeholder="Szukaj..." value={filters.search ?? ''} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} />
+            <AppInput ref={searchInputRef} placeholder="Szukaj..." value={filters.search ?? ''} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} />
           </div>
           {(filters.view ?? 'list') === 'board'
             ? <NotesBoardView notes={sortedRows} selectedNoteId={selectedNoteId} onSelectNote={selectNote} />
             : <DataTable storageKey={NOTES_TABLE_KEY} loading={loading} columns={listColumns} rows={tableRows}
-              getRowClassName={(row) => row.note_key === String(selectedNoteId) ? 'active-row' : ''}
+              getRowClassName={(row) => {
+                const classes = [noteColorClass(row.note_color, 'notes-row-color')];
+                if (row.note_key === String(selectedNoteId)) classes.push('active-row');
+                return classes.join(' ');
+              }}
               onRowClick={(row) => selectNote(row._note ?? row)}
               onOpen={(row) => selectNote(row._note ?? row)}
               onEdit={(row) => selectNote(row._note ?? row)}
@@ -9187,8 +9313,7 @@ function NotatkiModule() {
         onToggleCollapse={() => setDetailsCollapsed((value) => !value)}
         onSave={handleSave}
         onDelete={handleDelete}
-        onTogglePin={handleTogglePin}
-        onToggleArchive={handleToggleArchive}
+        onRegisterSave={(fn) => { saveCurrentNoteRef.current = fn; }}
         busy={busy}
       />
     </div>
@@ -9196,12 +9321,12 @@ function NotatkiModule() {
   </div>;
 }
 
-function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
+function OrganizerTaskEditor({ task, categories, workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave }) {
   const [form, setForm] = useState(() => ({
     title: task?.title ?? '',
     description: task?.description ?? '',
-    status: task?.status ?? ORGANIZER_TASK_STATUSES[0],
-    priority: task?.priority ?? 'Normalny',
+    status: normalizeWorkStatus(task?.status) || WORK_STATUSES[0],
+    priority: normalizeWorkPriority(task?.priority) || getDefaultWorkPriority(),
     due_date: task?.due_date ?? '',
     reminder_at: task?.reminder_at ? String(task.reminder_at).slice(0, 16) : '',
     category: task?.category ?? '',
@@ -9229,8 +9354,8 @@ function OrganizerTaskEditor({ task, categories, onClose, onSave }) {
       <FormField label="Opis"><AppTextarea resizeKey="fixer:ui-resize:organizer-task-editor:description" value={form.description} onChange={(e) => update('description', e.target.value)} rows={3} placeholder="Opcjonalne szczegóły, notatki, instrukcje..." /></FormField>
       <div className="organizer-task-meta-grid">
         <div className="organizer-task-meta-column">
-          <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{ORGANIZER_TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></FormField>
-          <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(e) => update('priority', e.target.value)}>{ORGANIZER_TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></FormField>
+          <FormField label="Status"><AppSelect value={normalizeWorkStatus(form.status)} onChange={(e) => update('status', e.target.value)}>{WORK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</AppSelect></FormField>
+          <FormField label="Priorytet"><AppSelect value={normalizeWorkPriority(form.priority)} onChange={(e) => update('priority', e.target.value)}>{workPriorities.map((p) => <option key={p} value={p}>{p}</option>)}</AppSelect></FormField>
           <FormField label="Kategoria"><AppSelect value={form.category} onChange={(e) => update('category', e.target.value)}><option value="">Brak kategorii</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</AppSelect></FormField>
         </div>
         <div className="organizer-task-meta-column">
@@ -12371,10 +12496,11 @@ const DEFAULT_STATUS_COLORS = {
   'dostępny': '#22c55e', 'wypożyczony': '#3b82f6', 'rezerwacja': '#f97316',
   'serwis': '#6366f1', 'uszkodzony': '#ef4444', 'wycofany': '#64748b', 'składnik zestawu': '#94a3b8',
   'aktywne': '#3b82f6', 'częściowo zwrócone': '#f97316', 'zwrócone': '#22c55e', 'zwrócony': '#22c55e', 'wydany': '#3b82f6', 'zagubiony': '#ef4444', 'wymaga serwisu': '#f97316', 'po terminie': '#ef4444',
-  'do zrobienia': '#3b82f6', 'w trakcie': '#8b5cf6', 'oczekuje': '#f97316', 'zrobione': '#22c55e',
+  'do zrobienia': '#3b82f6', 'w toku': '#8b5cf6', 'w trakcie': '#8b5cf6', 'wstrzymane': '#f97316', 'oczekuje': '#f97316', 'zakończone': '#22c55e', 'zrobione': '#22c55e',
   'anulowane': '#ef4444',
+  'niski': '#22c55e', 'normalny': '#94a3b8', 'wysoki': '#f97316', 'pilny': '#ef4444', 'pilne': '#ef4444',
   'stały': '#22c55e', 'nowy': '#3b82f6', 'vip': '#eab308', 'problematyczny': '#ef4444', 'pracownik': '#6366f1',
-  'planowany': '#6366f1', 'wstrzymany': '#f97316', 'zakończony': '#22c55e'
+  'planowany': '#3b82f6', 'wstrzymany': '#f97316', 'zakończony': '#22c55e'
 };
 
 const SYSTEM_STATUS_LABELS = {
@@ -12397,6 +12523,8 @@ const SYSTEM_STATUS_LABELS = {
 function formatSystemStatusLabel(value) {
   const text = String(value ?? '');
   const key = text.trim().toLowerCase();
+  const workLabel = displayWorkStatus(text);
+  if (workLabel && workLabel !== text.trim()) return workLabel;
   return SYSTEM_STATUS_LABELS[key] ?? text;
 }
 
@@ -12435,7 +12563,8 @@ function injectStatusColorStyles(colorMap) {
 function resolveStatusColorHex(value) {
   const text = formatSystemStatusLabel(value);
   const colors = getStatusColors();
-  const candidates = [text.toLowerCase().trim(), String(value ?? '').toLowerCase().trim()];
+  const normalized = normalizeWorkStatus(value);
+  const candidates = [text.toLowerCase().trim(), normalized.toLowerCase().trim(), String(value ?? '').toLowerCase().trim()];
   for (const candidate of candidates) {
     if (candidate && colors[candidate]) return colors[candidate];
   }
@@ -12742,7 +12871,7 @@ function ServiceStatusCell({ value, statuses, onStatusChange }) {
       {open && createPortal(
         <div ref={dropRef} className={`service-status-dropdown${dropTheme ? ` ${dropTheme}` : ''}`} style={{ top: dropPos.top, left: dropPos.left }} onClick={(e) => e.stopPropagation()}>
           {statuses.map((s) => (
-            <button key={s} type="button" className={`service-status-option${s === value ? ' active' : ''}`} onClick={() => { onStatusChange(s); setOpen(false); }}>
+            <button key={s} type="button" className={`service-status-option${s === value || normalizeWorkStatus(s) === normalizeWorkStatus(value) ? ' active' : ''}`} onClick={() => { onStatusChange(s); setOpen(false); }}>
               <StatusPill value={s} />
             </button>
           ))}
@@ -14370,6 +14499,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   const restoreInputRef = useRef(null);
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
   const [organizerCategoryItems, setOrganizerCategoryItems] = useState([]);
+  const [workPriorityItems, setWorkPriorityItems] = useState([]);
   const [calendarSourceSettings, setCalendarSourceSettings] = useState(getCalendarSourceSettings);
   const [agreementPreviewOpen, setAgreementPreviewOpen] = useState(false);
   const [copiedTemplateVariable, setCopiedTemplateVariable] = useState('');
@@ -14386,7 +14516,14 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     const result = await fetchOrganizerCategories();
     setOrganizerCategoryItems(result.data ?? []);
   };
-  useEffect(() => { loadOrganizerSettings(); }, []);
+  const loadWorkPrioritySettings = async () => {
+    const result = await fetchWorkDictionary(WORK_DICTIONARY_TYPES.priority);
+    setWorkPriorityItems(result.data ?? []);
+  };
+  useEffect(() => {
+    loadOrganizerSettings();
+    loadWorkPrioritySettings();
+  }, []);
 
   useEffect(() => {
     documentTemplateLibraryRef.current = documentTemplateLibrary;
@@ -15425,6 +15562,80 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     statusColors={statusColors}
     onColorChange={onStatusColorChange}
     emptyText="Brak pozycji systemowych."
+  />;
+
+  const renderWorkPriorityDictionaryEditor = () => <DictionaryEditor
+    title="Priorytety zadań i projektów"
+    description="Wspólne priorytety używane przy zadaniach prostych, projektach i zadaniach projektowych."
+    items={workPriorityItems}
+    addLabel="np. Ekspresowy"
+    supportsColor
+    supportsActiveState
+    statusColors={statusColors}
+    onColorChange={onStatusColorChange}
+    onAdd={async (name) => {
+      const { error } = await addWorkDictionaryRecord(WORK_DICTIONARY_TYPES.priority, name, workPriorityItems.length + 1);
+      if (error) throw new Error(error.message || 'Nie udało się dodać priorytetu.');
+      await loadWorkPrioritySettings();
+    }}
+    onEdit={async (item, name) => {
+      const { error } = await updateWorkDictionaryRecord(item.id, WORK_DICTIONARY_TYPES.priority, name);
+      if (error) throw new Error(error.message || 'Nie udało się zapisać priorytetu.');
+      await loadWorkPrioritySettings();
+    }}
+    onToggleActive={async (item) => {
+      const { error } = await toggleWorkDictionaryRecordActive(item.id, WORK_DICTIONARY_TYPES.priority);
+      if (error) throw new Error(error.message || 'Nie udało się zmienić aktywności priorytetu.');
+      await loadWorkPrioritySettings();
+    }}
+    onDelete={async (item) => {
+      if (workPriorityItems.filter((row) => row.active !== false).length <= 1 && item.active !== false) {
+        throw new Error('Musi zostać przynajmniej jeden aktywny priorytet.');
+      }
+      setConfirmDialog({
+        title: 'Usuń priorytet',
+        message: `Usunąć priorytet: ${item.name}? Jeśli był używany w starych rekordach, lepiej go dezaktywować.`,
+        confirmLabel: 'Usuń',
+        cancelLabel: 'Anuluj',
+        variant: 'danger',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          const { error } = await deleteWorkDictionaryRecord(item.id, WORK_DICTIONARY_TYPES.priority);
+          if (error) { setNotice(error.message || 'Nie udało się usunąć priorytetu.'); return; }
+          await loadWorkPrioritySettings();
+        }
+      });
+    }}
+    onMove={async (item, direction) => {
+      const index = workPriorityItems.findIndex((row) => row.id === item.id);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= workPriorityItems.length) return;
+      const next = [...workPriorityItems];
+      next.splice(index, 1);
+      next.splice(nextIndex, 0, item);
+      setWorkPriorityItems(next.map((row, rowIndex) => ({ ...row, sort_order: rowIndex + 1 })));
+      const { error } = await reorderWorkDictionaryRecords(WORK_DICTIONARY_TYPES.priority, next);
+      if (error) {
+        await loadWorkPrioritySettings();
+        throw new Error(error.message || 'Nie udało się zmienić kolejności.');
+      }
+    }}
+    onReset={() => {
+      setConfirmDialog({
+        title: 'Przywróć listę',
+        message: 'Przywrócić domyślną listę priorytetów?',
+        confirmLabel: 'Przywróć',
+        cancelLabel: 'Anuluj',
+        variant: 'warning',
+        onConfirm: async () => {
+          setConfirmDialog(null);
+          const { error } = await resetWorkDictionaryRecords(WORK_DICTIONARY_TYPES.priority);
+          if (error) { setNotice(error.message || 'Nie udało się przywrócić priorytetów.'); return; }
+          await loadWorkPrioritySettings();
+        }
+      });
+    }}
+    emptyText="Brak priorytetów."
   />;
 
   const renderOrganizerCategoryDictionaryEditor = () => <DictionaryEditor
@@ -16545,10 +16756,8 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
 
       {activeSection === 'dictionaries' && activeSubsInSection === 'projects' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
         {renderOrganizerCategoryDictionaryEditor()}
-        {renderReadonlyDictionaryEditor('Statusy zadań', 'Statusy systemowe prostych zadań w module Zadania i projekty.', ORGANIZER_TASK_STATUSES, { supportsColor: true })}
-        {renderReadonlyDictionaryEditor('Priorytety zadań i projektów', 'Priorytety systemowe używane przy zadaniach prostych, projektach i zadaniach projektowych.', [...new Set([...ORGANIZER_TASK_PRIORITIES, ...PROJECT_PRIORITIES, ...PROJECT_TASK_PRIORITIES])])}
-        {renderReadonlyDictionaryEditor('Statusy projektów', 'Statusy systemowe projektów w module Zadania i projekty.', PROJECT_STATUSES, { supportsColor: true })}
-        {renderReadonlyDictionaryEditor('Statusy zadań projektów', 'Statusy systemowe zadań wewnątrz projektów.', PROJECT_TASK_STATUSES, { supportsColor: true })}
+        {renderReadonlyDictionaryEditor('Statusy zadań i projektów', 'Wspólne statusy systemowe w module Zadania i projekty.', WORK_STATUSES, { supportsColor: true })}
+        {renderWorkPriorityDictionaryEditor()}
         <div className="settings-card compact-admin-card">
           <h3>Numeracja projektów</h3>
           <p className="muted">Numerację projektów można skonfigurować w sekcji <strong>Dokumenty → Numeracja</strong>.</p>

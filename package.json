@@ -10,10 +10,17 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "@tiptap/extension-link": "^3.27.1",
+    "@tiptap/extension-placeholder": "^3.27.1",
+    "@tiptap/extension-task-item": "^3.27.1",
+    "@tiptap/extension-task-list": "^3.27.1",
+    "@tiptap/extension-underline": "^3.27.1",
+    "@tiptap/react": "^3.27.1",
+    "@tiptap/starter-kit": "^3.27.1",
     "lucide-react": "^0.468.0",
-    "vite": "^5.4.11",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.11"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",

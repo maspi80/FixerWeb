@@ -1,13 +1,51 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
-export const PROJECT_STATUSES = ['Planowany', 'W trakcie', 'Wstrzymany', 'Zakończony', 'Anulowany'];
-export const PROJECT_PRIORITIES = ['Niski', 'Normalny', 'Wysoki', 'Pilny'];
-export const PROJECT_TERMINAL_STATUSES = ['Zakończony', 'Anulowany'];
-export const PROJECT_TASK_STATUSES = ['Do zrobienia', 'W trakcie', 'Oczekuje', 'Zrobione', 'Anulowane'];
-export const PROJECT_TASK_PRIORITIES = ['Niski', 'Normalny', 'Wysoki', 'Pilny'];
-export const PROJECT_TASK_TERMINAL_STATUSES = ['Zrobione', 'Anulowane'];
+import {
+  DEFAULT_WORK_PRIORITIES,
+  getActiveWorkPriorityNames,
+  getDefaultWorkPriority,
+  normalizeWorkPriority
+} from './workDictionariesService';
 
-function normalizeCompletedStatusKey(status) {
+export const WORK_STATUSES = ['Do zrobienia', 'W toku', 'Wstrzymane', 'Zakończone', 'Anulowane'];
+export const WORK_TERMINAL_STATUSES = ['Zakończone', 'Anulowane'];
+export const WORK_DONE_STATUS = 'Zakończone';
+
+export const PROJECT_STATUSES = WORK_STATUSES;
+export const PROJECT_TERMINAL_STATUSES = WORK_TERMINAL_STATUSES;
+export const PROJECT_TASK_STATUSES = WORK_STATUSES;
+export const PROJECT_TASK_TERMINAL_STATUSES = WORK_TERMINAL_STATUSES;
+
+export const WORK_PRIORITIES = DEFAULT_WORK_PRIORITIES;
+export const PROJECT_PRIORITIES = WORK_PRIORITIES;
+export const PROJECT_TASK_PRIORITIES = WORK_PRIORITIES;
+
+export { getActiveWorkPriorityNames, getDefaultWorkPriority, normalizeWorkPriority };
+
+const LEGACY_WORK_STATUS_MAP = {
+  nowe: 'Do zrobienia',
+  otwarte: 'Do zrobienia',
+  planowany: 'Do zrobienia',
+  'do zrobienia': 'Do zrobienia',
+  aktywne: 'W toku',
+  'w realizacji': 'W toku',
+  'w trakcie': 'W toku',
+  'w toku': 'W toku',
+  oczekuje: 'Wstrzymane',
+  wstrzymany: 'Wstrzymane',
+  wstrzymane: 'Wstrzymane',
+  gotowe: 'Zakończone',
+  zamkniete: 'Zakończone',
+  'zamknięte': 'Zakończone',
+  zrobione: 'Zakończone',
+  zakonczony: 'Zakończone',
+  'zakończony': 'Zakończone',
+  'zakończone': 'Zakończone',
+  anulowany: 'Anulowane',
+  anulowane: 'Anulowane'
+};
+
+function normalizeStatusKey(status) {
   return String(status ?? '')
     .trim()
     .toLocaleLowerCase('pl')
@@ -15,14 +53,35 @@ function normalizeCompletedStatusKey(status) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+export function normalizeWorkStatus(status) {
+  const raw = String(status ?? '').trim();
+  const key = normalizeStatusKey(raw);
+  if (!key) return WORK_STATUSES[0];
+  const canonical = WORK_STATUSES.find((item) => normalizeStatusKey(item) === key);
+  if (canonical) return canonical;
+  return (LEGACY_WORK_STATUS_MAP[key] ?? raw) || WORK_STATUSES[0];
+}
+
+export function displayWorkStatus(status) {
+  const raw = String(status ?? '').trim();
+  if (!raw) return WORK_STATUSES[0];
+  const key = normalizeStatusKey(raw);
+  if (WORK_STATUSES.some((item) => normalizeStatusKey(item) === key)) {
+    return WORK_STATUSES.find((item) => normalizeStatusKey(item) === key);
+  }
+  if (LEGACY_WORK_STATUS_MAP[key]) return LEGACY_WORK_STATUS_MAP[key];
+  return raw;
+}
+
 export function isCompletedStatus(status) {
-  const key = normalizeCompletedStatusKey(status);
+  const normalized = normalizeWorkStatus(status);
+  if (WORK_TERMINAL_STATUSES.includes(normalized)) return true;
+  const key = normalizeStatusKey(status);
   if (!key) return false;
-  if (PROJECT_TERMINAL_STATUSES.some((item) => normalizeCompletedStatusKey(item) === key)) return true;
-  if (PROJECT_TASK_TERMINAL_STATUSES.some((item) => normalizeCompletedStatusKey(item) === key)) return true;
-  const completedTokens = ['wykonan', 'zakoncz', 'zamkniet', 'zamkni', 'zrobion', 'anulowan'];
+  const completedTokens = ['wykonan', 'zakoncz', 'zamkniet', 'zamkni', 'zrobion', 'anulowan', 'gotow'];
   return completedTokens.some((token) => key.includes(token));
 }
+
 export const PROJECT_TASK_COMMENT_TYPES = ['Komentarz', 'Postęp', 'Decyzja', 'Problem'];
 
 const LOCAL_PROJECTS_KEY = 'fixer-projects';
@@ -96,8 +155,8 @@ function normalizeProject(project) {
     name: String(project.name ?? '').trim(),
     description: String(project.description ?? '').trim(),
     client_id: project.client_id || null,
-    status: project.status ?? 'Planowany',
-    priority: project.priority ?? 'Normalny',
+    status: normalizeWorkStatus(project.status),
+    priority: normalizeWorkPriority(project.priority),
     start_date: project.start_date || null,
     due_date: project.due_date || null,
     completed_at: project.completed_at || null,
@@ -157,8 +216,8 @@ function normalizeProjectTask(task) {
     section_id: task.section_id || null,
     title: String(task.title ?? '').trim(),
     description: String(task.description ?? '').trim(),
-    status: task.status ?? 'Do zrobienia',
-    priority: task.priority ?? 'Normalny',
+    status: normalizeWorkStatus(task.status),
+    priority: normalizeWorkPriority(task.priority),
     due_date: task.due_date || null,
     reminder_at: task.reminder_at || null,
     completed_at: task.completed_at || null,

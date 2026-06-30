@@ -2,11 +2,23 @@ import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const NOTE_STATUSES = ['Aktywna', 'Archiwum'];
 export const NOTE_PRIORITIES = ['Niski', 'Normalny', 'Wysoki', 'Pilne'];
+export const DEFAULT_NOTE_COLOR = 'default';
+export const NOTE_COLORS = [
+  { id: 'default', label: 'Domyślny' },
+  { id: 'blue', label: 'Niebieski' },
+  { id: 'green', label: 'Zielony' },
+  { id: 'yellow', label: 'Żółty' },
+  { id: 'orange', label: 'Pomarańczowy' },
+  { id: 'red', label: 'Czerwony' },
+  { id: 'purple', label: 'Fioletowy' },
+  { id: 'gray', label: 'Szary' }
+];
 
 const LOCAL_NOTES_KEY = 'fixer-notes';
+const NOTE_COLOR_IDS = new Set(NOTE_COLORS.map((color) => color.id));
 
 const noteColumns = `
-  id, title, content, status, priority, pinned, created_at, updated_at
+  id, title, content, status, priority, pinned, note_color, created_at, updated_at
 `;
 
 function readLocal(key) {
@@ -23,25 +35,35 @@ function writeLocal(key, data) {
   return data;
 }
 
+function normalizeNoteColor(color) {
+  const value = String(color ?? DEFAULT_NOTE_COLOR).trim();
+  return NOTE_COLOR_IDS.has(value) ? value : DEFAULT_NOTE_COLOR;
+}
+
 function normalizeNote(note) {
   return {
     title: String(note.title ?? '').trim(),
     content: String(note.content ?? ''),
     status: NOTE_STATUSES.includes(note.status) ? note.status : 'Aktywna',
     priority: NOTE_PRIORITIES.includes(note.priority) ? note.priority : 'Normalny',
-    pinned: Boolean(note.pinned)
+    pinned: Boolean(note.pinned),
+    note_color: normalizeNoteColor(note.note_color)
   };
 }
 
 export async function fetchNotes() {
   if (!isSupabaseConfigured) {
-    return { data: readLocal(LOCAL_NOTES_KEY), error: null, local: true };
+    return {
+      data: readLocal(LOCAL_NOTES_KEY).map((row) => ({ ...row, note_color: normalizeNoteColor(row.note_color) })),
+      error: null,
+      local: true
+    };
   }
   const { data, error } = await supabase
     .from('notes')
     .select(noteColumns)
     .order('updated_at', { ascending: false });
-  return { data: data ?? [], error, local: false };
+  return { data: (data ?? []).map((row) => ({ ...row, note_color: normalizeNoteColor(row.note_color) })), error, local: false };
 }
 
 export async function createNote(note) {
@@ -58,7 +80,7 @@ export async function createNote(note) {
     .insert(payload)
     .select(noteColumns)
     .single();
-  return { data, error, local: false };
+  return { data: data ? { ...data, note_color: normalizeNoteColor(data.note_color) } : null, error, local: false };
 }
 
 export async function updateNote(id, note) {
@@ -69,7 +91,8 @@ export async function updateNote(id, note) {
       String(row.id ?? row.localId) === String(id) ? { ...row, ...payload, updated_at: now } : row
     );
     writeLocal(LOCAL_NOTES_KEY, next);
-    return { data: next.find((row) => String(row.id ?? row.localId) === String(id)) ?? null, error: null, local: true };
+    const saved = next.find((row) => String(row.id ?? row.localId) === String(id)) ?? null;
+    return { data: saved ? { ...saved, note_color: normalizeNoteColor(saved.note_color) } : null, error: null, local: true };
   }
   const { data, error } = await supabase
     .from('notes')
@@ -77,7 +100,7 @@ export async function updateNote(id, note) {
     .eq('id', id)
     .select(noteColumns)
     .single();
-  return { data, error, local: false };
+  return { data: data ? { ...data, note_color: normalizeNoteColor(data.note_color) } : null, error, local: false };
 }
 
 export async function deleteNote(id, note = null) {

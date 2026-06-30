@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard, LockKeyhole,
   LogOut, MessageSquare, MoreHorizontal, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Pencil, Plus, Printer, RotateCcw, Save, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Pencil, Pin, Plus, Printer, RotateCcw, Save, StickyNote, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -90,6 +90,7 @@ import {
   updateOrganizerCategory,
   updateOrganizerTask
 } from './services/organizerService';
+import { createNote, deleteNote, fetchNotes, NOTE_PRIORITIES, NOTE_STATUSES, updateNote } from './services/notesService';
 import { createCalendarManualEvent, deleteCalendarManualEvent, fetchCalendarManualEvents, updateCalendarManualEvent } from './services/calendarService';
 import {
   createProject, createProjectTask, deleteProject, deleteProjectTask,
@@ -115,6 +116,7 @@ import {
 
 const PROJECTS_TABLE_KEY = 'projects-table';
 const PROJECTS_HISTORY_TABLE_KEY = 'projects-history-table';
+const NOTES_TABLE_KEY = 'notes-table';
 const NOTIFICATIONS_READ_STORAGE_KEY = 'fixer-notifications-read';
 const NOTIFICATIONS_DELETED_STORAGE_KEY = 'fixer-notifications-deleted';
 const NOTIFICATIONS_BACKUP_FAILURE_KEY = 'fixer-last-backup-failure';
@@ -679,6 +681,7 @@ const modules = [
   { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList },
   { id: 'service', label: 'Serwis', icon: Wrench },
   { id: 'projects', label: 'Zadania i projekty', icon: Briefcase },
+  { id: 'notes', label: 'Notatki', icon: StickyNote },
   { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
   { id: 'documents', label: 'Dokumenty', icon: FileText },
   { id: 'settings', label: 'Ustawienia', icon: Settings }
@@ -1043,6 +1046,7 @@ function App() {
           {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} />}
+          {activeModule === 'notes' && <NotatkiModule />}
           {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} appSettingsReady={appSettingsReady} />}
           {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} />}
         </section>
@@ -7358,6 +7362,18 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 const PROJECT_DETAILS_WIDTH_KEY = 'fixer-project-details-panel-width';
 const PROJECT_DETAILS_COLLAPSED_KEY = 'fixer.projects.detailsPanelCollapsed';
 const PROJECT_DETAILS_SELECTED_KEY = 'fixer.projects.selectedProjectId';
+const NOTES_DETAILS_WIDTH_KEY = 'fixer-notes-details-panel-width';
+const NOTES_DETAILS_COLLAPSED_KEY = 'fixer.notes.detailsPanelCollapsed';
+const NOTES_DETAILS_SELECTED_KEY = 'fixer.notes.selectedNoteId';
+
+function getSavedNotesDetailsWidth() {
+  const saved = Number(localStorage.getItem(NOTES_DETAILS_WIDTH_KEY));
+  return Number.isFinite(saved) && saved >= 340 ? saved : 420;
+}
+
+function getSavedNotesDetailsCollapsed() {
+  return localStorage.getItem(NOTES_DETAILS_COLLAPSED_KEY) === 'true';
+}
 
 function resolveProjectAccentColor(project) {
   return normalizeAccentColor(project?.accent_color);
@@ -8848,6 +8864,334 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
     {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
+    {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
+  </div>;
+}
+
+function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleCollapse, onSave, onDelete, onTogglePin, onToggleArchive, busy = false }) {
+  const [form, setForm] = useState(() => ({
+    title: note?.title ?? '',
+    content: note?.content ?? '',
+    status: note?.status ?? NOTE_STATUSES[0],
+    priority: note?.priority ?? 'Normalny',
+    pinned: Boolean(note?.pinned)
+  }));
+  const noteKey = String(note?.id ?? note?.localId ?? '');
+
+  useEffect(() => {
+    setForm({
+      title: note?.title ?? '',
+      content: note?.content ?? '',
+      status: note?.status ?? NOTE_STATUSES[0],
+      priority: note?.priority ?? 'Normalny',
+      pinned: Boolean(note?.pinned)
+    });
+  }, [noteKey, note?.title, note?.content, note?.status, note?.priority, note?.pinned]);
+
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const handleSave = () => {
+    if (!note) return;
+    if (!String(form.title ?? '').trim()) { alert('Tytuł notatki jest wymagany.'); return; }
+    onSave?.({ ...note, ...form });
+  };
+
+  if (collapsed) {
+    return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /><span>Szczegóły</span></button>
+    </aside>;
+  }
+
+  return <aside className="project-details-panel notes-details-panel" style={{ width: `${width}px` }}>
+    <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
+    <div className="project-details-header">
+      <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
+      <div>
+        <span className="project-details-type">Notatka</span>
+        <strong>{note ? (String(form.title ?? '').trim() || 'Notatka bez tytułu') : 'Wybierz notatkę'}</strong>
+        {note && <span>{note.status || '—'} · Edycja: {note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</span>}
+      </div>
+    </div>
+    {!note && <div className="notes-details-empty"><EmptyState title="Wybierz notatkę z listy lub tablicy." /></div>}
+    {note && <div className="project-details-body notes-details-body">
+      <div className="project-details-toolbar">
+        <button type="button" className={`project-icon-action ${form.pinned ? 'is-active' : ''}`} onClick={() => onTogglePin?.(note)} aria-label={form.pinned ? 'Odepnij notatkę' : 'Przypnij notatkę'} title={form.pinned ? 'Odepnij' : 'Przypnij'}><Pin size={15} /></button>
+        <button type="button" className="project-icon-action" onClick={() => onToggleArchive?.(note)} aria-label={form.status === 'Archiwum' ? 'Przywróć do aktywnych' : 'Przenieś do archiwum'} title={form.status === 'Archiwum' ? 'Przywróć' : 'Archiwizuj'}><ArchiveIcon status={form.status} /></button>
+      </div>
+      <div className="notes-details-form-scroll">
+        <FormField label="Tytuł *"><AppInput value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Tytuł notatki" /></FormField>
+        <FormField label="Treść"><AppTextarea resizeKey="fixer:ui-resize:notes-editor:content" value={form.content} onChange={(e) => update('content', e.target.value)} rows={12} placeholder="Treść notatki..." /></FormField>
+        <div className="notes-details-meta-grid">
+          <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{NOTE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
+          <FormField label="Priorytet"><AppSelect value={form.priority} onChange={(e) => update('priority', e.target.value)}>{NOTE_PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></FormField>
+        </div>
+      </div>
+      <div className="notes-details-footer">
+        <dl className="notes-details-dates">
+          <div><dt>Utworzono</dt><dd>{note.created_at ? formatDashboardDate(note.created_at) : '—'}</dd></div>
+          <div><dt>Ostatnia edycja</dt><dd>{note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</dd></div>
+        </dl>
+        <div className="notes-details-actions">
+          <ButtonSecondary className="notes-form-action-button" onClick={() => onDelete?.(note)} disabled={busy}><Trash2 size={16} />Usuń</ButtonSecondary>
+          <ButtonPrimary className="notes-form-action-button" onClick={handleSave} disabled={busy}><Save size={16} />Zapisz</ButtonPrimary>
+        </div>
+      </div>
+    </div>}
+  </aside>;
+}
+
+function ArchiveIcon({ status }) {
+  return status === 'Archiwum' ? <RotateCcw size={15} /> : <History size={15} />;
+}
+
+function NotesBoardCard({ note, selected, onSelect }) {
+  const title = String(note.title ?? '').trim() || 'Notatka bez tytułu';
+  const preview = String(note.content ?? '').trim().replace(/\s+/g, ' ').slice(0, 120);
+  return <button type="button" className={`notes-board-card ${selected ? 'is-selected' : ''}`.trim()} onClick={() => onSelect(note)}>
+    <strong>{title}</strong>
+    {preview && <span>{preview}</span>}
+    <em>{note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</em>
+  </button>;
+}
+
+function NotesBoardView({ notes, selectedNoteId, onSelectNote }) {
+  const pinnedNotes = notes.filter((note) => note.pinned && note.status !== 'Archiwum');
+  const activeNotes = notes.filter((note) => !note.pinned && note.status === 'Aktywna');
+  const archiveNotes = notes.filter((note) => note.status === 'Archiwum');
+  const columns = [
+    { id: 'pinned', label: 'Przypięte', items: pinnedNotes },
+    { id: 'active', label: 'Aktywne', items: activeNotes },
+    { id: 'archive', label: 'Archiwum', items: archiveNotes }
+  ];
+
+  return <div className="notes-board">
+    {columns.map((column) => <section className="notes-board-column" key={column.id}>
+      <header><strong>{column.label}</strong><span>{column.items.length}</span></header>
+      <div className="notes-board-column-list">
+        {column.items.map((note) => <NotesBoardCard key={note.id ?? note.localId} note={note} selected={String(note.id ?? note.localId) === String(selectedNoteId)} onSelect={onSelectNote} />)}
+        {!column.items.length && <div className="notes-board-empty">Brak notatek.</div>}
+      </div>
+    </section>)}
+  </div>;
+}
+
+function NotatkiModule() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [filters, setFilters] = useStoredState('fixer-notes-filters', { search: '', view: 'list' });
+  const [selectedNoteId, setSelectedNoteId] = useState(() => localStorage.getItem(NOTES_DETAILS_SELECTED_KEY));
+  const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedNotesDetailsCollapsed);
+  const [detailsWidth, setDetailsWidth] = useState(getSavedNotesDetailsWidth);
+
+  const loadData = async () => {
+    setLoading(true);
+    const result = await fetchNotes();
+    setRows(result.data ?? []);
+    if (result.error) setNotice(`Nie udało się pobrać notatek: ${humanizeError(result.error)}`);
+    else setNotice('');
+    setLoading(false);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    localStorage.setItem(NOTES_DETAILS_COLLAPSED_KEY, detailsCollapsed ? 'true' : 'false');
+  }, [detailsCollapsed]);
+
+  useEffect(() => {
+    if (selectedNoteId) localStorage.setItem(NOTES_DETAILS_SELECTED_KEY, selectedNoteId);
+    else localStorage.removeItem(NOTES_DETAILS_SELECTED_KEY);
+  }, [selectedNoteId]);
+
+  const filteredRows = useMemo(() => {
+    const q = String(filters.search ?? '').toLowerCase().trim();
+    return rows.filter((row) => {
+      if (!q) return true;
+      return `${row.title ?? ''} ${row.content ?? ''} ${row.status ?? ''} ${row.priority ?? ''}`.toLowerCase().includes(q);
+    });
+  }, [rows, filters.search]);
+
+  const sortedRows = useMemo(() => [...filteredRows].sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+    return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
+  }), [filteredRows]);
+
+  const tableRows = useMemo(() => sortedRows.map((note) => ({
+    ...note,
+    _note: note,
+    note_key: String(note.id ?? note.localId),
+    title_display: String(note.title ?? '').trim() || 'Notatka bez tytułu',
+    pinned_display: note.pinned ? 'Tak' : '—',
+    created_display: note.created_at ? formatDashboardDate(note.created_at) : '—',
+    updated_display: note.updated_at ? formatDashboardDate(note.updated_at) : '—'
+  })), [sortedRows]);
+
+  const tableRowsSignature = tableRows.map((row) => row.note_key).join('\u0001');
+
+  useEffect(() => {
+    setSelectedNoteId((currentId) => {
+      if (!tableRows.length) return null;
+      const matching = tableRows.find((row) => row.note_key === String(currentId));
+      if (matching) return matching.note_key;
+      return tableRows[0].note_key;
+    });
+  }, [tableRowsSignature]);
+
+  const selectedNote = tableRows.find((row) => row.note_key === String(selectedNoteId))?._note
+    ?? tableRows[0]?._note
+    ?? null;
+
+  const selectNote = (note) => setSelectedNoteId(String(note.id ?? note.localId));
+
+  const upsertRow = (saved) => {
+    if (!saved) return;
+    const key = String(saved.id ?? saved.localId);
+    setRows((current) => {
+      const exists = current.some((row) => String(row.id ?? row.localId) === key);
+      return exists
+        ? current.map((row) => String(row.id ?? row.localId) === key ? { ...row, ...saved } : row)
+        : [saved, ...current];
+    });
+    setSelectedNoteId(key);
+  };
+
+  const handleCreate = async () => {
+    setBusy(true);
+    const result = await createNote({ title: 'Nowa notatka', content: '', status: 'Aktywna', priority: 'Normalny', pinned: false });
+    setBusy(false);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd tworzenia notatki')); return; }
+    upsertRow(result.data);
+  };
+
+  const handleSave = async (note) => {
+    setBusy(true);
+    const result = await updateNote(note.id ?? note.localId, note);
+    setBusy(false);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu notatki')); return; }
+    upsertRow(result.data);
+  };
+
+  const handleDelete = (note) => {
+    setConfirmDialog({
+      title: 'Usuń notatkę',
+      message: `Usunąć notatkę "${note.title}"?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setBusy(true);
+        const result = await deleteNote(note.id ?? note.localId, note);
+        setBusy(false);
+        if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania notatki')); return; }
+        setRows((current) => current.filter((row) => String(row.id ?? row.localId) !== String(note.id ?? note.localId)));
+      }
+    });
+  };
+
+  const handleTogglePin = async (note) => {
+    setBusy(true);
+    const result = await updateNote(note.id ?? note.localId, { ...note, pinned: !note.pinned });
+    setBusy(false);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany przypięcia')); return; }
+    upsertRow(result.data);
+  };
+
+  const handleToggleArchive = async (note) => {
+    const nextStatus = note.status === 'Archiwum' ? 'Aktywna' : 'Archiwum';
+    setBusy(true);
+    const result = await updateNote(note.id ?? note.localId, { ...note, status: nextStatus, pinned: nextStatus === 'Archiwum' ? false : note.pinned });
+    setBusy(false);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany statusu notatki')); return; }
+    upsertRow(result.data);
+  };
+
+  const startDetailsResize = (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = detailsWidth;
+    const onMouseMove = (moveEvent) => {
+      const nextWidth = Math.min(Math.max(340, startWidth - (moveEvent.clientX - startX)), Math.max(420, window.innerWidth * 0.68));
+      setDetailsWidth(nextWidth);
+      localStorage.setItem(NOTES_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.classList.remove('resizing-project-details');
+    };
+    document.body.classList.add('resizing-project-details');
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const listColumns = [
+    {
+      key: 'title_display',
+      label: 'Tytuł',
+      renderCell: (row) => <span className={row.pinned ? 'notes-title-pinned' : ''}>{row.pinned && <Pin size={14} aria-hidden="true" />}<span>{row.title_display}</span></span>
+    },
+    { key: 'status', label: 'Status' },
+    { key: 'priority', label: 'Priorytet' },
+    { key: 'pinned_display', label: 'Przypięta', align: 'center' },
+    { key: 'updated_display', label: 'Edycja' },
+    { key: 'created_display', label: 'Utworzono' }
+  ];
+
+  return <div className={`module-page projects-module-page notes-module-page ${detailsCollapsed ? 'details-collapsed' : ''}`}>
+    <div className="projects-workspace">
+      <div className="projects-list-pane">
+        <section className="panel hero-panel projects-actions-panel">
+          <div className="module-actions">
+            <AppButton variant="primary" className="module-action-button" onClick={handleCreate} disabled={busy}><Plus size={16} />Notatka</AppButton>
+            <AppButton variant="secondary" className="module-action-button" onClick={loadData} disabled={loading}>Odśwież</AppButton>
+            <div className="work-type-switch notes-view-switch" role="group" aria-label="Widok notatek">
+              {[['list', 'Lista', List], ['board', 'Tablica', Columns3]].map(([value, label, Icon]) => (
+                <button key={value} type="button" className={(filters.view ?? 'list') === value ? 'active' : ''} onClick={() => setFilters((current) => ({ ...current, view: value }))}><Icon size={14} />{label}</button>
+              ))}
+            </div>
+          </div>
+          {notice && <div className="notice">{notice}</div>}
+        </section>
+
+        <section className="panel service-list-panel rentals-records-section projects-list-panel notes-list-panel">
+          <div className="rentals-section-heading">
+            <div>
+              <p className="eyebrow">Notatki</p>
+              <h3>{(filters.view ?? 'list') === 'board' ? 'Tablica notatek' : 'Lista notatek'}</h3>
+            </div>
+            <span>{sortedRows.length} pozycji</span>
+          </div>
+          <div className="module-filters project-filter-bar">
+            <AppInput placeholder="Szukaj..." value={filters.search ?? ''} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} />
+          </div>
+          {(filters.view ?? 'list') === 'board'
+            ? <NotesBoardView notes={sortedRows} selectedNoteId={selectedNoteId} onSelectNote={selectNote} />
+            : <DataTable storageKey={NOTES_TABLE_KEY} loading={loading} columns={listColumns} rows={tableRows}
+              getRowClassName={(row) => row.note_key === String(selectedNoteId) ? 'active-row' : ''}
+              onRowClick={(row) => selectNote(row._note ?? row)}
+              onOpen={(row) => selectNote(row._note ?? row)}
+              onEdit={(row) => selectNote(row._note ?? row)}
+              onDelete={(row) => handleDelete(row._note ?? row)}
+              openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń"
+            />}
+        </section>
+      </div>
+      <NoteDetailsPanel
+        note={selectedNote}
+        collapsed={detailsCollapsed}
+        width={detailsWidth}
+        onResizeStart={startDetailsResize}
+        onToggleCollapse={() => setDetailsCollapsed((value) => !value)}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        onTogglePin={handleTogglePin}
+        onToggleArchive={handleToggleArchive}
+        busy={busy}
+      />
+    </div>
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
 }

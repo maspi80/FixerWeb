@@ -97,7 +97,7 @@ import {
   createTaskComment, updateTaskComment, deleteTaskComment, fetchTaskComments,
   fetchAllProjectTasks, fetchProjectAllComments, fetchProjects, fetchProjectTasks,
   PROJECT_PRIORITIES, PROJECT_STATUSES, PROJECT_TASK_PRIORITIES,
-  PROJECT_TASK_STATUSES, PROJECT_TASK_TERMINAL_STATUSES, PROJECT_TASK_COMMENT_TYPES, PROJECT_TERMINAL_STATUSES,
+  PROJECT_TASK_STATUSES, PROJECT_TASK_TERMINAL_STATUSES, PROJECT_TASK_COMMENT_TYPES, PROJECT_TERMINAL_STATUSES, isCompletedStatus,
   normalizeAccentColor,
   updateProject, updateProjectTask
 } from './services/projectsService';
@@ -6975,7 +6975,11 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
   const saveTask = async (taskForm) => {
     const tid = taskForm.id ?? taskForm.localId;
-    const result = tid ? await updateProjectTask(tid, taskForm) : await createProjectTask(taskForm);
+    const completed = isCompletedStatus(taskForm.status);
+    const payload = completed
+      ? { ...taskForm, archived: true, completed_at: taskForm.completed_at || new Date().toISOString() }
+      : { ...taskForm, archived: false, completed_at: null };
+    const result = tid ? await updateProjectTask(tid, payload) : await createProjectTask(payload);
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
     setTaskEditorOpen(false);
     setEditingTask(null);
@@ -6984,8 +6988,9 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
   const setTaskStatus = async (task, newStatus) => {
     if (newStatus === task.status) return;
-    const isTerminal = PROJECT_TASK_TERMINAL_STATUSES.includes(newStatus);
-    if (isTerminal) {
+    const tid = task.id ?? task.localId;
+    const completed = isCompletedStatus(newStatus);
+    if (completed) {
       setConfirmDialog({
         title: 'Przenieś zadanie do historii',
         message: 'Przenieść zadanie do historii?',
@@ -6994,15 +6999,13 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
         variant: 'secondary',
         onConfirm: async () => {
           setConfirmDialog(null);
-          const tid = task.id ?? task.localId;
           await updateProjectTask(tid, { ...task, status: newStatus, archived: true, completed_at: new Date().toISOString() });
           await loadTasks();
         }
       });
       return;
     }
-    const tid = task.id ?? task.localId;
-    await updateProjectTask(tid, { ...task, status: newStatus, archived: false, completed_at: task.completed_at });
+    await updateProjectTask(tid, { ...task, status: newStatus, archived: false, completed_at: null });
     await loadTasks();
   };
 
@@ -7094,7 +7097,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
   const removeSection = async (section) => {
     const sid = section.id ?? section.localId;
-    const sectionTasks = tasks.filter((t) => !t.archived && String(t.section_id) === String(sid));
+    const sectionTasks = tasks.filter((t) => !t.archived && !isCompletedStatus(t.status) && String(t.section_id) === String(sid));
     setSectionMenu(null);
     if (sectionTasks.length > 0) {
       setConfirmDialog({
@@ -7136,8 +7139,8 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     setSectionMenu({ x: e.clientX, y: e.clientY, section });
   };
 
-  const activeTasks = tasks.filter((t) => !t.archived);
-  const historyTasks = tasks.filter((t) => t.archived);
+  const activeTasks = tasks.filter((t) => !t.archived && !isCompletedStatus(t.status));
+  const historyTasks = tasks.filter((t) => t.archived || isCompletedStatus(t.status));
 
   const tasksBySection = (sectionId) =>
     activeTasks.filter((t) => String(t.section_id ?? '') === String(sectionId ?? ''));
@@ -7163,7 +7166,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   }));
 
   const taskCustomActions = [
-    { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCheck, visible: (row) => !PROJECT_TASK_TERMINAL_STATUSES.includes(row.status), onClick: (row) => setTaskStatus(row._task, 'Zrobione') }
+    { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCheck, visible: (row) => !isCompletedStatus(row.status), onClick: (row) => setTaskStatus(row._task, 'Zrobione') }
   ];
 
   const historyTaskColumns = [
@@ -7979,9 +7982,9 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   useEffect(() => { loadPanelData(); }, [projectId, collapsed]);
   useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
 
-  const displayTasks = tasks;
-  const tasksBySection = (sectionId) => displayTasks.filter((task) => String(task.section_id ?? '') === String(sectionId ?? ''));
-  const unsectionedTasks = displayTasks.filter((task) => !task.section_id);
+  const activeTasks = tasks.filter((task) => !task.archived && !isCompletedStatus(task.status));
+  const tasksBySection = (sectionId) => activeTasks.filter((task) => String(task.section_id ?? '') === String(sectionId ?? ''));
+  const unsectionedTasks = activeTasks.filter((task) => !task.section_id);
 
   const openNewTask = (sectionId = null) => {
     if (sectionId) {
@@ -7997,7 +8000,11 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
 
   const saveTask = async (taskForm) => {
     const tid = taskForm.id ?? taskForm.localId;
-    const result = tid ? await updateProjectTask(tid, taskForm) : await createProjectTask(taskForm);
+    const completed = isCompletedStatus(taskForm.status);
+    const payload = completed
+      ? { ...taskForm, archived: true, completed_at: taskForm.completed_at || new Date().toISOString() }
+      : { ...taskForm, archived: false, completed_at: null };
+    const result = tid ? await updateProjectTask(tid, payload) : await createProjectTask(payload);
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
     setTaskEditorOpen(false);
     setEditingTask(null);
@@ -8008,7 +8015,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   const toggleTaskDone = async (task) => {
     if (!task) return;
     const tid = task.id ?? task.localId;
-    const done = task.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(task.status);
+    const done = task.archived || isCompletedStatus(task.status);
     await updateProjectTask(tid, done
       ? { ...task, status: PROJECT_TASK_STATUSES[0], archived: false, completed_at: null }
       : { ...task, status: 'Zrobione', archived: true, completed_at: task.completed_at || new Date().toISOString() });
@@ -8217,7 +8224,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const taskKey = String(task.id ?? task.localId);
     const comments = commentCounts[taskKey] ?? 0;
     const hasComments = comments > 0;
-    const done = task.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(task.status);
+    const done = task.archived || isCompletedStatus(task.status);
     const expanded = expandedTasks.has(taskKey);
     return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''}`} key={taskKey}>
       <div
@@ -8344,7 +8351,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => addCommentToTask(taskContextMenu.task) },
         {
           key: 'toggle-done',
-          label: (taskContextMenu.task?.archived || PROJECT_TASK_TERMINAL_STATUSES.includes(taskContextMenu.task?.status)) ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
+          label: (taskContextMenu.task?.archived || isCompletedStatus(taskContextMenu.task?.status)) ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
           icon: <CheckCheck size={14} />,
           onClick: () => toggleTaskDone(taskContextMenu.task)
         },
@@ -8355,7 +8362,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
 }
 
 function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onEditTask, onStatusChange, onDeleteTask, onChanged, colorTheme = 'dark' }) {
-  const done = Boolean(task?.archived) || ORGANIZER_TERMINAL_STATUSES.includes(task?.status);
+  const done = Boolean(task?.archived) || isCompletedStatus(task?.status);
   const title = String(task?.title ?? '').trim() || 'Zadanie bez tytułu';
   const [taskContextMenu, setTaskContextMenu] = useState(null);
 
@@ -8506,13 +8513,15 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setPendingOpenSimpleTaskId(null);
   }, [pendingOpenSimpleTaskId, organizerRows]);
 
-  const activeRows = rows.filter((r) => !r.archived);
-  const historyRows = rows.filter((r) => r.archived);
+  const activeRows = rows.filter((r) => !r.archived && !isCompletedStatus(r.status));
+  const historyProjectRows = rows.filter((r) => r.archived || isCompletedStatus(r.status));
+  const activeOrganizerRows = organizerRows.filter((t) => !t.archived && !isCompletedStatus(t.status));
+  const historyOrganizerRows = organizerRows.filter((t) => t.archived || isCompletedStatus(t.status));
 
   const saveProject = async (form) => {
     if (!String(form.name ?? '').trim()) { setNotice('Nazwa projektu jest wymagana'); return; }
     const projectId = form.id ?? form.localId;
-    const isTerminal = projectId && PROJECT_TERMINAL_STATUSES.includes(form.status);
+    const isTerminal = projectId && isCompletedStatus(form.status);
     const wasArchived = editingProject?.archived;
 
     const doSave = async (finalForm) => {
@@ -8565,7 +8574,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const setProjectStatus = async (project, nextStatus) => {
     if (!project || nextStatus === project.status) return;
     const projectId = project.id ?? project.localId;
-    const isTerminal = PROJECT_TERMINAL_STATUSES.includes(nextStatus);
+    const isTerminal = isCompletedStatus(nextStatus);
     const doUpdate = async (payload) => {
       const result = await updateProject(projectId, payload);
       if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany statusu projektu')); return; }
@@ -8598,9 +8607,15 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const saveSimpleTask = async (task) => {
     if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
+    const completed = isCompletedStatus(task.status);
+    const payload = {
+      ...task,
+      archived: completed,
+      completed_date: completed ? (task.completed_date || getLocalIsoDate()) : null
+    };
     const result = task.id || task.localId
-      ? await updateOrganizerTask(task.id ?? task.localId, task)
-      : await createOrganizerTask(task);
+      ? await updateOrganizerTask(task.id ?? task.localId, payload)
+      : await createOrganizerTask(payload);
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
     setTaskEditorOpen(false);
     setEditingSimpleTask(null);
@@ -8609,7 +8624,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const setSimpleTaskStatus = async (task, nextStatus) => {
     if (!task || nextStatus === task.status) return;
-    const done = ORGANIZER_TERMINAL_STATUSES.includes(nextStatus);
+    const done = isCompletedStatus(nextStatus);
     const payload = {
       ...task,
       status: nextStatus,
@@ -8656,7 +8671,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       label: 'Nazwa',
       renderCell: (row) => row._workType === 'project'
         ? <ProjectTableTitle project={row._source} title={row.displayTitle} titleClassName="work-title-project" />
-        : <span className={`${row._workType === 'task' && row._source?.archived ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span>
+        : <span className={`${row._workType === 'task' && (row._source?.archived || isCompletedStatus(row._source?.status)) ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span>
     },
     { key: 'client_name', label: 'Klient / powiązanie' },
     { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={row._workType === 'project' ? PROJECT_STATUSES : ORGANIZER_TASK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> },
@@ -8669,10 +8684,12 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     {
       key: 'displayTitle',
       label: 'Nazwa',
-      renderCell: (row) => <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName="work-title-project" />
+      renderCell: (row) => row._workType === 'task'
+        ? <span className={isCompletedStatus(row.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
+        : <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName="work-title-project" />
     },
     { key: 'client_name', label: 'Klient' },
-    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_STATUSES} onStatusChange={(status) => setProjectStatus(row._project ?? row, status)} /> },
+    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={row._workType === 'task' ? ORGANIZER_TASK_STATUSES : PROJECT_STATUSES} onStatusChange={(status) => row._workType === 'task' ? setSimpleTaskStatus(row._source ?? row, status) : setProjectStatus(row._project ?? row, status)} /> },
     { key: 'priority', label: 'Priorytet' },
     { key: 'due_date', label: 'Termin' },
     { key: 'completed_display', label: 'Zakończono' }
@@ -8702,11 +8719,12 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     type_label: 'Zadanie',
     displayTitle: String(task.title ?? '').trim() || 'Zadanie bez tytułu',
     title: String(task.title ?? '').trim() || 'Zadanie bez tytułu',
+    project_number: '—',
     client_name: task.linked_label || task.category || '',
     completed_display: task.completed_date ? formatDashboardDate(task.completed_date) : '—'
   });
 
-  const workRows = [...activeRows.map(mapProjectRow), ...organizerRows.map(mapTaskRow)];
+  const workRows = [...activeRows.map(mapProjectRow), ...activeOrganizerRows.map(mapTaskRow)];
   const filterWorkRows = (source) => source.filter((row) => {
     const q = (filters.search ?? '').toLowerCase().trim();
     if ((filters.type ?? 'all') !== 'all' && row._workType !== filters.type) return false;
@@ -8717,7 +8735,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   });
 
   const activeTableRows = filterWorkRows(workRows);
-  const historyTableRows = historyRows.map(mapProjectRow);
+  const historyTableRows = [...historyProjectRows.map(mapProjectRow), ...historyOrganizerRows.map(mapTaskRow)];
   const selectedWork = activeTableRows.find((row) => row.work_key === selectedProjectKey)
     ?? activeTableRows.find((row) => selectedProjectKey && String(row.id ?? row.localId) === String(selectedProjectKey))
     ?? activeTableRows[0]
@@ -8802,7 +8820,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         </section>
 
         <AppSection title={<button type="button" className="history-toggle-button" onClick={() => setHistoryCollapsed((v) => !v)}>
-          Historia projektów {historyCollapsed ? '▸' : '▾'} <span className="history-count">({historyRows.length})</span>
+          Historia projektów {historyCollapsed ? '▸' : '▾'} <span className="history-count">({historyTableRows.length})</span>
         </button>}>
           {!historyCollapsed && <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
             onRowClick={selectWorkItem} onOpen={openProject} onEdit={openProject} onDelete={handleDelete} openLabel="Otwórz"

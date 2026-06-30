@@ -6,6 +6,23 @@ export const PROJECT_TERMINAL_STATUSES = ['Zakończony', 'Anulowany'];
 export const PROJECT_TASK_STATUSES = ['Do zrobienia', 'W trakcie', 'Oczekuje', 'Zrobione', 'Anulowane'];
 export const PROJECT_TASK_PRIORITIES = ['Niski', 'Normalny', 'Wysoki', 'Pilny'];
 export const PROJECT_TASK_TERMINAL_STATUSES = ['Zrobione', 'Anulowane'];
+
+function normalizeCompletedStatusKey(status) {
+  return String(status ?? '')
+    .trim()
+    .toLocaleLowerCase('pl')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function isCompletedStatus(status) {
+  const key = normalizeCompletedStatusKey(status);
+  if (!key) return false;
+  if (PROJECT_TERMINAL_STATUSES.some((item) => normalizeCompletedStatusKey(item) === key)) return true;
+  if (PROJECT_TASK_TERMINAL_STATUSES.some((item) => normalizeCompletedStatusKey(item) === key)) return true;
+  const completedTokens = ['wykonan', 'zakoncz', 'zamkniet', 'zamkni', 'zrobion', 'anulowan'];
+  return completedTokens.some((token) => key.includes(token));
+}
 export const PROJECT_TASK_COMMENT_TYPES = ['Komentarz', 'Postęp', 'Decyzja', 'Problem'];
 
 const LOCAL_PROJECTS_KEY = 'fixer-projects';

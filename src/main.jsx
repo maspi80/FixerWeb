@@ -6977,7 +6977,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     const tid = taskForm.id ?? taskForm.localId;
     const completed = isCompletedStatus(taskForm.status);
     const payload = completed
-      ? { ...taskForm, archived: true, completed_at: taskForm.completed_at || new Date().toISOString() }
+      ? { ...taskForm, archived: false, completed_at: taskForm.completed_at || new Date().toISOString() }
       : { ...taskForm, archived: false, completed_at: null };
     const result = tid ? await updateProjectTask(tid, payload) : await createProjectTask(payload);
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
@@ -6990,22 +6990,12 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     if (newStatus === task.status) return;
     const tid = task.id ?? task.localId;
     const completed = isCompletedStatus(newStatus);
-    if (completed) {
-      setConfirmDialog({
-        title: 'Przenieś zadanie do historii',
-        message: 'Przenieść zadanie do historii?',
-        confirmLabel: 'Przenieś do historii',
-        cancelLabel: 'Anuluj',
-        variant: 'secondary',
-        onConfirm: async () => {
-          setConfirmDialog(null);
-          await updateProjectTask(tid, { ...task, status: newStatus, archived: true, completed_at: new Date().toISOString() });
-          await loadTasks();
-        }
-      });
-      return;
-    }
-    await updateProjectTask(tid, { ...task, status: newStatus, archived: false, completed_at: null });
+    await updateProjectTask(tid, {
+      ...task,
+      status: newStatus,
+      archived: false,
+      completed_at: completed ? (task.completed_at || new Date().toISOString()) : null
+    });
     await loadTasks();
   };
 
@@ -7097,7 +7087,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
   const removeSection = async (section) => {
     const sid = section.id ?? section.localId;
-    const sectionTasks = tasks.filter((t) => !t.archived && !isCompletedStatus(t.status) && String(t.section_id) === String(sid));
+    const sectionTasks = tasks.filter((t) => !t.archived && String(t.section_id) === String(sid));
     setSectionMenu(null);
     if (sectionTasks.length > 0) {
       setConfirmDialog({
@@ -7139,15 +7129,21 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     setSectionMenu({ x: e.clientX, y: e.clientY, section });
   };
 
-  const activeTasks = tasks.filter((t) => !t.archived && !isCompletedStatus(t.status));
-  const historyTasks = tasks.filter((t) => t.archived || isCompletedStatus(t.status));
+  const activeTasks = tasks.filter((t) => !t.archived || isCompletedStatus(t.status));
+  const historyTasks = tasks.filter((t) => t.archived && !isCompletedStatus(t.status));
 
   const tasksBySection = (sectionId) =>
     activeTasks.filter((t) => String(t.section_id ?? '') === String(sectionId ?? ''));
   const unsectionedTasks = activeTasks.filter((t) => !t.section_id);
 
   const makeTaskColumns = (storageKeyPrefix) => [
-    { key: 'title', label: 'Nazwa' },
+    {
+      key: 'title',
+      label: 'Nazwa',
+      renderCell: (row) => isCompletedStatus(row._task?.status ?? row.status)
+        ? <span className="work-title-done">{row._task?.title ?? row.title}</span>
+        : (row._task?.title ?? row.title)
+    },
     {
       key: 'status', label: 'Status',
       renderCell: (row) => <ServiceStatusCell value={row.status} statuses={PROJECT_TASK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} />
@@ -7982,10 +7978,6 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   useEffect(() => { loadPanelData(); }, [projectId, collapsed]);
   useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
 
-  const activeTasks = tasks.filter((task) => !task.archived && !isCompletedStatus(task.status));
-  const tasksBySection = (sectionId) => activeTasks.filter((task) => String(task.section_id ?? '') === String(sectionId ?? ''));
-  const unsectionedTasks = activeTasks.filter((task) => !task.section_id);
-
   const openNewTask = (sectionId = null) => {
     if (sectionId) {
       setCollapsedSections((current) => {
@@ -8002,7 +7994,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const tid = taskForm.id ?? taskForm.localId;
     const completed = isCompletedStatus(taskForm.status);
     const payload = completed
-      ? { ...taskForm, archived: true, completed_at: taskForm.completed_at || new Date().toISOString() }
+      ? { ...taskForm, archived: false, completed_at: taskForm.completed_at || new Date().toISOString() }
       : { ...taskForm, archived: false, completed_at: null };
     const result = tid ? await updateProjectTask(tid, payload) : await createProjectTask(payload);
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
@@ -8015,12 +8007,16 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
   const toggleTaskDone = async (task) => {
     if (!task) return;
     const tid = task.id ?? task.localId;
-    const done = task.archived || isCompletedStatus(task.status);
+    const done = isCompletedStatus(task.status);
     await updateProjectTask(tid, done
       ? { ...task, status: PROJECT_TASK_STATUSES[0], archived: false, completed_at: null }
-      : { ...task, status: 'Zrobione', archived: true, completed_at: task.completed_at || new Date().toISOString() });
+      : { ...task, status: 'Zrobione', archived: false, completed_at: task.completed_at || new Date().toISOString() });
     await loadPanelData();
   };
+
+  const displayTasks = tasks.filter((task) => !task.archived || isCompletedStatus(task.status));
+  const tasksBySection = (sectionId) => displayTasks.filter((task) => String(task.section_id ?? '') === String(sectionId ?? ''));
+  const unsectionedTasks = displayTasks.filter((task) => !task.section_id);
 
   const addSection = async () => {
     const sectionName = newSectionName.trim();
@@ -8224,7 +8220,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const taskKey = String(task.id ?? task.localId);
     const comments = commentCounts[taskKey] ?? 0;
     const hasComments = comments > 0;
-    const done = task.archived || isCompletedStatus(task.status);
+    const done = isCompletedStatus(task.status);
     const expanded = expandedTasks.has(taskKey);
     return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''}`} key={taskKey}>
       <div
@@ -8351,7 +8347,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => addCommentToTask(taskContextMenu.task) },
         {
           key: 'toggle-done',
-          label: (taskContextMenu.task?.archived || isCompletedStatus(taskContextMenu.task?.status)) ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
+          label: isCompletedStatus(taskContextMenu.task?.status) ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
           icon: <CheckCheck size={14} />,
           onClick: () => toggleTaskDone(taskContextMenu.task)
         },

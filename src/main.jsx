@@ -8482,6 +8482,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   useEffect(() => {
     if (selectedProjectKey) localStorage.setItem(PROJECT_DETAILS_SELECTED_KEY, selectedProjectKey);
+    else localStorage.removeItem(PROJECT_DETAILS_SELECTED_KEY);
   }, [selectedProjectKey]);
 
   useEffect(() => {
@@ -8732,6 +8733,18 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const activeTableRows = filterWorkRows(workRows);
   const historyTableRows = [...historyProjectRows.map(mapProjectRow), ...historyOrganizerRows.map(mapTaskRow)];
+  const activeTableRowsSignature = activeTableRows.map((row) => row.work_key).join('\u0001');
+
+  useEffect(() => {
+    setSelectedProjectKey((currentKey) => {
+      if (!activeTableRows.length) return null;
+      const matching = activeTableRows.find((row) => row.work_key === currentKey)
+        ?? activeTableRows.find((row) => currentKey && !String(currentKey).includes(':') && String(row.id ?? row.localId) === String(currentKey));
+      if (matching) return matching.work_key;
+      return activeTableRows[0].work_key;
+    });
+  }, [activeTableRowsSignature]);
+
   const selectedWork = activeTableRows.find((row) => row.work_key === selectedProjectKey)
     ?? activeTableRows.find((row) => selectedProjectKey && String(row.id ?? row.localId) === String(selectedProjectKey))
     ?? activeTableRows[0]
@@ -8811,7 +8824,11 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
             </AppSelect>
           </div>
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
-            getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
+            getRowClassName={(row) => {
+              const typeClass = row._workType ? `work-row work-row-${row._workType}` : '';
+              const activeClass = row.work_key === selectedProjectKey ? 'active-row' : '';
+              return `${typeClass} ${activeClass}`.trim();
+            }}
             onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
         </section>
 

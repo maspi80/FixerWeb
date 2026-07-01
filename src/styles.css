@@ -3467,6 +3467,112 @@ th.expand-cell{cursor:default}
 .rental-return-modal{
   width:min(820px, calc(100vw - 32px));
 }
+.service-close-modal{
+  background:var(--fw-color-surface-strong);
+}
+.service-close-modal .ds-modal-header,
+.service-close-modal .ds-modal-content,
+.service-close-modal .ds-modal-footer,
+.service-close-modal .modal-actions{
+  background:var(--fw-color-surface-strong);
+}
+.service-close-modal .ds-modal-content{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+}
+.service-close-modal-body{
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0;
+  height:100%;
+  gap:10px;
+  background:var(--fw-color-surface-strong);
+}
+.service-close-modal-body .service-form-notice{
+  flex:0 0 auto;
+}
+.service-close-order-card{
+  flex:0 0 auto;
+  display:grid;
+  grid-template-columns:minmax(132px,auto) minmax(0,1fr);
+  gap:6px 14px;
+  margin:0;
+  padding:12px 14px;
+  border:1px solid var(--fw-color-border-strong);
+  border-radius:12px;
+  background:var(--fw-color-surface-strong);
+}
+.service-close-order-card-row{
+  display:contents;
+}
+.service-close-order-card dt{
+  margin:0;
+  color:var(--fw-color-text-soft);
+  font-size:12px;
+  font-weight:700;
+  line-height:1.35;
+}
+.service-close-order-card dd{
+  margin:0;
+  color:var(--fw-color-text-strong);
+  font-size:13px;
+  font-weight:600;
+  line-height:1.35;
+  word-break:break-word;
+}
+.service-close-modal-fields{
+  display:flex;
+  flex-direction:column;
+  flex:1 1 auto;
+  min-height:0;
+  gap:10px;
+}
+.service-close-modal-work-field{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.service-close-modal-note-field{
+  flex:0 1 auto;
+  min-height:88px;
+  max-height:34%;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.service-close-modal-work-textarea,
+.service-close-modal-note-textarea{
+  background:var(--fw-color-surface-strong);
+}
+.service-close-modal-work-textarea{
+  flex:1 1 auto;
+  min-height:140px;
+  height:auto;
+  resize:vertical;
+}
+.service-close-modal-note-textarea{
+  flex:1 1 auto;
+  min-height:72px;
+  resize:vertical;
+}
+.app-shell.theme-light .service-close-order-card{
+  background:#fff;
+  border-color:rgba(15,23,42,.12);
+}
+.app-shell.theme-light .service-close-modal,
+.app-shell.theme-light .service-close-modal .ds-modal-header,
+.app-shell.theme-light .service-close-modal .ds-modal-content,
+.app-shell.theme-light .service-close-modal .ds-modal-footer,
+.app-shell.theme-light .service-close-modal-body,
+.app-shell.theme-light .service-close-modal-work-textarea,
+.app-shell.theme-light .service-close-modal-note-textarea{
+  background:#fff;
+}
 .rental-return-summary{
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) auto;

@@ -5198,6 +5198,63 @@ function SelectStatusDialog({ order, statuses, onConfirm, onCancel }) {
   </ModalFrame>;
 }
 
+function ServiceOrderCloseModal({ order, onClose, onConfirm, notice = '' }) {
+  const [workPerformed, setWorkPerformed] = useState(order?.work_performed || '');
+  const [finalNote, setFinalNote] = useState(order?.notes || '');
+  const equipment = order?.equipment ?? null;
+  const displayField = (value) => {
+    const text = String(value ?? '').trim();
+    return text && text !== '—' ? text : '—';
+  };
+  const serialOrId = [
+    order?.customer_device_serial,
+    order?.customer_device_code,
+    equipment?.serial,
+    equipment?.barcode,
+    equipment?.inventory_number
+  ].map((value) => String(value ?? '').trim()).find(Boolean);
+  const orderDetails = [
+    ['Numer zlecenia', displayField(order?.service_number)],
+    ['Klient', displayField(order?.client_name || order?.clients?.name)],
+    ['Sprzęt', displayField(order?.equipment_name || order?.customer_device_name || equipment?.name)],
+    ['Marka', displayField(order?.brand_display || order?.customer_device_brand || equipment?.brand)],
+    ['Model', displayField(order?.model_display || order?.customer_device_model || equipment?.model)],
+    ['Kategoria', displayField(order?.category_display || order?.customer_device_category || equipment?.category)],
+    ['Nr seryjny / ID', displayField(serialOrId)]
+  ];
+
+  const submit = (withPrint) => onConfirm({
+    workPerformed: workPerformed.trim(),
+    notes: finalNote.trim(),
+    withPrint
+  });
+
+  return <ResizableModalFrame
+    className="service-close-modal"
+    storageKey="fixer-service-close-modal"
+    defaultSize={{ width: 720, height: 560 }}
+    minSize={{ width: 520, height: 420 }}
+    title="Zamknij zlecenie serwisowe"
+    onClose={onClose}
+    footer={<><ButtonSecondary size="sm" onClick={onClose}>Anuluj</ButtonSecondary><ButtonSecondary size="sm" onClick={() => submit(false)}>Zamknij zlecenie</ButtonSecondary><ButtonPrimary size="sm" onClick={() => submit(true)}>Zamknij i drukuj dokument</ButtonPrimary></>}
+  >
+    <div className="service-close-modal-body">
+      {notice && <AppNotice variant="error" className="service-form-notice">{notice}</AppNotice>}
+      <dl className="service-close-order-card">
+        {orderDetails.map(([label, value]) => <div className="service-close-order-card-row" key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+      </dl>
+      <div className="service-close-modal-fields">
+        <FormField label="Opis czynności serwisowych" className="service-close-modal-work-field">
+          <AppTextarea className="service-close-modal-work-textarea" value={workPerformed} onChange={(event) => setWorkPerformed(event.target.value)} />
+        </FormField>
+        <FormField label="Notatka końcowa (opcjonalnie)" className="service-close-modal-note-field">
+          <AppTextarea resizeKey="fixer:ui-resize:service-close:finalNote" className="service-close-modal-note-textarea" value={finalNote} onChange={(event) => setFinalNote(event.target.value)} />
+        </FormField>
+      </div>
+    </div>
+  </ResizableModalFrame>;
+}
+
 function formatServiceMoney(value) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? `${number.toFixed(2).replace('.', ',')} zł` : '0,00 zł';
@@ -5260,6 +5317,13 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [serviceExternalServices, setServiceExternalServices] = useState(DEFAULT_SERVICE_EXTERNAL_SERVICES);
   const [serviceProgressTemplates, setServiceProgressTemplates] = useState(DEFAULT_SERVICE_PROGRESS_TEMPLATES);
   const [serviceDocumentPreview, setServiceDocumentPreview] = useState(null);
+  const [closingServiceOrder, setClosingServiceOrder] = useState(null);
+  const [closeModalNotice, setCloseModalNotice] = useState('');
+
+  const showTransientNotice = (message) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice((current) => (current === message ? '' : current)), 4000);
+  };
 
   const loadServiceData = async () => {
     setLoading(true);
@@ -5434,7 +5498,6 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
       title: SERVICE_DOCUMENT_TITLES[type],
       fileName: buildServiceDocumentFileName(order, type)
     });
-    setNotice(type === 'acceptance' ? 'Przygotowano dokument przyjęcia do serwisu.' : 'Przygotowano dokument wydania z serwisu.');
   };
 
   const printServiceDocumentPreview = () => {
@@ -5446,21 +5509,45 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     setFilters({ search: '', status: 'all', priority: 'all', category: 'all' });
   };
 
+  const openCloseServiceOrderModal = (order) => {
+    setCloseModalNotice('');
+    setClosingServiceOrder(order);
+  };
+
+  const executeCloseServiceOrder = async (order, { workPerformed, notes, withPrint }) => {
+    const updatedOrder = {
+      ...order,
+      status: 'Wydane',
+      completed_date: order.completed_date || getLocalIsoDate(),
+      work_performed: workPerformed,
+      notes: notes || order.notes || ''
+    };
+    const result = await saveServiceOrder(updatedOrder);
+    if (result?.error) {
+      setCloseModalNotice(humanizeError(result.error, 'service'));
+      return;
+    }
+    setClosingServiceOrder(null);
+    setCloseModalNotice('');
+    if (withPrint) {
+      try {
+        const client = resolveClient(updatedOrder);
+        const html = buildServiceOrderDocumentHtml(updatedOrder, 'release', { preview: true, client });
+        setServiceDocumentPreview({
+          html,
+          title: SERVICE_DOCUMENT_TITLES.release,
+          fileName: buildServiceDocumentFileName(updatedOrder, 'release')
+        });
+      } catch {
+        showTransientNotice('Zlecenie zamknięte. Nie udało się wygenerować raportu serwisowego.');
+      }
+    }
+  };
+
   const setServiceOrderStatus = async (order, newStatus) => {
     if (newStatus === order.status) return;
     if (newStatus === 'Wydane') {
-      setConfirmDialog({
-        title: 'Zamknij zlecenie serwisowe',
-        message: `Zamknąć zlecenie ${order.service_number || 'serwisowe'} i przenieść do historii?`,
-        confirmLabel: 'Zamknij zlecenie',
-        cancelLabel: 'Anuluj',
-        variant: 'primary',
-        onConfirm: async () => {
-          setConfirmDialog(null);
-          const result = await saveServiceOrder({ ...order, status: newStatus, completed_date: order.completed_date || getLocalIsoDate() });
-          if (result?.error) setNotice(humanizeError(result.error, 'service'));
-        }
-      });
+      openCloseServiceOrderModal(order);
       return;
     }
     const result = await saveServiceOrder({ ...order, status: newStatus, completed_date: order.completed_date ?? null });
@@ -5534,6 +5621,7 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
         editLabel="Otwórz kartotekę"
         deleteLabel="Usuń zlecenie"
         customRowActions={[
+          { key: 'close', label: 'Zamknij zlecenie', icon: CheckCircle2, visible: (row) => row.status !== 'Wydane', onClick: (row) => openCloseServiceOrderModal(row) },
           { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'acceptance') },
           { key: 'release', label: 'Utwórz dokument wydania', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'release') }
         ]}
@@ -5581,15 +5669,26 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
       order={selectStatusDialog.order}
       statuses={serviceStatuses}
       onConfirm={async (newStatus) => {
+        const order = selectStatusDialog.order;
         setSelectStatusDialog(null);
+        if (newStatus === 'Wydane') {
+          openCloseServiceOrderModal(order);
+          return;
+        }
         const result = await saveServiceOrder({
-          ...selectStatusDialog.order,
+          ...order,
           status: newStatus,
-          completed_date: newStatus === 'Wydane' ? (selectStatusDialog.order.completed_date || getLocalIsoDate()) : selectStatusDialog.order.completed_date
+          completed_date: order.completed_date ?? null
         });
         if (result?.error) setNotice(humanizeError(result.error, 'service'));
       }}
       onCancel={() => setSelectStatusDialog(null)}
+    />}
+    {closingServiceOrder && <ServiceOrderCloseModal
+      order={closingServiceOrder}
+      notice={closeModalNotice}
+      onClose={() => { setClosingServiceOrder(null); setCloseModalNotice(''); }}
+      onConfirm={(payload) => executeCloseServiceOrder(closingServiceOrder, payload)}
     />}
     {serviceDocumentPreview && <DocumentPreviewModal
       html={serviceDocumentPreview.html}
@@ -6022,6 +6121,7 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
 
       {activeTab === 'notes' && <div className="service-tab-content">
         <SectionPanel className="service-record-section" title="Notatki wewnętrzne">
+          <FormField label="Opis czynności serwisowych"><AppTextarea resizeKey="fixer:ui-resize:service-editor:workPerformed" className="large-notes" value={form.work_performed} onChange={(event) => update('work_performed', event.target.value)} /></FormField>
           <FormField label="Notatki operatora"><AppTextarea resizeKey="fixer:ui-resize:service-editor:internalNotes" className="large-notes" value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} placeholder="Wewnętrzne informacje dla obsługi. Nie mieszać z postępami serwisowymi." /></FormField>
         </SectionPanel>
         <SectionPanel className="service-record-section" title="Zdjęcia i załączniki">
@@ -10117,6 +10217,12 @@ const DEFAULT_SERVICE_INTAKE_TEMPLATE_COLUMNS = [
   { key: 'serial', label: 'Nr seryjny', enabled: true },
   { key: 'fault', label: 'Opis usterki', enabled: true }
 ];
+const DEFAULT_SERVICE_REPORT_TEMPLATE_COLUMNS = [
+  { key: 'name', label: 'Nazwa', enabled: true },
+  { key: 'brand', label: 'Marka', enabled: true },
+  { key: 'model', label: 'Model', enabled: true },
+  { key: 'serial', label: 'Numer seryjny', enabled: true }
+];
 
 function buildServiceIntakeTableRows(context = {}) {
   const name = String(context.deviceName ?? '').trim();
@@ -10129,7 +10235,143 @@ function buildServiceIntakeTableRows(context = {}) {
   }];
 }
 
+function buildServiceReportEquipmentTableRows(context = {}) {
+  const normalize = (value) => {
+    const text = String(value ?? '').trim();
+    return text && text !== '—' ? text : '';
+  };
+  const name = normalize(context.deviceName);
+  const brand = normalize(context.deviceBrand);
+  const model = normalize(context.deviceModel);
+  const serial = normalize(context.deviceSerialNumber);
+  if (!name && !brand && !model && !serial) return [];
+  return [{ name, brand, model, serial }];
+}
+
+function buildServiceReportEquipmentTableRowsFromOrder(order = {}) {
+  const equipment = order?.equipment ?? null;
+  const name = String(order.customer_device_name || order.equipment_name || equipment?.name || '').trim();
+  const brand = String(order.customer_device_brand || equipment?.brand || '').trim();
+  const model = String(order.customer_device_model || equipment?.model || '').trim();
+  const serial = String(order.customer_device_serial || equipment?.serial || '').trim();
+  if (!name && !brand && !model && !serial) return [];
+  return [{ name, brand, model, serial }];
+}
+
+const SERVICE_WORK_DESCRIPTION_EMPTY = 'Brak opisu czynności serwisowych';
+const DOCUMENT_DESIGNER_SERVICE_COMPLETION_MIGRATION_KEY = 'fixer:document-designer-service-completion-v3';
+const DOCUMENT_DESIGNER_SERVICE_REPORT_MIGRATION_KEY = 'fixer:document-designer-service-report-v2';
+
+function formatDocumentFieldValue(value) {
+  const text = String(value ?? '').trim();
+  return text || '—';
+}
+
+function formatServiceDeviceDisplayName(order = {}) {
+  const name = String(order.customer_device_name || order.equipment_name || order.equipment?.name || '').trim();
+  const brand = String(order.customer_device_brand || order.equipment?.brand || '').trim();
+  const model = String(order.customer_device_model || order.equipment?.model || '').trim();
+  const brandModel = [brand, model].filter(Boolean).join(' ');
+  if (!name) return brandModel || '—';
+  if (!brandModel) return name;
+  const normalizedName = name.toLocaleLowerCase('pl');
+  const hasBrand = brand && normalizedName.includes(brand.toLocaleLowerCase('pl'));
+  const hasModel = model && normalizedName.includes(model.toLocaleLowerCase('pl'));
+  if (hasBrand || hasModel) return name;
+  return `${name} ${brandModel}`.trim();
+}
+
+function formatServiceWorkDescriptionValue(value) {
+  const text = String(value ?? '').trim();
+  return text || SERVICE_WORK_DESCRIPTION_EMPTY;
+}
+
+function buildServiceCompletionDetailSection(title, pairs) {
+  return `${title}\n${pairs.map(([label, value]) => `${label}: ${formatDocumentFieldValue(value)}`).join('\n')}`;
+}
+
+function appendServiceReportDocumentContext(context, order, clientContext) {
+  const equipment = order?.equipment ?? null;
+  const serial = String(order?.customer_device_serial || equipment?.serial || '').trim();
+  const deviceCode = String(order?.customer_device_code || equipment?.barcode || equipment?.inventory_number || '').trim();
+  const serialOrId = [serial, deviceCode].find(Boolean);
+  const workPerformed = formatServiceWorkDescriptionValue(order?.work_performed);
+  const estimateItems = Array.isArray(order?.estimate_items) ? order.estimate_items : [];
+  const estimateSummary = estimateItems.length
+    ? estimateItems
+      .map((item) => `${String(item?.name ?? '').trim() || 'Pozycja'}: ${formatServiceMoney(item?.amount)}`)
+      .join('\n')
+    : '';
+
+  context.serviceWorkPerformed = workPerformed;
+  context.serviceWorkDescription = workPerformed;
+  context.claimType = formatDocumentFieldValue(order?.claim_type);
+  context.servicePriority = formatDocumentFieldValue(order?.priority);
+  context.plannedDate = formatAgreementDate(order?.planned_date) || '—';
+  context.acceptedDate = formatAgreementDate(order?.accepted_date) || '—';
+  context.completedDate = formatAgreementDate(order?.completed_date) || '—';
+  context.deviceBrand = formatDocumentFieldValue(order?.customer_device_brand || equipment?.brand);
+  context.deviceModel = formatDocumentFieldValue(order?.customer_device_model || equipment?.model);
+  context.deviceCategory = formatDocumentFieldValue(order?.customer_device_category || equipment?.category);
+  context.deviceSerialNumber = formatDocumentFieldValue(serial);
+  context.deviceCode = formatDocumentFieldValue(deviceCode);
+  context.deviceSerialOrId = formatDocumentFieldValue(serialOrId);
+  context.intakeCondition = formatDocumentFieldValue(order?.intake_condition);
+  context.intakeAccessories = formatDocumentFieldValue(order?.intake_accessories);
+  context.intakeVisualNotes = formatDocumentFieldValue(order?.intake_visual_notes);
+  context.faultDescription = formatDocumentFieldValue(order?.fault_description);
+  context.diagnosis = formatDocumentFieldValue(order?.diagnosis);
+  context.externalService = String(order?.external_service ?? '').trim()
+    ? formatDocumentFieldValue(order.external_service)
+    : '';
+  context.serviceEstimate = estimateSummary || formatServiceMoney(order?.total_cost);
+  context.estimateStatus = formatDocumentFieldValue(order?.estimate_status);
+  context.serviceCost = formatServiceMoney(order?.total_cost);
+  context.finalNote = String(order?.notes ?? '').trim();
+  context.notes = context.finalNote;
+  context.repairDescription = workPerformed;
+  context.serviceReportWorkBlock = `Opis czynności serwisowych\n${workPerformed}`;
+  context.equipmentRows = buildServiceReportEquipmentTableRowsFromOrder(order);
+}
+
+function appendServiceCompletionDocumentBlocks(context, order, clientContext) {
+  const equipment = order?.equipment ?? null;
+  const serialOrId = [
+    order?.customer_device_serial,
+    order?.customer_device_code,
+    equipment?.serial,
+    equipment?.barcode,
+    equipment?.inventory_number
+  ].map((value) => String(value ?? '').trim()).find(Boolean);
+  context.serviceCompletionOrderBlock = buildServiceCompletionDetailSection('Dane zlecenia', [
+    ['Klient', clientContext.clientName],
+    ['Numer zlecenia', order?.service_number],
+    ['Data przyjęcia', formatAgreementDate(order?.accepted_date)],
+    ['Data zakończenia', formatAgreementDate(order?.completed_date)],
+    ['Status', order?.status],
+    ...(String(order?.priority ?? '').trim() ? [['Priorytet', order.priority]] : [])
+  ]);
+  context.serviceCompletionEquipmentBlock = buildServiceCompletionDetailSection('Dane sprzętu', [
+    ['Sprzęt', context.deviceName],
+    ['Marka', order?.customer_device_brand || equipment?.brand],
+    ['Model', order?.customer_device_model || equipment?.model],
+    ['Kategoria', order?.customer_device_category || equipment?.category],
+    ['Nr seryjny / ID', serialOrId],
+    ...(String(order?.external_service ?? '').trim() ? [['Serwis zewnętrzny', order.external_service]] : [])
+  ]);
+  const workText = formatServiceWorkDescriptionValue(order?.work_performed);
+  context.serviceCompletionWorkBlock = `Opis czynności serwisowych\n${workText}`;
+  const finalNote = String(order?.notes ?? '').trim();
+  context.serviceCompletionFinalNoteBlock = finalNote ? `Notatka końcowa\n${finalNote}` : '';
+  context.serviceCompletionConfirmation = 'Klient potwierdza odbiór urządzenia po zakończeniu obsługi serwisowej.';
+}
+
 function resolveDocumentTableRows(context = {}, documentTypeId = '') {
+  if (documentTypeId === 'serviceReport') {
+    if (Array.isArray(context.equipmentRows) && context.equipmentRows.length) return context.equipmentRows;
+    return buildServiceReportEquipmentTableRows(context);
+  }
+  if (documentTypeId === 'serviceCompletion') return [];
   if (documentTypeId === 'serviceIntake') {
     const intakeRows = buildServiceIntakeTableRows(context);
     if (intakeRows.length) return intakeRows;
@@ -10325,16 +10567,18 @@ const DOCUMENT_TEMPLATE_TYPES = [
       { key: '{{serviceNumber}}', description: 'Numer zlecenia' },
       { key: '{{issueDate}}', description: 'Data zakończenia' },
       { key: '{{clientName}}', description: 'Nazwa klienta' },
-      { key: '{{repairDescription}}', description: 'Opis wykonanej naprawy' },
+      { key: '{{deviceDisplayName}}', description: 'Sprzęt (nazwa / marka / model)' },
+      { key: '{{serviceWorkDescription}}', description: 'Opis czynności serwisowych' },
+      { key: '{{repairDescription}}', description: 'Opis czynności serwisowych' },
       { key: '{{serviceCost}}', description: 'Koszt serwisu' }
     ],
     defaultTemplate: {
       title: 'Potwierdzenie zakończenia serwisu',
-      headerText: '{{companyName}}\n{{companyAddress}}',
-      introText: 'Niniejszym potwierdzono zakończenie serwisu dnia {{issueDate}}.',
-      issuerText: '{{companyName}}\nSerwisant: {{operatorName}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
-      termsText: '- Urządzenie zostało sprawdzone po naprawie.\n- Klient potwierdza odbiór urządzenia.',
+      headerText: '{{companyName}}\n{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}',
+      introText: 'Niniejszym potwierdzono zakończenie obsługi serwisowej.',
+      issuerText: '',
+      borrowerText: '',
+      termsText: '',
       footerText: '{{documentFooter}}',
       signatureIssuer: 'Serwis',
       signatureBorrower: 'Klient',
@@ -10346,29 +10590,41 @@ const DOCUMENT_TEMPLATE_TYPES = [
   {
     id: 'serviceReport',
     label: 'Raport serwisowy',
-    description: 'Szczegółowy raport z diagnozy i naprawy.',
+    description: 'Prosty raport przekazywany klientowi przy zamknięciu zlecenia.',
     variables: [
       { key: '{{serviceNumber}}', description: 'Numer zlecenia' },
-      { key: '{{deviceName}}', description: 'Urządzenie' },
-      { key: '{{faultDescription}}', description: 'Usterka' },
-      { key: '{{diagnosis}}', description: 'Diagnoza' },
-      { key: '{{repairDescription}}', description: 'Naprawa' },
+      { key: '{{issueDate}}', description: 'Data dokumentu' },
+      { key: '{{acceptedDate}}', description: 'Data przyjęcia' },
+      { key: '{{completedDate}}', description: 'Data zakończenia' },
+      { key: '{{clientName}}', description: 'Klient' },
+      { key: '{{clientAddress}}', description: 'Adres klienta' },
+      { key: '{{clientNip}}', description: 'NIP klienta' },
+      { key: '{{clientContact}}', description: 'Kontakt klienta' },
       { key: '{{serviceStatus}}', description: 'Status serwisu' },
-      { key: '{{serviceCost}}', description: 'Koszt serwisu' }
+      { key: '{{deviceName}}', description: 'Nazwa sprzętu' },
+      { key: '{{deviceBrand}}', description: 'Marka' },
+      { key: '{{deviceModel}}', description: 'Model' },
+      { key: '{{deviceSerialNumber}}', description: 'Numer seryjny' },
+      { key: '{{serviceWorkPerformed}}', description: 'Opis czynności serwisowych' },
+      { key: '{{serviceReportWorkBlock}}', description: 'Sekcja opisu czynności serwisowych' },
+      { key: '{{companyName}}', description: 'Nazwa firmy' },
+      { key: '{{companyAddress}}', description: 'Adres firmy' },
+      { key: '{{companyTaxData}}', description: 'NIP firmy' },
+      { key: '{{companyContact}}', description: 'Kontakt firmy' }
     ],
     defaultTemplate: {
       title: 'Raport serwisowy',
       headerText: '{{companyName}}\n{{companyAddress}}',
-      introText: 'Raport serwisowy dla zlecenia {{serviceNumber}}.',
-      issuerText: '{{companyName}}\nSerwisant: {{operatorName}}',
-      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}',
-      termsText: '- Diagnoza: {{diagnosis}}\n- Zakres naprawy: {{repairDescription}}\n- Status: {{serviceStatus}}',
+      introText: '',
+      issuerText: '',
+      borrowerText: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}\n{{clientContact}}',
+      termsText: '',
       footerText: '{{documentFooter}}',
-      signatureIssuer: 'Serwisant',
+      signatureIssuer: 'Serwis',
       signatureBorrower: 'Klient',
       sectionVisibility: DEFAULT_SHARED_TEMPLATE_SECTION_VISIBILITY,
       sectionOrder: DEFAULT_SHARED_TEMPLATE_SECTION_ORDER,
-      columns: DEFAULT_GENERIC_TEMPLATE_COLUMNS
+      columns: DEFAULT_SERVICE_REPORT_TEMPLATE_COLUMNS
     }
   },
   {
@@ -10838,7 +11094,7 @@ const DOCUMENT_DESIGNER_LIBRARY = [
   { id: 'companyName', label: '🏢 Nagłówek firmy', kind: 'text', width: 240, height: 24, text: '{{companyName}}', fontSize: 16, fontWeight: 700, hint: 'Nazwa w nagłówku' },
   { id: 'companyDetails', label: '🏢 Dane firmy', kind: 'text', width: 300, height: 64, text: '{{companyAddress}}\n{{companyContact}}', fontSize: 10, fontWeight: 400, hint: 'Adres i kontakt' },
   { id: 'clientDetails', label: '👤 Dane klienta', kind: 'text', width: 300, height: 64, text: '{{clientDetails}}', fontSize: 10, fontWeight: 400, hint: 'Informacje klienta' },
-  { id: 'serviceDetails', label: '🔧 Dane serwisowe', kind: 'text', width: 300, height: 64, text: '{{serviceNumber}}\n{{serviceStatus}}\n{{diagnosis}}', fontSize: 10, fontWeight: 400, hint: 'Numer, status, diagnoza' },
+  { id: 'serviceDetails', label: '🔧 Dane serwisowe', kind: 'text', width: 300, height: 80, text: '{{serviceNumber}}\n{{serviceStatus}}\n{{faultDescription}}\n{{serviceWorkPerformed}}', fontSize: 10, fontWeight: 400, hint: 'Numer, status, usterka, czynności serwisowe' },
   { id: 'rentalDetails', label: '📦 Dane wypożyczenia', kind: 'text', width: 300, height: 64, text: '{{rentalNumber}}\n{{rentalIssueDate}}\n{{plannedReturnDate}}', fontSize: 10, fontWeight: 400, hint: 'Numer i terminy' },
   { id: 'documentNumber', label: '📄 Numer dokumentu', kind: 'text', width: 210, height: 22, text: 'Numer: {{documentNumber}}', fontSize: 10, fontWeight: 600, hint: 'Numeracja dokumentu' },
   { id: 'documentDate', label: '📄 Data dokumentu', kind: 'text', width: 210, height: 22, text: 'Data: {{issueDate}}', fontSize: 10, fontWeight: 600, hint: 'Data wystawienia' },
@@ -10959,9 +11215,204 @@ function designerLayoutElement(libraryId, layout = {}, overrides = {}) {
   return { ...base, ...layout, ...overrides };
 }
 
+function buildServiceCompletionDesignerLayout(margins, defaults, typeDef) {
+  const area = getDesignerWorkArea(margins);
+  const gap = 10;
+  const colGap = 16;
+  const metaW = Math.min(250, Math.floor(area.width * 0.38));
+  const metaX = area.right - metaW;
+  const leftColW = Math.min(340, Math.floor(area.width * 0.55));
+  const logoH = 56;
+  let y = area.top;
+  const elements = [];
+
+  elements.push(
+    designerLayoutElement('logo', { x: area.left, y, width: 100, height: logoH }),
+    designerLayoutElement('companyName', { x: area.left, y: y + logoH + 6, width: leftColW, height: 22, fontSize: 14, fontWeight: 700, text: '{{companyName}}' }),
+    designerLayoutElement('companyDetails', { x: area.left, y: y + logoH + 30, width: leftColW, height: 58, fontSize: 10, fontWeight: 400, text: '{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}' }),
+    designerLayoutElement('customText', { x: metaX, y, width: metaW, height: 18, align: 'right', fontSize: 10, fontWeight: 600, text: 'Numer zlecenia: {{serviceNumber}}' }),
+    designerLayoutElement('customText', { x: metaX, y: y + 22, width: metaW, height: 18, align: 'right', fontSize: 10, fontWeight: 600, text: 'Data: {{issueDate}}' }),
+    designerLayoutElement('customText', { x: metaX, y: y + 44, width: metaW, height: 18, align: 'right', fontSize: 10, fontWeight: 600, text: 'Status: {{serviceStatus}}' })
+  );
+
+  y = area.top + logoH + 30 + 58 + gap + 4;
+
+  elements.push(designerLayoutElement('customText', {
+    x: area.left,
+    y,
+    width: area.width,
+    height: 28,
+    align: 'center',
+    fontSize: 16,
+    fontWeight: 700,
+    text: defaults.title ?? typeDef.label
+  }));
+  y += 28 + gap;
+
+  const introText = String(defaults.introText ?? 'Niniejszym potwierdzono zakończenie obsługi serwisowej.').trim();
+  if (introText) {
+    elements.push(designerLayoutElement('customText', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: 24,
+      align: 'center',
+      fontSize: 10,
+      fontWeight: 400,
+      text: introText
+    }));
+    y += 24 + gap;
+  }
+
+  y += 2;
+
+  [
+    { text: '{{serviceCompletionOrderBlock}}', height: 96 },
+    { text: '{{serviceCompletionEquipmentBlock}}', height: 112 },
+    { text: '{{serviceCompletionWorkBlock}}', height: 148 },
+    { text: '{{serviceCompletionFinalNoteBlock}}', height: 88 },
+    { text: '{{serviceCompletionConfirmation}}', height: 28, fontSize: 10.5 }
+  ].forEach((section) => {
+    elements.push(designerLayoutElement('customText', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: section.height,
+      fontSize: section.fontSize ?? 10,
+      fontWeight: 400,
+      text: section.text,
+      summaryRole: 'serviceCompletionFlow'
+    }));
+    y += section.height + 10;
+  });
+
+  const sigW = Math.min(280, Math.floor((area.width - colGap) / 2));
+  const sigY = area.bottom - 118;
+  elements.push(
+    designerLayoutElement('signatureLeft', { x: area.left, y: sigY, width: sigW, height: 72, text: defaults.signatureIssuer ?? 'Serwis' }),
+    designerLayoutElement('signatureRight', { x: area.left + sigW + colGap, y: sigY, width: sigW, height: 72, text: defaults.signatureBorrower ?? 'Klient' })
+  );
+
+  elements.push(designerLayoutElement('footer', {
+    x: area.left,
+    y: area.bottom - 20,
+    width: area.width,
+    height: 16,
+    align: 'center',
+    fontSize: 9,
+    text: '{{documentFooter}}'
+  }));
+
+  return elements.map((element) => clampDesignerElementToWorkArea(element, margins));
+}
+
+function buildServiceReportDesignerLayout(margins, defaults, typeDef) {
+  const area = getDesignerWorkArea(margins);
+  const gap = 12;
+  const colGap = 16;
+  const rightColW = Math.min(280, Math.floor(area.width * 0.42));
+  const rightColX = area.right - rightColW;
+  const leftColW = Math.min(300, Math.floor(area.width * 0.44));
+  const logoH = 58;
+  const elements = [];
+  let y = area.top;
+
+  elements.push(
+    designerLayoutElement('logo', { x: area.left, y, width: 110, height: logoH }),
+    designerLayoutElement('companyName', { x: area.left, y: y + logoH + 8, width: leftColW, height: 22, fontSize: 14, fontWeight: 700, text: '{{companyName}}' }),
+    designerLayoutElement('companyDetails', { x: area.left, y: y + logoH + 34, width: leftColW, height: 58, fontSize: 10, fontWeight: 400, text: '{{companyAddress}}\n{{companyTaxData}}\n{{companyContact}}' }),
+    designerLayoutElement('customText', { x: rightColX, y, width: rightColW, height: 86, align: 'right', fontSize: 10, fontWeight: 400, text: '{{clientName}}\n{{clientAddress}}\n{{clientNip}}\n{{clientContact}}' })
+  );
+
+  y = area.top + logoH + 34 + 58 + gap + 6;
+
+  elements.push(designerLayoutElement('customText', {
+    x: area.left,
+    y,
+    width: area.width,
+    height: 30,
+    align: 'center',
+    fontSize: 16,
+    fontWeight: 700,
+    text: defaults.title ?? typeDef.label
+  }));
+  y += 30 + gap;
+
+  elements.push(designerLayoutElement('customText', {
+    x: area.left,
+    y,
+    width: area.width,
+    height: 72,
+    fontSize: 10,
+    fontWeight: 400,
+    text: 'Numer zlecenia: {{serviceNumber}}\nData przyjęcia: {{acceptedDate}}\nData zakończenia: {{completedDate}}\nStatus: {{serviceStatus}}'
+  }));
+  y += 72 + gap;
+
+  elements.push(designerLayoutElement('customText', {
+    x: area.left,
+    y,
+    width: area.width,
+    height: 18,
+    fontSize: 10,
+    fontWeight: 700,
+    text: 'SPRZĘT'
+  }));
+  y += 18 + 6;
+
+  const tableColumns = defaults.columns ?? DEFAULT_SERVICE_REPORT_TEMPLATE_COLUMNS;
+  const tableHeight = 52;
+  const tableEl = createDesignerTableElement('equipmentTable', tableColumns, {
+    x: area.left,
+    y,
+    width: area.width,
+    height: tableHeight
+  }, 'serviceReport');
+  tableEl.columns = fitDesignerTableColumns(mapTemplateColumnsToDesignerColumns(tableColumns), area.width);
+  elements.push(tableEl);
+  y += tableHeight + gap;
+
+  elements.push(designerLayoutElement('customText', {
+    x: area.left,
+    y,
+    width: area.width,
+    height: 120,
+    fontSize: 10,
+    fontWeight: 400,
+    text: '{{serviceReportWorkBlock}}',
+    summaryRole: 'serviceCompletionFlow'
+  }));
+  y += 120 + gap;
+
+  const sigW = Math.min(300, Math.floor((area.width - colGap) / 2));
+  const sigY = Math.min(y, area.bottom - 98);
+  elements.push(
+    designerLayoutElement('signatureLeft', { x: area.left, y: sigY, width: sigW, height: 70, text: defaults.signatureIssuer ?? 'Serwis' }),
+    designerLayoutElement('signatureRight', { x: area.left + sigW + colGap, y: sigY, width: sigW, height: 70, text: defaults.signatureBorrower ?? 'Klient' })
+  );
+
+  elements.push(designerLayoutElement('footer', {
+    x: area.left,
+    y: Math.min(sigY + 78, area.bottom - 26),
+    width: area.width,
+    height: 24,
+    align: 'center',
+    fontSize: 9,
+    text: defaults.footerText ?? '{{documentFooter}}'
+  }));
+
+  return elements.map((element) => clampDesignerElementToWorkArea(element, margins));
+}
+
 function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DESIGNER_MARGINS) {
   const typeDef = getDocumentTemplateTypeById(documentTypeId);
   const defaults = typeDef.defaultTemplate ?? {};
+  if (documentTypeId === 'serviceCompletion') {
+    return buildServiceCompletionDesignerLayout(margins, defaults, typeDef);
+  }
+  if (documentTypeId === 'serviceReport') {
+    return buildServiceReportDesignerLayout(margins, defaults, typeDef);
+  }
   const area = getDesignerWorkArea(margins);
   const gap = 12;
   const colGap = 16;
@@ -11151,6 +11602,15 @@ function isLegacyDesignerTemplateLayout(template) {
   if (Number(companyNameEl.y) < Number(logoEl.y) + Number(logoEl.height) - 8) return true;
   if (companyDetailsEl && Number(companyDetailsEl.x) > area.left + 130) return true;
   if (template.documentTypeId === 'serviceIntake' && template.elements.some((element) => element.libraryId === 'serviceDetails')) return true;
+  if (template.documentTypeId === 'serviceCompletion') {
+    const elements = Array.isArray(template.elements) ? template.elements : [];
+    const hasFlowBlocks = elements.some((element) => element.summaryRole === 'serviceCompletionFlow');
+    if (!hasFlowBlocks || elements.some((element) => element.kind === 'table' || element.summaryRole === 'serviceWorkDescription')) return true;
+    return false;
+  }
+  if (template.documentTypeId === 'serviceReport') {
+    return !isServiceReportDesignerTemplateValid(template);
+  }
   return template.elements.some((element) => Number(element.x) <= 60 && Number(element.width) >= 680);
 }
 
@@ -11190,6 +11650,7 @@ function normalizeDocumentDesignerElement(element = {}) {
     color: normalizeHexColor(element.color, base.color),
     logoDataUrl: String(element.logoDataUrl ?? base.logoDataUrl ?? ''),
     visible: element.visible !== false,
+    summaryRole: String(element.summaryRole ?? merged.summaryRole ?? '').trim(),
     columns: sourceColumns
       .map((column, index) => ({
         key: String(column?.key ?? `col-${index}`),
@@ -11248,6 +11709,36 @@ function normalizeDocumentDesignerState(value) {
   return { templates: normalizedTemplates };
 }
 
+function migrateServiceReportDesignerTemplatesOnce() {
+  if (localStorage.getItem(DOCUMENT_DESIGNER_SERVICE_REPORT_MIGRATION_KEY) === '1') return;
+  const stored = getAppSetting(APP_SETTING_KEYS.documentDesigner) ?? getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
+  const templates = Array.isArray(stored?.templates) && stored.templates.length
+    ? stored.templates
+    : getDefaultDocumentDesignerState().templates;
+  const migratedTemplates = templates.map((template) => (
+    template.documentTypeId === 'serviceReport'
+      ? createDefaultDocumentDesignerTemplate('serviceReport', template.name || 'Domyślny • Raport serwisowy')
+      : template
+  ));
+  saveDocumentDesignerState({ templates: migratedTemplates });
+  localStorage.setItem(DOCUMENT_DESIGNER_SERVICE_REPORT_MIGRATION_KEY, '1');
+}
+
+function migrateServiceCompletionDesignerTemplatesOnce() {
+  if (localStorage.getItem(DOCUMENT_DESIGNER_SERVICE_COMPLETION_MIGRATION_KEY) === '1') return;
+  const stored = getAppSetting(APP_SETTING_KEYS.documentDesigner) ?? getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
+  const templates = Array.isArray(stored?.templates) && stored.templates.length
+    ? stored.templates
+    : getDefaultDocumentDesignerState().templates;
+  const migratedTemplates = templates.map((template) => (
+    template.documentTypeId === 'serviceCompletion'
+      ? createDefaultDocumentDesignerTemplate('serviceCompletion', template.name || 'Domyślny • Potwierdzenie zakończenia serwisu')
+      : template
+  ));
+  saveDocumentDesignerState({ templates: migratedTemplates });
+  localStorage.setItem(DOCUMENT_DESIGNER_SERVICE_COMPLETION_MIGRATION_KEY, '1');
+}
+
 function migrateLegacyDocumentDesignerStorageOnce() {
   if (localStorage.getItem(DOCUMENT_DESIGNER_LEGACY_MIGRATION_KEY) === '1') return;
   const raw = getStoredJson(DOCUMENT_DESIGNER_STORAGE_KEY, null);
@@ -11277,6 +11768,8 @@ function migrateLegacyDocumentDesignerStorageOnce() {
 
 function getDocumentDesignerState() {
   migrateLegacyDocumentDesignerStorageOnce();
+  migrateServiceCompletionDesignerTemplatesOnce();
+  migrateServiceReportDesignerTemplatesOnce();
   const stored = getAppSetting(APP_SETTING_KEYS.documentDesigner);
   if (stored && Array.isArray(stored.templates) && stored.templates.length) {
     return normalizeDocumentDesignerState(stored);
@@ -11306,6 +11799,7 @@ function enrichDocumentRenderContext(documentTypeId, context = {}, sharedTemplat
     ? normalizeSharedDocumentTemplate(sharedTemplate, getDocumentTemplateTypeById(documentTypeId).defaultTemplate, documentTypeId)
     : getSavedDocumentTemplateByType(documentTypeId);
   const typeDef = getDocumentTemplateTypeById(documentTypeId);
+  const resolvedFooter = resolveEnrichedDocumentFooter(context, savedTemplate);
   return {
     ...context,
     documentTypeId,
@@ -11314,42 +11808,149 @@ function enrichDocumentRenderContext(documentTypeId, context = {}, sharedTemplat
     introText: savedTemplate.introText || context.introText || '',
     issuerText: savedTemplate.issuerText || context.issuerText || '',
     borrowerText: savedTemplate.borrowerText || context.borrowerText || '',
-    footerText: savedTemplate.footerText || context.footerText || '',
-    documentFooter: context.documentFooter || savedTemplate.footerText || ''
+    footerText: resolvedFooter,
+    documentFooter: resolvedFooter
   };
+}
+
+function resolveEnrichedDocumentFooter(context = {}, savedTemplate = {}) {
+  const fromCompany = String(context.documentFooter ?? '').trim();
+  if (fromCompany) return fromCompany;
+  const templateFooter = String(savedTemplate.footerText ?? '').trim();
+  if (!templateFooter || templateFooter === '{{documentFooter}}') return '';
+  const resolved = applyTemplateVariables(templateFooter, context).trim();
+  if (!resolved || /\{\{[^{}]+\}\}/.test(resolved)) return '';
+  return compactTemplateMultilineText(resolved);
+}
+
+function resolveDocumentFooterForRender(context = {}, templateText = '') {
+  const resolved = applyDesignerTokens(templateText, context).trim();
+  if (!resolved || /\{\{[^{}]+\}\}/.test(resolved)) return '';
+  return resolved;
+}
+
+function getServiceCompletionSectionKind(element = {}) {
+  const text = String(element.text ?? '');
+  if (text.includes('{{serviceReportWorkBlock}}') || text.includes('{{serviceCompletionWorkBlock}}')) return 'content';
+  if (text.includes('{{serviceCompletionFinalNoteBlock}}')) return 'content';
+  if (text.includes('{{serviceCompletionConfirmation}}')) return 'confirmation';
+  return 'info';
+}
+
+function renderServiceCompletionDetailRows(body) {
+  return String(body ?? '')
+    .split('\n')
+    .map((line) => String(line ?? '').trim())
+    .filter(Boolean)
+    .map((line) => {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex < 0) {
+        return `<div class="designer-doc-sc-row"><span class="designer-doc-sc-value">${escapeHtml(line)}</span></div>`;
+      }
+      const label = line.slice(0, colonIndex).trim();
+      const value = line.slice(colonIndex + 1).trim() || '—';
+      return `<div class="designer-doc-sc-row"><span class="designer-doc-sc-label">${escapeHtml(label)}:</span><span class="designer-doc-sc-value">${escapeHtml(value)}</span></div>`;
+    })
+    .join('');
 }
 
 const SERVICE_DOCUMENT_TYPE_MAP = {
   acceptance: 'serviceIntake',
-  release: 'serviceCompletion'
+  release: 'serviceReport'
 };
 
 const SERVICE_DOCUMENT_TITLES = {
   acceptance: 'Potwierdzenie przyjęcia do serwisu',
-  release: 'Potwierdzenie zakończenia serwisu'
+  release: 'Raport serwisowy'
 };
 
 const SERVICE_DOCUMENT_FILE_PREFIX = {
   acceptance: 'Protokol_przyjecia',
-  release: 'Protokol_wydania'
+  release: 'Raport_serwisowy'
 };
 
 function buildServiceCompletionTableRows(context = {}) {
-  const name = String(context.deviceName ?? '').trim();
-  if (!name) return [];
-  return [{
-    lp: '1',
-    name,
-    details: String(context.repairDescription ?? '—').trim() || '—',
-    status: String(context.serviceStatus ?? '—').trim() || '—',
-    notes: String(context.serviceCost ?? '—').trim() || '—'
-  }];
+  return [];
+}
+
+function isServiceCompletionDesignerTemplateValid(template = {}) {
+  if (String(template.documentTypeId ?? '') !== 'serviceCompletion') return true;
+  const elements = Array.isArray(template.elements) ? template.elements : [];
+  const hasFlowBlocks = elements.some((element) => element.summaryRole === 'serviceCompletionFlow' && element.visible !== false);
+  const hasTable = elements.some((element) => element.kind === 'table' && element.visible !== false);
+  const hasLegacyWorkBlock = elements.some((element) => element.summaryRole === 'serviceWorkDescription' && element.visible !== false);
+  return hasFlowBlocks && !hasTable && !hasLegacyWorkBlock;
+}
+
+function resolveServiceCompletionDesignerTemplate(template = {}) {
+  const normalized = normalizeDocumentDesignerTemplate(template, 'serviceCompletion');
+  if (isServiceCompletionDesignerTemplateValid(normalized)) return normalized;
+  const fresh = createDefaultDocumentDesignerTemplate(
+    'serviceCompletion',
+    normalized.name || 'Domyślny • Potwierdzenie zakończenia serwisu'
+  );
+  return {
+    ...fresh,
+    id: normalized.id,
+    name: normalized.name,
+    margins: normalized.margins ?? fresh.margins
+  };
+}
+
+function isServiceReportDesignerTemplateValid(template = {}) {
+  if (String(template.documentTypeId ?? '') !== 'serviceReport') return true;
+  const elements = Array.isArray(template.elements) ? template.elements : [];
+  const hasEquipmentTable = elements.some((element) => element.kind === 'table' && element.visible !== false);
+  const hasWorkBlock = elements.some((element) => element.visible !== false
+    && element.summaryRole === 'serviceCompletionFlow'
+    && String(element.text ?? '').includes('{{serviceReportWorkBlock}}'));
+  const hasLegacyClutter = elements.some((element) => {
+    if (element.visible === false) return false;
+    const text = String(element.text ?? '');
+    return text.includes('Typ zgłoszenia')
+      || text.includes('Dane sprzętu:')
+      || text.includes('Diagnoza:')
+      || text.includes('Notatka końcowa')
+      || text.includes('Priorytet:')
+      || text.includes('Planowany termin')
+      || text.includes('{{terms}}');
+  });
+  const hasClientTopRight = elements.some((element) => element.visible !== false
+    && String(element.text ?? '').includes('{{clientName}}')
+    && element.align === 'right'
+    && Number(element.x) > 200);
+  return hasEquipmentTable && hasWorkBlock && !hasLegacyClutter && hasClientTopRight;
+}
+
+function resolveServiceReportDesignerTemplate(template = {}) {
+  const normalized = normalizeDocumentDesignerTemplate(template, 'serviceReport');
+  if (isServiceReportDesignerTemplateValid(normalized)) return normalized;
+  const fresh = createDefaultDocumentDesignerTemplate(
+    'serviceReport',
+    normalized.name || 'Domyślny • Raport serwisowy'
+  );
+  return {
+    ...fresh,
+    id: normalized.id,
+    name: normalized.name,
+    margins: normalized.margins ?? fresh.margins
+  };
 }
 
 function getServiceDocumentDesignerTemplate(documentTypeId) {
   const designerState = getDocumentDesignerState();
   const templates = designerState.templates.filter((template) => template.documentTypeId === documentTypeId);
-  return templates[0] ?? createDefaultDocumentDesignerTemplate(documentTypeId);
+  if (documentTypeId === 'serviceReport' && !templates.length) {
+    throw new Error('Brak szablonu Raport serwisowy w kreatorze dokumentów.');
+  }
+  const template = templates[0] ?? createDefaultDocumentDesignerTemplate(documentTypeId);
+  if (documentTypeId === 'serviceCompletion') {
+    return resolveServiceCompletionDesignerTemplate(template);
+  }
+  if (documentTypeId === 'serviceReport') {
+    return resolveServiceReportDesignerTemplate(template);
+  }
+  return template;
 }
 
 function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile()) {
@@ -11418,7 +12019,9 @@ function buildServiceOrderDocumentContext(order, type, client = null, company = 
     ? mapClientToDocumentContext(resolvedClient)
     : { clientName: order.client_name || '—', clientAddress: '—', clientNip: '', clientDetails: order.client_name || '—', clientContact: '' };
   const deviceName = String(order.customer_device_name || order.equipment_name || order.equipment?.name || '').trim();
+  const deviceDisplayName = formatServiceDeviceDisplayName(order);
   const deviceSerial = String(order.customer_device_serial || order.equipment?.serial || '').trim();
+  const serviceWorkDescription = formatServiceWorkDescriptionValue(order.work_performed);
   const issueDate = formatAgreementDate(type === 'release' ? (order.completed_date || order.accepted_date) : order.accepted_date) || formatAgreementDate(getLocalIsoDate());
   const context = {
     ...clientContext,
@@ -11433,10 +12036,13 @@ function buildServiceOrderDocumentContext(order, type, client = null, company = 
     companyContact: formatCompanyContact(company),
     operatorName: 'Operator',
     deviceName: deviceName || '—',
+    deviceDisplayName: deviceDisplayName || '—',
     deviceSerialNumber: deviceSerial || '—',
     faultDescription: order.fault_description || '—',
     diagnosis: order.diagnosis || '—',
-    repairDescription: order.work_performed || order.diagnosis || '—',
+    serviceWorkPerformed: serviceWorkDescription,
+    serviceWorkDescription,
+    repairDescription: type === 'release' ? serviceWorkDescription : (order.work_performed || order.diagnosis || '—'),
     serviceCost: formatServiceMoney(order.total_cost),
     notes: order.notes || '',
     documentFooter: company.documentFooter || '',
@@ -11445,7 +12051,9 @@ function buildServiceOrderDocumentContext(order, type, client = null, company = 
   if (documentTypeId === 'serviceIntake') {
     context.equipmentRows = buildServiceIntakeTableRows(context);
   } else if (documentTypeId === 'serviceCompletion') {
-    context.equipmentRows = buildServiceCompletionTableRows(context);
+    appendServiceCompletionDocumentBlocks(context, order, clientContext);
+  } else if (documentTypeId === 'serviceReport') {
+    appendServiceReportDocumentContext(context, order, clientContext);
   }
   return context;
 }
@@ -11464,7 +12072,13 @@ function prepareServiceDocumentPrintHtml(html, fileName = 'dokument.pdf') {
 }
 
 function applyDesignerTokens(value, context = {}) {
-  return compactTemplateMultilineText(applyTemplateVariables(String(value ?? ''), context));
+  let output = String(value ?? '');
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = compactTemplateMultilineText(applyTemplateVariables(output, context));
+    if (next === output) break;
+    output = next;
+  }
+  return output;
 }
 
 function getDesignerMarginPaddingPx(margins = DEFAULT_DESIGNER_MARGINS) {
@@ -11476,33 +12090,68 @@ function getDesignerMarginPaddingPx(margins = DEFAULT_DESIGNER_MARGINS) {
   };
 }
 
-function splitDesignerElementsForFlowLayout(elements = []) {
+function splitDesignerElementsForFlowLayout(elements = [], documentTypeId = '') {
   const visible = elements.filter((element) => element.visible !== false);
-  const tables = visible
-    .filter((element) => element.kind === 'table')
+  const isServiceCompletion = documentTypeId === 'serviceCompletion';
+  const isServiceReport = documentTypeId === 'serviceReport';
+  const tables = isServiceCompletion
+    ? []
+    : visible
+      .filter((element) => element.kind === 'table')
+      .sort((left, right) => left.y - right.y || left.x - right.x);
+  const completionFlowBlocks = visible
+    .filter((element) => element.summaryRole === 'serviceCompletionFlow')
     .sort((left, right) => left.y - right.y || left.x - right.x);
+  const legacySummaryBlocks = visible.filter((element) => element.summaryRole === 'serviceWorkDescription');
+  const flowBlocks = completionFlowBlocks.length ? completionFlowBlocks : legacySummaryBlocks;
+
+  if (isServiceCompletion || isServiceReport || (!tables.length && flowBlocks.length)) {
+    const flowIds = new Set(flowBlocks.map((element) => element.id));
+    const afterElements = visible.filter((element) => element.kind === 'signature' || element.libraryId === 'footer');
+    const afterIds = new Set(afterElements.map((element) => element.id));
+    const skipTableIds = isServiceCompletion
+      ? new Set(visible.filter((element) => element.kind === 'table').map((element) => element.id))
+      : isServiceReport
+        ? new Set(tables.map((element) => element.id))
+        : new Set();
+    const before = visible.filter((element) => !flowIds.has(element.id) && !afterIds.has(element.id) && !skipTableIds.has(element.id));
+    return {
+      before,
+      tables: isServiceReport ? tables : [],
+      after: afterElements,
+      anchorTable: null,
+      anchorBottom: 0,
+      summaryBlocks: flowBlocks
+    };
+  }
+
   if (!tables.length) {
-    return { before: visible, tables: [], after: [], anchorTable: null, anchorBottom: 0 };
+    return { before: visible, tables: [], after: [], anchorTable: null, anchorBottom: 0, summaryBlocks: [] };
   }
   const anchorTable = tables[0];
   const tableIds = new Set(tables.map((table) => table.id));
+  const summaryBlocks = visible.filter((element) => element.summaryRole === 'serviceWorkDescription' || element.summaryRole === 'serviceCompletionFlow');
+  const summaryIds = new Set(summaryBlocks.map((element) => element.id));
   const anchorBottom = anchorTable.y + anchorTable.height;
-  const before = visible.filter((element) => !tableIds.has(element.id) && (element.y + element.height <= anchorTable.y + 2));
-  const after = visible.filter((element) => !tableIds.has(element.id) && !(element.y + element.height <= anchorTable.y + 2));
-  return { before, tables, after, anchorTable, anchorBottom };
+  const before = visible.filter((element) => !tableIds.has(element.id) && !summaryIds.has(element.id) && (element.y + element.height <= anchorTable.y + 2));
+  const after = visible.filter((element) => !tableIds.has(element.id) && !summaryIds.has(element.id) && !(element.y + element.height <= anchorTable.y + 2));
+  return { before, tables, after, anchorTable, anchorBottom, summaryBlocks };
 }
 
-function buildDesignerEquipmentTableChunkMarkup(safeColumns, rows = []) {
+function buildDesignerEquipmentTableChunkMarkup(safeColumns, rows = [], { showEmptyMessage = true } = {}) {
   const header = safeColumns.map((column) => `<th style="padding:3px 5px;text-align:left;border-bottom:1px solid #c0c8d4;background:#1e3a5f;color:#fff;font-size:8px;font-weight:700;">${escapeHtml(column.label)}</th>`).join('');
   const body = rows.map((row) => `<tr class="designer-doc-table-row">${safeColumns.map((column) => `<td style="padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8.5px;color:#111;vertical-align:top;word-break:break-word;">${escapeHtml(formatDocumentTableCell(row[column.key]))}</td>`).join('')}</tr>`).join('');
-  const emptyRow = `<tr class="designer-doc-table-row"><td colspan="${safeColumns.length}" style="padding:6px 5px;font-size:8.5px;color:#64748b;">Brak pozycji sprzętu.</td></tr>`;
+  const emptyRow = showEmptyMessage
+    ? `<tr class="designer-doc-table-row"><td colspan="${safeColumns.length}" style="padding:6px 5px;font-size:8.5px;color:#64748b;">Brak pozycji sprzętu.</td></tr>`
+    : '';
   return `<table class="designer-doc-equipment-table" style="width:100%;border-collapse:collapse;table-layout:fixed;"><colgroup>${safeColumns.map((column) => `<col style="width:${column.width}px;">`).join('')}</colgroup><thead><tr>${header}</tr></thead><tbody>${body || emptyRow}</tbody></table>`;
 }
 
 function buildDesignerEquipmentTableMarkup(element, context = {}) {
   const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
   const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
-  return buildDesignerEquipmentTableChunkMarkup(safeColumns, sourceRows);
+  const showEmptyMessage = context.documentTypeId !== 'serviceReport';
+  return buildDesignerEquipmentTableChunkMarkup(safeColumns, sourceRows, { showEmptyMessage });
 }
 
 const DESIGNER_PRINT_TABLE_HEADER_HEIGHT = 24;
@@ -11513,10 +12162,31 @@ function estimateDesignerFlowBlockHeight(element, context = {}, company = getCom
   if (element.kind === 'line') return Math.max(1, element.height);
   if (element.kind === 'signature') return Math.max(70, element.height);
   if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') return 118;
-  if (element.libraryId === 'footer') return Math.max(24, element.height);
+  if (element.libraryId === 'footer') {
+    const footerText = resolveDocumentFooterForRender(context, element.text);
+    return footerText ? Math.max(20, element.height) : 0;
+  }
   const rawText = String(element.text ?? '').trim();
   if (rawText === '{{rentalCostSummary}}' && context.rentalCostSummaryHtml) return 118;
-  const text = applyDesignerTokens(element.text, context);
+  const text = applyDesignerTokens(element.text, context).trim();
+  if (!text) return 0;
+  if (element.summaryRole === 'serviceCompletionFlow') {
+    const kind = getServiceCompletionSectionKind(element);
+    if (kind === 'confirmation') return 34;
+    const body = text.split('\n').slice(1).join('\n');
+    const isContent = kind === 'content';
+    const titleHeight = 26;
+    const fontSize = isContent ? 10.5 : 10;
+    const lineHeight = fontSize * 1.48;
+    const innerWidth = contentWidth - (isContent ? 24 : 0);
+    const charsPerLine = Math.max(24, Math.floor(innerWidth / 5.2));
+    if (kind === 'info') {
+      const rowCount = body.split('\n').filter((line) => String(line).trim()).length;
+      return Math.max(Number(element.height) || 0, titleHeight + rowCount * 16 + 8);
+    }
+    const bodyLines = body.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(String(line).length / charsPerLine)), 0);
+    return Math.max(Number(element.height) || 0, titleHeight + Math.ceil(bodyLines * lineHeight) + 28);
+  }
   const fontSize = Number(element.fontSize) || 10;
   const lineHeight = fontSize * 1.35;
   const charsPerLine = Math.max(24, Math.floor(contentWidth / Math.max(4.5, fontSize * 0.52)));
@@ -11556,14 +12226,14 @@ function paginateDesignerTableRows(rows, firstPageCapacity, nextPageCapacity) {
   return chunks.length ? chunks : [[]];
 }
 
-function renderDesignerTableChunkHtml(safeColumns, rows, marginLeft, width) {
-  return `<div class="designer-doc-table-chunk" style="margin-left:${marginLeft}px;width:${width}px;max-width:100%;"><div class="designer-doc-table-flow-inner">${buildDesignerEquipmentTableChunkMarkup(safeColumns, rows)}</div></div>`;
+function renderDesignerTableChunkHtml(safeColumns, rows, marginLeft, width, { showEmptyMessage = true } = {}) {
+  return `<div class="designer-doc-table-chunk" style="margin-left:${marginLeft}px;width:${width}px;max-width:100%;"><div class="designer-doc-table-flow-inner">${buildDesignerEquipmentTableChunkMarkup(safeColumns, rows, { showEmptyMessage })}</div></div>`;
 }
 
 function renderDocumentDesignerElementAbsoluteHtml(element, context = {}, company = getCompanyProfile(), origin = { x: 0, y: 0 }) {
   if (element.visible === false) return '';
   const commonStyle = `position:absolute;left:${element.x - origin.x}px;top:${element.y - origin.y}px;width:${element.width}px;height:${element.height}px;overflow:visible;`;
-  const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;`;
+  const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;`;
   if (element.kind === 'logo') {
     const logoSource = String(element.logoDataUrl ?? '').trim() || (company?.showLogoOnDocuments !== false ? company?.logoDataUrl : '');
     const logo = logoSource
@@ -11580,6 +12250,7 @@ function renderDocumentDesignerElementAbsoluteHtml(element, context = {}, compan
     return `<div style="${commonStyle}${textStyle}display:flex;flex-direction:column;justify-content:flex-end;"><div style="font-size:${Math.max(9, element.fontSize)}px;font-weight:${element.fontWeight};margin-bottom:30px;">${escapeHtml(label)}</div><div style="border-top:1px dotted #64748b;padding-top:4px;font-size:9px;color:#64748b;text-align:center;">miejscowość, data i podpis</div></div>`;
   }
   if (element.kind === 'table') {
+    if (['serviceReport', 'serviceCompletion'].includes(String(context.documentTypeId ?? ''))) return '';
     const minHeight = Math.max(40, element.height);
     return `<div style="${commonStyle}min-height:${minHeight}px;height:auto;border:1px solid #c0c8d4;background:#fff;overflow:visible;">${buildDesignerEquipmentTableMarkup(element, context)}</div>`;
   }
@@ -11601,22 +12272,60 @@ function renderDocumentDesignerElementAbsoluteHtml(element, context = {}, compan
   if (rawText === '{{rentalCostSummary}}' && context.rentalCostSummaryHtml) {
     return `<div style="${commonStyle}height:auto;overflow:visible;">${context.rentalCostSummaryHtml}</div>`;
   }
+  if (element.libraryId === 'footer') {
+    const footerText = resolveDocumentFooterForRender(context, element.text);
+    if (!footerText) return '';
+    return `<div style="${commonStyle}${textStyle}height:auto;overflow:visible;">${escapeHtml(footerText).replace(/\n/g, '<br/>')}</div>`;
+  }
   const text = applyDesignerTokens(element.text, context);
   return `<div style="${commonStyle}${textStyle}height:auto;overflow:visible;">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
+}
+
+function getServiceCompletionSectionGap(sectionKind, isFirst = false) {
+  if (isFirst) return 4;
+  if (sectionKind === 'confirmation') return 20;
+  if (sectionKind === 'content') return 16;
+  return 14;
+}
+
+function renderServiceCompletionSignatureFlowHtml(element, context, { marginTop = 0, marginLeft = 0, contentWidth = 240 } = {}) {
+  const label = applyDesignerTokens(element.text || 'Podpis', context);
+  return `<div class="designer-doc-flow-block designer-doc-sc-signature" style="margin-top:${marginTop}px;margin-left:${marginLeft}px;flex:1 1 0;min-width:0;max-width:${contentWidth}px;"><span class="designer-doc-sc-sig-label">${escapeHtml(label)}</span><div class="designer-doc-sc-sig-line">miejscowość, data i podpis</div></div>`;
+}
+
+function renderServiceCompletionFlowBlockHtml(element, context, { marginTop = 0, marginLeft = 0, contentWidth = DOCUMENT_DESIGNER_PAGE.width } = {}) {
+  const raw = applyDesignerTokens(element.text, context).trim();
+  if (!raw) return '';
+  const wrapStyle = `margin-top:${marginTop}px;margin-left:${marginLeft}px;width:${contentWidth}px;max-width:100%;`;
+  const sectionKind = getServiceCompletionSectionKind(element);
+  if (sectionKind === 'confirmation') {
+    return `<div class="designer-doc-flow-block designer-doc-sc-confirmation" style="${wrapStyle}">${escapeHtml(raw)}</div>`;
+  }
+  const lines = raw.split('\n');
+  const title = lines[0] ?? '';
+  const body = lines.slice(1).join('\n').trim();
+  if (sectionKind === 'content') {
+    const bodyHtml = body
+      ? `<div class="designer-doc-sc-content-body">${escapeHtml(body).replace(/\n/g, '<br/>')}</div>`
+      : '';
+    return `<div class="designer-doc-flow-block designer-doc-sc-highlight" style="${wrapStyle}"><div class="designer-doc-sc-heading">${escapeHtml(title)}</div>${bodyHtml}</div>`;
+  }
+  const bodyHtml = body ? `<div class="designer-doc-sc-info-body">${renderServiceCompletionDetailRows(body)}</div>` : '';
+  return `<div class="designer-doc-flow-block designer-doc-sc-info" style="${wrapStyle}"><div class="designer-doc-sc-heading">${escapeHtml(title)}</div>${bodyHtml}</div>`;
 }
 
 function renderDocumentDesignerElementFlowHtml(element, context = {}, company = getCompanyProfile(), { marginTop = 0, marginLeft = 0, contentWidth = DOCUMENT_DESIGNER_PAGE.width } = {}) {
   if (element.visible === false) return '';
   const width = Math.min(element.width, contentWidth);
   const wrapStyle = `margin-top:${marginTop}px;margin-left:${marginLeft}px;width:${width}px;max-width:100%;`;
-  const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;`;
+  const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;`;
   if (element.kind === 'line') {
     const thickness = Math.max(1, element.height);
     return `<div class="designer-doc-flow-block" style="${wrapStyle}"><div style="width:100%;height:${thickness}px;background:${escapeHtml(element.color)};"></div></div>`;
   }
   if (element.kind === 'signature') {
     const label = applyDesignerTokens(element.text || 'Podpis', context);
-    return `<div class="designer-doc-flow-block designer-doc-flow-signature" style="${wrapStyle}${textStyle}"><div style="font-size:${Math.max(9, element.fontSize)}px;font-weight:${element.fontWeight};margin-bottom:30px;">${escapeHtml(label)}</div><div style="border-top:1px dotted #64748b;padding-top:4px;font-size:9px;color:#64748b;text-align:center;">miejscowość, data i podpis</div></div>`;
+    return `<div class="designer-doc-flow-block designer-doc-flow-signature" style="${wrapStyle}${textStyle}"><div style="font-size:${Math.max(10, element.fontSize)}px;font-weight:800;margin-bottom:40px;color:#0f1e35;">${escapeHtml(label)}</div><div style="border-top:1.2px dotted #8090a8;padding-top:5px;font-size:8.5px;color:#666;text-align:center;">miejscowość, data i podpis</div></div>`;
   }
   if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') {
     const summaryHtml = context.rentalCostSummaryHtml
@@ -11636,23 +12345,41 @@ function renderDocumentDesignerElementFlowHtml(element, context = {}, company = 
   if (rawText === '{{rentalCostSummary}}' && context.rentalCostSummaryHtml) {
     return `<div class="designer-doc-flow-block" style="${wrapStyle}">${context.rentalCostSummaryHtml}</div>`;
   }
+  if (element.libraryId === 'footer') {
+    const footerText = resolveDocumentFooterForRender(context, element.text);
+    if (!footerText) return '';
+    return `<div class="designer-doc-flow-block designer-doc-sc-footer" style="${wrapStyle}${textStyle}">${escapeHtml(footerText).replace(/\n/g, '<br/>')}</div>`;
+  }
   const text = applyDesignerTokens(element.text, context);
   return `<div class="designer-doc-flow-block" style="${wrapStyle}${textStyle}">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
 }
 
 function renderDocumentDesignerPaginatedHtml(template, context = {}, company = getCompanyProfile()) {
   const normalized = normalizeDocumentDesignerTemplate(template, template?.documentTypeId);
-  const margins = normalized.margins ?? DEFAULT_DESIGNER_MARGINS;
+  const documentTypeId = String(context.documentTypeId ?? normalized.documentTypeId ?? '');
+  const layoutTemplate = documentTypeId === 'serviceCompletion'
+    ? resolveServiceCompletionDesignerTemplate(normalized)
+    : documentTypeId === 'serviceReport'
+      ? resolveServiceReportDesignerTemplate(normalized)
+      : normalized;
+  const margins = layoutTemplate.margins ?? DEFAULT_DESIGNER_MARGINS;
   const padding = getDesignerMarginPaddingPx(margins);
   const origin = { x: padding.left, y: padding.top };
   const contentWidth = DOCUMENT_DESIGNER_PAGE.width - padding.left - padding.right;
   const pageBottom = DOCUMENT_DESIGNER_PAGE.height - padding.bottom;
-  const { before, tables, after, anchorTable } = splitDesignerElementsForFlowLayout(normalized.elements);
-  const headerHeight = anchorTable ? Math.max(anchorTable.y - padding.top, 0) : 0;
+  const { before, tables, after, anchorTable, summaryBlocks = [] } = splitDesignerElementsForFlowLayout(layoutTemplate.elements, documentTypeId);
+  const beforeBottom = before.length
+    ? Math.max(...before.map((element) => Number(element.y) + Number(element.height)))
+    : padding.top;
+  const headerHeight = anchorTable
+    ? Math.max(anchorTable.y - padding.top, 0)
+    : Math.max(beforeBottom - padding.top, 0);
   const headerHtml = before.map((element) => renderDocumentDesignerElementAbsoluteHtml(element, context, company, origin)).join('');
-  const firstPageBodyTop = anchorTable ? anchorTable.y : padding.top;
+  const firstPageBodyTop = anchorTable ? anchorTable.y : beforeBottom + 4;
   const firstPageAvailable = DOCUMENT_DESIGNER_PAGE.height - padding.bottom - firstPageBodyTop;
   const nextPageAvailable = DOCUMENT_DESIGNER_PAGE.height - padding.top - padding.bottom;
+  const isServiceCompletionDoc = context.documentTypeId === 'serviceCompletion';
+  const isServiceReportDoc = context.documentTypeId === 'serviceReport';
 
   const pageDrafts = [];
   let currentParts = [];
@@ -11674,22 +12401,70 @@ function renderDocumentDesignerPaginatedHtml(template, context = {}, company = g
     }
   };
 
-  tables.forEach((element) => {
-    const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
-    const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
-    const marginLeft = Math.max(0, element.x - padding.left);
-    const width = Math.min(element.width, contentWidth);
-    const rowChunks = paginateDesignerTableRows(sourceRows, firstPageAvailable, nextPageAvailable);
-    rowChunks.forEach((chunk, chunkIndex) => {
-      const chunkHeight = DESIGNER_PRINT_TABLE_HEADER_HEIGHT + (chunk.length || 1) * DESIGNER_PRINT_TABLE_ROW_HEIGHT;
-      if (chunkIndex > 0) pushPage();
-      else ensureSpace(chunkHeight);
-      currentParts.push(renderDesignerTableChunkHtml(safeColumns, chunk, marginLeft, width));
-      cursorY = chunkIndex === 0 && pageDrafts.length === 0 && pageHasHeader
-        ? firstPageBodyTop + chunkHeight + DESIGNER_PRINT_BLOCK_GAP
-        : padding.top + chunkHeight + DESIGNER_PRINT_BLOCK_GAP;
+  const completionSummaryElements = summaryBlocks;
+
+  const renderSummaryFlowBlocks = () => {
+    let heightUsed = 0;
+    let serviceSectionIndex = 0;
+    completionSummaryElements.forEach((element) => {
+      const raw = applyDesignerTokens(element.text, context).trim();
+      if (!raw) return;
+      const sectionKind = getServiceCompletionSectionKind(element);
+      const marginTop = element.summaryRole === 'serviceCompletionFlow'
+        ? getServiceCompletionSectionGap(sectionKind, serviceSectionIndex === 0)
+        : 0;
+      const blockHeight = estimateDesignerFlowBlockHeight(element, context, company, contentWidth);
+      const marginLeft = Math.max(0, Number(element.x ?? padding.left) - padding.left);
+      const width = Math.min(Number(element.width) || contentWidth, contentWidth);
+      ensureSpace(marginTop + blockHeight);
+      currentParts.push(
+        element.summaryRole === 'serviceCompletionFlow'
+          ? renderServiceCompletionFlowBlockHtml(element, context, { marginTop, marginLeft, contentWidth: width })
+          : renderDocumentDesignerElementFlowHtml(element, context, company, { marginTop, marginLeft, contentWidth: width })
+      );
+      heightUsed += marginTop + blockHeight + DESIGNER_PRINT_BLOCK_GAP;
+      cursorY += marginTop + blockHeight + DESIGNER_PRINT_BLOCK_GAP;
+      if (element.summaryRole === 'serviceCompletionFlow') serviceSectionIndex += 1;
     });
-  });
+    return heightUsed;
+  };
+
+  const renderTableFlowBlocks = (availableFirstPage) => {
+    const showEmptyMessage = context.documentTypeId !== 'serviceReport';
+    tables.forEach((element) => {
+      const sourceRows = resolveDocumentTableRows(context, context.documentTypeId);
+      const safeColumns = resolveDesignerEquipmentTableColumns(element, context.documentTypeId, context);
+      const marginLeft = Math.max(0, element.x - padding.left);
+      const width = Math.min(element.width, contentWidth);
+      const rowChunks = paginateDesignerTableRows(sourceRows, availableFirstPage, nextPageAvailable);
+      rowChunks.forEach((chunk, chunkIndex) => {
+        const chunkHeight = DESIGNER_PRINT_TABLE_HEADER_HEIGHT + (chunk.length || (showEmptyMessage ? 1 : 0)) * DESIGNER_PRINT_TABLE_ROW_HEIGHT;
+        const tableMarginTop = chunkIndex === 0 && isServiceReportDoc
+          ? Math.max(0, Number(element.y) - beforeBottom)
+          : 0;
+        if (chunkIndex > 0) pushPage();
+        else ensureSpace(tableMarginTop + chunkHeight);
+        const tableHtml = renderDesignerTableChunkHtml(safeColumns, chunk, marginLeft, width, { showEmptyMessage });
+        currentParts.push(tableMarginTop > 0
+          ? `<div class="designer-doc-table-chunk-wrap" style="margin-top:${tableMarginTop}px">${tableHtml}</div>`
+          : tableHtml);
+        cursorY = chunkIndex === 0 && pageDrafts.length === 0 && pageHasHeader
+          ? firstPageBodyTop + tableMarginTop + chunkHeight + DESIGNER_PRINT_BLOCK_GAP
+          : padding.top + tableMarginTop + chunkHeight + DESIGNER_PRINT_BLOCK_GAP;
+      });
+    });
+  };
+
+  if (isServiceReportDoc) {
+    renderTableFlowBlocks(firstPageAvailable);
+    renderSummaryFlowBlocks();
+  } else {
+    const summaryHeightUsed = renderSummaryFlowBlocks();
+    const adjustedFirstPageAvailable = completionSummaryElements.length
+      ? Math.max(DESIGNER_PRINT_TABLE_HEADER_HEIGHT + DESIGNER_PRINT_TABLE_ROW_HEIGHT, firstPageAvailable - summaryHeightUsed)
+      : firstPageAvailable;
+    renderTableFlowBlocks(adjustedFirstPageAvailable);
+  }
 
   const sortedAfter = sortDesignerAfterElements(after);
   const renderedSignatureY = new Set();
@@ -11699,29 +12474,36 @@ function renderDocumentDesignerPaginatedHtml(template, context = {}, company = g
       const pair = sortedAfter.filter((item) => item.kind === 'signature' && item.y === element.y);
       renderedSignatureY.add(element.y);
       const blockHeight = Math.max(...pair.map((item) => estimateDesignerFlowBlockHeight(item, context, company, contentWidth)));
-      const targetY = Math.max(padding.top, Number(element.y) || padding.top);
-      let marginTop = Math.max(0, targetY - cursorY);
+      let marginTop = isServiceCompletionDoc ? 24 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
       ensureSpace(marginTop + blockHeight);
       if (cursorY + marginTop + blockHeight > pageBottom) {
         pushPage();
-        marginTop = Math.max(0, targetY - cursorY);
+        marginTop = isServiceCompletionDoc ? 24 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
         ensureSpace(marginTop + blockHeight);
       }
-      currentParts.push(`<div class="designer-doc-flow-signatures-row">${pair.map((item) => renderDocumentDesignerElementFlowHtml(item, context, company, {
-        marginTop,
-        marginLeft: Math.max(0, item.x - padding.left),
-        contentWidth: Math.min(item.width, contentWidth)
-      })).join('')}</div>`);
+      currentParts.push(`<div class="designer-doc-flow-signatures-row${isServiceCompletionDoc ? ' designer-doc-sc-signatures' : ''}"${isServiceCompletionDoc ? ` style="margin-top:${marginTop}px;"` : ''}>${pair.map((item) => (
+        isServiceCompletionDoc
+          ? renderServiceCompletionSignatureFlowHtml(item, context, {
+            marginTop: 0,
+            marginLeft: Math.max(0, item.x - padding.left),
+            contentWidth: Math.min(item.width, contentWidth)
+          })
+          : renderDocumentDesignerElementFlowHtml(item, context, company, {
+            marginTop,
+            marginLeft: Math.max(0, item.x - padding.left),
+            contentWidth: Math.min(item.width, contentWidth)
+          })
+      )).join('')}</div>`);
       cursorY += marginTop + blockHeight + DESIGNER_PRINT_BLOCK_GAP;
       return;
     }
     const blockHeight = estimateDesignerFlowBlockHeight(element, context, company, contentWidth);
-    const targetY = Math.max(padding.top, Number(element.y) || padding.top);
-    let marginTop = Math.max(0, targetY - cursorY);
+    if (!blockHeight) return;
+    let marginTop = isServiceCompletionDoc ? 12 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
     ensureSpace(marginTop + blockHeight);
     if (cursorY + marginTop + blockHeight > pageBottom) {
       pushPage();
-      marginTop = Math.max(0, targetY - cursorY);
+      marginTop = isServiceCompletionDoc ? 12 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
       ensureSpace(marginTop + blockHeight);
     }
     currentParts.push(renderDocumentDesignerElementFlowHtml(element, context, company, {
@@ -11753,17 +12535,25 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
 }
 
 function createDesignerDocumentLayoutCss() {
-  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body.designer-doc-body{display:flex;flex-direction:column;align-items:center;gap:16px;min-height:100vh;padding:16px 0;background:#e2e8f0}.designer-doc-print-page{position:relative;width:210mm;height:297mm;background:#fff;box-shadow:0 0 0 1px #cbd5e1;box-sizing:border-box;overflow:hidden;page-break-after:always;break-after:page}.designer-doc-print-page:last-child{page-break-after:auto;break-after:auto}.designer-doc-header-region{position:relative;width:100%}.designer-doc-page-body{width:100%}.designer-doc-table-chunk{margin-bottom:6px}.designer-doc-table-flow-inner{border:1px solid #c0c8d4;background:#fff;overflow:visible}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block,.designer-doc-flow-signature,.designer-doc-flow-signatures-row{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-flow-signatures-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}.designer-doc-flow-signatures-row .designer-doc-flow-block,.designer-doc-flow-signatures-row .designer-doc-flow-signature{flex:1 1 240px;margin-left:0!important;width:auto!important;max-width:100%}.designer-doc-page-number{position:absolute;left:20mm;right:20mm;bottom:6mm;display:flex;justify-content:flex-end;font-size:8px;color:#64748b}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;min-height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:visible;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed;width:100%}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:auto!important;height:auto!important;display:block;margin:0;padding:0}.designer-doc-body{padding:0!important;gap:0!important}.designer-doc-print-page{width:210mm;height:297mm;box-shadow:none!important;margin:0!important;overflow:hidden}.designer-doc-toolbar{display:none!important}}`;
+  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body.designer-doc-body{display:flex;flex-direction:column;align-items:center;gap:16px;min-height:100vh;padding:16px 0;background:#e2e8f0}.designer-doc-print-page{position:relative;width:210mm;height:297mm;background:#fff;box-shadow:0 0 0 1px #cbd5e1;box-sizing:border-box;overflow:hidden;page-break-after:always;break-after:page}.designer-doc-print-page:last-child{page-break-after:auto;break-after:auto}.designer-doc-header-region{position:relative;width:100%}.designer-doc-page-body{width:100%}.designer-doc-table-chunk{margin-bottom:6px}.designer-doc-table-flow-inner{border:1px solid #c0c8d4;background:#fff;overflow:visible}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block,.designer-doc-flow-signature,.designer-doc-flow-signatures-row{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-sc-info,.designer-doc-sc-highlight,.designer-doc-sc-confirmation{break-inside:auto;page-break-inside:auto}.designer-doc-sc-heading{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1e3a5f;margin:0 0 7px;padding-bottom:4px;border-bottom:1px solid #c8d4e0}.designer-doc-sc-info-body{display:grid;gap:4px}.designer-doc-sc-row{display:flex;flex-wrap:wrap;gap:4px;font-size:10px;line-height:1.45}.designer-doc-sc-label{font-weight:700;color:#334155;flex:0 0 auto}.designer-doc-sc-value{color:#0f1e35;font-weight:600;word-break:break-word}.designer-doc-sc-highlight{border:1px solid #d8e0eb;border-radius:8px;background:#f8fafc;padding:10px 12px}.designer-doc-sc-content-body{font-size:10.5px;line-height:1.48;color:#0f1e35;white-space:pre-wrap;word-break:break-word;font-weight:500}.designer-doc-sc-confirmation{font-size:10.5px;line-height:1.45;color:#334155;font-style:italic;padding:2px 0}.designer-doc-flow-signatures-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}.designer-doc-sc-signatures{display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%}.designer-doc-sc-signatures .designer-doc-sc-signature{margin-left:0!important;max-width:none!important;width:auto!important}.designer-doc-sc-sig-label{font-size:10.5px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.designer-doc-sc-sig-line{border-top:1.2px dotted #8090a8;padding-top:5px;font-size:8.5px;color:#666;text-align:center}.designer-doc-sc-footer{margin-top:10px;padding-top:6px;border-top:1px solid #dde3ec;color:#888!important;text-align:center;line-height:1.35}.designer-doc-flow-signatures-row .designer-doc-flow-block,.designer-doc-flow-signatures-row .designer-doc-flow-signature{flex:1 1 240px;margin-left:0!important;width:auto!important;max-width:100%}.designer-doc-page-number{position:absolute;left:20mm;right:20mm;bottom:6mm;display:flex;justify-content:flex-end;font-size:8px;color:#64748b}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;min-height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:visible;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed;width:100%}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:auto!important;height:auto!important;display:block;margin:0;padding:0}.designer-doc-body{padding:0!important;gap:0!important}.designer-doc-print-page{width:210mm;height:297mm;box-shadow:none!important;margin:0!important;overflow:hidden}.designer-doc-toolbar{display:none!important}}`;
 }
 
 function renderDesignerDocumentHtml(template, context = {}, { preview = true, company = getCompanyProfile(), title = '' } = {}) {
   const normalized = normalizeDocumentDesignerTemplate(template, template?.documentTypeId);
-  const renderContext = { ...context, documentTypeId: normalized.documentTypeId };
-  const hasFlowTable = normalized.elements.some((element) => element.visible !== false && element.kind === 'table');
-  const bodyHtml = hasFlowTable
-    ? renderDocumentDesignerPaginatedHtml(normalized, renderContext, company)
-    : `<div class="designer-doc-page">${normalized.elements.map((element) => renderDocumentDesignerElementHtml(element, renderContext, company)).join('')}</div>`;
-  const docTitle = escapeHtml(title || normalized.name || 'Dokument');
+  const layoutTemplate = normalized.documentTypeId === 'serviceCompletion'
+    ? resolveServiceCompletionDesignerTemplate(normalized)
+    : normalized.documentTypeId === 'serviceReport'
+      ? resolveServiceReportDesignerTemplate(normalized)
+      : normalized;
+  const renderContext = { ...context, documentTypeId: layoutTemplate.documentTypeId };
+  const hasFlowLayout = ['serviceCompletion', 'serviceReport'].includes(layoutTemplate.documentTypeId)
+    || layoutTemplate.elements.some((element) => element.visible !== false && (
+      element.kind === 'table' || element.summaryRole === 'serviceCompletionFlow' || element.summaryRole === 'serviceWorkDescription'
+    ));
+  const bodyHtml = hasFlowLayout
+    ? renderDocumentDesignerPaginatedHtml(layoutTemplate, renderContext, company)
+    : `<div class="designer-doc-page">${layoutTemplate.elements.map((element) => renderDocumentDesignerElementHtml(element, renderContext, company)).join('')}</div>`;
+  const docTitle = escapeHtml(title || layoutTemplate.name || 'Dokument');
   const toolbar = preview ? '' : '<div class="designer-doc-toolbar"><button type="button" onclick="window.print()">Drukuj / zapisz PDF</button></div>';
   return `<!doctype html><html lang="pl"><head><meta charset="utf-8"/><title>${docTitle}</title><style>${createDesignerDocumentLayoutCss()}</style></head><body class="designer-doc-body">${toolbar}${bodyHtml}</body></html>`;
 }
@@ -13123,6 +13913,19 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
     });
     if (activeTypeId === 'serviceIntake') {
       base.equipmentRows = buildServiceIntakeTableRows(base);
+    }
+    if (activeTypeId === 'serviceReport') {
+      base.deviceName = base.deviceName || 'Aparat';
+      base.deviceBrand = base.deviceBrand || 'Sony';
+      base.deviceModel = base.deviceModel || 'FX3';
+      base.deviceSerialNumber = base.deviceSerialNumber || '';
+      base.acceptedDate = base.acceptedDate || formatAgreementDate('2026-07-01');
+      base.completedDate = base.completedDate || formatAgreementDate('2026-07-01');
+      base.serviceStatus = base.serviceStatus || 'Wydane';
+      const workText = formatServiceWorkDescriptionValue(base.serviceWorkPerformed || base.repairDescription || 'Wymiana płyty głównej.\nNie działa.');
+      base.serviceWorkPerformed = workText;
+      base.serviceReportWorkBlock = `Opis czynności serwisowych\n${workText}`;
+      base.equipmentRows = buildServiceReportEquipmentTableRows(base);
     }
     return base;
   }, [previewContext, activeTypeId]);

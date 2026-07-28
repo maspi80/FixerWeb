@@ -8093,7 +8093,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, onSelectTask = null, onOpenTask = null, refreshKey = 0, style = null }) {
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, refreshKey = 0, style = null }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -8511,6 +8511,9 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       sectionItemClickTimeoutRef.current = null;
     }
     onSelectTask?.(task);
+    if (detailsPanelActive && String(selectedTaskKey ?? '') !== getTaskKey(task)) {
+      onOpenTask?.(task);
+    }
   };
 
   const handleSectionItemMainDoubleClick = (event, task) => {
@@ -9581,6 +9584,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         style={{ flexGrow: leftCollapsed ? 1 : centerColumnFlex }}
         onResizeStart={!leftCollapsed ? startProjectColumnsResize : null}
         selectedTaskKey={highlightedProjectTask ? String(highlightedProjectTask.id ?? highlightedProjectTask.localId) : null}
+        detailsPanelActive={detailsOpen && !detailsCollapsed}
         onSelectTask={highlightProjectTask}
         onOpenTask={openProjectTaskDetails}
         onRefreshProject={loadData}

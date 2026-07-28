@@ -10697,6 +10697,25 @@ body.rental-items-section-resizing *{
   gap:6px;
   flex:0 0 auto;
 }
+.project-board-actions{
+  gap:6px;
+  flex-wrap:nowrap;
+}
+.project-board-actions .project-board-action-button{
+  min-width:auto;
+  min-height:32px;
+  height:32px;
+  padding:0 10px;
+  border-radius:9px;
+  gap:5px;
+  font-size:12px;
+  line-height:1;
+}
+.project-board-actions .project-board-action-button svg{
+  width:14px;
+  height:14px;
+  flex:0 0 auto;
+}
 .project-detail-sections{
   flex:0 0 auto;
   display:grid;
@@ -10998,8 +11017,40 @@ body.rental-items-section-resizing *{
   gap:2px;
   padding:5px;
 }
+.project-detail-task-list.is-drag-target{
+  cursor:grabbing;
+}
 .project-detail-task-item{
+  position:relative;
   border-radius:10px;
+  cursor:grab;
+}
+.project-detail-task-item:active{
+  cursor:grabbing;
+}
+.project-detail-task-item.is-dragging{
+  opacity:.62;
+  background:rgba(96,165,250,.14);
+  box-shadow:inset 0 0 0 1px rgba(96,165,250,.34);
+}
+.project-detail-task-item.is-drop-before::before,
+.project-detail-task-item.is-drop-after::after{
+  content:"";
+  position:absolute;
+  left:6px;
+  right:6px;
+  height:2px;
+  z-index:3;
+  pointer-events:none;
+  border-radius:999px;
+  background:linear-gradient(90deg, rgba(96,165,250,.18), rgba(96,165,250,.72), rgba(96,165,250,.18));
+  box-shadow:0 0 0 1px rgba(96,165,250,.16);
+}
+.project-detail-task-item.is-drop-before::before{
+  top:-2px;
+}
+.project-detail-task-item.is-drop-after::after{
+  bottom:-2px;
 }
 .project-detail-task-item.is-selected{
   background:rgba(96,165,250,.12);
@@ -11017,7 +11068,7 @@ body.rental-items-section-resizing *{
   align-items:center;
   padding:5px 6px;
   border-radius:9px;
-  cursor:context-menu;
+  cursor:inherit;
 }
 .project-task-done-toggle{
   width:20px;

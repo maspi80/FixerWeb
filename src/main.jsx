@@ -99,6 +99,7 @@ import {
   PROJECT_TASK_COMMENT_TYPES, WORK_STATUSES, WORK_DONE_STATUS, WORK_TERMINAL_STATUSES,
   displayWorkStatus, getDefaultWorkPriority, isCompletedStatus, normalizeWorkPriority, normalizeWorkStatus,
   normalizeAccentColor,
+  reorderProjectTasksInSection,
   updateProject, updateProjectTask
 } from './services/projectsService';
 import {
@@ -8112,7 +8113,10 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const [sectionMenu, setSectionMenu] = useState(null);
   const [sectionRenameTarget, setSectionRenameTarget] = useState(null);
   const [taskContextMenu, setTaskContextMenu] = useState(null);
+  const [taskDragState, setTaskDragState] = useState(null);
   const sectionItemClickTimeoutRef = useRef(null);
+  const taskDragRef = useRef(null);
+  const suppressTaskClickRef = useRef(false);
 
   useEffect(() => () => {
     if (sectionItemClickTimeoutRef.current) window.clearTimeout(sectionItemClickTimeoutRef.current);
@@ -8179,9 +8183,18 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     await loadPanelData();
   };
 
+  const comparePanelTasks = (a, b) => {
+    const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : 100;
+    const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : 100;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
+  };
+
   const displayTasks = tasks.filter((task) => !task.archived || isCompletedStatus(task.status));
-  const tasksBySection = (sectionId) => displayTasks.filter((task) => String(task.section_id ?? '') === String(sectionId ?? ''));
-  const unsectionedTasks = displayTasks.filter((task) => !task.section_id);
+  const tasksBySection = (sectionId) => displayTasks
+    .filter((task) => String(task.section_id ?? '') === String(sectionId ?? ''))
+    .sort(comparePanelTasks);
+  const unsectionedTasks = displayTasks.filter((task) => !task.section_id).sort(comparePanelTasks);
 
   const addSection = async () => {
     const sectionName = newSectionName.trim();
@@ -8359,7 +8372,140 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     });
   };
 
+  const getTaskKey = (task) => String(task?.id ?? task?.localId ?? '');
+  const getSectionKey = (sectionId) => String(sectionId ?? '');
+
+  const getTaskDropIndex = (event, sectionId) => {
+    const item = event.currentTarget;
+    const sectionTasks = tasksBySection(sectionId);
+    const sourceIndex = sectionTasks.findIndex((task) => getTaskKey(task) === taskDragRef.current?.taskKey);
+    const targetTaskId = item.dataset.taskKey;
+    const targetIndex = sectionTasks.findIndex((task) => getTaskKey(task) === targetTaskId);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return null;
+    const rect = item.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    if (sourceIndex < targetIndex) {
+      return event.clientY > midpoint ? targetIndex + 1 : targetIndex;
+    }
+    return event.clientY < midpoint ? targetIndex : targetIndex + 1;
+  };
+
+  const startTaskDrag = (event, task, sectionId) => {
+    if (event.target.closest('.project-task-done-toggle, .project-detail-task-comments')) {
+      event.preventDefault();
+      return;
+    }
+    const taskKey = getTaskKey(task);
+    const sectionKey = getSectionKey(sectionId);
+    const sectionTasks = tasksBySection(sectionId);
+    const sourceIndex = sectionTasks.findIndex((item) => getTaskKey(item) === taskKey);
+    taskDragRef.current = { taskKey, sectionKey, sourceIndex, dropTargetIndex: sourceIndex };
+    suppressTaskClickRef.current = true;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', taskKey);
+    setTaskDragState({ taskKey, sectionKey, sourceIndex, dropTargetIndex: sourceIndex });
+    console.info('[Project task reorder] drag start', { draggedTaskId: taskKey, sourceIndex, sectionId: sectionId || null });
+  };
+
+  const updateTaskDragTarget = (event, sectionId, index) => {
+    const sectionKey = getSectionKey(sectionId);
+    const drag = taskDragRef.current;
+    if (!drag || drag.sectionKey !== sectionKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    if (index == null) return;
+    const sectionTasks = tasksBySection(sectionId);
+    const sourceIndex = Number.isFinite(drag.sourceIndex)
+      ? drag.sourceIndex
+      : sectionTasks.findIndex((task) => getTaskKey(task) === drag.taskKey);
+    const dropTargetIndex = Math.min(Math.max(Number.isFinite(index) ? index : sectionTasks.length, 0), sectionTasks.length);
+    if (!Number.isFinite(index) && event.target !== event.currentTarget) return;
+    const finalIndex = dropTargetIndex > sourceIndex ? dropTargetIndex - 1 : dropTargetIndex;
+    if (sourceIndex < 0 || finalIndex === sourceIndex || dropTargetIndex === drag.dropTargetIndex) return;
+    taskDragRef.current = { ...drag, sourceIndex, dropTargetIndex };
+    const targetTask = sectionTasks[Math.min(dropTargetIndex, sectionTasks.length - 1)] ?? null;
+    console.debug('[Project task reorder] drag over', {
+      draggedTaskId: drag.taskKey,
+      targetTaskId: targetTask ? getTaskKey(targetTask) : null,
+      sourceIndex,
+      targetIndex: dropTargetIndex,
+      sectionId: sectionId || null
+    });
+    setTaskDragState((current) => (
+      current && current.sectionKey === sectionKey && current.dropTargetIndex === dropTargetIndex
+        ? current
+        : { ...taskDragRef.current }
+    ));
+  };
+
+  const finishTaskDrop = async (event, sectionId, sectionTasks) => {
+    const sectionKey = getSectionKey(sectionId);
+    const drag = taskDragRef.current;
+    if (!drag || drag.sectionKey !== sectionKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const fromIndex = sectionTasks.findIndex((task) => getTaskKey(task) === drag.taskKey);
+    const rawTargetIndex = Number.isFinite(drag.dropTargetIndex) ? drag.dropTargetIndex : sectionTasks.length;
+    const targetIndex = rawTargetIndex > fromIndex ? rawTargetIndex - 1 : rawTargetIndex;
+    const targetTask = sectionTasks[Math.min(rawTargetIndex, sectionTasks.length - 1)] ?? null;
+    console.info('[Project task reorder] drop', {
+      draggedTaskId: drag.taskKey,
+      targetTaskId: targetTask ? getTaskKey(targetTask) : null,
+      sourceIndex: fromIndex,
+      targetIndex,
+      rawTargetIndex,
+      sectionId: sectionId || null
+    });
+    setTaskDragState(null);
+    taskDragRef.current = null;
+    window.setTimeout(() => { suppressTaskClickRef.current = false; }, 0);
+    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return;
+    const previousTasks = tasks;
+    const nextSectionTasks = [...sectionTasks];
+    const [movedTask] = nextSectionTasks.splice(fromIndex, 1);
+    nextSectionTasks.splice(Math.min(targetIndex, nextSectionTasks.length), 0, movedTask);
+    const nextOrderMap = new Map(nextSectionTasks.map((task, index) => [getTaskKey(task), (index + 1) * 10]));
+    console.info('[Project task reorder] next order', {
+      sectionId: sectionId || null,
+      order: nextSectionTasks.map((task, index) => ({
+        taskId: getTaskKey(task),
+        title: task.title,
+        sort_order: (index + 1) * 10
+      }))
+    });
+    setTasks((current) => current.map((task) => {
+      const taskKey = getTaskKey(task);
+      return String(task.project_id) === String(projectId)
+        && getSectionKey(task.section_id) === sectionKey
+        && nextOrderMap.has(taskKey)
+          ? { ...task, sort_order: nextOrderMap.get(taskKey) }
+          : task;
+    }));
+    const result = await reorderProjectTasksInSection(projectId, sectionId || null, nextSectionTasks);
+    console.info('[Project task reorder] save result', {
+      sectionId: sectionId || null,
+      error: result.error ?? null,
+      local: result.local ?? false
+    });
+    if (result.error) {
+      console.error('[Project task reorder] Supabase error', result.error);
+      setTasks(previousTasks);
+      setNotice(humanizeError(result.error, 'Nie udało się zapisać kolejności zadań'));
+      return;
+    }
+    setNotice('');
+    await loadPanelData();
+  };
+
+  const endTaskDrag = () => {
+    setTaskDragState(null);
+    taskDragRef.current = null;
+    window.setTimeout(() => { suppressTaskClickRef.current = false; }, 0);
+  };
+
   const handleSectionItemMainClick = (task) => {
+    if (suppressTaskClickRef.current) return;
     if (sectionItemClickTimeoutRef.current) {
       window.clearTimeout(sectionItemClickTimeoutRef.current);
       sectionItemClickTimeoutRef.current = null;
@@ -8368,6 +8514,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const handleSectionItemMainDoubleClick = (event, task) => {
+    if (suppressTaskClickRef.current) return;
     event.preventDefault();
     event.stopPropagation();
     if (sectionItemClickTimeoutRef.current) {
@@ -8377,13 +8524,27 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     onOpenTask?.(task);
   };
 
-  const renderTask = (task) => {
+  const renderTask = (task, sectionId, index) => {
     const taskKey = String(task.id ?? task.localId);
+    const sectionKey = getSectionKey(sectionId);
     const comments = commentCounts[taskKey] ?? 0;
     const hasComments = comments > 0;
     const done = isCompletedStatus(task.status);
     const expanded = expandedTasks.has(taskKey);
-    return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''} ${String(selectedTaskKey ?? '') === taskKey ? 'is-selected' : ''}`} key={taskKey}>
+    const dragging = taskDragState?.taskKey === taskKey;
+    const dropTargetIndex = taskDragState?.sectionKey === sectionKey ? taskDragState.dropTargetIndex : null;
+    const dropBefore = dropTargetIndex === index;
+    const dropAfter = dropTargetIndex === index + 1;
+    return <div
+      className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''} ${String(selectedTaskKey ?? '') === taskKey ? 'is-selected' : ''} ${dragging ? 'is-dragging' : ''} ${dropBefore ? 'is-drop-before' : ''} ${dropAfter ? 'is-drop-after' : ''}`}
+      key={taskKey}
+      draggable
+      onDragStart={(event) => startTaskDrag(event, task, sectionId)}
+      onDragOver={(event) => updateTaskDragTarget(event, sectionId, getTaskDropIndex(event, sectionId))}
+      onDragEnd={endTaskDrag}
+      data-task-key={taskKey}
+      data-section-key={sectionKey}
+    >
       <div
         className="project-detail-task-row"
         onContextMenu={(event) => openTaskContextMenu(event, task)}
@@ -8409,6 +8570,22 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     </div>;
   };
 
+  const renderTaskList = (sectionTasks, sectionId) => {
+    const sectionKey = getSectionKey(sectionId);
+    const dropTargetIndex = taskDragState?.sectionKey === sectionKey ? taskDragState.dropTargetIndex : null;
+    const items = sectionTasks.map((task, index) => renderTask(task, sectionId, index));
+    if (!sectionTasks.length) items.push(<div className="project-detail-empty" key={`empty-${sectionKey}`}>Brak zadań.</div>);
+    return <div
+      className={`project-detail-task-list ${taskDragState?.sectionKey === sectionKey ? 'is-drag-target' : ''} ${dropTargetIndex === sectionTasks.length ? 'is-drop-at-end' : ''}`}
+      onDragOver={(event) => {
+        if (event.target === event.currentTarget) updateTaskDragTarget(event, sectionId, sectionTasks.length);
+      }}
+      onDrop={(event) => finishTaskDrop(event, sectionId, sectionTasks)}
+    >
+      {items}
+    </div>;
+  };
+
   if (!embedded && collapsed) {
     return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
       <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /></button>
@@ -8431,9 +8608,9 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     </div>
     {!project && <EmptyState title="Wybierz projekt z listy." />}
     {project && <div className="project-details-body">
-      <div className="project-details-toolbar">
-        <button type="button" className="project-icon-action primary-action" onClick={() => openNewTask(null)} aria-label="Dodaj zadanie" title="Dodaj zadanie"><Plus size={15} /></button>
-        <button type="button" className="project-icon-action" onClick={() => { setNewSectionName(''); setSectionNameError(''); setSectionModalOpen(true); }} aria-label="Dodaj sekcję" title="Dodaj sekcję"><Columns3 size={15} /></button>
+      <div className="project-details-toolbar project-board-actions">
+        <AppButton variant="primary" className="module-action-button project-board-action-button" onClick={() => openNewTask(null)}><Plus size={15} />Dodaj zadanie</AppButton>
+        <AppButton variant="secondary" className="module-action-button project-board-action-button" onClick={() => { setNewSectionName(''); setSectionNameError(''); setSectionModalOpen(true); }}><Columns3 size={15} />Dodaj sekcję</AppButton>
       </div>
       <div className="project-details-body-scroll">
         {notice && <div className="notice">{notice}</div>}
@@ -8456,7 +8633,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
               <button type="button" className="project-detail-section-action" onClick={(event) => { event.stopPropagation(); openNewTask(sid); }} aria-label={`Dodaj zadanie do sekcji ${section.name}`} title="Dodaj zadanie do sekcji"><Plus size={13} /></button>
               <button type="button" className="project-detail-section-delete" onClick={(event) => { event.stopPropagation(); removeSection(section, sectionTasks); }} aria-label={`Usuń sekcję ${section.name}`} title="Usuń sekcję"><Trash2 size={13} /></button>
             </div>
-            {!sectionCollapsed && <div className="project-detail-task-list">{sectionTasks.map(renderTask)}{!sectionTasks.length && <div className="project-detail-empty">Brak zadań.</div>}</div>}
+            {!sectionCollapsed && renderTaskList(sectionTasks, sid)}
           </section>;
         })}
         {(sections.length === 0 || unsectionedTasks.length > 0) && <section className="project-detail-section">
@@ -8465,7 +8642,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
               <span>{collapsedSections.has('__unsectioned__') ? '▸' : '▾'}</span><strong>Bez sekcji</strong><em>({unsectionedTasks.length})</em>
             </button>
           </div>
-          {!collapsedSections.has('__unsectioned__') && <div className="project-detail-task-list">{unsectionedTasks.map(renderTask)}{!unsectionedTasks.length && <div className="project-detail-empty">Brak zadań.</div>}</div>}
+          {!collapsedSections.has('__unsectioned__') && renderTaskList(unsectionedTasks, null)}
         </section>}
       </div>}
       </div>

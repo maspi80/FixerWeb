@@ -22,6 +22,8 @@ export const PROJECT_TASK_PRIORITIES = WORK_PRIORITIES;
 
 export { getActiveWorkPriorityNames, getDefaultWorkPriority, normalizeWorkPriority };
 
+const PROJECT_TASK_ORDER_STEP = 10;
+
 const LEGACY_WORK_STATUS_MAP = {
   nowe: 'Do zrobienia',
   otwarte: 'Do zrobienia',
@@ -211,6 +213,7 @@ function normalizeSectionUpdates(updates) {
 }
 
 function normalizeProjectTask(task) {
+  const sortOrder = Number(task.sort_order);
   return {
     project_id: task.project_id,
     section_id: task.section_id || null,
@@ -221,8 +224,16 @@ function normalizeProjectTask(task) {
     due_date: task.due_date || null,
     reminder_at: task.reminder_at || null,
     completed_at: task.completed_at || null,
-    archived: Boolean(task.archived)
+    archived: Boolean(task.archived),
+    ...(task.sort_order !== undefined && Number.isFinite(sortOrder) ? { sort_order: sortOrder } : {})
   };
+}
+
+function compareProjectTaskOrder(a, b) {
+  const aOrder = Number.isFinite(Number(a?.sort_order)) ? Number(a.sort_order) : 100;
+  const bOrder = Number.isFinite(Number(b?.sort_order)) ? Number(b.sort_order) : 100;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  return String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
 }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
@@ -299,12 +310,13 @@ export async function deleteProject(id, project = null) {
 export async function fetchProjectTasks(projectId) {
   if (!isSupabaseConfigured) {
     const all = readLocal(LOCAL_PROJECT_TASKS_KEY);
-    return { data: all.filter((t) => String(t.project_id) === String(projectId)), error: null, local: true };
+    return { data: all.filter((t) => String(t.project_id) === String(projectId)).sort(compareProjectTaskOrder), error: null, local: true };
   }
   const { data, error } = await supabase
     .from('project_tasks')
     .select('*')
     .eq('project_id', projectId)
+    .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true });
   return { data: data ?? [], error, local: false };
 }
@@ -364,6 +376,46 @@ export async function deleteProjectTask(id, task = null) {
 }
 
 // ─── Project Task Sections ─────────────────────────────────────────────────────
+
+export async function reorderProjectTasksInSection(projectId, sectionId, orderedTasks = []) {
+  const normalizedSectionId = sectionId || null;
+  const updates = orderedTasks
+    .map((task, index) => ({
+      id: task.id ?? task.localId,
+      sort_order: (index + 1) * PROJECT_TASK_ORDER_STEP
+    }))
+    .filter((row) => row.id);
+
+  if (!updates.length) return { error: null, local: !isSupabaseConfigured };
+
+  if (!isSupabaseConfigured || orderedTasks.some((task) => task.localId)) {
+    const updateMap = new Map(updates.map((row) => [String(row.id), row.sort_order]));
+    const now = new Date().toISOString();
+    const next = readLocal(LOCAL_PROJECT_TASKS_KEY).map((task) => {
+      const taskId = String(task.id ?? task.localId);
+      const sameProject = String(task.project_id) === String(projectId);
+      const sameSection = String(task.section_id ?? '') === String(normalizedSectionId ?? '');
+      return sameProject && sameSection && updateMap.has(taskId)
+        ? { ...task, sort_order: updateMap.get(taskId), updated_at: now }
+        : task;
+    });
+    writeLocal(LOCAL_PROJECT_TASKS_KEY, next);
+    return { error: null, local: true };
+  }
+
+  const updatedAt = new Date().toISOString();
+  const results = await Promise.all(updates.map((row) => {
+    let query = supabase
+      .from('project_tasks')
+      .update({ sort_order: row.sort_order, updated_at: updatedAt })
+      .eq('id', row.id)
+      .eq('project_id', projectId);
+    query = normalizedSectionId ? query.eq('section_id', normalizedSectionId) : query.is('section_id', null);
+    return query;
+  }));
+  const failed = results.find((result) => result.error);
+  return { error: failed?.error ?? null, local: false };
+}
 
 export async function fetchProjectSections(projectId) {
   if (!isSupabaseConfigured) {

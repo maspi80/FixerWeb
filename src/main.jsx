@@ -7471,6 +7471,16 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 const PROJECT_DETAILS_WIDTH_KEY = 'fixer-project-details-panel-width';
 const PROJECT_DETAILS_COLLAPSED_KEY = 'fixer.projects.detailsPanelCollapsed';
 const PROJECT_DETAILS_SELECTED_KEY = 'fixer.projects.selectedProjectId';
+const PROJECTS_COLUMNS_SPLIT_KEY = 'fixer.projects.columnsSplit';
+const PROJECTS_LEFT_COLLAPSED_KEY = 'fixer.projects.leftColumnCollapsed';
+const PROJECTS_LEFT_COLUMN_MIN_WIDTH = 520;
+const PROJECTS_CENTER_COLUMN_MIN_WIDTH = 360;
+const PROJECTS_LEFT_COLLAPSED_WIDTH = 52;
+const PROJECT_DETAILS_MIN_WIDTH = 340;
+const PROJECT_DETAILS_DEFAULT_WIDTH = 420;
+const PROJECT_DETAILS_LAYOUT_BUFFER = 16;
+const PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH = 252;
+const PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH = 56;
 const NOTES_DETAILS_WIDTH_KEY = 'fixer-notes-details-panel-width';
 const NOTES_DETAILS_COLLAPSED_KEY = 'fixer.notes.detailsPanelCollapsed';
 const NOTES_DETAILS_SELECTED_KEY = 'fixer.notes.selectedNoteId';
@@ -7791,8 +7801,21 @@ function ProjectSectionContextMenu({
 
 function getSavedProjectDetailsWidth() {
   const saved = Number(localStorage.getItem(PROJECT_DETAILS_WIDTH_KEY));
-  if (Number.isFinite(saved) && saved > 0) return saved;
-  return Math.round(Math.min(620, Math.max(420, window.innerWidth * 0.38)));
+  if (Number.isFinite(saved) && saved > 0) return clampProjectDetailsWidth(saved);
+  return Math.round(clampProjectDetailsWidth(Math.min(620, Math.max(PROJECT_DETAILS_DEFAULT_WIDTH, window.innerWidth * 0.38))));
+}
+
+function getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed = false) {
+  const fallbackWorkspaceWidth = window.innerWidth - PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH - PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH;
+  const resolvedWorkspaceWidth = Number.isFinite(workspaceWidth) && workspaceWidth > 0 ? workspaceWidth : fallbackWorkspaceWidth;
+  const leftReserve = leftCollapsed ? PROJECTS_LEFT_COLLAPSED_WIDTH : PROJECTS_LEFT_COLUMN_MIN_WIDTH;
+  const maxWidth = resolvedWorkspaceWidth - leftReserve - PROJECTS_CENTER_COLUMN_MIN_WIDTH - PROJECT_DETAILS_LAYOUT_BUFFER;
+  return Math.max(PROJECT_DETAILS_MIN_WIDTH, maxWidth);
+}
+
+function clampProjectDetailsWidth(width, workspaceWidth, leftCollapsed = false) {
+  const resolvedWidth = Number.isFinite(width) && width > 0 ? width : PROJECT_DETAILS_DEFAULT_WIDTH;
+  return Math.min(Math.max(PROJECT_DETAILS_MIN_WIDTH, resolvedWidth), getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed));
 }
 
 function getSavedProjectDetailsCollapsed() {
@@ -7804,7 +7827,6 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [notice, setNotice] = useState('');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
@@ -7824,7 +7846,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
 
   const addComment = async () => {
     if (!newComment.trim()) return;
-    const result = await createTaskComment(taskId, newComment, newCommentType, demoUser.name);
+    const result = await createTaskComment(taskId, newComment, PROJECT_TASK_COMMENT_TYPES[0] ?? 'Komentarz', demoUser.name);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setNewComment('');
     await loadComments();
@@ -7850,7 +7872,9 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const saveCommentEdit = async (comment) => {
-    const result = await updateTaskComment(comment.id ?? comment.localId, editingCommentText, comment);
+    const nextBody = editingCommentText.trim();
+    if (!nextBody) return;
+    const result = await updateTaskComment(comment.id ?? comment.localId, nextBody, comment);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setEditingCommentId(null);
     setEditingCommentText('');
@@ -7889,9 +7913,10 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   return <div className="project-task-inline-comments">
     {notice && <div className="notice">{notice}</div>}
     <div className="project-comments-add">
-      <AppSelect value={newCommentType} onChange={(event) => setNewCommentType(event.target.value)}>{PROJECT_TASK_COMMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</AppSelect>
       <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
-      <button type="button" className="project-icon-action primary-action" onClick={addComment} disabled={!newComment.trim()} aria-label="Dodaj komentarz" title="Dodaj komentarz"><Plus size={15} /></button>
+      <div className="project-comment-add-actions">
+        <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
+      </div>
     </div>
     <div className="project-comments-list">
       {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
@@ -7905,7 +7930,13 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
         >
           <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
           {isEditing
-            ? <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
+            ? <div className="project-comment-edit">
+              <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
+              <div className="project-comment-edit-actions">
+                <ButtonSecondary onClick={cancelCommentEdit}>Anuluj</ButtonSecondary>
+                <ButtonPrimary onClick={() => saveCommentEdit(comment)} disabled={!editingCommentText.trim()}>Zapisz</ButtonPrimary>
+              </div>
+            </div>
             : <p>{comment.body}</p>}
         </div>;
       })}
@@ -7930,7 +7961,6 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [newCommentType, setNewCommentType] = useState('Komentarz');
   const [notice, setNotice] = useState('');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
@@ -7951,7 +7981,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
 
   const addComment = async () => {
     if (!newComment.trim()) return;
-    const result = await createOrganizerTaskComment(taskId, newComment, newCommentType, demoUser.name);
+    const result = await createOrganizerTaskComment(taskId, newComment, PROJECT_TASK_COMMENT_TYPES[0] ?? 'Komentarz', demoUser.name);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setNewComment('');
     await loadComments();
@@ -7977,7 +8007,9 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const saveCommentEdit = async (comment) => {
-    const result = await updateOrganizerTaskComment(comment.id ?? comment.localId, editingCommentText, comment);
+    const nextBody = editingCommentText.trim();
+    if (!nextBody) return;
+    const result = await updateOrganizerTaskComment(comment.id ?? comment.localId, nextBody, comment);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setEditingCommentId(null);
     setEditingCommentText('');
@@ -8017,9 +8049,10 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
     <div className="simple-task-comments-title">Komentarze / postęp <span>({comments.length})</span></div>
     {notice && <div className="notice">{notice}</div>}
     <div className="project-comments-add">
-      <AppSelect value={newCommentType} onChange={(event) => setNewCommentType(event.target.value)}>{PROJECT_TASK_COMMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</AppSelect>
       <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza lub postępu..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
-      <button type="button" className="project-icon-action primary-action" onClick={addComment} disabled={!newComment.trim()} aria-label="Dodaj komentarz" title="Dodaj komentarz"><Plus size={15} /></button>
+      <div className="project-comment-add-actions">
+        <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
+      </div>
     </div>
     <div className="project-comments-list">
       {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
@@ -8033,7 +8066,13 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
         >
           <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
           {isEditing
-            ? <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
+            ? <div className="project-comment-edit">
+              <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
+              <div className="project-comment-edit-actions">
+                <ButtonSecondary onClick={cancelCommentEdit}>Anuluj</ButtonSecondary>
+                <ButtonPrimary onClick={() => saveCommentEdit(comment)} disabled={!editingCommentText.trim()}>Zapisz</ButtonPrimary>
+              </div>
+            </div>
             : <p>{comment.body}</p>}
         </div>;
       })}
@@ -8053,7 +8092,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, onSelectTask = null, onOpenTask = null, refreshKey = 0, style = null }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -8100,7 +8139,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     setLoading(false);
   };
 
-  useEffect(() => { loadPanelData(); }, [projectId, collapsed]);
+  useEffect(() => { loadPanelData(); }, [projectId, collapsed, refreshKey]);
   useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
 
   const openNewTask = (sectionId = null) => {
@@ -8127,6 +8166,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     setEditingTask(null);
     await loadPanelData();
     onRefreshProject?.();
+    if (result.data) onSelectTask?.(result.data);
   };
 
   const toggleTaskDone = async (task) => {
@@ -8279,8 +8319,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
 
   const openEditSectionItem = (task) => {
     setTaskContextMenu(null);
-    setEditingTask(task);
-    setTaskEditorOpen(true);
+    onOpenTask?.(task);
   };
 
   const openTaskContextMenu = (event, task) => {
@@ -8325,10 +8364,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
       window.clearTimeout(sectionItemClickTimeoutRef.current);
       sectionItemClickTimeoutRef.current = null;
     }
-    sectionItemClickTimeoutRef.current = window.setTimeout(() => {
-      sectionItemClickTimeoutRef.current = null;
-      toggleTaskExpanded(task);
-    }, 250);
+    onSelectTask?.(task);
   };
 
   const handleSectionItemMainDoubleClick = (event, task) => {
@@ -8338,7 +8374,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
       window.clearTimeout(sectionItemClickTimeoutRef.current);
       sectionItemClickTimeoutRef.current = null;
     }
-    openEditSectionItem(task);
+    onOpenTask?.(task);
   };
 
   const renderTask = (task) => {
@@ -8347,7 +8383,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     const hasComments = comments > 0;
     const done = isCompletedStatus(task.status);
     const expanded = expandedTasks.has(taskKey);
-    return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''}`} key={taskKey}>
+    return <div className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''} ${String(selectedTaskKey ?? '') === taskKey ? 'is-selected' : ''}`} key={taskKey}>
       <div
         className="project-detail-task-row"
         onContextMenu={(event) => openTaskContextMenu(event, task)}
@@ -8362,7 +8398,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
           onDoubleClick={(event) => handleSectionItemMainDoubleClick(event, task)}
           onKeyDown={(event) => { if (event.key === 'Enter') openEditSectionItem(task); }}
           aria-expanded={expanded}
-          title="Dwuklik — edycja, prawy klik — menu"
+          title="Dwuklik — szczegóły, prawy klik — menu"
         >
           <strong>{task.title}</strong>
           <span>{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
@@ -8373,24 +8409,27 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
     </div>;
   };
 
-  if (collapsed) {
+  if (!embedded && collapsed) {
     return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
-      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /><span>Szczegóły</span></button>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /></button>
     </aside>;
   }
 
-  return <aside className="project-details-panel" style={{ width: `${width}px`, ...(projectAccentColor ? { '--project-accent-color': projectAccentColor } : {}) }}>
-    <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
+  const PanelTag = embedded ? 'section' : 'aside';
+  return <PanelTag className={`project-details-panel ${embedded ? 'project-board-panel' : ''}`} style={{ ...(style ?? {}), ...(embedded ? {} : { width: `${width}px` }), ...(projectAccentColor ? { '--project-accent-color': projectAccentColor } : {}) }}>
+    {embedded
+      ? onResizeStart && <div className="projects-columns-splitter" onMouseDown={onResizeStart} title="Zmień szerokość kolumn" />
+      : <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />}
     {projectAccentColor && <div className="project-accent-bar" aria-hidden="true" />}
     <div className="project-details-header">
-      <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
+      {!embedded && <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>}
       <div>
         <span className="project-details-type">Projekt</span>
         <strong className="project-details-title"><ProjectAccentDot color={projectAccentColor} /><span>{project ? projectTitle : 'Wybierz projekt'}</span></strong>
         {project && <span>{project.status || '—'} · Termin: {project.due_date || 'brak'}</span>}
       </div>
     </div>
-    {!project && <EmptyState title="Wybierz projekt z listy." description="Pojedynczy klik pokazuje zadania i sekcje. Dwuklik otwiera kartotekę." />}
+    {!project && <EmptyState title="Wybierz projekt z listy." />}
     {project && <div className="project-details-body">
       <div className="project-details-toolbar">
         <button type="button" className="project-icon-action primary-action" onClick={() => openNewTask(null)} aria-label="Dodaj zadanie" title="Dodaj zadanie"><Plus size={15} /></button>
@@ -8468,7 +8507,7 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
       colorTheme={colorTheme}
       onClose={() => setTaskContextMenu(null)}
       items={[
-        { key: 'edit', label: 'Edytuj', icon: <Pencil size={14} />, onClick: () => openEditSectionItem(taskContextMenu.task) },
+        { key: 'edit', label: 'Pokaż szczegóły', icon: <Pencil size={14} />, onClick: () => openEditSectionItem(taskContextMenu.task) },
         { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => addCommentToTask(taskContextMenu.task) },
         {
           key: 'toggle-done',
@@ -8479,10 +8518,215 @@ function ProjectDetailsPanel({ project, collapsed, width, onResizeStart, onToggl
         { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => deletePanelTask(taskContextMenu.task) }
       ]}
     />}
+  </PanelTag>;
+}
+
+function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onClose, onSaveProject, allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
+  const projectId = project?.id ?? project?.localId;
+  const projectAccentColor = resolveProjectAccentColor(project);
+  const [form, setForm] = useState(() => ({}));
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    const safeProject = project ?? {};
+    setForm({
+      project_number: String(safeProject.project_number ?? generateNextProjectNumber(allProjects, documentSettings)),
+      name: String(safeProject.name ?? ''),
+      description: String(safeProject.description ?? ''),
+      client_id: safeProject.client_id ?? '',
+      status: normalizeWorkStatus(safeProject.status) || WORK_STATUSES[0],
+      priority: normalizeWorkPriority(safeProject.priority) || getDefaultWorkPriority(),
+      start_date: safeProject.start_date ?? '',
+      due_date: safeProject.due_date ?? '',
+      notes: String(safeProject.notes ?? ''),
+      accent_color: resolveProjectAccentColor(safeProject) ?? '',
+      archived: Boolean(safeProject.archived),
+      completed_at: safeProject.completed_at ?? null,
+      ...(project ? { id: project.id, localId: project.localId, created_at: project.created_at } : {})
+    });
+    setNotice('');
+  }, [projectId]);
+
+  const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  const handleSave = async () => {
+    if (!project) return;
+    if (!String(form.name ?? '').trim()) { setNotice('Nazwa projektu jest wymagana.'); return; }
+    setBusy(true);
+    await onSaveProject?.({
+      ...form,
+      project_number: String(form.project_number ?? '').trim() || generateNextProjectNumber(allProjects, documentSettings),
+      client_id: form.client_id || null
+    });
+    setBusy(false);
+  };
+
+  if (collapsed) {
+    return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /></button>
+    </aside>;
+  }
+
+  return <aside className="project-details-panel project-inspector-panel" style={{ width: `${width}px`, ...(projectAccentColor ? { '--project-accent-color': projectAccentColor } : {}) }}>
+    <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
+    {projectAccentColor && <div className="project-accent-bar" aria-hidden="true" />}
+    <div className="project-details-header">
+      <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
+      <div>
+        <span className="project-details-type">Projekt</span>
+        <strong className="project-details-title"><ProjectAccentDot color={projectAccentColor} /><span>{project ? (String(project.name ?? '').trim() || 'Projekt bez nazwy') : 'Wybierz projekt'}</span></strong>
+        {project && <span>{project.status || '—'} · Termin: {project.due_date || 'brak'}</span>}
+      </div>
+      <button type="button" className="project-icon-action project-details-close" onClick={onClose} aria-label="Zamknij panel" title="Zamknij panel"><X size={15} /></button>
+    </div>
+    {!project && <EmptyState title="Wybierz projekt z listy." />}
+    {project && <div className="project-details-body">
+      <div className="project-details-body-scroll project-inspector-fields">
+        {notice && <div className="notice">{notice}</div>}
+        <FormField label="Nazwa projektu *">
+          <AppInput value={form.name ?? ''} onChange={(event) => set('name', event.target.value)} />
+        </FormField>
+        <div className="project-inspector-grid">
+          <FormField label="Status">
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value)}>
+              {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Priorytet">
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value)}>
+              {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Start">
+            <AppInput type="date" value={form.start_date ?? ''} onChange={(event) => set('start_date', event.target.value)} />
+          </FormField>
+          <FormField label="Termin">
+            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value)} />
+          </FormField>
+        </div>
+        <FormField label="Kolor projektu">
+          <div className="project-accent-field">
+            <label className="project-accent-color-swatch" style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }} title="Wybierz kolor projektu">
+              <input type="color" className="project-accent-color-input" value={normalizeAccentColor(form.accent_color) || '#2563EB'} onChange={(event) => set('accent_color', event.target.value.toUpperCase())} aria-label="Wybierz kolor projektu" />
+            </label>
+            <AppInput value={form.accent_color ?? ''} onChange={(event) => set('accent_color', event.target.value)} placeholder="Domyślny akcent motywu" />
+          </div>
+        </FormField>
+        <FormField label="Opis">
+          <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} />
+        </FormField>
+        <FormField label="Notatki">
+          <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:notes`} value={form.notes ?? ''} onChange={(event) => set('notes', event.target.value)} rows={5} />
+        </FormField>
+        {project.clients?.name && <div className="project-inspector-related"><span>Klient</span><strong>{project.clients.name}</strong></div>}
+      </div>
+      <div className="project-details-footer">
+        <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />Zapisz</ButtonPrimary>
+      </div>
+    </div>}
   </aside>;
 }
 
-function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onEditTask, onStatusChange, onDeleteTask, onChanged, colorTheme = 'dark' }) {
+function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onSaveTask, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
+  const taskId = task?.id ?? task?.localId;
+  const [form, setForm] = useState(() => ({}));
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const done = isCompletedStatus(form.status);
+
+  useEffect(() => {
+    const safeTask = task ?? {};
+    setForm({
+      title: safeTask.title ?? '',
+      description: safeTask.description ?? '',
+      status: normalizeWorkStatus(safeTask.status) || WORK_STATUSES[0],
+      priority: normalizeWorkPriority(safeTask.priority) || getDefaultWorkPriority(),
+      due_date: safeTask.due_date ?? '',
+      reminder_at: safeTask.reminder_at ? String(safeTask.reminder_at).slice(0, 16) : '',
+      section_id: safeTask.section_id ?? '',
+      project_id: safeTask.project_id,
+      archived: safeTask.archived,
+      completed_at: safeTask.completed_at,
+      created_at: safeTask.created_at,
+      ...(task ? { id: task.id, localId: task.localId } : {})
+    });
+    setNotice('');
+  }, [taskId]);
+
+  const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  const handleSave = async () => {
+    if (!task) return;
+    if (!String(form.title ?? '').trim()) { setNotice('Tytuł zadania jest wymagany.'); return; }
+    setBusy(true);
+    await onSaveTask?.({
+      ...form,
+      section_id: form.section_id || null,
+      reminder_at: form.reminder_at ? new Date(form.reminder_at).toISOString() : null
+    });
+    setBusy(false);
+  };
+
+  if (collapsed) {
+    return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /></button>
+    </aside>;
+  }
+
+  return <aside className="project-details-panel project-inspector-panel" style={{ width: `${width}px` }}>
+    <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
+    <div className="project-details-header">
+      <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
+      <div>
+        <span className="project-details-type">Zadanie</span>
+        <strong>{task ? (String(task.title ?? '').trim() || 'Zadanie bez tytułu') : 'Wybierz zadanie'}</strong>
+        {task && <span>{task.status || '—'} · Termin: {task.due_date || 'brak'}</span>}
+      </div>
+      <button type="button" className="project-icon-action project-details-close" onClick={onClose} aria-label="Zamknij panel" title="Zamknij panel"><X size={15} /></button>
+    </div>
+    {!task && <EmptyState title="Wybierz zadanie." />}
+    {task && <div className="project-details-body">
+      <div className="project-details-toolbar">
+        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>{done && <CheckCircle2 size={16} />}</button>
+        <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>
+      </div>
+      <div className="project-details-body-scroll project-inspector-fields">
+        {notice && <div className="notice">{notice}</div>}
+        <FormField label="Nazwa zadania *">
+          <AppInput value={form.title ?? ''} onChange={(event) => set('title', event.target.value)} />
+        </FormField>
+        <div className="project-inspector-grid">
+          <FormField label="Status">
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value)}>
+              {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Priorytet">
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value)}>
+              {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Termin">
+            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value)} />
+          </FormField>
+          <FormField label="Przypomnienie">
+            <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value)} />
+          </FormField>
+        </div>
+        <FormField label="Opis">
+          <AppTextarea resizeKey={`fixer:ui-resize:project-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} />
+        </FormField>
+        <ProjectTaskInlineComments task={task} onChanged={onChanged} colorTheme={colorTheme} />
+      </div>
+      <div className="project-details-footer">
+        <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />Zapisz</ButtonPrimary>
+      </div>
+    </div>}
+  </aside>;
+}
+
+function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose = null, onEditTask, onStatusChange, onDeleteTask, onChanged, colorTheme = 'dark' }) {
   const done = Boolean(task?.archived) || isCompletedStatus(task?.status);
   const title = String(task?.title ?? '').trim() || 'Zadanie bez tytułu';
   const [taskContextMenu, setTaskContextMenu] = useState(null);
@@ -8502,7 +8746,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
 
   if (collapsed) {
     return <aside className="project-details-collapsed" onClick={onToggleCollapse}>
-      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /><span>Szczegóły</span></button>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onToggleCollapse(); }} title="Pokaż szczegóły"><ChevronRight size={15} /></button>
     </aside>;
   }
 
@@ -8515,6 +8759,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
         <strong>{task ? title : 'Wybierz zadanie'}</strong>
         {task && <span>{task.status || '—'} · Termin: {task.due_date || 'brak'}</span>}
       </div>
+      {onClose && <button type="button" className="project-icon-action project-details-close" onClick={onClose} aria-label="Zamknij panel" title="Zamknij panel"><X size={15} /></button>}
     </div>
     {!task && <EmptyState title="Wybierz zadanie lub projekt z listy." />}
     {task && <div className="project-details-body">
@@ -8583,9 +8828,20 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const [pendingOpenProjectId, setPendingOpenProjectId] = useState(null);
   const [pendingOpenSimpleTaskId, setPendingOpenSimpleTaskId] = useState(null);
   const [selectedProjectKey, setSelectedProjectKey] = useState(() => localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY));
+  const [selectedDetailsWork, setSelectedDetailsWork] = useState(null);
+  const [selectedProjectTask, setSelectedProjectTask] = useState(null);
+  const [highlightedProjectTask, setHighlightedProjectTask] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(() => Boolean(localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY)));
   const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedProjectDetailsCollapsed);
   const [detailsWidth, setDetailsWidth] = useState(getSavedProjectDetailsWidth);
+  const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem(PROJECTS_LEFT_COLLAPSED_KEY) === 'true');
+  const [columnsSplit, setColumnsSplit] = useState(() => {
+    const saved = Number(localStorage.getItem(PROJECTS_COLUMNS_SPLIT_KEY));
+    return Number.isFinite(saved) && saved > 0 ? saved : 0.54;
+  });
+  const [projectPanelRefreshKey, setProjectPanelRefreshKey] = useState(0);
   const [workPriorityNames, setWorkPriorityNames] = useState(DEFAULT_WORK_PRIORITIES);
+  const projectsWorkspaceRef = useRef(null);
   const documentSettings = getDocumentSettings();
 
   const loadData = async () => {
@@ -8615,6 +8871,26 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   }, [detailsCollapsed]);
 
   useEffect(() => {
+    localStorage.setItem(PROJECTS_LEFT_COLLAPSED_KEY, leftCollapsed ? 'true' : 'false');
+  }, [leftCollapsed]);
+
+  useEffect(() => {
+    const clampDetailsWidth = () => {
+      const workspaceWidth = projectsWorkspaceRef.current?.getBoundingClientRect().width;
+      setDetailsWidth((currentWidth) => {
+        const nextWidth = clampProjectDetailsWidth(currentWidth, workspaceWidth, leftCollapsed);
+        if (Math.round(nextWidth) !== Math.round(currentWidth)) {
+          localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
+        }
+        return nextWidth;
+      });
+    };
+    clampDetailsWidth();
+    window.addEventListener('resize', clampDetailsWidth);
+    return () => window.removeEventListener('resize', clampDetailsWidth);
+  }, [leftCollapsed]);
+
+  useEffect(() => {
     if (selectedProjectKey) localStorage.setItem(PROJECT_DETAILS_SELECTED_KEY, selectedProjectKey);
     else localStorage.removeItem(PROJECT_DETAILS_SELECTED_KEY);
   }, [selectedProjectKey]);
@@ -8630,7 +8906,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   useEffect(() => {
     if (!pendingOpenProjectId || !rows.length) return;
     const project = rows.find((r) => String(r.id ?? r.localId) === String(pendingOpenProjectId));
-    if (project) setSelectedProjectKey(`project:${project.id ?? project.localId}`);
+    if (project) {
+      setSelectedProjectKey(`project:${project.id ?? project.localId}`);
+      setSelectedDetailsWork(mapProjectRow(project));
+      setSelectedProjectTask(null);
+      setHighlightedProjectTask(null);
+      setDetailsOpen(true);
+      setDetailsCollapsed(false);
+    }
     setPendingOpenProjectId(null);
   }, [pendingOpenProjectId, rows]);
 
@@ -8638,8 +8921,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     if (!pendingOpenSimpleTaskId || !organizerRows.length) return;
     const task = organizerRows.find((r) => String(r.id ?? r.localId) === String(pendingOpenSimpleTaskId));
     if (task) {
+      const taskRow = mapTaskRow(task);
       setSelectedProjectKey(`task:${task.id ?? task.localId}`);
+      setSelectedDetailsWork(taskRow);
       setFilters((current) => ({ ...current, type: 'task' }));
+      setSelectedProjectTask(null);
+      setHighlightedProjectTask(null);
+      setDetailsOpen(true);
+      setDetailsCollapsed(false);
     }
     setPendingOpenSimpleTaskId(null);
   }, [pendingOpenSimpleTaskId, organizerRows]);
@@ -8653,7 +8942,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     if (!String(form.name ?? '').trim()) { setNotice('Nazwa projektu jest wymagana'); return; }
     const projectId = form.id ?? form.localId;
     const isTerminal = projectId && isCompletedStatus(form.status);
-    const wasArchived = editingProject?.archived;
+    const sourceProject = editingProject ?? rows.find((row) => String(row.id ?? row.localId) === String(projectId));
+    const wasArchived = sourceProject?.archived;
 
     const doSave = async (finalForm) => {
       const result = projectId ? await updateProject(projectId, finalForm) : await createProject(finalForm);
@@ -8774,6 +9064,41 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setOrganizerRows((current) => current.map((row) => String(row.id ?? row.localId) === String(task.id ?? task.localId) ? { ...row, priority: nextPriority, ...(result.data ?? {}) } : row));
   };
 
+  const saveProjectTaskFromInspector = async (taskForm) => {
+    const taskId = taskForm.id ?? taskForm.localId;
+    if (!taskId) return;
+    const completed = isCompletedStatus(taskForm.status);
+    const payload = completed
+      ? { ...taskForm, archived: false, completed_at: taskForm.completed_at || new Date().toISOString() }
+      : { ...taskForm, archived: false, completed_at: null };
+    const result = await updateProjectTask(taskId, payload);
+    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
+    setSelectedProjectTask(result.data ?? payload);
+    setHighlightedProjectTask(result.data ?? payload);
+    setProjectPanelRefreshKey((value) => value + 1);
+    await loadData();
+  };
+
+  const deleteProjectTaskFromInspector = async (task) => {
+    if (!task) return;
+    setConfirmDialog({
+      title: 'Usuń zadanie',
+      message: `Usunąć zadanie "${task.title}"?`,
+      confirmLabel: 'Usuń',
+      cancelLabel: 'Anuluj',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const result = await deleteProjectTask(task.id ?? task.localId, task);
+        if (result.error) { setNotice(humanizeError(result.error, 'Błąd usuwania zadania')); return; }
+        setSelectedProjectTask(null);
+        setHighlightedProjectTask(null);
+        setProjectPanelRefreshKey((value) => value + 1);
+        await loadData();
+      }
+    });
+  };
+
   const deleteSimpleTask = async (task) => {
     setConfirmDialog({
       title: 'Usuń zadanie',
@@ -8791,7 +9116,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   };
 
   const openNewProject = () => { setEditingProject(null); setEditorOpen(true); };
-  const openProject = (project) => { setEditingProject(project); setEditorOpen(true); };
+  const openProject = (project) => {
+    setSelectedProjectKey(`project:${project.id ?? project.localId}`);
+    setSelectedDetailsWork(mapProjectRow(project));
+    setSelectedProjectTask(null);
+    setHighlightedProjectTask(null);
+    setDetailsOpen(true);
+    setDetailsCollapsed(false);
+  };
   const openNewSimpleTask = () => { setEditingSimpleTask(null); setTaskEditorOpen(true); };
   const openSimpleTask = (task) => { setEditingSimpleTask(task); setTaskEditorOpen(true); };
 
@@ -8884,21 +9216,73 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     ?? activeTableRows[0]
     ?? null;
   const selectedProject = selectedWork?._workType === 'project' ? selectedWork._source : null;
-  const selectedSimpleTask = selectedWork?._workType === 'task' ? selectedWork._source : null;
+  const selectedDetailsProject = selectedDetailsWork?._workType === 'project' ? selectedDetailsWork._source : null;
+  const selectedSimpleTask = selectedDetailsWork?._workType === 'task' ? selectedDetailsWork._source : null;
+
+  useEffect(() => {
+    if (!detailsOpen || selectedDetailsWork || !selectedWork) return;
+    setSelectedDetailsWork(selectedWork);
+  }, [detailsOpen, selectedDetailsWork, selectedWork?.work_key]);
+
+  useEffect(() => {
+    if (!selectedProjectTask) return;
+    if (!selectedProject || String(selectedProjectTask.project_id) !== String(selectedProject.id ?? selectedProject.localId)) {
+      setSelectedProjectTask(null);
+    }
+  }, [selectedProject?.id, selectedProject?.localId, selectedProjectTask?.id, selectedProjectTask?.localId]);
+
+  useEffect(() => {
+    if (!highlightedProjectTask) return;
+    if (!selectedProject || String(highlightedProjectTask.project_id) !== String(selectedProject.id ?? selectedProject.localId)) {
+      setHighlightedProjectTask(null);
+    }
+  }, [selectedProject?.id, selectedProject?.localId, highlightedProjectTask?.id, highlightedProjectTask?.localId]);
 
   const selectWorkItem = (row) => {
     setSelectedProjectKey(row.work_key ?? `${row._workType}:${row.id ?? row.localId}`);
+    setSelectedProjectTask(null);
+    setHighlightedProjectTask(null);
+    if (row._workType === 'task') {
+      setSelectedDetailsWork(row);
+      setDetailsOpen(true);
+      setDetailsCollapsed(false);
+    }
   };
 
-  const openWorkItem = (row) => row._workType === 'project' ? openProject(row._source) : openSimpleTask(row._source);
+  const openWorkItem = (row) => {
+    setSelectedProjectKey(row.work_key ?? `${row._workType}:${row.id ?? row.localId}`);
+    setSelectedDetailsWork(row);
+    setSelectedProjectTask(null);
+    setHighlightedProjectTask(null);
+    setDetailsOpen(true);
+    setDetailsCollapsed(false);
+  };
+
+  const highlightProjectTask = (task) => {
+    setHighlightedProjectTask(task);
+  };
+
+  const openProjectTaskDetails = (task) => {
+    setHighlightedProjectTask(task);
+    setSelectedProjectTask(task);
+    setDetailsOpen(true);
+    setDetailsCollapsed(false);
+  };
+
+  const closeDetailsPanel = () => {
+    setDetailsOpen(false);
+    setDetailsCollapsed(false);
+  };
+
   const deleteWorkItem = (row) => row._workType === 'project' ? handleDelete(row._source) : deleteSimpleTask(row._source);
 
   const startDetailsResize = (event) => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = detailsWidth;
+    const workspaceWidth = projectsWorkspaceRef.current?.getBoundingClientRect().width;
     const onMouseMove = (moveEvent) => {
-      const nextWidth = Math.min(Math.max(340, startWidth - (moveEvent.clientX - startX)), Math.max(420, window.innerWidth * 0.68));
+      const nextWidth = clampProjectDetailsWidth(startWidth - (moveEvent.clientX - startX), workspaceWidth, leftCollapsed);
       setDetailsWidth(nextWidth);
       localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
     };
@@ -8912,15 +9296,56 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     document.addEventListener('mouseup', onMouseUp);
   };
 
+  const startProjectColumnsResize = (event) => {
+    event.preventDefault();
+    const workspace = projectsWorkspaceRef.current;
+    if (!workspace) return;
+    const startX = event.clientX;
+    const startSplit = columnsSplit;
+    const rightWidth = detailsOpen
+      ? detailsCollapsed
+        ? 52
+        : detailsWidth
+      : 0;
+    const workspaceWidth = workspace.getBoundingClientRect().width;
+    const availableWidth = Math.max(
+      PROJECTS_LEFT_COLUMN_MIN_WIDTH + PROJECTS_CENTER_COLUMN_MIN_WIDTH,
+      workspaceWidth - rightWidth - 34
+    );
+    const minSplit = PROJECTS_CENTER_COLUMN_MIN_WIDTH / availableWidth;
+    const maxSplit = 1 - (PROJECTS_LEFT_COLUMN_MIN_WIDTH / availableWidth);
+    const onMouseMove = (moveEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const nextSplit = Math.min(Math.max(startSplit - (delta / availableWidth), minSplit), maxSplit);
+      setColumnsSplit(nextSplit);
+      localStorage.setItem(PROJECTS_COLUMNS_SPLIT_KEY, String(Number(nextSplit.toFixed(4))));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.classList.remove('resizing-project-columns');
+    };
+    document.body.classList.add('resizing-project-columns');
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
   const listSubtitle = (filters.type ?? 'all') === 'task'
     ? 'Lista zadań'
     : (filters.type ?? 'all') === 'project'
       ? 'Lista projektów'
       : 'Lista zadań i projektów';
+  const leftColumnFlex = Math.max(0.1, 1 - columnsSplit);
+  const centerColumnFlex = Math.max(0.1, columnsSplit);
 
-  return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''}`}>
-    <div className="projects-workspace">
-      <div className="projects-list-pane">
+  return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''} ${leftCollapsed ? 'projects-left-collapsed-mode' : ''}`}>
+    <div className="projects-workspace" ref={projectsWorkspaceRef}>
+      {leftCollapsed
+        ? <aside className="project-details-collapsed projects-left-collapsed">
+          <button type="button" className="project-icon-action" onClick={() => setLeftCollapsed(false)} aria-label="Pokaż listę" title="Pokaż listę"><ChevronRight size={15} /></button>
+        </aside>
+        : <div className="projects-list-pane" style={{ flexGrow: leftColumnFlex }}>
+        <button type="button" className="project-icon-action projects-left-collapse-button" onClick={() => setLeftCollapsed(true)} aria-label="Zwiń listę" title="Zwiń listę"><ChevronLeft size={15} /></button>
         <section className="panel hero-panel projects-actions-panel">
           <div className="module-actions">
             <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Proste zadanie</AppButton>
@@ -8935,7 +9360,6 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         <section className="panel service-list-panel rentals-records-section projects-list-panel">
           <div className="rentals-section-heading">
             <div>
-              <p className="eyebrow">Zadania i projekty</p>
               <h3>{listSubtitle}</h3>
             </div>
             <span>{activeTableRows.length} pozycji</span>
@@ -8969,14 +9393,29 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
           Historia projektów {historyCollapsed ? '▸' : '▾'} <span className="history-count">({historyTableRows.length})</span>
         </button>}>
           {!historyCollapsed && <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
-            onRowClick={selectWorkItem} onOpen={openProject} onEdit={openProject} onDelete={handleDelete} openLabel="Otwórz"
+            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz"
             customRowActions={[{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }]}
           />}
         </AppSection>
-      </div>
-      {selectedSimpleTask
-        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
-        : <ProjectDetailsPanel project={selectedProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onRefreshProject={loadData} workPriorities={workPriorityNames} colorTheme={colorTheme} />}
+      </div>}
+      {selectedProject && <ProjectDetailsPanel
+        project={selectedProject}
+        embedded
+        style={{ flexGrow: leftCollapsed ? 1 : centerColumnFlex }}
+        onResizeStart={!leftCollapsed ? startProjectColumnsResize : null}
+        selectedTaskKey={highlightedProjectTask ? String(highlightedProjectTask.id ?? highlightedProjectTask.localId) : null}
+        onSelectTask={highlightProjectTask}
+        onOpenTask={openProjectTaskDetails}
+        onRefreshProject={loadData}
+        refreshKey={projectPanelRefreshKey}
+        workPriorities={workPriorityNames}
+        colorTheme={colorTheme}
+      />}
+      {detailsOpen && (selectedSimpleTask
+        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
+        : selectedProjectTask
+          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onClose={closeDetailsPanel} onSaveTask={saveProjectTaskFromInspector} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} />
+          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onClose={closeDetailsPanel} onSaveProject={saveProject} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} />)}
     </div>
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
@@ -12804,6 +13243,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const [bulkBusy, setBulkBusy] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState(() => new Set());
   const [lpVisible, setLpVisible] = useState(initialPreference.lpVisible !== false);
+  const columnSubmenuCloseTimerRef = useRef(null);
   // Refs always reflect the latest state so event-handler closures (drag, resize)
   // never read stale values when calling persistTablePreference.
   const columnOrderRef = useRef(initialPreference.columnOrder);
@@ -12885,15 +13325,28 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   useEffect(() => {
     if (!contextMenu && !rowContextMenu) return undefined;
     const closeMenu = () => { setContextMenu(null); setRowContextMenu(null); };
+    const closeMenuOnEscape = (event) => {
+      if (event.key === 'Escape') closeMenu();
+    };
     window.addEventListener('click', closeMenu);
-    window.addEventListener('keydown', closeMenu);
+    window.addEventListener('keydown', closeMenuOnEscape);
     window.addEventListener('resize', closeMenu);
     return () => {
       window.removeEventListener('click', closeMenu);
-      window.removeEventListener('keydown', closeMenu);
+      window.removeEventListener('keydown', closeMenuOnEscape);
       window.removeEventListener('resize', closeMenu);
     };
   }, [contextMenu, rowContextMenu]);
+
+  useEffect(() => () => {
+    if (columnSubmenuCloseTimerRef.current) window.clearTimeout(columnSubmenuCloseTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (contextMenu) return undefined;
+    clearColumnSubmenuClose();
+    return undefined;
+  }, [contextMenu]);
 
   const sortedRows = useMemo(() => {
     if (!sortKey) return rows;
@@ -13044,7 +13497,23 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     persistTablePreference({ columnAlignments: next });
   };
 
+  const clearColumnSubmenuClose = () => {
+    if (columnSubmenuCloseTimerRef.current) {
+      window.clearTimeout(columnSubmenuCloseTimerRef.current);
+      columnSubmenuCloseTimerRef.current = null;
+    }
+  };
+
+  const scheduleColumnSubmenuClose = () => {
+    clearColumnSubmenuClose();
+    columnSubmenuCloseTimerRef.current = window.setTimeout(() => {
+      columnSubmenuCloseTimerRef.current = null;
+      openColumnSubmenu(null);
+    }, 250);
+  };
+
   const openColumnSubmenu = (submenu, event = null) => {
+    clearColumnSubmenuClose();
     setContextMenu((current) => {
       if (!current) return current;
       if (!submenu) return { ...current, submenu: null, submenuPosition: null };
@@ -13057,8 +13526,9 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       const submenuWidth = 220;
       const submenuHeight = submenu === 'columns' ? Math.min(360, Math.max(180, orderedColumns.length * 36 + 16)) : 140;
       const rect = event?.currentTarget?.getBoundingClientRect?.();
-      const baseX = rect ? rect.right + 6 : current.x + 226;
-      const fallbackLeftX = rect ? rect.left - submenuWidth - 6 : current.x - submenuWidth - 6;
+      const overlap = 4;
+      const baseX = rect ? rect.right - overlap : current.x + 218 - overlap;
+      const fallbackLeftX = rect ? rect.left - submenuWidth + overlap : current.x - submenuWidth + overlap;
       const opensLeft = baseX + submenuWidth + padding > offsetLeft + viewportWidth;
       const x = opensLeft ? Math.max(offsetLeft + padding, fallbackLeftX) : Math.min(baseX, offsetLeft + viewportWidth - submenuWidth - padding);
       const preferredY = rect ? rect.top : current.y;
@@ -13229,10 +13699,10 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
         {(rowContextMenu.row?.id || rowContextMenu.row?.localId || rowContextMenu.row?.number) && <button type="button" onClick={() => runRowAction('copyId')}><Copy size={14} />Kopiuj ID / numer</button>}
         {onDelete && canDelete(rowContextMenu.row) && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />{deleteLabel}</button></>}
       </div>}
-      {contextMenu && <div className="column-context-menu column-menu-desktop" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()} onMouseLeave={() => openColumnSubmenu(null)}>
-        <div className="column-menu-submenu-row" onMouseEnter={(event) => openColumnSubmenu('alignment', event)}>
+      {contextMenu && <div className="column-context-menu column-menu-desktop" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()} onMouseEnter={clearColumnSubmenuClose} onMouseLeave={scheduleColumnSubmenuClose}>
+        <div className={`column-menu-submenu-row ${contextMenu.submenu === 'alignment' ? `is-open submenu-bridge-${contextMenu.submenuSide ?? 'right'}` : ''}`.trim()} onMouseEnter={(event) => openColumnSubmenu('alignment', event)} onMouseLeave={scheduleColumnSubmenuClose}>
           <button type="button" className={contextMenu.submenu === 'alignment' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'alignment' ? null : 'alignment', event)}>Wyrównanie <ChevronRight size={14} /></button>
-          {contextMenu.submenu === 'alignment' && selectedContextColumn && <div className={`column-submenu column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }}>
+          {contextMenu.submenu === 'alignment' && selectedContextColumn && <div className={`column-submenu column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }} onMouseEnter={clearColumnSubmenuClose} onMouseLeave={scheduleColumnSubmenuClose}>
             {[
               { value: 'left', label: 'Do lewej', icon: AlignLeft },
               { value: 'center', label: 'Do środka', icon: AlignCenter },
@@ -13244,9 +13714,9 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
             })}
           </div>}
         </div>
-        <div className="column-menu-submenu-row" onMouseEnter={(event) => openColumnSubmenu('columns', event)}>
+        <div className={`column-menu-submenu-row ${contextMenu.submenu === 'columns' ? `is-open submenu-bridge-${contextMenu.submenuSide ?? 'right'}` : ''}`.trim()} onMouseEnter={(event) => openColumnSubmenu('columns', event)} onMouseLeave={scheduleColumnSubmenuClose}>
           <button type="button" className={contextMenu.submenu === 'columns' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'columns' ? null : 'columns', event)}>Kolumny <ChevronRight size={14} /></button>
-          {contextMenu.submenu === 'columns' && <div className={`column-submenu column-submenu-columns column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }}>
+          {contextMenu.submenu === 'columns' && <div className={`column-submenu column-submenu-columns column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }} onMouseEnter={clearColumnSubmenuClose} onMouseLeave={scheduleColumnSubmenuClose}>
             <label key="__lp__"><input type="checkbox" checked={lpVisible} onChange={toggleLpColumn} />Lp.</label>
             {orderedColumns.map((column) => {
               const checked = visibleColumns.includes(column.key);

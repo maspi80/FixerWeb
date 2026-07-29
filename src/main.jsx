@@ -7838,17 +7838,19 @@ function getSavedProjectDetailsWidth() {
   return Math.round(clampProjectDetailsWidth(Math.min(620, Math.max(PROJECT_DETAILS_DEFAULT_WIDTH, window.innerWidth * 0.38))));
 }
 
-function getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed = false) {
+function getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed = false, options = {}) {
+  const reserveCenterPanel = options.reserveCenterPanel !== false;
   const fallbackWorkspaceWidth = window.innerWidth - PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH - PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH;
   const resolvedWorkspaceWidth = Number.isFinite(workspaceWidth) && workspaceWidth > 0 ? workspaceWidth : fallbackWorkspaceWidth;
   const leftReserve = leftCollapsed ? PROJECTS_LEFT_COLLAPSED_WIDTH : PROJECTS_LEFT_COLUMN_MIN_WIDTH;
-  const maxWidth = resolvedWorkspaceWidth - leftReserve - PROJECTS_CENTER_COLUMN_MIN_WIDTH - PROJECT_DETAILS_LAYOUT_BUFFER;
+  const centerReserve = reserveCenterPanel ? PROJECTS_CENTER_COLUMN_MIN_WIDTH : 0;
+  const maxWidth = resolvedWorkspaceWidth - leftReserve - centerReserve - PROJECT_DETAILS_LAYOUT_BUFFER;
   return Math.max(PROJECT_DETAILS_MIN_WIDTH, maxWidth);
 }
 
-function clampProjectDetailsWidth(width, workspaceWidth, leftCollapsed = false) {
+function clampProjectDetailsWidth(width, workspaceWidth, leftCollapsed = false, options = {}) {
   const resolvedWidth = Number.isFinite(width) && width > 0 ? width : PROJECT_DETAILS_DEFAULT_WIDTH;
-  return Math.min(Math.max(PROJECT_DETAILS_MIN_WIDTH, resolvedWidth), getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed));
+  return Math.min(Math.max(PROJECT_DETAILS_MIN_WIDTH, resolvedWidth), getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed, options));
 }
 
 function getSavedProjectDetailsCollapsed() {
@@ -9228,6 +9230,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const projectAutosaveCacheRef = useRef(new Map());
   const projectTaskAutosaveCacheRef = useRef(new Map());
   const documentSettings = getDocumentSettings();
+  const isTasksOnlyView = (filters.type ?? 'all') === 'task';
 
   const getWorkRecordKey = (record) => String(record?.id ?? record?.localId ?? '').trim();
   const mergeSavedProjectDraft = (project) => {
@@ -9277,7 +9280,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     const clampDetailsWidth = () => {
       const workspaceWidth = projectsWorkspaceRef.current?.getBoundingClientRect().width;
       setDetailsWidth((currentWidth) => {
-        const nextWidth = clampProjectDetailsWidth(currentWidth, workspaceWidth, leftCollapsed);
+        const nextWidth = clampProjectDetailsWidth(currentWidth, workspaceWidth, leftCollapsed, { reserveCenterPanel: !isTasksOnlyView });
         if (Math.round(nextWidth) !== Math.round(currentWidth)) {
           localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
         }
@@ -9287,7 +9290,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     clampDetailsWidth();
     window.addEventListener('resize', clampDetailsWidth);
     return () => window.removeEventListener('resize', clampDetailsWidth);
-  }, [leftCollapsed]);
+  }, [leftCollapsed, isTasksOnlyView]);
 
   useEffect(() => {
     if (selectedProjectKey) localStorage.setItem(PROJECT_DETAILS_SELECTED_KEY, selectedProjectKey);
@@ -9746,10 +9749,13 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const startDetailsResize = (event) => {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = detailsWidth;
     const workspaceWidth = projectsWorkspaceRef.current?.getBoundingClientRect().width;
+    const reserveCenterPanel = !isTasksOnlyView && Boolean(selectedDetailsWork?._workType !== 'task');
+    const startWidth = reserveCenterPanel
+      ? detailsWidth
+      : clampProjectDetailsWidth(Math.max(detailsWidth, PROJECT_DETAILS_DEFAULT_WIDTH), workspaceWidth, leftCollapsed, { reserveCenterPanel });
     const onMouseMove = (moveEvent) => {
-      const nextWidth = clampProjectDetailsWidth(startWidth - (moveEvent.clientX - startX), workspaceWidth, leftCollapsed);
+      const nextWidth = clampProjectDetailsWidth(startWidth - (moveEvent.clientX - startX), workspaceWidth, leftCollapsed, { reserveCenterPanel });
       setDetailsWidth(nextWidth);
       localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
     };
@@ -9804,14 +9810,19 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       : 'Lista zadań i projektów';
   const leftColumnFlex = Math.max(0.1, 1 - columnsSplit);
   const centerColumnFlex = Math.max(0.1, columnsSplit);
+  const hasProjectBoard = Boolean(selectedProject);
+  const isSimpleTaskDetailsLayout = Boolean(selectedSimpleTask && !hasProjectBoard);
+  const detailsLayoutWidth = isSimpleTaskDetailsLayout
+    ? Math.round(clampProjectDetailsWidth(Math.max(detailsWidth, PROJECT_DETAILS_DEFAULT_WIDTH), projectsWorkspaceRef.current?.getBoundingClientRect().width, leftCollapsed, { reserveCenterPanel: false }))
+    : detailsWidth;
 
-  return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''} ${leftCollapsed ? 'projects-left-collapsed-mode' : ''}`}>
+  return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''} ${leftCollapsed ? 'projects-left-collapsed-mode' : ''} ${isSimpleTaskDetailsLayout ? 'projects-task-details-layout' : ''}`}>
     <div className="projects-workspace" ref={projectsWorkspaceRef}>
       {leftCollapsed
         ? <aside className="project-details-collapsed projects-left-collapsed">
           <button type="button" className="project-icon-action" onClick={() => setLeftCollapsed(false)} aria-label="Pokaż listę" title="Pokaż listę"><ChevronRight size={15} /></button>
         </aside>
-        : <div className="projects-list-pane" style={{ flexGrow: leftColumnFlex }}>
+        : <div className="projects-list-pane" style={{ flexGrow: hasProjectBoard ? leftColumnFlex : 1 }}>
         <button type="button" className="project-icon-action projects-left-collapse-button" onClick={() => setLeftCollapsed(true)} aria-label="Zwiń listę" title="Zwiń listę"><ChevronLeft size={15} /></button>
         <section className="panel hero-panel projects-actions-panel">
           <div className="module-actions">
@@ -9865,7 +9876,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
           />}
         </AppSection>
       </div>}
-      {selectedProject && <ProjectDetailsPanel
+      {hasProjectBoard && <ProjectDetailsPanel
         project={selectedProject}
         embedded
         style={{ flexGrow: leftCollapsed ? 1 : centerColumnFlex }}
@@ -9881,10 +9892,10 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         colorTheme={colorTheme}
       />}
       {detailsOpen && (selectedSimpleTask
-        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
+        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
         : selectedProjectTask
-          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} />
-          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveProject={saveProjectFromInspector} autosaveRef={detailsAutosaveRef} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} />)}
+          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} />
+          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveProject={saveProjectFromInspector} autosaveRef={detailsAutosaveRef} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} />)}
     </div>
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}

@@ -9957,7 +9957,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         <button type="button" className="project-icon-action projects-left-collapse-button" onClick={() => setLeftCollapsed(true)} aria-label="Zwiń listę" title="Zwiń listę"><ChevronLeft size={15} /></button>
         <section className="panel hero-panel projects-actions-panel">
           <div className="module-actions">
-            <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Proste zadanie</AppButton>
+            <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Zadanie</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>

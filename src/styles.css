@@ -12644,12 +12644,20 @@ body.rental-items-section-resizing *{
 .global-search-result small { font-weight: 400; }
 
 /* ── Projects & Organizer ── */
-.project-section-name { font-weight: 600; }
+.project-table-title,
+.project-table-title > span,
+.project-table-title > span:last-child,
+.work-title-project,
+.work-title-done,
+.project-detail-task-main strong,
+.simple-task-details-card > strong { font-weight: var(--fw-weight-medium); }
+.project-section-name { font-weight: var(--fw-weight-semibold); }
 .history-toggle { font-weight: 500; }
 .project-icon-action { font-weight: 600; }
 .project-details-collapsed button { font-weight: 600; }
 .project-details-header span { font-weight: 600; }
 .project-details-type { font-weight: 600 !important; }
+.project-detail-section-toggle strong { font-weight: var(--fw-weight-semibold); }
 .project-detail-section-toggle em { font-weight: 600; }
 .project-detail-task-main span { font-weight: 500; }
 .project-detail-task-comments { font-weight: 600; }
@@ -12660,7 +12668,6 @@ body.rental-items-section-resizing *{
 .simple-task-details-card dt { font-weight: 600; }
 .simple-task-details-card dd { font-weight: 400; }
 .work-type-pill { font-weight: 600; }
-.work-title-project { font-weight: 700; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Context Menu Slim — v0.6.1
@@ -12805,4 +12812,1632 @@ body.rental-items-section-resizing *{
   display:grid;
   grid-template-columns:minmax(0,1fr);
   gap:8px;
+}
+
+/* Global UI refresh layer v0.6.2
+   Lightweight SaaS surface system shared by every existing module. */
+:root {
+  color-scheme: light dark;
+  background: var(--fw-color-app-bg);
+  color: var(--fw-color-text);
+}
+
+html,
+body,
+#root {
+  min-width: 0;
+  min-height: 100%;
+}
+
+body {
+  min-width: 0;
+  background: var(--fw-color-app-bg);
+  color: var(--fw-color-text);
+  font-family: var(--fw-font-family);
+  font-size: var(--fw-font-size-base);
+  line-height: 1.45;
+}
+
+.app-shell {
+  background: var(--fw-color-app-bg);
+  color: var(--fw-color-text);
+}
+
+.app-shell.theme-light {
+  background: var(--fw-color-app-bg);
+}
+
+.app-shell.theme-dark {
+  background: var(--fw-color-app-bg);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--fw-font-family);
+  letter-spacing: 0;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 0;
+  border-color: var(--fw-color-primary-border) !important;
+  box-shadow: 0 0 0 3px var(--fw-color-primary-soft) !important;
+}
+
+.sidebar {
+  background: var(--fw-color-surface);
+  border-right: 1px solid var(--fw-color-border);
+  padding: 14px 12px;
+  box-shadow: none;
+}
+
+.sidebar-header {
+  gap: 10px;
+  padding: 2px 2px 14px;
+}
+
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-color-button-primary, var(--fw-color-primary));
+  box-shadow: none;
+  font-weight: var(--fw-weight-extrabold);
+}
+
+.sidebar h2 {
+  color: var(--fw-color-text-strong);
+  font-size: 18px;
+  font-weight: var(--fw-weight-semibold);
+}
+
+.sidebar p,
+.muted {
+  color: var(--fw-color-text-muted);
+  font-weight: var(--fw-weight-body);
+}
+
+.nav-list {
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.nav-item,
+.ghost-button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: var(--fw-radius-md);
+  color: var(--fw-color-text-soft);
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: var(--fw-weight-medium);
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease;
+}
+
+.nav-item:hover,
+.ghost-button:hover {
+  background: var(--fw-color-hover);
+  color: var(--fw-color-text-strong);
+}
+
+.nav-item.active {
+  background: var(--fw-color-selection);
+  color: var(--fw-color-menu-active);
+  border-color: var(--fw-color-primary-border);
+  box-shadow: inset 2px 0 0 var(--fw-color-selection-bar);
+}
+
+.user-card,
+.avatar {
+  border-radius: var(--fw-radius-md);
+}
+
+.user-card {
+  background: var(--fw-color-section-soft);
+  border-color: var(--fw-color-border);
+  padding: 10px;
+}
+
+.topbar {
+  height: 72px;
+  padding: 12px 24px;
+  gap: 14px;
+  background: color-mix(in srgb, var(--fw-color-app-bg) 88%, var(--fw-color-surface) 12%);
+  border-bottom: 1px solid var(--fw-color-border);
+  box-shadow: none;
+}
+
+.topbar h1,
+.hero-panel h2 {
+  color: var(--fw-color-text-strong);
+  font-size: var(--fw-font-size-topbar-title);
+  font-weight: var(--fw-weight-semibold);
+  line-height: 1.15;
+}
+
+.eyebrow,
+.app-eyebrow,
+.ds-eyebrow {
+  color: var(--fw-color-text-muted);
+  font-size: var(--fw-font-size-xs);
+  font-weight: var(--fw-weight-medium);
+  letter-spacing: .08em;
+}
+
+.topbar-actions {
+  gap: 8px;
+  min-width: 0;
+}
+
+.global-search {
+  min-width: min(280px, 36vw);
+  max-width: 560px;
+  height: var(--fw-control-height-lg);
+  border-color: var(--fw-color-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-color-surface);
+  padding: 0 12px;
+}
+
+.global-search input {
+  height: 100%;
+  color: var(--fw-color-text-strong);
+  font-size: var(--fw-font-size-control);
+}
+
+.global-search input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--fw-color-text-muted) 72%, transparent);
+}
+
+.page-content {
+  height: calc(100vh - 72px);
+  padding: 16px 24px 28px;
+}
+
+.module-page {
+  gap: 12px;
+}
+
+.hero-panel {
+  padding: 10px 0;
+  gap: 5px;
+}
+
+.hero-panel .muted {
+  font-size: 13px;
+}
+
+.panel,
+.stat-card,
+.login-card,
+.modal-card,
+.app-section,
+.ds-section-panel,
+.settings-card,
+.settings-config-card,
+.settings-content,
+.settings-sidebar,
+.settings-section-shell,
+.documents-nav-panel,
+.documents-detail-panel,
+.settings-preview-panel,
+.calendar-work-filter-card,
+.system-info-panel,
+.system-warning-panel,
+.summary-box,
+.form-section,
+.flat-form-section,
+.kanban-column,
+.task-card,
+.timeline-row div,
+.quick-actions button,
+.alert-row {
+  border: 1px solid var(--fw-color-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-color-surface);
+  box-shadow: none;
+}
+
+.panel,
+.settings-config-card,
+.settings-card {
+  padding: 14px;
+}
+
+.stat-card {
+  padding: 14px 16px;
+}
+
+.panel-header,
+.settings-config-card-header,
+.documents-card-header-row {
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.panel-header h2,
+.dashboard-panel-title,
+.settings-config-card h3,
+.settings-card h3,
+.documents-card-header-row strong {
+  color: var(--fw-color-text-strong);
+  font-size: var(--fw-font-size-panel-title);
+  font-weight: var(--fw-weight-semibold);
+  line-height: 1.25;
+}
+
+.stat-card p,
+.dashboard-metrics-label {
+  color: var(--fw-color-text-muted);
+  font-size: 12px;
+  font-weight: var(--fw-weight-medium);
+}
+
+.stat-card strong,
+.dashboard-metric-card strong {
+  color: var(--fw-color-text-strong);
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: var(--fw-weight-semibold);
+}
+
+.icon-button,
+.primary-button,
+.secondary-button,
+.app-button,
+.ds-button,
+.ds-icon-button,
+.panel-header button,
+.row-actions button,
+.compact-table-button,
+.module-actions .module-action-button,
+.theme-choice-button,
+.file-button,
+.settings-action-row button,
+.backup-action-button,
+.calendar-filter-button,
+.work-type-switch button,
+.calendar-view-switch button,
+.tabs button,
+.equipment-tabs button,
+.record-tabs button,
+.service-order-tabs button,
+.settings-top-tab,
+.settings-inner-tab,
+.settings-sub-tab,
+.documents-nav-item,
+.agreement-subtab,
+.dictionary-icon-button {
+  min-height: var(--fw-control-height-md);
+  border: 1px solid var(--fw-color-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-color-section-soft);
+  color: var(--fw-color-text-soft);
+  font-size: var(--fw-font-size-control);
+  font-weight: var(--fw-weight-medium);
+  box-shadow: none;
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease, filter .14s ease;
+}
+
+.primary-button,
+.app-button-primary,
+.ds-button-primary,
+.theme-choice-button.active,
+.backup-action-button.primary {
+  border-color: transparent;
+  background: var(--fw-color-button-primary, var(--fw-color-primary));
+  color: #fff;
+}
+
+.secondary-button:hover,
+.icon-button:hover,
+.app-button-secondary:hover,
+.app-button-ghost:hover,
+.ds-button-secondary:hover,
+.ds-button-ghost:hover,
+.ds-icon-button:hover,
+.panel-header button:hover,
+.row-actions button:hover,
+.compact-table-button:hover,
+.module-actions .module-action-button:hover,
+.tabs button:hover,
+.equipment-tabs button:hover,
+.record-tabs button:hover,
+.service-order-tabs button:hover,
+.settings-top-tab:hover,
+.settings-inner-tab:hover,
+.settings-sub-tab:hover,
+.documents-nav-item:hover,
+.agreement-subtab:hover {
+  background: var(--fw-color-hover);
+  border-color: var(--fw-color-border-hover);
+  color: var(--fw-color-text-strong);
+}
+
+.app-button-danger,
+.ds-button-danger,
+.danger-bulk-button,
+.row-actions .danger-action {
+  color: var(--fw-color-danger);
+  border-color: color-mix(in srgb, var(--fw-color-danger) 28%, transparent);
+  background: color-mix(in srgb, var(--fw-color-danger) 9%, transparent);
+}
+
+input,
+select,
+textarea,
+.app-input,
+.login-form input,
+.form-grid input,
+.form-grid select,
+.form-grid textarea,
+.inline-form input,
+.client-filter-bar input,
+.client-filter-bar select,
+.notes-rich-text-editor,
+.notes-rich-text-editor .ProseMirror,
+.dictionary-row input,
+.dictionary-add-row input,
+.dictionary-add-compact input,
+.dictionary-row-compact input {
+  border: 1px solid var(--fw-color-border-strong);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-color-section);
+  color: var(--fw-color-text-strong);
+  min-height: var(--fw-control-height-md);
+  font-size: var(--fw-font-size-control);
+  font-weight: var(--fw-weight-body);
+  box-shadow: none;
+}
+
+textarea,
+.app-textarea,
+.form-grid textarea {
+  line-height: 1.45;
+}
+
+.login-form label,
+.form-grid label,
+.app-form-field,
+.ds-form-field,
+.settings-field,
+.company-field,
+.firm-field,
+.calendar-source-color-field {
+  color: var(--fw-color-text-soft);
+  font-size: var(--fw-font-size-label);
+  font-weight: var(--fw-weight-medium);
+}
+
+table,
+.app-table,
+.data-table,
+.expanded-set-table,
+.dashboard-mini-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--fw-color-table-bg, transparent);
+  font-size: var(--fw-font-size-table);
+}
+
+th,
+td,
+.app-table th,
+.app-table td,
+.data-table th,
+.data-table td,
+.expanded-set-table th,
+.expanded-set-table td,
+.dashboard-mini-table th,
+.dashboard-mini-table td {
+  border-bottom: 1px solid var(--fw-color-border);
+  color: var(--fw-color-text);
+  padding: 9px 10px;
+}
+
+th,
+.table-scroll thead th,
+.app-table th,
+.data-table th,
+.expanded-set-table th,
+.dashboard-mini-table th {
+  color: var(--fw-color-text-muted);
+  background: var(--fw-color-surface-strong);
+  font-size: var(--fw-font-size-table-head);
+  font-weight: var(--fw-weight-medium);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  box-shadow: 0 1px 0 var(--fw-color-border);
+}
+
+th.sorted,
+.table-scroll thead th.sorted {
+  color: var(--fw-color-menu-active);
+  background: var(--fw-color-selection);
+  box-shadow: inset 0 -2px 0 var(--fw-color-selection-bar), 0 1px 0 var(--fw-color-border);
+}
+
+.table-shell tbody tr,
+.data-table tbody tr,
+.app-table tbody tr {
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease;
+}
+
+.table-shell tbody tr:hover,
+.data-table tbody tr:hover,
+.app-table tbody tr:hover {
+  background: var(--fw-color-hover);
+}
+
+.table-shell tbody tr:hover td,
+.data-table tbody tr:hover td,
+.app-table tbody tr:hover td {
+  color: var(--fw-color-text-strong);
+}
+
+.table-shell tbody tr.selected-row {
+  background: var(--fw-color-selection);
+  box-shadow: inset 2px 0 0 var(--fw-color-selection-bar);
+}
+
+.table-tools,
+.table-toolbar,
+.client-filter-bar,
+.project-filter-bar,
+.shared-picker-toolbar,
+.equipment-picker-toolbar,
+.calendar-toolbar,
+.notifications-header,
+.settings-action-row,
+.module-actions {
+  gap: 8px;
+}
+
+.table-toolbar,
+.table-tools,
+.client-filter-bar,
+.project-filter-bar,
+.shared-picker-toolbar,
+.equipment-picker-toolbar {
+  border-color: var(--fw-color-border);
+}
+
+.status-pill,
+.app-badge,
+.ds-status-pill,
+.config-tag,
+.work-type-pill,
+.equipment-set-badge,
+.dictionary-readonly-badge {
+  border-radius: 999px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: var(--fw-weight-medium);
+  line-height: 1.2;
+}
+
+.status-pill,
+.app-badge-info,
+.ds-status-pill.tone-info {
+  background: var(--fw-color-primary-soft);
+  color: var(--fw-color-menu-active);
+}
+
+.status-pill.success,
+.app-badge-success,
+.ds-status-pill.tone-success {
+  color: var(--fw-color-success-text);
+}
+
+.status-pill.warning,
+.app-badge-warning,
+.ds-status-pill.tone-warning {
+  color: var(--fw-color-warning-text);
+}
+
+.status-pill.danger,
+.app-badge-danger,
+.ds-status-pill.tone-danger {
+  color: var(--fw-color-danger-text);
+}
+
+.modal-backdrop,
+.draggable-modal-backdrop {
+  background: rgba(15, 23, 42, .46);
+  backdrop-filter: blur(4px);
+}
+
+.modal-card,
+.app-modal,
+.ds-modal-frame,
+.client-modal {
+  border-radius: var(--fw-radius-modal);
+  background: var(--fw-color-surface-strong);
+  border-color: var(--fw-color-border);
+  box-shadow: var(--fw-shadow-modal);
+}
+
+.modal-header,
+.app-modal-header,
+.ds-modal-header,
+.draggable-modal-header {
+  border-bottom-color: var(--fw-color-border);
+}
+
+.modal-actions,
+.app-modal-footer,
+.ds-modal-footer {
+  border-top-color: var(--fw-color-border);
+}
+
+.column-context-menu,
+.row-context-menu,
+.column-submenu,
+.context-menu,
+.calendar-source-menu,
+.notifications-popover,
+.global-search-results {
+  border: 1px solid var(--fw-color-border);
+  border-radius: var(--fw-radius-lg);
+  background: var(--fw-color-surface-strong);
+  box-shadow: var(--fw-shadow-menu);
+}
+
+.column-context-menu button,
+.column-submenu button,
+.row-context-menu button,
+.context-menu button,
+.column-context-menu label,
+.column-submenu label {
+  border-radius: var(--fw-radius-md);
+  font-size: 13px;
+  font-weight: var(--fw-weight-medium);
+}
+
+.column-context-menu button:hover,
+.column-submenu button:hover,
+.row-context-menu button:hover,
+.context-menu button:hover,
+.column-context-menu label:hover,
+.column-submenu label:hover {
+  background: var(--fw-color-hover);
+}
+
+.context-menu-title {
+  border-bottom-color: var(--fw-color-border);
+  color: var(--fw-color-text-muted);
+  letter-spacing: .06em;
+}
+
+.app-shell.theme-light .panel,
+.app-shell.theme-light .stat-card,
+.app-shell.theme-light .login-card,
+.app-shell.theme-light .modal-card,
+.app-shell.theme-light .app-section,
+.app-shell.theme-light .ds-section-panel,
+.app-shell.theme-light .settings-card,
+.app-shell.theme-light .settings-config-card,
+.app-shell.theme-light .settings-content,
+.app-shell.theme-light .settings-sidebar,
+.app-shell.theme-light .settings-section-shell,
+.app-shell.theme-light .documents-nav-panel,
+.app-shell.theme-light .documents-detail-panel,
+.app-shell.theme-light .settings-preview-panel,
+.app-shell.theme-light .summary-box,
+.app-shell.theme-light .form-section,
+.app-shell.theme-light .flat-form-section,
+.app-shell.theme-light .kanban-column,
+.app-shell.theme-light .task-card,
+.app-shell.theme-light .timeline-row div,
+.app-shell.theme-light .quick-actions button,
+.app-shell.theme-light .alert-row {
+  background: var(--fw-color-surface);
+  border-color: var(--fw-color-border);
+  box-shadow: none;
+}
+
+.app-shell.theme-light input,
+.app-shell.theme-light select,
+.app-shell.theme-light textarea,
+.app-shell.theme-light .app-input,
+.app-shell.theme-light .login-form input,
+.app-shell.theme-light .form-grid input,
+.app-shell.theme-light .form-grid select,
+.app-shell.theme-light .form-grid textarea,
+.app-shell.theme-light .inline-form input,
+.app-shell.theme-light .client-filter-bar input,
+.app-shell.theme-light .client-filter-bar select {
+  background: var(--fw-color-section);
+  border-color: var(--fw-color-border-strong);
+  color: var(--fw-color-text-strong);
+}
+
+.compact .topbar {
+  height: 64px;
+}
+
+.compact .page-content {
+  height: calc(100vh - 64px);
+}
+
+.compact .panel,
+.compact .stat-card,
+.compact .settings-card,
+.compact .settings-config-card {
+  padding: 10px;
+}
+
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .topbar {
+    padding-inline: 16px;
+  }
+
+  .page-content {
+    padding-inline: 16px;
+  }
+
+  .dashboard-grid,
+  .stats-grid,
+  .settings-grid,
+  .kanban {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--fw-color-border);
+  }
+
+  .nav-list {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(140px, max-content);
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .sidebar-footer {
+    display: none;
+  }
+
+  .topbar {
+    position: relative;
+    height: auto;
+    min-height: 64px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .topbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .global-search {
+    flex: 1 1 260px;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .page-content,
+  .compact .page-content {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .main-area {
+    height: auto;
+    overflow: visible;
+  }
+
+  .module-page {
+    height: auto;
+  }
+
+  .dashboard-grid,
+  .stats-grid,
+  .settings-grid,
+  .kanban,
+  .form-grid,
+  .quick-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-card,
+  .app-modal,
+  .ds-modal-frame,
+  .client-modal {
+    width: min(100%, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+  }
+}
+
+/* Table selection checkbox refinement v0.6.3 */
+th.selection-cell,
+td.selection-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.selection-cell input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 15px;
+  min-width: 15px;
+  max-width: 15px;
+  height: 15px;
+  min-height: 15px !important;
+  max-height: 15px;
+  margin: 0 auto;
+  padding: 0;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  border: 1px solid var(--fw-color-border-strong);
+  border-radius: 4px;
+  background: var(--fw-color-section);
+  color: #fff;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+.selection-cell input[type="checkbox"]::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scale(0);
+  transition: transform .12s ease;
+}
+
+.selection-cell input[type="checkbox"]:checked {
+  border-color: var(--fw-color-button-primary, var(--fw-color-primary));
+  background: var(--fw-color-button-primary, var(--fw-color-primary));
+}
+
+.selection-cell input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+.selection-cell input[type="checkbox"]:hover {
+  border-color: var(--fw-color-border-hover);
+  background: var(--fw-color-hover);
+}
+
+.selection-cell input[type="checkbox"]:checked:hover {
+  border-color: var(--fw-color-button-primary, var(--fw-color-primary));
+  background: var(--fw-color-button-primary, var(--fw-color-primary));
+  filter: brightness(1.04);
+}
+
+.selection-cell input[type="checkbox"]:focus-visible {
+  outline: 0;
+  border-color: var(--fw-color-primary-border) !important;
+  box-shadow: 0 0 0 2px var(--fw-color-primary-soft) !important;
+}
+
+.app-shell.theme-light .selection-cell input[type="checkbox"] {
+  background: #fff;
+  border-color: var(--fw-color-border-strong);
+}
+
+.app-shell.theme-light .selection-cell input[type="checkbox"]:hover {
+  background: var(--fw-color-hover);
+  border-color: var(--fw-color-border-hover);
+}
+
+.app-shell.theme-light .selection-cell input[type="checkbox"]:checked,
+.app-shell.theme-light .selection-cell input[type="checkbox"]:checked:hover {
+  background: var(--fw-color-button-primary, var(--fw-color-primary));
+  border-color: var(--fw-color-button-primary, var(--fw-color-primary));
+}
+
+/* Dark mode select/dropdown contrast v0.6.4 */
+.app-shell.theme-dark {
+  color-scheme: dark;
+}
+
+.app-shell.theme-dark select,
+.app-shell.theme-dark .app-select,
+.app-shell.theme-dark .ds-form-field select,
+.app-shell.theme-dark .client-filter-bar select,
+.app-shell.theme-dark .settings-content select,
+.app-shell.theme-dark .settings-field select,
+.app-shell.theme-dark .equipment-basic-grid select,
+.app-shell.theme-dark .set-basic-grid select,
+.app-shell.theme-dark .set-component-add-row select,
+.app-shell.theme-dark .set-picker-filters select,
+.app-shell.theme-dark .shared-picker-toolbar select,
+.app-shell.theme-dark .equipment-picker-toolbar select,
+.app-shell.theme-dark .rental-document-grid .app-select,
+.app-shell.theme-dark .document-template-row .app-select,
+.app-shell.theme-dark .document-designer-toolbar-field .app-select,
+.app-shell.theme-dark .document-designer-properties .firm-field .app-select,
+.app-shell.theme-dark .document-numbering-row .app-select,
+.app-shell.theme-dark .interface-rows-field select,
+.app-shell.theme-dark .interface-rows-field .app-select,
+.app-shell.theme-dark .organizer-task-strip select,
+.app-shell.theme-dark .service-document-strip select,
+.app-shell.theme-dark .calendar-filter-popover-field .app-select {
+  color-scheme: dark;
+  background-color: var(--fw-color-section);
+  color: var(--fw-color-text-strong);
+  border-color: var(--fw-color-border-strong);
+}
+
+.app-shell.theme-dark select:hover,
+.app-shell.theme-dark .app-select:hover,
+.app-shell.theme-dark .ds-form-field select:hover,
+.app-shell.theme-dark .client-filter-bar select:hover,
+.app-shell.theme-dark .settings-content select:hover,
+.app-shell.theme-dark .settings-field select:hover {
+  border-color: var(--fw-color-border-hover);
+}
+
+.app-shell.theme-dark select:focus,
+.app-shell.theme-dark .app-select:focus,
+.app-shell.theme-dark .ds-form-field select:focus,
+.app-shell.theme-dark .client-filter-bar select:focus,
+.app-shell.theme-dark .settings-content select:focus,
+.app-shell.theme-dark .settings-field select:focus {
+  border-color: var(--fw-color-primary-border);
+  box-shadow: 0 0 0 2px var(--fw-color-primary-soft);
+}
+
+.app-shell.theme-dark select:focus-visible,
+.app-shell.theme-dark .app-select:focus-visible,
+.app-shell.theme-dark .ds-form-field select:focus-visible,
+.app-shell.theme-dark .client-filter-bar select:focus-visible,
+.app-shell.theme-dark .settings-content select:focus-visible,
+.app-shell.theme-dark .settings-field select:focus-visible {
+  outline: 0;
+  border-color: var(--fw-color-primary-border) !important;
+  box-shadow: 0 0 0 2px var(--fw-color-primary-soft) !important;
+}
+
+.app-shell.theme-dark select:disabled,
+.app-shell.theme-dark .app-select:disabled,
+.app-shell.theme-dark .ds-form-field select:disabled {
+  background-color: color-mix(in srgb, var(--fw-color-surface) 74%, transparent);
+  color: var(--fw-color-text-muted);
+  border-color: var(--fw-color-border);
+}
+
+.app-shell.theme-dark select option,
+.app-shell.theme-dark .app-select option,
+.app-shell.theme-dark select optgroup {
+  background-color: var(--fw-color-surface-strong);
+  color: var(--fw-color-text-strong);
+  outline: 0;
+}
+
+.app-shell.theme-dark select option:hover,
+.app-shell.theme-dark .app-select option:hover {
+  background-color: var(--fw-color-hover);
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-dark select option:checked,
+.app-shell.theme-dark .app-select option:checked {
+  background-color: var(--fw-color-selection);
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-dark select option:disabled,
+.app-shell.theme-dark .app-select option:disabled {
+  background-color: var(--fw-color-surface-strong);
+  color: var(--fw-color-text-muted);
+}
+
+.app-shell.theme-dark .service-status-dropdown:not(.theme-light),
+.app-shell.theme-dark .calendar-filter-popover,
+.app-shell.theme-dark .calendar-source-menu-list,
+.app-shell.theme-dark .document-designer-toolbar-menu,
+.app-shell.theme-dark .document-designer-element-actions-menu,
+.app-shell.theme-dark .documents-template-header-menu-panel,
+.app-shell.theme-dark .documents-template-row-menu-panel {
+  background: var(--fw-color-surface-strong);
+  border: 1px solid color-mix(in srgb, var(--fw-color-border) 72%, var(--fw-color-surface) 28%);
+  color: var(--fw-color-text-strong);
+  outline: 0;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .24);
+}
+
+.app-shell.theme-dark .service-status-option:hover,
+.app-shell.theme-dark .calendar-source-menu-list label:hover,
+.app-shell.theme-dark .document-designer-toolbar-menu-item:hover:not(:disabled),
+.app-shell.theme-dark .document-designer-element-actions-menu-item:hover,
+.app-shell.theme-dark .documents-template-row-menu-item:hover {
+  background: var(--fw-color-hover);
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-dark .service-status-option.active {
+  background: var(--fw-color-selection);
+  color: var(--fw-color-text-strong);
+}
+
+/* Dark mode native dropdown hardening v0.6.5 */
+.app-shell.theme-dark {
+  --fw-dropdown-bg: var(--fw-color-surface-strong);
+  --fw-dropdown-item-bg: var(--fw-color-surface-strong);
+  --fw-dropdown-hover-bg: color-mix(in srgb, var(--fw-color-text-strong) 8%, var(--fw-color-surface-strong) 92%);
+  --fw-dropdown-selected-bg: color-mix(in srgb, var(--fw-color-primary) 24%, var(--fw-color-surface-strong) 76%);
+  --fw-dropdown-border: color-mix(in srgb, var(--fw-color-border) 62%, var(--fw-color-surface-strong) 38%);
+}
+
+.app-shell.theme-dark select,
+.app-shell.theme-dark .app-select {
+  outline: 0 !important;
+}
+
+.app-shell.theme-dark select:focus,
+.app-shell.theme-dark select:focus-visible,
+.app-shell.theme-dark .app-select:focus,
+.app-shell.theme-dark .app-select:focus-visible,
+.app-shell.theme-dark .ds-form-field select:focus,
+.app-shell.theme-dark .ds-form-field select:focus-visible,
+.app-shell.theme-dark .client-filter-bar select:focus,
+.app-shell.theme-dark .client-filter-bar select:focus-visible,
+.app-shell.theme-dark .settings-content select:focus,
+.app-shell.theme-dark .settings-content select:focus-visible,
+.app-shell.theme-dark .settings-field select:focus,
+.app-shell.theme-dark .settings-field select:focus-visible {
+  outline: 0 !important;
+  border-color: var(--fw-color-primary-border) !important;
+  box-shadow: inset 0 0 0 1px var(--fw-color-primary-border) !important;
+}
+
+.app-shell.theme-dark select option,
+.app-shell.theme-dark .app-select option {
+  background: var(--fw-dropdown-item-bg) !important;
+  background-color: var(--fw-dropdown-item-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+.app-shell.theme-dark select option:hover,
+.app-shell.theme-dark .app-select option:hover,
+.app-shell.theme-dark select option:focus,
+.app-shell.theme-dark .app-select option:focus {
+  background: var(--fw-dropdown-hover-bg) !important;
+  background-color: var(--fw-dropdown-hover-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+  box-shadow: inset 0 0 0 9999px var(--fw-dropdown-hover-bg) !important;
+}
+
+.app-shell.theme-dark select option:checked,
+.app-shell.theme-dark .app-select option:checked {
+  background: var(--fw-dropdown-selected-bg) !important;
+  background-color: var(--fw-dropdown-selected-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+  box-shadow: inset 0 0 0 9999px var(--fw-dropdown-selected-bg) !important;
+}
+
+.app-shell.theme-dark select option:disabled,
+.app-shell.theme-dark .app-select option:disabled {
+  background: var(--fw-dropdown-item-bg) !important;
+  background-color: var(--fw-dropdown-item-bg) !important;
+  color: var(--fw-color-text-muted) !important;
+  box-shadow: none !important;
+}
+
+.app-shell.theme-dark .service-status-dropdown:not(.theme-light),
+.app-shell.theme-dark .calendar-filter-popover,
+.app-shell.theme-dark .calendar-source-menu-list,
+.app-shell.theme-dark .document-designer-toolbar-menu,
+.app-shell.theme-dark .document-designer-element-actions-menu,
+.app-shell.theme-dark .documents-template-header-menu-panel,
+.app-shell.theme-dark .documents-template-row-menu-panel,
+.app-shell.theme-dark .column-context-menu,
+.app-shell.theme-dark .column-submenu,
+.app-shell.theme-dark .row-context-menu,
+.app-shell.theme-dark .context-menu,
+.app-shell.theme-dark .global-search-results,
+.app-shell.theme-dark .notifications-popover {
+  background: var(--fw-dropdown-bg) !important;
+  border: 1px solid var(--fw-dropdown-border) !important;
+  outline: 0 !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .22) !important;
+}
+
+.app-shell.theme-dark .service-status-option,
+.app-shell.theme-dark .calendar-source-menu-list label,
+.app-shell.theme-dark .document-designer-toolbar-menu-item,
+.app-shell.theme-dark .document-designer-element-actions-menu-item,
+.app-shell.theme-dark .documents-template-row-menu-item,
+.app-shell.theme-dark .column-context-menu button,
+.app-shell.theme-dark .column-context-menu label,
+.app-shell.theme-dark .column-submenu button,
+.app-shell.theme-dark .column-submenu label,
+.app-shell.theme-dark .row-context-menu button,
+.app-shell.theme-dark .context-menu button {
+  background: transparent;
+  color: var(--fw-color-text-strong);
+  outline: 0;
+  box-shadow: none;
+}
+
+.app-shell.theme-dark .service-status-option:hover,
+.app-shell.theme-dark .calendar-source-menu-list label:hover,
+.app-shell.theme-dark .document-designer-toolbar-menu-item:hover:not(:disabled),
+.app-shell.theme-dark .document-designer-element-actions-menu-item:hover,
+.app-shell.theme-dark .documents-template-row-menu-item:hover,
+.app-shell.theme-dark .column-context-menu button:hover,
+.app-shell.theme-dark .column-context-menu label:hover,
+.app-shell.theme-dark .column-submenu button:hover,
+.app-shell.theme-dark .column-submenu label:hover,
+.app-shell.theme-dark .row-context-menu button:hover,
+.app-shell.theme-dark .context-menu button:hover {
+  background: var(--fw-dropdown-hover-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+}
+
+.app-shell.theme-dark .service-status-option.active,
+.app-shell.theme-dark .column-context-menu button.active,
+.app-shell.theme-dark .column-submenu button.active {
+  background: var(--fw-dropdown-selected-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+}
+
+/* Filter result count v0.6.6 */
+.filter-count,
+.app-shell.theme-light .filter-count {
+  height: auto;
+  min-height: var(--fw-control-height-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fw-color-text-muted);
+  font-size: var(--fw-font-size-sm);
+  font-weight: var(--fw-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* Soft Dark theme v0.6.7 */
+.app-shell.theme-soft-dark {
+  color-scheme: dark;
+  --fw-dropdown-bg: var(--fw-color-surface-strong);
+  --fw-dropdown-item-bg: var(--fw-color-surface-strong);
+  --fw-dropdown-hover-bg: color-mix(in srgb, var(--fw-color-text-strong) 7%, var(--fw-color-surface-strong) 93%);
+  --fw-dropdown-selected-bg: color-mix(in srgb, var(--fw-color-primary) 22%, var(--fw-color-surface-strong) 78%);
+  --fw-dropdown-border: color-mix(in srgb, var(--fw-color-border) 68%, var(--fw-color-surface-strong) 32%);
+}
+
+.app-shell.theme-soft-dark select,
+.app-shell.theme-soft-dark .app-select,
+.app-shell.theme-soft-dark .ds-form-field select,
+.app-shell.theme-soft-dark .client-filter-bar select,
+.app-shell.theme-soft-dark .settings-content select,
+.app-shell.theme-soft-dark .settings-field select,
+.app-shell.theme-soft-dark .equipment-basic-grid select,
+.app-shell.theme-soft-dark .set-basic-grid select,
+.app-shell.theme-soft-dark .set-component-add-row select,
+.app-shell.theme-soft-dark .set-picker-filters select,
+.app-shell.theme-soft-dark .shared-picker-toolbar select,
+.app-shell.theme-soft-dark .equipment-picker-toolbar select,
+.app-shell.theme-soft-dark .interface-rows-field select,
+.app-shell.theme-soft-dark .organizer-task-strip select,
+.app-shell.theme-soft-dark .service-document-strip select {
+  color-scheme: dark;
+  background-color: var(--fw-color-section);
+  color: var(--fw-color-text-strong);
+  border-color: var(--fw-color-border-strong);
+  outline: 0 !important;
+}
+
+.app-shell.theme-soft-dark select:hover,
+.app-shell.theme-soft-dark .app-select:hover,
+.app-shell.theme-soft-dark .ds-form-field select:hover,
+.app-shell.theme-soft-dark .client-filter-bar select:hover,
+.app-shell.theme-soft-dark .settings-content select:hover,
+.app-shell.theme-soft-dark .settings-field select:hover {
+  border-color: var(--fw-color-border-hover);
+}
+
+.app-shell.theme-soft-dark select:focus,
+.app-shell.theme-soft-dark select:focus-visible,
+.app-shell.theme-soft-dark .app-select:focus,
+.app-shell.theme-soft-dark .app-select:focus-visible,
+.app-shell.theme-soft-dark .ds-form-field select:focus,
+.app-shell.theme-soft-dark .ds-form-field select:focus-visible,
+.app-shell.theme-soft-dark .client-filter-bar select:focus,
+.app-shell.theme-soft-dark .client-filter-bar select:focus-visible,
+.app-shell.theme-soft-dark .settings-content select:focus,
+.app-shell.theme-soft-dark .settings-content select:focus-visible,
+.app-shell.theme-soft-dark .settings-field select:focus,
+.app-shell.theme-soft-dark .settings-field select:focus-visible {
+  outline: 0 !important;
+  border-color: var(--fw-color-primary-border) !important;
+  box-shadow: inset 0 0 0 1px var(--fw-color-primary-border) !important;
+}
+
+.app-shell.theme-soft-dark select:disabled,
+.app-shell.theme-soft-dark .app-select:disabled,
+.app-shell.theme-soft-dark .ds-form-field select:disabled {
+  background-color: color-mix(in srgb, var(--fw-color-surface) 74%, transparent);
+  color: var(--fw-color-text-muted);
+  border-color: var(--fw-color-border);
+}
+
+.app-shell.theme-soft-dark select option,
+.app-shell.theme-soft-dark .app-select option,
+.app-shell.theme-soft-dark select optgroup {
+  background: var(--fw-dropdown-item-bg) !important;
+  background-color: var(--fw-dropdown-item-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+.app-shell.theme-soft-dark select option:hover,
+.app-shell.theme-soft-dark .app-select option:hover,
+.app-shell.theme-soft-dark select option:focus,
+.app-shell.theme-soft-dark .app-select option:focus {
+  background: var(--fw-dropdown-hover-bg) !important;
+  background-color: var(--fw-dropdown-hover-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+  box-shadow: inset 0 0 0 9999px var(--fw-dropdown-hover-bg) !important;
+}
+
+.app-shell.theme-soft-dark select option:checked,
+.app-shell.theme-soft-dark .app-select option:checked {
+  background: var(--fw-dropdown-selected-bg) !important;
+  background-color: var(--fw-dropdown-selected-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+  box-shadow: inset 0 0 0 9999px var(--fw-dropdown-selected-bg) !important;
+}
+
+.app-shell.theme-soft-dark select option:disabled,
+.app-shell.theme-soft-dark .app-select option:disabled {
+  background: var(--fw-dropdown-item-bg) !important;
+  background-color: var(--fw-dropdown-item-bg) !important;
+  color: var(--fw-color-text-muted) !important;
+  box-shadow: none !important;
+}
+
+.app-shell.theme-soft-dark .service-status-dropdown:not(.theme-light),
+.app-shell.theme-soft-dark .calendar-filter-popover,
+.app-shell.theme-soft-dark .calendar-source-menu-list,
+.app-shell.theme-soft-dark .document-designer-toolbar-menu,
+.app-shell.theme-soft-dark .document-designer-element-actions-menu,
+.app-shell.theme-soft-dark .documents-template-header-menu-panel,
+.app-shell.theme-soft-dark .documents-template-row-menu-panel,
+.app-shell.theme-soft-dark .column-context-menu,
+.app-shell.theme-soft-dark .column-submenu,
+.app-shell.theme-soft-dark .row-context-menu,
+.app-shell.theme-soft-dark .context-menu,
+.app-shell.theme-soft-dark .global-search-results,
+.app-shell.theme-soft-dark .notifications-popover {
+  background: var(--fw-dropdown-bg) !important;
+  border: 1px solid var(--fw-dropdown-border) !important;
+  color: var(--fw-color-text-strong);
+  outline: 0 !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .20) !important;
+}
+
+.app-shell.theme-soft-dark .service-status-option,
+.app-shell.theme-soft-dark .calendar-source-menu-list label,
+.app-shell.theme-soft-dark .document-designer-toolbar-menu-item,
+.app-shell.theme-soft-dark .document-designer-element-actions-menu-item,
+.app-shell.theme-soft-dark .documents-template-row-menu-item,
+.app-shell.theme-soft-dark .column-context-menu button,
+.app-shell.theme-soft-dark .column-context-menu label,
+.app-shell.theme-soft-dark .column-submenu button,
+.app-shell.theme-soft-dark .column-submenu label,
+.app-shell.theme-soft-dark .row-context-menu button,
+.app-shell.theme-soft-dark .context-menu button {
+  background: transparent;
+  color: var(--fw-color-text-strong);
+  outline: 0;
+  box-shadow: none;
+}
+
+.app-shell.theme-soft-dark .service-status-option:hover,
+.app-shell.theme-soft-dark .calendar-source-menu-list label:hover,
+.app-shell.theme-soft-dark .document-designer-toolbar-menu-item:hover:not(:disabled),
+.app-shell.theme-soft-dark .document-designer-element-actions-menu-item:hover,
+.app-shell.theme-soft-dark .documents-template-row-menu-item:hover,
+.app-shell.theme-soft-dark .column-context-menu button:hover,
+.app-shell.theme-soft-dark .column-context-menu label:hover,
+.app-shell.theme-soft-dark .column-submenu button:hover,
+.app-shell.theme-soft-dark .column-submenu label:hover,
+.app-shell.theme-soft-dark .row-context-menu button:hover,
+.app-shell.theme-soft-dark .context-menu button:hover {
+  background: var(--fw-dropdown-hover-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+}
+
+.app-shell.theme-soft-dark .service-status-option.active,
+.app-shell.theme-soft-dark .column-context-menu button.active,
+.app-shell.theme-soft-dark .column-submenu button.active {
+  background: var(--fw-dropdown-selected-bg) !important;
+  color: var(--fw-color-text-strong) !important;
+}
+
+/* Soft Dark shared side/detail panels v0.6.8 */
+.app-shell.theme-soft-dark .project-details-panel,
+.app-shell.theme-soft-dark .project-details-collapsed,
+.app-shell.theme-soft-dark .notes-details-panel,
+.app-shell.theme-soft-dark .documents-nav-panel,
+.app-shell.theme-soft-dark .documents-detail-panel,
+.app-shell.theme-soft-dark .settings-preview-panel {
+  background: var(--fw-color-surface);
+  border-color: var(--fw-color-border);
+  box-shadow: none;
+}
+
+.app-shell.theme-soft-dark .project-details-header {
+  background: var(--fw-color-surface);
+  border-bottom-color: var(--fw-color-border);
+}
+
+.app-shell.theme-soft-dark .project-details-body,
+.app-shell.theme-soft-dark .notes-details-body,
+.app-shell.theme-soft-dark .notes-details-fields {
+  background: transparent;
+}
+
+.app-shell.theme-soft-dark .project-details-header strong,
+.app-shell.theme-soft-dark .project-detail-task-main strong,
+.app-shell.theme-soft-dark .project-comment-row strong,
+.app-shell.theme-soft-dark .project-inspector-related strong,
+.app-shell.theme-soft-dark .simple-task-details-card > strong,
+.app-shell.theme-soft-dark .notes-board-card strong,
+.app-shell.theme-soft-dark .notes-board-column header strong {
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-soft-dark .project-details-header span,
+.app-shell.theme-soft-dark .project-detail-task-main span,
+.app-shell.theme-soft-dark .project-comment-row span,
+.app-shell.theme-soft-dark .project-detail-empty,
+.app-shell.theme-soft-dark .project-inspector-related span,
+.app-shell.theme-soft-dark .simple-task-details-card dt,
+.app-shell.theme-soft-dark .simple-task-details-card dd,
+.app-shell.theme-soft-dark .simple-task-details-card p,
+.app-shell.theme-soft-dark .notes-board-card span,
+.app-shell.theme-soft-dark .notes-board-card em,
+.app-shell.theme-soft-dark .notes-board-column header span,
+.app-shell.theme-soft-dark .notes-board-empty,
+.app-shell.theme-soft-dark .notes-save-status {
+  color: var(--fw-color-text-muted);
+}
+
+.app-shell.theme-soft-dark .project-details-type,
+.app-shell.theme-soft-dark .notes-details-panel .project-details-toolbar .project-icon-action.is-active {
+  background: var(--fw-color-primary-soft);
+  border-color: var(--fw-color-primary-border);
+  color: var(--fw-color-menu-active) !important;
+}
+
+.app-shell.theme-soft-dark .project-detail-section,
+.app-shell.theme-soft-dark .project-comment-row,
+.app-shell.theme-soft-dark .project-inspector-related,
+.app-shell.theme-soft-dark .simple-task-details-card,
+.app-shell.theme-soft-dark .notes-board-column,
+.app-shell.theme-soft-dark .notes-board-card,
+.app-shell.theme-soft-dark .notes-rich-text-shell {
+  background: var(--fw-color-section);
+  border-color: var(--fw-color-border);
+}
+
+.app-shell.theme-soft-dark .project-detail-section-head,
+.app-shell.theme-soft-dark .notes-board-column header,
+.app-shell.theme-soft-dark .notes-rich-text-toolbar {
+  background: var(--fw-color-section-soft);
+  border-color: var(--fw-color-border);
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-soft-dark .project-detail-section-head.is-colored {
+  background: var(--project-section-header-bg, var(--fw-color-section-soft));
+  color: var(--project-section-header-text, var(--fw-color-text-strong));
+}
+
+.app-shell.theme-soft-dark .project-detail-section-head.is-colored .project-detail-section-toggle em {
+  color: var(--project-section-header-muted, var(--fw-color-text-muted));
+}
+
+.app-shell.theme-soft-dark .project-detail-task-row:hover,
+.app-shell.theme-soft-dark .project-comment-interactive-row:not(.is-editing):hover,
+.app-shell.theme-soft-dark .notes-board-card:hover,
+.app-shell.theme-soft-dark .notes-board-card.is-selected {
+  background: var(--fw-color-hover);
+  border-color: var(--fw-color-border-hover);
+}
+
+.app-shell.theme-soft-dark .project-detail-task-item.is-selected,
+.app-shell.theme-soft-dark .projects-list-panel .table-shell tbody tr.active-row,
+.app-shell.theme-soft-dark .projects-list-panel .table-shell tbody tr.active-row:hover,
+.app-shell.theme-soft-dark .projects-list-panel .table-shell tbody tr.active-row:hover td {
+  background: var(--fw-color-selection);
+}
+
+.app-shell.theme-soft-dark .project-details-footer,
+.app-shell.theme-soft-dark .notes-details-footer,
+.app-shell.theme-soft-dark .project-task-inline-comments {
+  border-color: var(--fw-color-border);
+}
+
+.app-shell.theme-soft-dark .project-details-splitter::after,
+.app-shell.theme-soft-dark .projects-columns-splitter::after {
+  background: var(--fw-color-border-strong);
+}
+
+/* Light theme neutral refinement v0.6.9 */
+.app-shell.theme-light {
+  --fw-color-app-bg: #f6f7f9;
+  --fw-color-surface: #ffffff;
+  --fw-color-surface-strong: #ffffff;
+  --fw-color-section: #f8fafc;
+  --fw-color-section-soft: #f1f5f9;
+  --fw-color-border: #e2e5ea;
+  --fw-color-border-strong: #d8dde5;
+  --fw-color-border-hover: rgba(37, 99, 235, .20);
+  --fw-color-primary: #2563eb;
+  --fw-color-primary-2: #1d4ed8;
+  --fw-color-button-primary: #2563eb;
+  --fw-color-menu-active: #1d4ed8;
+  --fw-color-primary-soft: rgba(37, 99, 235, .065);
+  --fw-color-primary-border: rgba(37, 99, 235, .20);
+  --fw-color-selection: rgba(37, 99, 235, .075);
+  --fw-color-selection-bar: rgba(37, 99, 235, .40);
+  --fw-color-hover: rgba(15, 23, 42, .038);
+  background: var(--fw-color-app-bg);
+}
+
+.app-shell.theme-light .sidebar,
+.app-shell.theme-light .topbar,
+.app-shell.theme-light .panel,
+.app-shell.theme-light .stat-card,
+.app-shell.theme-light .login-card,
+.app-shell.theme-light .modal-card,
+.app-shell.theme-light .app-section,
+.app-shell.theme-light .ds-section-panel,
+.app-shell.theme-light .settings-card,
+.app-shell.theme-light .settings-config-card,
+.app-shell.theme-light .settings-content,
+.app-shell.theme-light .settings-sidebar,
+.app-shell.theme-light .settings-section-shell,
+.app-shell.theme-light .documents-nav-panel,
+.app-shell.theme-light .documents-detail-panel,
+.app-shell.theme-light .settings-preview-panel,
+.app-shell.theme-light .project-details-panel,
+.app-shell.theme-light .project-details-collapsed,
+.app-shell.theme-light .notes-details-panel {
+  background: var(--fw-color-surface);
+  border-color: var(--fw-color-border);
+  box-shadow: none;
+}
+
+.app-shell.theme-light .form-section,
+.app-shell.theme-light .flat-form-section,
+.app-shell.theme-light .kanban-column,
+.app-shell.theme-light .task-card,
+.app-shell.theme-light .timeline-row div,
+.app-shell.theme-light .quick-actions button,
+.app-shell.theme-light .alert-row,
+.app-shell.theme-light .equipment-section-panel,
+.app-shell.theme-light .set-components-table-shell,
+.app-shell.theme-light .set-picker-table-shell,
+.app-shell.theme-light .project-detail-section,
+.app-shell.theme-light .project-comment-row,
+.app-shell.theme-light .project-inspector-related,
+.app-shell.theme-light .simple-task-details-card,
+.app-shell.theme-light .notes-board-column,
+.app-shell.theme-light .notes-board-card,
+.app-shell.theme-light .notes-rich-text-shell,
+.app-shell.theme-light .calendar-agenda-day,
+.app-shell.theme-light .system-info-panel,
+.app-shell.theme-light .system-warning-panel,
+.app-shell.theme-light .system-diagnostic-row,
+.app-shell.theme-light .integration-filter-summary {
+  background: var(--fw-color-section);
+  border-color: var(--fw-color-border);
+  box-shadow: none;
+}
+
+.app-shell.theme-light .table-scroll thead th,
+.app-shell.theme-light .set-components-table th,
+.app-shell.theme-light .set-picker-table th,
+.app-shell.theme-light .project-details-header,
+.app-shell.theme-light .project-detail-section-head,
+.app-shell.theme-light .notes-board-column header,
+.app-shell.theme-light .notes-rich-text-toolbar,
+.app-shell.theme-light .calendar-day-head {
+  background: var(--fw-color-section-soft);
+  border-color: var(--fw-color-border);
+  color: var(--fw-color-text-soft);
+}
+
+.app-shell.theme-light input,
+.app-shell.theme-light select,
+.app-shell.theme-light textarea,
+.app-shell.theme-light .app-input,
+.app-shell.theme-light .app-select,
+.app-shell.theme-light .app-textarea,
+.app-shell.theme-light .ds-form-field input,
+.app-shell.theme-light .ds-form-field select,
+.app-shell.theme-light .ds-form-field textarea,
+.app-shell.theme-light .client-filter-bar input,
+.app-shell.theme-light .client-filter-bar select,
+.app-shell.theme-light .project-filter-bar input,
+.app-shell.theme-light .project-filter-bar select,
+.app-shell.theme-light .settings-field select,
+.app-shell.theme-light .notes-rich-text-editor .ProseMirror {
+  background: var(--fw-color-surface);
+  border-color: var(--fw-color-border-strong);
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-light .nav-item:hover,
+.app-shell.theme-light .ghost-button:hover,
+.app-shell.theme-light .table-shell tbody tr:hover,
+.app-shell.theme-light .project-detail-task-row:hover,
+.app-shell.theme-light .project-comment-interactive-row:not(.is-editing):hover,
+.app-shell.theme-light .notes-board-card:hover,
+.app-shell.theme-light .calendar-day-cell:hover,
+.app-shell.theme-light .notification-item:hover,
+.app-shell.theme-light .notification-item.unread,
+.app-shell.theme-light .global-search-result:hover,
+.app-shell.theme-light .global-search-result.active,
+.app-shell.theme-light .notes-rich-text-toolbar-button:hover:not(:disabled) {
+  background: var(--fw-color-hover);
+}
+
+.app-shell.theme-light .nav-item.active,
+.app-shell.theme-light .tabs button.active,
+.app-shell.theme-light .table-shell tbody tr.selected-row,
+.app-shell.theme-light .projects-list-panel .table-shell tbody tr.active-row,
+.app-shell.theme-light .projects-list-panel .table-shell tbody tr.active-row:hover,
+.app-shell.theme-light .project-detail-task-item.is-selected,
+.app-shell.theme-light .notes-board-card.is-selected,
+.app-shell.theme-light .work-type-switch button:hover,
+.app-shell.theme-light .work-type-switch button.active,
+.app-shell.theme-light .notes-module-page .notes-view-switch button.active,
+.app-shell.theme-light .notes-rich-text-toolbar-button.is-active {
+  background: var(--fw-color-selection);
+  border-color: var(--fw-color-primary-border);
+  color: var(--fw-color-menu-active);
+}
+
+.app-shell.theme-light .table-shell tbody tr.selected-row,
+.app-shell.theme-light .projects-list-panel .table-shell tbody tr.active-row,
+.app-shell.theme-light .project-detail-task-item.is-selected,
+.app-shell.theme-light .notes-board-card.is-selected {
+  box-shadow: inset 3px 0 0 var(--fw-color-selection-bar);
+}
+
+.app-shell.theme-light .bulk-actions-bar,
+.app-shell.theme-light .notice,
+.app-shell.theme-light .loading-line,
+.app-shell.theme-light .config-tag,
+.app-shell.theme-light .equipment-set-badge,
+.app-shell.theme-light .backup-scope-list span,
+.app-shell.theme-light .project-details-type,
+.app-shell.theme-light .work-type-pill.project {
+  background: var(--fw-color-primary-soft);
+  border-color: var(--fw-color-primary-border);
+  color: var(--fw-color-menu-active);
+}
+
+.app-shell.theme-light .context-menu,
+.app-shell.theme-light .row-context-menu,
+.app-shell.theme-light .column-context-menu,
+.app-shell.theme-light .column-submenu,
+.app-shell.theme-light .calendar-source-menu,
+.app-shell.theme-light .notifications-popover,
+.app-shell.theme-light .global-search-results,
+.app-shell.theme-light .global-search-dropdown {
+  background: var(--fw-color-surface);
+  border-color: var(--fw-color-border);
+  box-shadow: var(--fw-shadow-menu);
+}
+
+.app-shell.theme-light .primary-button,
+.app-shell.theme-light .app-button-primary,
+.app-shell.theme-light .ds-button-primary,
+.app-shell.theme-light .theme-choice-button.active,
+.app-shell.theme-light .backup-action-button.primary {
+  background: var(--fw-color-button-primary);
+  border-color: var(--fw-color-button-primary);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.app-shell.theme-light .table-scroll table thead th,
+.app-shell.theme-light .rental-items-table thead th,
+.app-shell.theme-light .set-components-table th,
+.app-shell.theme-light .set-picker-table th {
+  background: var(--fw-color-section-soft);
+  border-color: var(--fw-color-border);
+  color: var(--fw-color-text-soft);
+  box-shadow: none;
+}
+
+.app-shell.theme-light .table-scroll thead th:hover,
+.app-shell.theme-light .table-scroll table thead th:hover,
+.app-shell.theme-light .table-scroll table thead th[aria-sort="ascending"],
+.app-shell.theme-light .table-scroll table thead th[aria-sort="descending"],
+.app-shell.theme-light .table-scroll table thead th.sorted,
+.app-shell.theme-light .table-scroll table thead th.active {
+  background: #eef2f7;
+  border-color: var(--fw-color-border);
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-light .settings-nav-item.active,
+.app-shell.theme-light .settings-sidebar-item.active,
+.app-shell.theme-light .settings-sub-tab.active,
+.app-shell.theme-light .documents-nav-item.active,
+.app-shell.theme-light .agreement-subtab.active,
+.app-shell.theme-light .calendar-view-switch button.active,
+.app-shell.theme-light .calendar-filter-button.active,
+.app-shell.theme-light .record-tabs button.active,
+.app-shell.theme-light .service-order-tabs button.active,
+.app-shell.theme-light .document-preview-toolbar button.active {
+  background: var(--fw-color-selection);
+  border-color: var(--fw-color-primary-border);
+  color: var(--fw-color-menu-active);
+  box-shadow: none;
+}
+
+.app-shell.theme-light .user-card,
+.app-shell.theme-light .calendar-source-settings-card-item,
+.app-shell.theme-light .equipment-list-row,
+.app-shell.theme-light .expanded-content-row td,
+.app-shell.theme-light .expanded-set-table,
+.app-shell.theme-light .expanded-set-empty,
+.app-shell.theme-light .company-logo-preview,
+.app-shell.theme-light .company-preview-box {
+  background: var(--fw-color-section);
+  border-color: var(--fw-color-border);
 }

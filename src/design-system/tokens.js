@@ -1,15 +1,15 @@
 export const dsTokens = {
   fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   colors: {
-    appBg: '#080d15',
-    surface: 'rgba(15, 23, 42, .76)',
-    surfaceStrong: '#0f172a',
-    section: 'rgba(8, 13, 21, .22)',
-    border: 'rgba(148, 163, 184, .14)',
-    text: '#e6edf8',
-    textMuted: '#95a0b5',
-    primary: '#2563eb',
-    primary2: '#4f46e5',
+    appBg: '#10141c',
+    surface: '#171c26',
+    surfaceStrong: '#1b2130',
+    section: 'rgba(255, 255, 255, .035)',
+    border: 'rgba(226, 232, 240, .10)',
+    text: '#e7edf6',
+    textMuted: '#9aa6b8',
+    primary: '#4f46e5',
+    primary2: '#4338ca',
     successBg: 'rgba(34, 197, 94, .16)',
     successText: '#bbf7d0',
     warningBg: 'rgba(245, 158, 11, .16)',
@@ -30,35 +30,41 @@ export const dsTokens = {
     10: 24
   },
   radius: {
-    xs: 8,
-    sm: 9,
-    md: 12,
-    lg: 14,
-    xl: 16,
-    panel: 18,
-    modal: 24
+    xs: 5,
+    sm: 6,
+    md: 8,
+    lg: 10,
+    xl: 12,
+    panel: 12,
+    modal: 14
   },
   shadows: {
-    panel: '0 18px 60px rgba(0, 0, 0, .22)',
-    modal: '0 30px 100px rgba(0, 0, 0, .55)',
-    menu: '0 20px 60px rgba(0, 0, 0, .45)'
+    panel: '0 8px 24px rgba(0, 0, 0, .18)',
+    modal: '0 18px 54px rgba(0, 0, 0, .38)',
+    menu: '0 14px 34px rgba(0, 0, 0, .30)'
   },
   typography: {
     eyebrow: 11,
     section: 10,
-    label: 13,
-    control: 14,
+    xs: 11,
+    sm: 12,
+    base: 13,
+    md: 14,
+    lg: 16,
+    label: 12,
+    control: 13,
     table: 13,
     tableHead: 12,
-    panelTitle: 19,
-    modalTitle: 22,
-    moduleTitle: 25,
-    topbarTitle: 26
+    panelTitle: 17,
+    modalTitle: 20,
+    moduleTitle: 23,
+    topbarTitle: 24
   },
   controls: {
-    small: 30,
+    small: 28,
     medium: 34,
-    large: 40,
-    icon: 40
+    large: 36,
+    icon: 34,
+    paddingX: 12
   }
 };

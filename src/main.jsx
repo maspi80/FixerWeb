@@ -1,4 +1,4 @@
-import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import {
@@ -687,13 +687,12 @@ function exportTableToPdf(title, storageKey, columns, rows) {
 const modules = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'clients', label: 'Klienci', icon: Users },
-  { id: 'equipment', label: 'Sprzęt', icon: Package },
+  { id: 'equipment', label: 'Magazyn', icon: Package },
   { id: 'rentals', label: 'Wypożyczenia', icon: ClipboardList },
   { id: 'service', label: 'Serwis', icon: Wrench },
   { id: 'projects', label: 'Zadania i projekty', icon: Briefcase },
   { id: 'notes', label: 'Notatki', icon: StickyNote },
   { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
-  { id: 'documents', label: 'Dokumenty', icon: FileText },
   { id: 'settings', label: 'Ustawienia', icon: Settings }
 ];
 
@@ -723,6 +722,12 @@ function formatBackupTableLabel(table) {
 }
 
 function normalizeModuleNavigation(moduleId, intent = null) {
+  if (moduleId === 'documents') {
+    return {
+      moduleId: 'settings',
+      intent: { ...(intent ?? {}), type: 'settings', section: 'documents' }
+    };
+  }
   if (moduleId !== 'organizer') return { moduleId, intent };
   return {
     moduleId: 'projects',
@@ -915,12 +920,13 @@ function App() {
   const [statusColors, setStatusColors] = useState(getStatusColors);
   const [activeUiTheme, setActiveUiTheme] = useState(() => getInitialUiAppearance().activeUiTheme);
   const [appSettingsReady, setAppSettingsReady] = useState(() => !isSupabaseConfigured);
-  const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens), [activeUiTheme.tokens]);
+  const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens, colorTheme), [activeUiTheme.tokens, colorTheme]);
 
   const handleColorThemeCollection = useCallback((mode) => {
-    setColorTheme(mode);
-    localStorage.setItem('fixer-color-theme', mode);
-    setActiveUiTheme((current) => syncActiveUiThemeToColorTheme(mode, current));
+    const nextMode = normalizeColorThemeMode(mode);
+    setColorTheme(nextMode);
+    localStorage.setItem('fixer-color-theme', nextMode);
+    setActiveUiTheme((current) => syncActiveUiThemeToColorTheme(nextMode, current));
   }, []);
 
   const handleApplyUiThemePreset = useCallback((presetId) => {
@@ -1057,7 +1063,6 @@ function App() {
           {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} />}
           {activeModule === 'notes' && <NotatkiModule />}
-          {activeModule === 'documents' && <DocumentsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} appSettingsReady={appSettingsReady} />}
           {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} />}
         </section>
       </main>
@@ -1118,6 +1123,31 @@ function Sidebar({ activeModule, setActiveModule, collapsed, onToggle, onLogout,
       </div>
     </aside>
   );
+}
+
+const COLOR_THEME_SEQUENCE = ['light', 'soft-dark', 'dark'];
+const COLOR_THEME_LABELS = {
+  light: 'Jasny',
+  'soft-dark': 'Soft Dark',
+  dark: 'Ciemny'
+};
+
+function normalizeColorThemeMode(mode) {
+  return COLOR_THEME_SEQUENCE.includes(mode) ? mode : 'light';
+}
+
+function getNextColorThemeMode(mode) {
+  const current = normalizeColorThemeMode(mode);
+  const index = COLOR_THEME_SEQUENCE.indexOf(current);
+  return COLOR_THEME_SEQUENCE[(index + 1) % COLOR_THEME_SEQUENCE.length];
+}
+
+function getNextColorThemeLabel(mode) {
+  return COLOR_THEME_LABELS[getNextColorThemeMode(mode)];
+}
+
+function getColorThemeLabel(mode) {
+  return COLOR_THEME_LABELS[normalizeColorThemeMode(mode)];
 }
 
 function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme, onNavigate }) {
@@ -1243,7 +1273,7 @@ function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onT
           </div>}
         </div>
         <button className="icon-button" onClick={onToggleDensity}><SlidersHorizontal size={18} /><span>{themeCompact ? 'Kompakt' : 'Wygodny'}</span></button>
-        <button className="icon-button" onClick={() => onChangeColorTheme(colorTheme === 'light' ? 'dark' : 'light')} title="Zmień motyw">{colorTheme === 'light' ? <Moon size={18} /> : <Sun size={18} />}<span>{colorTheme === 'light' ? 'Ciemny' : 'Jasny'}</span></button>
+        <button className="icon-button" onClick={() => onChangeColorTheme(getNextColorThemeMode(colorTheme))} title="Zmień motyw">{getNextColorThemeMode(colorTheme) === 'light' ? <Sun size={18} /> : <Moon size={18} />}<span>{getNextColorThemeLabel(colorTheme)}</span></button>
         <NotificationsBell onNavigate={onNavigate} />
       </div>
     </header>
@@ -1899,7 +1929,7 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
             </AppSelect>
           </label>
           <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearClientFilters}>Wyczyść filtry</AppButton>
-          {rows.length > 0 && filteredRows.length < rows.length && <span className="filter-count">Wyświetlono {filteredRows.length} z {rows.length}</span>}
+          {rows.length > 0 && filteredRows.length < rows.length && <span className="filter-count">{filteredRows.length} z {rows.length}</span>}
         </div>
         <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
@@ -2477,7 +2507,7 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
           <label>Producent<AppSelect value={filters.brand ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, brand: event.target.value }))}><option value="all">Wszyscy</option>{equipmentFilterOptions.brands.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
           <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option><option value="Sprzęt">Sprzęt</option><option value="Zestaw">Zestaw</option></AppSelect></label>
           <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearEquipmentFilters}>Wyczyść</AppButton>
-          {rows.filter((item) => !isEquipmentSetComponent(item)).length > 0 && displayRows.length < rows.filter((item) => !isEquipmentSetComponent(item)).length && <span className="filter-count">Wyświetlono {displayRows.length} z {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>}
+          {rows.filter((item) => !isEquipmentSetComponent(item)).length > 0 && displayRows.length < rows.filter((item) => !isEquipmentSetComponent(item)).length && <span className="filter-count">{displayRows.length} z {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>}
         </div>
         <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
@@ -4112,7 +4142,7 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
         <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option><option value="active">Aktywne</option><option value="partially_returned">Częściowo zwrócone</option><option value="returned">Zwrócone</option></AppSelect></label>
         <label>Typ wypożyczenia<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{rentalTypes.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
         <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearRentalFilters}>Wyczyść</AppButton>
-        {displayRows.length > 0 && activeRows.length + returnedRows.length < displayRows.length && <span className="filter-count">Wyświetlono {activeRows.length + returnedRows.length} z {displayRows.length}</span>}
+        {displayRows.length > 0 && activeRows.length + returnedRows.length < displayRows.length && <span className="filter-count">{activeRows.length + returnedRows.length} z {displayRows.length}</span>}
       </div>
       <div className="rentals-section-heading">
         <div>
@@ -10410,15 +10440,15 @@ const BUILTIN_UI_THEME_PRESETS = [
     group: 'light',
     builtIn: true,
     tokens: {
-      appBg: '#f4f7fb',
+      appBg: '#F6F7F9',
       panelBg: '#ffffff',
       tableBg: '#ffffff',
-      border: '#cbd5e1',
-      textMain: '#172033',
-      textMuted: '#64748b',
-      accent: '#2563eb',
-      menuActive: '#1d4ed8',
-      primaryButton: '#2563eb',
+      border: '#E2E5EA',
+      textMain: '#1F2937',
+      textMuted: '#667085',
+      accent: '#2563EB',
+      menuActive: '#1D4ED8',
+      primaryButton: '#2563EB',
       success: '#16a34a',
       warning: '#d97706',
       danger: '#dc2626'
@@ -10536,15 +10566,15 @@ const BUILTIN_UI_THEME_PRESETS = [
     group: 'dark',
     builtIn: true,
     tokens: {
-      appBg: '#080d15',
-      panelBg: '#111827',
-      tableBg: '#0f172a',
-      border: '#334155',
-      textMain: '#e6edf8',
-      textMuted: '#95a0b5',
-      accent: '#2563eb',
-      menuActive: '#a5b4fc',
-      primaryButton: '#2563eb',
+      appBg: '#10141C',
+      panelBg: '#171C26',
+      tableBg: '#171C26',
+      border: '#303747',
+      textMain: '#E7EDF6',
+      textMuted: '#9AA6B8',
+      accent: '#818CF8',
+      menuActive: '#C7D2FE',
+      primaryButton: '#4F46E5',
       success: '#22c55e',
       warning: '#f59e0b',
       danger: '#fb7185'
@@ -10700,19 +10730,19 @@ const BUILTIN_UI_THEME_PRESETS = [
   {
     id: 'soft-dark',
     name: 'Soft Dark',
-    description: 'ciemny miękki',
-    group: 'dark',
+    description: 'grafitowy komfortowy',
+    group: 'soft-dark',
     builtIn: true,
     tokens: {
-      appBg: '#131722',
-      panelBg: '#1B2231',
-      tableBg: '#161D2A',
-      border: '#364152',
-      textMain: '#E5E7EB',
-      textMuted: '#A1A1AA',
-      accent: '#7C3AED',
-      menuActive: '#C4B5FD',
-      primaryButton: '#6D28D9',
+      appBg: '#1E222A',
+      panelBg: '#252A33',
+      tableBg: '#252A33',
+      border: '#373D48',
+      textMain: '#F1F3F5',
+      textMuted: '#858C98',
+      accent: '#4F46E5',
+      menuActive: '#C7D2FE',
+      primaryButton: '#4F46E5',
       success: '#22C55E',
       warning: '#F59E0B',
       danger: '#F87171'
@@ -10721,16 +10751,18 @@ const BUILTIN_UI_THEME_PRESETS = [
 ];
 
 const DEFAULT_LIGHT_THEME_ID = 'default-light';
+const DEFAULT_SOFT_DARK_THEME_ID = 'soft-dark';
 const DEFAULT_DARK_THEME_ID = 'default-dark';
-const DEFAULT_ACTIVE_THEME_ID = DEFAULT_DARK_THEME_ID;
+const DEFAULT_ACTIVE_THEME_ID = DEFAULT_LIGHT_THEME_ID;
 
 function getDefaultUiThemePresetIdForMode(mode) {
+  if (mode === 'soft-dark') return DEFAULT_SOFT_DARK_THEME_ID;
   return mode === 'light' ? DEFAULT_LIGHT_THEME_ID : DEFAULT_DARK_THEME_ID;
 }
 
 function getUiThemePresetColorMode(preset) {
   const group = String(preset?.group ?? '').toLowerCase();
-  if (group === 'light' || group === 'dark') return group;
+  if (group === 'light' || group === 'soft-dark' || group === 'dark') return group;
   return null;
 }
 
@@ -10776,7 +10808,7 @@ function getUiThemeCustomPresets() {
       id: item?.id || `custom-${Date.now()}`,
       name: String(item?.name ?? '').trim(),
       builtIn: false,
-      group: item?.group === 'light' || item?.group === 'dark' ? item.group : undefined,
+      group: COLOR_THEME_SEQUENCE.includes(item?.group) ? item.group : undefined,
       tokens: normalizeUiThemeTokens(item?.tokens ?? {})
     }))
     .filter((item) => item.name);
@@ -10798,7 +10830,7 @@ function getStoredActiveUiTheme(preferredPresetId = DEFAULT_ACTIVE_THEME_ID) {
   }
   const presetId = String(parsed.presetId ?? DEFAULT_ACTIVE_THEME_ID);
   const preset = getAllUiThemePresets().find((item) => item.id === presetId);
-  const tokens = normalizeUiThemeTokens(parsed.tokens ?? preset?.tokens ?? BUILTIN_UI_THEME_PRESETS[0].tokens);
+  const tokens = normalizeUiThemeTokens(preset?.builtIn ? preset.tokens : (parsed.tokens ?? preset?.tokens ?? BUILTIN_UI_THEME_PRESETS[0].tokens));
   return { presetId: preset ? preset.id : 'custom-live', tokens };
 }
 
@@ -10813,7 +10845,7 @@ let cachedInitialUiAppearance;
 
 function getInitialUiAppearance() {
   if (cachedInitialUiAppearance) return cachedInitialUiAppearance;
-  const storedColorTheme = localStorage.getItem('fixer-color-theme') === 'light' ? 'light' : 'dark';
+  const storedColorTheme = normalizeColorThemeMode(localStorage.getItem('fixer-color-theme'));
   let activeUiTheme = getStoredActiveUiTheme(getDefaultUiThemePresetIdForMode(storedColorTheme));
   const preset = getAllUiThemePresets().find((item) => item.id === activeUiTheme.presetId);
   const presetMode = getUiThemePresetColorMode(preset);
@@ -10826,7 +10858,7 @@ function getInitialUiAppearance() {
   return cachedInitialUiAppearance;
 }
 
-function createUiThemeCssVariables(tokens) {
+function createUiThemeCssVariables(tokens, colorTheme = 'dark') {
   const normalized = normalizeUiThemeTokens(tokens);
   const result = {};
   UI_THEME_TOKEN_DEFINITIONS.forEach((token) => {
@@ -10836,10 +10868,11 @@ function createUiThemeCssVariables(tokens) {
   result['--fw-color-success-text'] = normalized.success;
   result['--fw-color-warning-text'] = normalized.warning;
   result['--fw-color-danger-text'] = normalized.danger;
-  result['--fw-color-primary-soft'] = `${normalized.accent}1A`;
-  result['--fw-color-primary-border'] = `${normalized.accent}66`;
-  result['--fw-color-selection'] = `${normalized.accent}1F`;
-  result['--fw-color-selection-bar'] = `${normalized.accent}CC`;
+  const isLight = normalizeColorThemeMode(colorTheme) === 'light';
+  result['--fw-color-primary-soft'] = `${normalized.accent}${isLight ? '11' : '1A'}`;
+  result['--fw-color-primary-border'] = `${normalized.accent}${isLight ? '33' : '66'}`;
+  result['--fw-color-selection'] = `${normalized.accent}${isLight ? '13' : '1F'}`;
+  result['--fw-color-selection-bar'] = `${normalized.accent}${isLight ? '66' : 'CC'}`;
   return result;
 }
 
@@ -16124,12 +16157,14 @@ function DocumentTemplateRowActions({ type, menuOpen, onToggleMenu, onEdit, onPr
 function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
   const isDocumentsMode = mode === 'documents';
   const themeOptions = [
-    { id: 'dark', label: 'Ciemny', icon: Moon },
-    { id: 'light', label: 'Jasny', icon: Sun }
+    { id: 'light', label: 'Jasny', icon: Sun },
+    { id: 'soft-dark', label: 'Soft Dark', icon: Moon },
+    { id: 'dark', label: 'Ciemny', icon: Moon }
   ];
   const sections = isDocumentsMode
     ? [{ id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony, numeracja, profil firmy i projektant.' }]
     : [
+      { id: 'documents', label: 'Dokumenty i szablony', icon: FileText, description: 'Szablony, numeracja, profil firmy i projektant.' },
       { id: 'dictionaries', label: 'Słowniki', icon: List, description: 'Statusy, kategorie, priorytety, lokalizacje i stany w modułach.' },
       { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, dashboard, tabele, widoki i preferencje pracy.' },
       { id: 'integrations', label: 'Integracje', icon: CalendarDays, description: 'Kalendarz, powiadomienia, import, eksport i przyszłe połączenia.' },
@@ -16159,7 +16194,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     }
     requestDocumentTemplateExitGuard(() => setActiveSection(sectionId), { leavingSection: sectionId !== 'documents' });
   };
-  const [activeDocumentPanel, setActiveDocumentPanel] = useState(isDocumentsMode ? 'agreement' : 'designer');
+  const [activeDocumentPanel, setActiveDocumentPanel] = useState('agreement');
   const [documentsMainSection, setDocumentsMainSection] = useState('templates');
   const [documentsDesignerFullscreen, setDocumentsDesignerFullscreen] = useState(false);
   const [pdfArchiveRows, setPdfArchiveRows] = useState(() => getStoredJson('fixer:pdf-archive', []));
@@ -16363,10 +16398,11 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
   const uiThemeCustomPresets = useMemo(() => getUiThemeCustomPresets(), [activeUiTheme]);
   const uiThemePresets = useMemo(() => [...BUILTIN_UI_THEME_PRESETS, ...uiThemeCustomPresets], [uiThemeCustomPresets]);
   const uiThemeLightPresets = useMemo(() => BUILTIN_UI_THEME_PRESETS.filter((item) => item.group === 'light'), []);
+  const uiThemeSoftDarkPresets = useMemo(() => BUILTIN_UI_THEME_PRESETS.filter((item) => item.group === 'soft-dark'), []);
   const uiThemeDarkPresets = useMemo(() => BUILTIN_UI_THEME_PRESETS.filter((item) => item.group === 'dark'), []);
   const uiThemeBuiltinPresetsForCollection = useMemo(
-    () => (colorTheme === 'light' ? uiThemeLightPresets : uiThemeDarkPresets),
-    [colorTheme, uiThemeLightPresets, uiThemeDarkPresets]
+    () => colorTheme === 'light' ? uiThemeLightPresets : colorTheme === 'soft-dark' ? uiThemeSoftDarkPresets : uiThemeDarkPresets,
+    [colorTheme, uiThemeLightPresets, uiThemeSoftDarkPresets, uiThemeDarkPresets]
   );
   const uiThemeCustomPresetsForCollection = useMemo(
     () => uiThemeCustomPresets.filter((preset) => isUiThemePresetInCollection(preset, colorTheme, activeUiTheme?.presetId)),
@@ -16999,7 +17035,16 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     if (dashboardIntent?.type !== 'settings') return;
     const sectionMap = {
       company: { section: 'company' },
-      documents: { section: 'documents' },
+      documents: { section: 'documents', documentPanel: 'agreement' },
+      documentTemplates: { section: 'documents', documentPanel: 'agreement' },
+      templates: { section: 'documents', documentPanel: 'agreement' },
+      numbering: { section: 'documents', documentPanel: 'numbering' },
+      documentNumbering: { section: 'documents', documentPanel: 'numbering' },
+      documentCompany: { section: 'documents', documentPanel: 'company' },
+      designer: { section: 'documents', documentPanel: 'designer' },
+      documentDesigner: { section: 'documents', documentPanel: 'designer' },
+      archive: { section: 'documents', documentPanel: 'archive' },
+      pdfArchive: { section: 'documents', documentPanel: 'archive' },
       interface: { section: 'interface' },
       clients: { section: 'dictionaries', sub: 'clients' },
       equipment: { section: 'dictionaries', sub: 'equipment' },
@@ -17018,6 +17063,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     if (target?.section) {
       setActiveSection(target.section);
       if (target.sub) setActiveSubs((current) => ({ ...current, [target.section]: target.sub }));
+      if (target.documentPanel) setActiveDocumentPanel(target.documentPanel);
       if (target.integrationPanel) setActiveIntegrationPanel(target.integrationPanel);
       if (target.systemPanel) setActiveSystemPanel(target.systemPanel);
     }
@@ -17682,6 +17728,11 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     })
     : buildGenericDocumentTemplateHtml(currentTemplateType, currentDocumentTemplate, templatePreviewContext, { preview: true, company: companyProfile });
   const settingsSearchTargets = [
+    { section: 'documents', documentPanel: 'agreement', label: 'Szablony dokumentów', keywords: 'dokumenty szablony umowy protokoly raporty wydruki pdf' },
+    { section: 'documents', documentPanel: 'numbering', label: 'Numeracja dokumentów', keywords: 'dokumenty numeracja numery format prefix prefiks wypozyczenia serwis projekty' },
+    { section: 'documents', documentPanel: 'company', label: 'Logo i dane firmy', keywords: 'dokumenty firma logo dane firmowe stopka naglowek' },
+    { section: 'documents', documentPanel: 'designer', label: 'Projektant dokumentów', keywords: 'dokumenty projektant kreator edytor szablon a4 layout' },
+    { section: 'documents', documentPanel: 'archive', label: 'Archiwum PDF', keywords: 'dokumenty pdf archiwum wygenerowane pobierz podglad' },
     { section: 'integrations', integrationPanel: 'calendar', label: 'Kalendarz', keywords: 'kalendarz zrodla kolory filtr roboczy wydarzenia' },
     { section: 'system', systemPanel: 'backup', label: 'Backup', keywords: 'backup kopie bezpieczenstwa pelna kopia json' },
     { section: 'system', systemPanel: 'restore', label: 'Restore', keywords: 'restore przywroc import backup przywracanie' },
@@ -17901,7 +17952,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
                   applyUiThemePreset(next);
                 }}
               >
-                <optgroup label={colorTheme === 'light' ? 'Jasne' : 'Ciemne'}>
+                <optgroup label={getColorThemeLabel(colorTheme)}>
                   {uiThemeBuiltinPresetsForCollection.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </optgroup>
                 <optgroup label="Własne">

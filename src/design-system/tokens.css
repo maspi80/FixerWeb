@@ -1,27 +1,29 @@
 :root {
   --fw-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  --fw-color-app-bg: #080d15;
-  --fw-color-surface: rgba(15, 23, 42, .76);
-  --fw-color-surface-strong: #0f172a;
-  --fw-color-section: rgba(8, 13, 21, .22);
-  --fw-color-section-soft: rgba(148, 163, 184, .07);
-  --fw-color-border: rgba(148, 163, 184, .14);
-  --fw-color-border-strong: rgba(148, 163, 184, .18);
-  --fw-color-text: #e6edf8;
-  --fw-color-text-strong: #f8fbff;
-  --fw-color-text-muted: #95a0b5;
-  --fw-color-text-soft: #cbd5e1;
+  --fw-color-app-bg: #10141c;
+  --fw-color-surface: #171c26;
+  --fw-color-surface-strong: #1b2130;
+  --fw-color-section: rgba(255, 255, 255, .035);
+  --fw-color-section-soft: rgba(255, 255, 255, .055);
+  --fw-color-border: rgba(226, 232, 240, .10);
+  --fw-color-border-strong: rgba(226, 232, 240, .14);
+  --fw-color-border-hover: rgba(129, 140, 248, .34);
+  --fw-color-text: #e7edf6;
+  --fw-color-text-strong: #f8fafc;
+  --fw-color-text-muted: #9aa6b8;
+  --fw-color-text-soft: #c7d0df;
   --fw-color-table-bg: transparent;
 
-  --fw-color-primary: #2563eb;
-  --fw-color-primary-2: #4f46e5;
-  --fw-color-button-primary: #2563eb;
-  --fw-color-menu-active: #a5b4fc;
-  --fw-color-primary-soft: rgba(96, 165, 250, .12);
-  --fw-color-primary-border: rgba(96, 165, 250, .45);
-  --fw-color-selection: rgba(59, 130, 246, .16);
-  --fw-color-selection-bar: rgba(96, 165, 250, .75);
+  --fw-color-primary: #4f46e5;
+  --fw-color-primary-2: #4338ca;
+  --fw-color-button-primary: #4f46e5;
+  --fw-color-menu-active: #c7d2fe;
+  --fw-color-primary-soft: rgba(129, 140, 248, .14);
+  --fw-color-primary-border: rgba(129, 140, 248, .38);
+  --fw-color-selection: rgba(129, 140, 248, .16);
+  --fw-color-selection-bar: rgba(129, 140, 248, .70);
+  --fw-color-hover: rgba(148, 163, 184, .08);
 
   --fw-color-success: #22c55e;
   --fw-color-success-bg: rgba(34, 197, 94, .16);
@@ -45,33 +47,39 @@
   --fw-space-10: 24px;
   --fw-space-11: 32px;
 
-  --fw-radius-xs: 8px;
-  --fw-radius-sm: 9px;
-  --fw-radius-md: 12px;
-  --fw-radius-lg: 14px;
-  --fw-radius-xl: 16px;
-  --fw-radius-panel: 18px;
-  --fw-radius-modal: 24px;
+  --fw-radius-xs: 5px;
+  --fw-radius-sm: 6px;
+  --fw-radius-md: 8px;
+  --fw-radius-lg: 10px;
+  --fw-radius-xl: 12px;
+  --fw-radius-panel: 12px;
+  --fw-radius-modal: 14px;
 
-  --fw-shadow-panel: 0 18px 60px rgba(0, 0, 0, .22);
-  --fw-shadow-modal: 0 30px 100px rgba(0, 0, 0, .55);
-  --fw-shadow-menu: 0 20px 60px rgba(0, 0, 0, .45);
+  --fw-shadow-panel: 0 8px 24px rgba(0, 0, 0, .18);
+  --fw-shadow-modal: 0 18px 54px rgba(0, 0, 0, .38);
+  --fw-shadow-menu: 0 14px 34px rgba(0, 0, 0, .30);
 
   --fw-font-size-eyebrow: 11px;
   --fw-font-size-section: 10px;
-  --fw-font-size-label: 13px;
-  --fw-font-size-control: 14px;
+  --fw-font-size-xs: 11px;
+  --fw-font-size-sm: 12px;
+  --fw-font-size-base: 13px;
+  --fw-font-size-md: 14px;
+  --fw-font-size-lg: 16px;
+  --fw-font-size-label: 12px;
+  --fw-font-size-control: 13px;
   --fw-font-size-table: 13px;
   --fw-font-size-table-head: 12px;
-  --fw-font-size-panel-title: 19px;
-  --fw-font-size-modal-title: 22px;
-  --fw-font-size-module-title: 25px;
-  --fw-font-size-topbar-title: 26px;
+  --fw-font-size-panel-title: 17px;
+  --fw-font-size-modal-title: 20px;
+  --fw-font-size-module-title: 23px;
+  --fw-font-size-topbar-title: 24px;
 
-  --fw-control-height-sm: 30px;
-  --fw-control-height-md: 36px;
+  --fw-control-height-sm: 28px;
+  --fw-control-height-md: 34px;
   --fw-control-height-lg: 36px;
-  --fw-icon-button-size: 36px;
+  --fw-icon-button-size: 34px;
+  --fw-control-padding-x: 12px;
 
   /* Typographic weight scale */
   --fw-weight-body:        400; /* body text, helper descriptions, inputs */
@@ -79,31 +87,98 @@
   --fw-weight-semibold:    600; /* section titles, active tabs, buttons */
   --fw-weight-bold:        700; /* page/panel titles, strong values */
   --fw-weight-extrabold:   800; /* brand mark, avatar, hero numbers */
+
+  --appBackground: var(--fw-color-app-bg);
+  --surface: var(--fw-color-surface);
+  --surfaceSecondary: var(--fw-color-section-soft);
+  --border: var(--fw-color-border);
+  --borderHover: var(--fw-color-border-hover);
+  --textPrimary: var(--fw-color-text-strong);
+  --textSecondary: var(--fw-color-text-soft);
+  --textMuted: var(--fw-color-text-muted);
+  --accent: var(--fw-color-primary);
+  --accentHover: var(--fw-color-primary-2);
+  --selected: var(--fw-color-selection);
+  --hover: var(--fw-color-hover);
+  --danger: var(--fw-color-danger);
+  --warning: var(--fw-color-warning);
+  --success: var(--fw-color-success);
+  --fontFamily: var(--fw-font-family);
+  --fontSizeXS: var(--fw-font-size-xs);
+  --fontSizeSM: var(--fw-font-size-sm);
+  --fontSizeBase: var(--fw-font-size-base);
+  --fontSizeMD: var(--fw-font-size-md);
+  --fontSizeLG: var(--fw-font-size-lg);
+  --fontWeightRegular: var(--fw-weight-body);
+  --fontWeightMedium: var(--fw-weight-medium);
+  --fontWeightSemiBold: var(--fw-weight-semibold);
+  --spacingXS: var(--fw-space-2);
+  --spacingSM: var(--fw-space-4);
+  --spacingMD: var(--fw-space-7);
+  --spacingLG: var(--fw-space-10);
+  --radiusSmall: var(--fw-radius-sm);
+  --radiusMedium: var(--fw-radius-md);
+  --radiusLarge: var(--fw-radius-lg);
+  --controlHeightSmall: var(--fw-control-height-sm);
+  --controlHeightDefault: var(--fw-control-height-md);
+  --controlPaddingX: var(--fw-control-padding-x);
 }
 
 .app-shell.theme-light {
-  --fw-color-app-bg: #f4f7fb;
-  --fw-color-surface: rgba(255, 255, 255, .88);
+  --fw-color-app-bg: #f6f7f9;
+  --fw-color-surface: #ffffff;
   --fw-color-surface-strong: #ffffff;
-  --fw-color-section: rgba(248, 250, 252, .75);
-  --fw-color-section-soft: rgba(241, 245, 249, .82);
-  --fw-color-border: rgba(15, 23, 42, .10);
-  --fw-color-border-strong: rgba(15, 23, 42, .13);
-  --fw-color-text: #172033;
+  --fw-color-section: #f8fafc;
+  --fw-color-section-soft: #f1f5f9;
+  --fw-color-border: #e2e5ea;
+  --fw-color-border-strong: #d8dde5;
+  --fw-color-border-hover: rgba(37, 99, 235, .20);
+  --fw-color-text: #1f2937;
   --fw-color-text-strong: #0f172a;
-  --fw-color-text-muted: #64748b;
+  --fw-color-text-muted: #667085;
   --fw-color-text-soft: #334155;
-  --fw-color-table-bg: transparent;
+  --fw-color-table-bg: #ffffff;
   --fw-color-button-primary: #2563eb;
   --fw-color-menu-active: #1d4ed8;
-  --fw-color-primary-soft: rgba(37, 99, 235, .10);
-  --fw-color-primary-border: rgba(37, 99, 235, .28);
-  --fw-color-selection: rgba(37, 99, 235, .10);
-  --fw-color-selection-bar: rgba(37, 99, 235, .55);
+  --fw-color-primary-soft: rgba(37, 99, 235, .065);
+  --fw-color-primary-border: rgba(37, 99, 235, .20);
+  --fw-color-selection: rgba(37, 99, 235, .075);
+  --fw-color-selection-bar: rgba(37, 99, 235, .40);
+  --fw-color-hover: rgba(15, 23, 42, .038);
   --fw-color-success: #16a34a;
   --fw-color-warning: #d97706;
   --fw-color-danger: #dc2626;
-  --fw-shadow-panel: 0 18px 50px rgba(15, 23, 42, .09);
-  --fw-shadow-modal: 0 24px 70px rgba(15, 23, 42, .18);
-  --fw-shadow-menu: 0 24px 70px rgba(15, 23, 42, .18);
+  --fw-shadow-panel: 0 8px 24px rgba(15, 23, 42, .06);
+  --fw-shadow-modal: 0 18px 48px rgba(15, 23, 42, .16);
+  --fw-shadow-menu: 0 14px 34px rgba(15, 23, 42, .14);
+}
+
+.app-shell.theme-soft-dark {
+  color-scheme: dark;
+  --fw-color-app-bg: #1e222a;
+  --fw-color-surface: #252a33;
+  --fw-color-surface-strong: #2b303a;
+  --fw-color-section: rgba(255, 255, 255, .045);
+  --fw-color-section-soft: rgba(255, 255, 255, .06);
+  --fw-color-border: rgba(241, 243, 245, .12);
+  --fw-color-border-strong: rgba(241, 243, 245, .16);
+  --fw-color-border-hover: rgba(129, 140, 248, .30);
+  --fw-color-text: #f1f3f5;
+  --fw-color-text-strong: #f8fafc;
+  --fw-color-text-muted: #858c98;
+  --fw-color-text-soft: #c7ced8;
+  --fw-color-table-bg: #252a33;
+  --fw-color-button-primary: #4f46e5;
+  --fw-color-menu-active: #c7d2fe;
+  --fw-color-primary-soft: rgba(79, 70, 229, .16);
+  --fw-color-primary-border: rgba(129, 140, 248, .34);
+  --fw-color-selection: rgba(79, 70, 229, .18);
+  --fw-color-selection-bar: rgba(129, 140, 248, .62);
+  --fw-color-hover: rgba(241, 243, 245, .07);
+  --fw-color-success: #22c55e;
+  --fw-color-warning: #f59e0b;
+  --fw-color-danger: #f87171;
+  --fw-shadow-panel: 0 8px 24px rgba(0, 0, 0, .18);
+  --fw-shadow-modal: 0 18px 54px rgba(0, 0, 0, .36);
+  --fw-shadow-menu: 0 12px 28px rgba(0, 0, 0, .28);
 }

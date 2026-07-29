@@ -40,13 +40,15 @@ export async function fetchTablePreference(tableKey, fallback) {
   const localSortKey = localPreference.sortKey ?? fallback.sortKey ?? null;
   const localSortDir = localPreference.sortDir ?? fallback.sortDir ?? 'asc';
   const localColumnAlignments = localPreference.columnAlignments ?? fallback.columnAlignments ?? {};
+  const localLpVisible = localPreference.lpVisible ?? fallback.lpVisible ?? true;
   const preference = {
     visibleColumns: Array.isArray(data.visible_columns) ? data.visible_columns : fallback.visibleColumns,
     columnOrder: Array.isArray(data.column_order) ? data.column_order : fallback.columnOrder,
     columnWidths: data.column_widths && typeof data.column_widths === 'object' ? data.column_widths : fallback.columnWidths,
     columnAlignments: localColumnAlignments,
     sortKey: localSortKey,
-    sortDir: localSortDir
+    sortDir: localSortDir,
+    lpVisible: localLpVisible
   };
 
   saveLocalTablePreference(tableKey, preference);

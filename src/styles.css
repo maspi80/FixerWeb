@@ -10261,7 +10261,63 @@ body.rental-items-section-resizing *{
 .column-resizer-hint{border:0;background:0;color:#64748b;cursor:pointer;padding:2px;display:flex;align-items:center}
 .column-resizer-hint:hover{color:#93c5fd}
 .project-history-section{margin-top:8px;flex:0 0 auto}
-.history-toggle{cursor:pointer;font-weight:700;color:#94a3b8;font-size:13px}
+.history-section{
+  margin-top:8px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  min-height:auto;
+}
+.history-section.panel{
+  padding:0;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+}
+.history-toggle,
+.history-toggle-button{
+  width:fit-content;
+  min-height:32px;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  border:1px solid var(--fw-color-border);
+  border-radius:10px;
+  background:var(--fw-color-section);
+  color:var(--fw-color-text-muted);
+  padding:0 10px;
+  font-size:13px;
+  line-height:1;
+  font-weight:500;
+  cursor:pointer;
+}
+.history-toggle-button:hover{
+  background:var(--fw-color-hover);
+  border-color:var(--fw-color-border-hover);
+  color:var(--fw-color-text-strong);
+}
+.history-count{
+  color:var(--fw-color-text-muted);
+  font-weight:500;
+}
+.history-section-toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.history-section-toolbar .app-button,
+.history-section-toolbar .ds-button,
+.history-section-toolbar .secondary-button{
+  min-height:32px;
+  border-radius:10px;
+  padding:0 10px;
+  font-size:12px;
+}
+.history-section-content{
+  min-height:0;
+}
 .project-section-block .table-shell{border-radius:0;border:0}
 .app-shell.theme-light .project-client-chip{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.12);color:#0f172a}
 .app-shell.theme-light .project-icon-action{background:rgba(255,255,255,.82);border-color:rgba(15,23,42,.12);color:#334155}
@@ -14210,6 +14266,94 @@ td.selection-cell {
 .app-shell.theme-soft-dark .project-details-splitter::after,
 .app-shell.theme-soft-dark .projects-columns-splitter::after {
   background: var(--fw-color-border-strong);
+}
+
+/* Soft Dark notifications surface alignment v0.6.10 */
+.app-shell.theme-soft-dark .notifications-dropdown {
+  background: var(--fw-color-surface);
+  border-color: var(--fw-color-border);
+  box-shadow: var(--fw-shadow-menu);
+}
+
+.app-shell.theme-soft-dark .notifications-header {
+  border-bottom-color: var(--fw-color-border);
+}
+
+.app-shell.theme-soft-dark .notifications-header strong,
+.app-shell.theme-soft-dark .notification-copy strong {
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-soft-dark .notifications-header span,
+.app-shell.theme-soft-dark .notification-copy small {
+  color: var(--fw-color-text-muted);
+}
+
+.app-shell.theme-soft-dark .notifications-header button {
+  background: var(--fw-color-section);
+  border-color: var(--fw-color-border);
+  color: var(--fw-color-text-soft);
+  box-shadow: none;
+}
+
+.app-shell.theme-soft-dark .notifications-header button:hover:not(:disabled) {
+  background: var(--fw-color-hover);
+  border-color: var(--fw-color-border-hover);
+  color: var(--fw-color-text-strong);
+}
+
+.app-shell.theme-soft-dark .notifications-header button.danger-action {
+  background: color-mix(in srgb, var(--fw-color-danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--fw-color-danger) 24%, var(--fw-color-border) 76%);
+  color: var(--fw-color-danger);
+}
+
+.app-shell.theme-soft-dark .notifications-header button.danger-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fw-color-danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--fw-color-danger) 34%, var(--fw-color-border) 66%);
+  color: var(--fw-color-danger);
+}
+
+.app-shell.theme-soft-dark .notification-item {
+  background: var(--fw-color-section);
+  border-color: var(--fw-color-border);
+  color: var(--fw-color-text-soft);
+  box-shadow: none;
+}
+
+.app-shell.theme-soft-dark .notification-item:hover {
+  background: var(--fw-color-hover);
+  border-color: var(--fw-color-border-hover);
+}
+
+.app-shell.theme-soft-dark .notification-item.unread {
+  background: var(--fw-color-section-soft);
+  border-color: var(--fw-color-border-strong);
+}
+
+.app-shell.theme-soft-dark .notification-item.unread:hover {
+  background: var(--fw-color-hover);
+  border-color: var(--fw-color-border-hover);
+}
+
+.app-shell.theme-soft-dark .notification-copy em {
+  color: var(--fw-color-text-soft);
+}
+
+.app-shell.theme-soft-dark .notification-marker {
+  background: var(--fw-color-primary-soft);
+  color: var(--fw-color-menu-active);
+}
+
+.app-shell.theme-soft-dark .notifications-state,
+.app-shell.theme-soft-dark .notifications-empty {
+  background: transparent;
+  border-color: var(--fw-color-border);
+  color: var(--fw-color-text-muted);
+}
+
+.app-shell.theme-soft-dark .notifications-count {
+  border-color: var(--fw-color-surface);
 }
 
 /* Light theme neutral refinement v0.6.9 */

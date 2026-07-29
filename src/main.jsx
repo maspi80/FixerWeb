@@ -11,7 +11,6 @@ import './design-system/components.css';
 import {
   AppButton,
   AppInput,
-  AppSection,
   AppSelect,
   AppTable,
   AppTextarea,
@@ -3862,6 +3861,19 @@ function findUnavailableRentalEquipment(equipmentItems, originalEquipmentIds = n
   return items.find((item) => !originalEquipmentIds.has(item.id) && !isEquipmentAvailableForRental(item)) ?? null;
 }
 
+function HistorySection({ title, count = 0, collapsed, onToggle, actions = null, children, className = '' }) {
+  return <section className={`history-section ${collapsed ? 'is-collapsed' : 'is-expanded'} ${className}`.trim()}>
+    <button type="button" className="history-toggle-button" onClick={onToggle} aria-expanded={!collapsed}>
+      <span>{title} {collapsed ? '▸' : '▾'}</span>
+      <span className="history-count">({count})</span>
+    </button>
+    {!collapsed && <>
+      {actions && <div className="history-section-toolbar">{actions}</div>}
+      <div className="history-section-content">{children}</div>
+    </>}
+  </section>;
+}
+
 function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [clients, setClients] = useState([]);
@@ -4153,20 +4165,19 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       </div>
       <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={activeRows} onOpen={(row) => openRentalEditor(row._rental)} onEdit={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'return', label: 'Zarejestruj zwrot', icon: CheckCircle2, visible: canRegisterReturn, onClick: (row) => setReturningRental(row._rental ?? row) }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
     </section>
-    <section className="panel rentals-table-panel rentals-records-section returned-rentals-section">
-      <div className="rentals-section-heading">
-        <div>
-          <p className="eyebrow">Historia</p>
-          <h3>Wypożyczenia zwrócone</h3>
-        </div>
-        <div className="section-export-actions">
-          <ButtonSecondary onClick={() => exportTableToCsv(`${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><Download size={15} />CSV</ButtonSecondary>
-          <ButtonSecondary onClick={() => exportTableToPdf('Historia wypożyczeń', `${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><FileText size={15} />PDF</ButtonSecondary>
-          <ButtonSecondary onClick={() => setReturnedCollapsed((value) => !value)}>{returnedCollapsed ? 'Rozwiń' : 'Zwiń'} · {returnedRows.length}</ButtonSecondary>
-        </div>
-      </div>
-      {!returnedCollapsed && <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />}
-    </section>
+    <HistorySection
+      title="Historia wypożyczeń"
+      count={returnedRows.length}
+      collapsed={returnedCollapsed}
+      onToggle={() => setReturnedCollapsed((value) => !value)}
+      className="panel rentals-table-panel rentals-records-section returned-rentals-section"
+      actions={<>
+        <ButtonSecondary onClick={() => exportTableToCsv(`${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><Download size={15} />CSV</ButtonSecondary>
+        <ButtonSecondary onClick={() => exportTableToPdf('Historia wypożyczeń', `${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><FileText size={15} />PDF</ButtonSecondary>
+      </>}
+    >
+      <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
+    </HistorySection>
     {editorOpen && <RentalEditor rental={editingRental} nextRentalNumber={generateNextRentalNumber(rows)} clients={clients} equipmentRows={equipmentRows} rentalTypes={rentalTypes} rentalSettings={rentalSettings} onClose={() => setEditorOpen(false)} onSave={handleSave} onAgreement={(rentalRecord) => setAgreementRental(rentalRecord)} />}
     {returningRental && <RentalReturnModal rental={returningRental} returnConditions={returnConditions} onClose={() => { setReturningRental(null); setReturnModalNotice(''); }} onConfirm={handleRegisterReturn} notice={returnModalNotice} />}
     {agreementRental && <RentalAgreementModal rental={agreementRental} onClose={() => setAgreementRental(null)} />}
@@ -5658,19 +5669,18 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
         ]}
       />
     </section>
-    <section className="panel service-list-panel rentals-records-section service-completed-section">
-      <div className="rentals-section-heading">
-        <div>
-          <p className="eyebrow">Historia</p>
-          <h3>Zlecenia zakończone</h3>
-        </div>
-        <div className="section-export-actions">
-          <ButtonSecondary onClick={() => exportTableToCsv(`${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><Download size={15} />CSV</ButtonSecondary>
-          <ButtonSecondary onClick={() => exportTableToPdf('Historia serwisów', `${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><FileText size={15} />PDF</ButtonSecondary>
-          <ButtonSecondary onClick={() => setServiceHistoryCollapsed((v) => !v)}>{serviceHistoryCollapsed ? 'Rozwiń' : 'Zwiń'} · {completedTableRows.length}</ButtonSecondary>
-        </div>
-      </div>
-      {!serviceHistoryCollapsed && <DataTable
+    <HistorySection
+      title="Historia serwisu"
+      count={completedTableRows.length}
+      collapsed={serviceHistoryCollapsed}
+      onToggle={() => setServiceHistoryCollapsed((v) => !v)}
+      className="panel service-list-panel rentals-records-section service-completed-section"
+      actions={<>
+        <ButtonSecondary onClick={() => exportTableToCsv(`${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><Download size={15} />CSV</ButtonSecondary>
+        <ButtonSecondary onClick={() => exportTableToPdf('Historia serwisów', `${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><FileText size={15} />PDF</ButtonSecondary>
+      </>}
+    >
+      <DataTable
         storageKey={`${SERVICE_TABLE_KEY}-completed`}
         loading={loading}
         columns={completedServiceColumns}
@@ -5684,8 +5694,8 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
           { key: 'acceptance', label: 'Utwórz dokument przyjęcia', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'acceptance') },
           { key: 'release', label: 'Utwórz dokument wydania', icon: FileText, onClick: (order) => openServiceDocumentPreview(order, 'release') }
         ]}
-      />}
-    </section>
+      />
+    </HistorySection>
     {editorOpen && <ServiceOrderEditor order={editingOrder} clients={clients} equipmentRows={equipmentRows} existingRows={rows} serviceStatuses={serviceStatuses} servicePriorities={servicePriorities} serviceDeviceCategories={serviceDeviceCategories} serviceIntakeConditions={serviceIntakeConditions} serviceExternalServices={serviceExternalServices} serviceProgressTemplates={serviceProgressTemplates} onClose={() => setEditorOpen(false)} onSave={saveServiceOrder} />}
     {confirmDialog && <ConfirmDialog
       title={confirmDialog.title}
@@ -7040,6 +7050,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
+  const [historyTasksCollapsed, setHistoryTasksCollapsed] = useState(true);
   const [localClients, setLocalClients] = useState(() => Array.isArray(clients) ? clients : []);
 
   useEffect(() => { setLocalClients(Array.isArray(clients) ? clients : []); }, [clients]);
@@ -7447,13 +7458,12 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
           </div>}
           {!activeTasks.length && !tasksLoading && <EmptyState title="Brak aktywnych zadań." />}
         </div>}
-        {historyTaskRows.length > 0 && <details className="project-history-section">
-          <summary className="history-toggle">Historia zadań ({historyTaskRows.length})</summary>
+        {historyTaskRows.length > 0 && <HistorySection title="Historia zadań" count={historyTaskRows.length} collapsed={historyTasksCollapsed} onToggle={() => setHistoryTasksCollapsed((value) => !value)} className="project-history-section">
           <DataTable storageKey={`pt-hist-${projectId?.slice(0,8) ?? 'new'}`} columns={historyTaskColumns} rows={historyTaskRows} enableSelectionActions={false}
             onOpen={openEditTask} openLabel="Podgląd zadania"
             customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: WORK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }]}
           />
-        </details>}
+        </HistorySection>}
         {sectionMenu && <ProjectSectionContextMenu
           section={sectionMenu.section}
           x={sectionMenu.x}
@@ -8127,7 +8137,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, refreshKey = 0, style = null }) {
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, refreshKey = 0, style = null }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -8422,12 +8432,14 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const getTaskDropIndex = (event, sectionId) => {
     const item = event.currentTarget;
     const sectionTasks = tasksBySection(sectionId);
-    const sourceIndex = sectionTasks.findIndex((task) => getTaskKey(task) === taskDragRef.current?.taskKey);
     const targetTaskId = item.dataset.taskKey;
     const targetIndex = sectionTasks.findIndex((task) => getTaskKey(task) === targetTaskId);
-    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return null;
+    if (targetIndex < 0) return null;
     const rect = item.getBoundingClientRect();
     const midpoint = rect.top + rect.height / 2;
+    const sourceIndex = sectionTasks.findIndex((task) => getTaskKey(task) === taskDragRef.current?.taskKey);
+    if (sourceIndex < 0) return event.clientY > midpoint ? targetIndex + 1 : targetIndex;
+    if (sourceIndex === targetIndex) return null;
     if (sourceIndex < targetIndex) {
       return event.clientY > midpoint ? targetIndex + 1 : targetIndex;
     }
@@ -8454,7 +8466,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const updateTaskDragTarget = (event, sectionId, index) => {
     const sectionKey = getSectionKey(sectionId);
     const drag = taskDragRef.current;
-    if (!drag || drag.sectionKey !== sectionKey) return;
+    if (!drag) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = 'move';
@@ -8465,9 +8477,10 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       : sectionTasks.findIndex((task) => getTaskKey(task) === drag.taskKey);
     const dropTargetIndex = Math.min(Math.max(Number.isFinite(index) ? index : sectionTasks.length, 0), sectionTasks.length);
     if (!Number.isFinite(index) && event.target !== event.currentTarget) return;
-    const finalIndex = dropTargetIndex > sourceIndex ? dropTargetIndex - 1 : dropTargetIndex;
-    if (sourceIndex < 0 || finalIndex === sourceIndex || dropTargetIndex === drag.dropTargetIndex) return;
-    taskDragRef.current = { ...drag, sourceIndex, dropTargetIndex };
+    const sameSection = drag.sectionKey === sectionKey;
+    const finalIndex = sameSection && dropTargetIndex > sourceIndex ? dropTargetIndex - 1 : dropTargetIndex;
+    if (sameSection && (sourceIndex < 0 || finalIndex === sourceIndex || dropTargetIndex === drag.dropTargetIndex)) return;
+    taskDragRef.current = { ...drag, targetSectionKey: sectionKey, targetSectionId: sectionId || null, targetIndex: dropTargetIndex, dropTargetIndex };
     const targetTask = sectionTasks[Math.min(dropTargetIndex, sectionTasks.length - 1)] ?? null;
     console.debug('[Project task reorder] drag over', {
       draggedTaskId: drag.taskKey,
@@ -8483,15 +8496,84 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     ));
   };
 
+  const moveProjectTaskToSection = async (task, targetSectionId, targetIndex = null) => {
+    const taskId = task?.id ?? task?.localId;
+    if (!taskId) return false;
+    const targetSectionKey = getSectionKey(targetSectionId);
+    const sourceSectionKey = getSectionKey(task.section_id);
+    const previousTasks = tasks;
+    const movingTask = previousTasks.find((item) => getTaskKey(item) === getTaskKey(task)) ?? task;
+    const targetTasks = previousTasks
+      .filter((item) => getTaskKey(item) !== getTaskKey(movingTask))
+      .filter((item) => String(item.project_id) === String(projectId) && getSectionKey(item.section_id) === targetSectionKey)
+      .sort(comparePanelTasks);
+    const insertIndex = Number.isFinite(targetIndex)
+      ? Math.min(Math.max(targetIndex, 0), targetTasks.length)
+      : targetTasks.length;
+    const movedTask = { ...movingTask, section_id: targetSectionId || null };
+    targetTasks.splice(insertIndex, 0, movedTask);
+    const nextOrderMap = new Map(targetTasks.map((item, index) => [getTaskKey(item), (index + 1) * 10]));
+    const optimisticMovedTask = { ...movedTask, sort_order: nextOrderMap.get(getTaskKey(movedTask)) ?? movedTask.sort_order };
+
+    setCollapsedSections((current) => {
+      const next = new Set(current);
+      next.delete(targetSectionKey || '__unsectioned__');
+      return next;
+    });
+    setTasks((current) => current.map((item) => {
+      const key = getTaskKey(item);
+      if (key === getTaskKey(movedTask)) return optimisticMovedTask;
+      if (String(item.project_id) === String(projectId) && getSectionKey(item.section_id) === targetSectionKey && nextOrderMap.has(key)) {
+        return { ...item, sort_order: nextOrderMap.get(key) };
+      }
+      return item;
+    }));
+    onTaskChanged?.(optimisticMovedTask);
+
+    const payload = { ...movingTask, section_id: targetSectionId || null, sort_order: optimisticMovedTask.sort_order };
+    const updateResult = await updateProjectTask(taskId, payload);
+    if (updateResult.error) {
+      setTasks(previousTasks);
+      onTaskChanged?.(movingTask);
+      setNotice(humanizeError(updateResult.error, 'Nie udało się zmienić sekcji zadania'));
+      return false;
+    }
+
+    const savedMovedTask = updateResult.data ?? optimisticMovedTask;
+    const orderedTargetTasks = targetTasks.map((item) => (
+      getTaskKey(item) === getTaskKey(movedTask)
+        ? { ...savedMovedTask, sort_order: nextOrderMap.get(getTaskKey(item)) }
+        : { ...item, sort_order: nextOrderMap.get(getTaskKey(item)) }
+    ));
+    const reorderResult = await reorderProjectTasksInSection(projectId, targetSectionId || null, orderedTargetTasks);
+    if (reorderResult.error) {
+      await updateProjectTask(taskId, { ...movingTask, section_id: sourceSectionKey || null, sort_order: movingTask.sort_order });
+      setTasks(previousTasks);
+      onTaskChanged?.(movingTask);
+      setNotice(humanizeError(reorderResult.error, 'Nie udało się zapisać kolejności zadań'));
+      return false;
+    }
+
+    const finalMovedTask = { ...savedMovedTask, section_id: targetSectionId || null, sort_order: optimisticMovedTask.sort_order };
+    setTasks((current) => current.map((item) => getTaskKey(item) === getTaskKey(finalMovedTask) ? { ...item, ...finalMovedTask } : item));
+    onTaskChanged?.(finalMovedTask);
+    setNotice('');
+    return true;
+  };
+
   const finishTaskDrop = async (event, sectionId, sectionTasks) => {
     const sectionKey = getSectionKey(sectionId);
     const drag = taskDragRef.current;
-    if (!drag || drag.sectionKey !== sectionKey) return;
+    if (!drag) return;
     event.preventDefault();
     event.stopPropagation();
+    const movedTask = tasks.find((task) => getTaskKey(task) === drag.taskKey);
+    const fromSectionKey = drag.sectionKey;
+    const targetSectionKey = sectionKey;
     const fromIndex = sectionTasks.findIndex((task) => getTaskKey(task) === drag.taskKey);
     const rawTargetIndex = Number.isFinite(drag.dropTargetIndex) ? drag.dropTargetIndex : sectionTasks.length;
-    const targetIndex = rawTargetIndex > fromIndex ? rawTargetIndex - 1 : rawTargetIndex;
+    const sameSection = fromSectionKey === targetSectionKey;
+    const targetIndex = sameSection && rawTargetIndex > fromIndex ? rawTargetIndex - 1 : rawTargetIndex;
     const targetTask = sectionTasks[Math.min(rawTargetIndex, sectionTasks.length - 1)] ?? null;
     console.info('[Project task reorder] drop', {
       draggedTaskId: drag.taskKey,
@@ -8504,11 +8586,16 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     setTaskDragState(null);
     taskDragRef.current = null;
     window.setTimeout(() => { suppressTaskClickRef.current = false; }, 0);
-    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return;
+    if (!movedTask || targetIndex < 0) return;
+    if (!sameSection) {
+      await moveProjectTaskToSection(movedTask, sectionId || null, rawTargetIndex);
+      return;
+    }
+    if (fromIndex < 0 || fromIndex === targetIndex) return;
     const previousTasks = tasks;
     const nextSectionTasks = [...sectionTasks];
-    const [movedTask] = nextSectionTasks.splice(fromIndex, 1);
-    nextSectionTasks.splice(Math.min(targetIndex, nextSectionTasks.length), 0, movedTask);
+    const [reorderedTask] = nextSectionTasks.splice(fromIndex, 1);
+    nextSectionTasks.splice(Math.min(targetIndex, nextSectionTasks.length), 0, reorderedTask);
     const nextOrderMap = new Map(nextSectionTasks.map((task, index) => [getTaskKey(task), (index + 1) * 10]));
     console.info('[Project task reorder] next order', {
       sectionId: sectionId || null,
@@ -8579,7 +8666,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     const done = isCompletedStatus(task.status);
     const expanded = expandedTasks.has(taskKey);
     const dragging = taskDragState?.taskKey === taskKey;
-    const dropTargetIndex = taskDragState?.sectionKey === sectionKey ? taskDragState.dropTargetIndex : null;
+    const activeDropSectionKey = taskDragState?.targetSectionKey ?? taskDragState?.sectionKey;
+    const dropTargetIndex = activeDropSectionKey === sectionKey ? taskDragState.dropTargetIndex : null;
     const dropBefore = dropTargetIndex === index;
     const dropAfter = dropTargetIndex === index + 1;
     return <div
@@ -8619,13 +8707,14 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
 
   const renderTaskList = (sectionTasks, sectionId) => {
     const sectionKey = getSectionKey(sectionId);
-    const dropTargetIndex = taskDragState?.sectionKey === sectionKey ? taskDragState.dropTargetIndex : null;
+    const activeDropSectionKey = taskDragState?.targetSectionKey ?? taskDragState?.sectionKey;
+    const dropTargetIndex = activeDropSectionKey === sectionKey ? taskDragState.dropTargetIndex : null;
     const items = sectionTasks.map((task, index) => renderTask(task, sectionId, index));
     if (!sectionTasks.length) items.push(<div className="project-detail-empty" key={`empty-${sectionKey}`}>Brak zadań.</div>);
     return <div
-      className={`project-detail-task-list ${taskDragState?.sectionKey === sectionKey ? 'is-drag-target' : ''} ${dropTargetIndex === sectionTasks.length ? 'is-drop-at-end' : ''}`}
+      className={`project-detail-task-list ${activeDropSectionKey === sectionKey ? 'is-drag-target' : ''} ${dropTargetIndex === sectionTasks.length ? 'is-drop-at-end' : ''}`}
       onDragOver={(event) => {
-        if (event.target === event.currentTarget) updateTaskDragTarget(event, sectionId, sectionTasks.length);
+        if (!event.target.closest?.('.project-detail-task-item')) updateTaskDragTarget(event, sectionId, sectionTasks.length);
       }}
       onDrop={(event) => finishTaskDrop(event, sectionId, sectionTasks)}
     >
@@ -8640,6 +8729,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   }
 
   const PanelTag = embedded ? 'section' : 'aside';
+  const showUnsectionedSection = sections.length === 0 || unsectionedTasks.length > 0 || Boolean(taskDragState);
   return <PanelTag className={`project-details-panel ${embedded ? 'project-board-panel' : ''}`} style={{ ...(style ?? {}), ...(embedded ? {} : { width: `${width}px` }), ...(projectAccentColor ? { '--project-accent-color': projectAccentColor } : {}) }}>
     {embedded
       ? onResizeStart && <div className="projects-columns-splitter" onMouseDown={onResizeStart} title="Zmień szerokość kolumn" />
@@ -8672,6 +8762,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
               className="project-detail-section-head is-colored"
               style={getProjectSectionHeadStyle(section, colorTheme)}
               title="Kliknij prawym przyciskiem, aby otworzyć menu sekcji"
+              onDragOver={(event) => updateTaskDragTarget(event, sid, sectionTasks.length)}
+              onDrop={(event) => finishTaskDrop(event, sid, sectionTasks)}
               onContextMenu={(event) => openSectionMenu(event, section)}
             >
               <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection(sid)}>
@@ -8683,8 +8775,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
             {!sectionCollapsed && renderTaskList(sectionTasks, sid)}
           </section>;
         })}
-        {(sections.length === 0 || unsectionedTasks.length > 0) && <section className="project-detail-section">
-          <div className="project-detail-section-head is-colored" style={getProjectSectionHeadStyle({ name: 'Bez sekcji' }, colorTheme, { unsectioned: true })}>
+        {showUnsectionedSection && <section className="project-detail-section">
+          <div className="project-detail-section-head is-colored" style={getProjectSectionHeadStyle({ name: 'Bez sekcji' }, colorTheme, { unsectioned: true })} onDragOver={(event) => updateTaskDragTarget(event, null, unsectionedTasks.length)} onDrop={(event) => finishTaskDrop(event, null, unsectionedTasks)}>
             <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection('__unsectioned__')}>
               <span>{collapsedSections.has('__unsectioned__') ? '▸' : '▾'}</span><strong>Bez sekcji</strong><em>({unsectionedTasks.length})</em>
             </button>
@@ -8934,7 +9026,9 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
 
 function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
   const taskId = task?.id ?? task?.localId;
+  const taskProjectId = task?.project_id;
   const [form, setForm] = useState(() => ({}));
+  const [sections, setSections] = useState([]);
   const [notice, setNotice] = useState('');
   const autosaveTimerRef = useRef(null);
   const formRef = useRef({});
@@ -9012,6 +9106,26 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     setNotice('');
     return () => { flushPendingChanges(); };
   }, [taskId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSections = async () => {
+      if (!taskProjectId) {
+        setSections([]);
+        return;
+      }
+      const result = await fetchProjectSections(taskProjectId);
+      if (cancelled) return;
+      if (result.error) {
+        setSections([]);
+        setNotice(humanizeError(result.error, 'Nie udało się pobrać sekcji projektu'));
+        return;
+      }
+      setSections(result.data ?? []);
+    };
+    loadSections();
+    return () => { cancelled = true; };
+  }, [taskProjectId]);
 
   useEffect(() => {
     formRef.current = form;
@@ -9092,6 +9206,12 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
           <FormField label="Priorytet">
             <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })}>
               {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Sekcja">
+            <AppSelect value={form.section_id ?? ''} onChange={(event) => set('section_id', event.target.value, { immediate: true })}>
+              <option value="">Bez sekcji</option>
+              {sections.map((section) => <option key={section.id ?? section.localId} value={section.id ?? section.localId}>{section.name}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Termin">
@@ -9724,6 +9844,17 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setHighlightedProjectTask(mergeSavedProjectTaskDraft(task));
   };
 
+  const syncProjectTaskPanels = (task) => {
+    if (!task) return;
+    const taskKey = String(task.id ?? task.localId);
+    setHighlightedProjectTask((current) => (
+      current && String(current.id ?? current.localId) === taskKey ? { ...current, ...task } : current
+    ));
+    setSelectedProjectTask((current) => (
+      current && String(current.id ?? current.localId) === taskKey ? { ...current, ...task } : current
+    ));
+  };
+
   const openProjectTaskDetails = async (task) => {
     await flushDetailsAutosave();
     const mergedTask = mergeSavedProjectTaskDraft(task);
@@ -9867,14 +9998,12 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
             onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
         </section>
 
-        <AppSection title={<button type="button" className="history-toggle-button" onClick={() => setHistoryCollapsed((v) => !v)}>
-          Historia projektów {historyCollapsed ? '▸' : '▾'} <span className="history-count">({historyTableRows.length})</span>
-        </button>}>
-          {!historyCollapsed && <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
+        <HistorySection title="Historia projektów" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
+          <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
             onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz"
             customRowActions={[{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }]}
-          />}
-        </AppSection>
+          />
+        </HistorySection>
       </div>}
       {hasProjectBoard && <ProjectDetailsPanel
         project={selectedProject}
@@ -9886,6 +10015,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         detailsPanelActive={detailsOpen && !detailsCollapsed}
         onSelectTask={highlightProjectTask}
         onOpenTask={openProjectTaskDetails}
+        onTaskChanged={syncProjectTaskPanels}
         onRefreshProject={loadData}
         refreshKey={projectPanelRefreshKey}
         workPriorities={workPriorityNames}

@@ -7474,6 +7474,8 @@ const PROJECT_DETAILS_COLLAPSED_KEY = 'fixer.projects.detailsPanelCollapsed';
 const PROJECT_DETAILS_SELECTED_KEY = 'fixer.projects.selectedProjectId';
 const PROJECTS_COLUMNS_SPLIT_KEY = 'fixer.projects.columnsSplit';
 const PROJECTS_LEFT_COLLAPSED_KEY = 'fixer.projects.leftColumnCollapsed';
+const PROJECT_LIST_SYNC_FIELDS = ['project_number', 'name', 'client_id', 'status', 'priority', 'start_date', 'due_date', 'accent_color', 'archived', 'completed_at'];
+const PROJECT_TASK_PANEL_SYNC_FIELDS = ['title', 'status', 'priority', 'due_date', 'reminder_at', 'section_id', 'archived', 'completed_at'];
 const PROJECTS_LEFT_COLUMN_MIN_WIDTH = 520;
 const PROJECTS_CENTER_COLUMN_MIN_WIDTH = 360;
 const PROJECTS_LEFT_COLLAPSED_WIDTH = 52;
@@ -8093,7 +8095,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, refreshKey = 0, style = null }) {
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, refreshKey = 0, style = null }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -8145,6 +8147,16 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
 
   useEffect(() => { loadPanelData(); }, [projectId, collapsed, refreshKey]);
   useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
+  useEffect(() => {
+    if (!latestTask || String(latestTask.project_id) !== String(projectId)) return;
+    const latestTaskId = latestTask.id ?? latestTask.localId;
+    if (!latestTaskId) return;
+    setTasks((current) => current.map((task) => (
+      String(task.id ?? task.localId) === String(latestTaskId)
+        ? { ...task, ...latestTask }
+        : task
+    )));
+  }, [latestTask?.id, latestTask?.localId, latestTask?.title, latestTask?.status, latestTask?.priority, latestTask?.due_date, latestTask?.reminder_at, latestTask?.section_id, latestTask?.completed_at, latestTask?.archived, projectId]);
 
   const openNewTask = (sectionId = null) => {
     if (sectionId) {
@@ -8701,16 +8713,19 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   </PanelTag>;
 }
 
-function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onClose, onSaveProject, allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
+function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveProject, autosaveRef = null, allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
   const projectId = project?.id ?? project?.localId;
   const projectAccentColor = resolveProjectAccentColor(project);
   const [form, setForm] = useState(() => ({}));
-  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const autosaveTimerRef = useRef(null);
+  const formRef = useRef({});
+  const dirtyRef = useRef(false);
+  const savingRef = useRef(Promise.resolve());
 
-  useEffect(() => {
+  const buildFormFromProject = () => {
     const safeProject = project ?? {};
-    setForm({
+    return {
       project_number: String(safeProject.project_number ?? generateNextProjectNumber(allProjects, documentSettings)),
       name: String(safeProject.name ?? ''),
       description: String(safeProject.description ?? ''),
@@ -8724,22 +8739,102 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
       archived: Boolean(safeProject.archived),
       completed_at: safeProject.completed_at ?? null,
       ...(project ? { id: project.id, localId: project.localId, created_at: project.created_at } : {})
+    };
+  };
+
+  const clearAutosaveTimer = () => {
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  };
+
+  const saveDraft = (draft = formRef.current) => {
+    const draftProjectId = draft?.id ?? draft?.localId;
+    if (!draftProjectId || !dirtyRef.current) return savingRef.current;
+    if (!String(draft.name ?? '').trim()) {
+      setNotice('Nazwa projektu jest wymagana.');
+      return savingRef.current;
+    }
+
+    dirtyRef.current = false;
+    const payload = {
+      ...draft,
+      project_number: String(draft.project_number ?? '').trim() || generateNextProjectNumber(allProjects, documentSettings),
+      client_id: draft.client_id || null
+    };
+    savingRef.current = savingRef.current.then(async () => {
+      try {
+        const result = await onAutoSaveProject?.(payload);
+        if (result?.error) {
+          dirtyRef.current = true;
+          setNotice(humanizeError(result.error, 'Błąd zapisu projektu'));
+          return;
+        }
+        setNotice('');
+      } catch (error) {
+        dirtyRef.current = true;
+        setNotice(humanizeError(error, 'Błąd zapisu projektu'));
+      }
     });
+    return savingRef.current;
+  };
+
+  const flushPendingChanges = () => {
+    clearAutosaveTimer();
+    return saveDraft(formRef.current);
+  };
+
+  useEffect(() => {
+    flushPendingChanges();
+    const nextForm = buildFormFromProject();
+    formRef.current = nextForm;
+    dirtyRef.current = false;
+    setForm(nextForm);
     setNotice('');
+    return () => { flushPendingChanges(); };
   }, [projectId]);
 
-  const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
-  const handleSave = async () => {
-    if (!project) return;
-    if (!String(form.name ?? '').trim()) { setNotice('Nazwa projektu jest wymagana.'); return; }
-    setBusy(true);
-    await onSaveProject?.({
-      ...form,
-      project_number: String(form.project_number ?? '').trim() || generateNextProjectNumber(allProjects, documentSettings),
-      client_id: form.client_id || null
-    });
-    setBusy(false);
+  useEffect(() => {
+    if (!autosaveRef) return undefined;
+    autosaveRef.current = { flush: flushPendingChanges };
+    return () => {
+      flushPendingChanges();
+      autosaveRef.current = null;
+    };
+  }, [autosaveRef, projectId]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => { flushPendingChanges(); };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  const scheduleSave = (delay = 700) => {
+    clearAutosaveTimer();
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      saveDraft(formRef.current);
+    }, delay);
+  };
+
+  const set = (field, value, options = {}) => {
+    const next = { ...formRef.current, [field]: value };
+    formRef.current = next;
+    dirtyRef.current = true;
+    setForm(next);
+    if (options.immediate) {
+      window.setTimeout(() => {
+        clearAutosaveTimer();
+        saveDraft(formRef.current);
+      }, 0);
+      return;
+    }
+    scheduleSave();
   };
 
   if (collapsed) {
@@ -8769,28 +8864,28 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
         </FormField>
         <div className="project-inspector-grid">
           <FormField label="Status">
-            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value)}>
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })}>
               {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value)}>
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })}>
               {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Start">
-            <AppInput type="date" value={form.start_date ?? ''} onChange={(event) => set('start_date', event.target.value)} />
+            <AppInput type="date" value={form.start_date ?? ''} onChange={(event) => set('start_date', event.target.value, { immediate: true })} />
           </FormField>
           <FormField label="Termin">
-            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value)} />
+            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} />
           </FormField>
         </div>
         <FormField label="Kolor projektu">
           <div className="project-accent-field">
             <label className="project-accent-color-swatch" style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }} title="Wybierz kolor projektu">
-              <input type="color" className="project-accent-color-input" value={normalizeAccentColor(form.accent_color) || '#2563EB'} onChange={(event) => set('accent_color', event.target.value.toUpperCase())} aria-label="Wybierz kolor projektu" />
+              <input type="color" className="project-accent-color-input" value={normalizeAccentColor(form.accent_color) || '#2563EB'} onChange={(event) => set('accent_color', event.target.value.toUpperCase(), { immediate: true })} aria-label="Wybierz kolor projektu" />
             </label>
-            <AppInput value={form.accent_color ?? ''} onChange={(event) => set('accent_color', event.target.value)} placeholder="Domyślny akcent motywu" />
+            <AppInput value={form.accent_color ?? ''} onChange={(event) => set('accent_color', event.target.value, { immediate: true })} placeholder="Domyślny akcent motywu" />
           </div>
         </FormField>
         <FormField label="Opis">
@@ -8801,23 +8896,23 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
         </FormField>
         {project.clients?.name && <div className="project-inspector-related"><span>Klient</span><strong>{project.clients.name}</strong></div>}
       </div>
-      <div className="project-details-footer">
-        <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />Zapisz</ButtonPrimary>
-      </div>
     </div>}
   </aside>;
 }
 
-function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onSaveTask, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
+function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
   const taskId = task?.id ?? task?.localId;
   const [form, setForm] = useState(() => ({}));
-  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const autosaveTimerRef = useRef(null);
+  const formRef = useRef({});
+  const dirtyRef = useRef(false);
+  const savingRef = useRef(Promise.resolve());
   const done = isCompletedStatus(form.status);
 
-  useEffect(() => {
+  const buildFormFromTask = () => {
     const safeTask = task ?? {};
-    setForm({
+    return {
       title: safeTask.title ?? '',
       description: safeTask.description ?? '',
       status: normalizeWorkStatus(safeTask.status) || WORK_STATUSES[0],
@@ -8830,22 +8925,102 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
       completed_at: safeTask.completed_at,
       created_at: safeTask.created_at,
       ...(task ? { id: task.id, localId: task.localId } : {})
+    };
+  };
+
+  const clearAutosaveTimer = () => {
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  };
+
+  const saveDraft = (draft = formRef.current) => {
+    const draftTaskId = draft?.id ?? draft?.localId;
+    if (!draftTaskId || !dirtyRef.current) return savingRef.current;
+    if (!String(draft.title ?? '').trim()) {
+      setNotice('Tytuł zadania jest wymagany.');
+      return savingRef.current;
+    }
+
+    dirtyRef.current = false;
+    const payload = {
+      ...draft,
+      section_id: draft.section_id || null,
+      reminder_at: draft.reminder_at ? new Date(draft.reminder_at).toISOString() : null
+    };
+    savingRef.current = savingRef.current.then(async () => {
+      try {
+        const result = await onAutoSaveTask?.(payload);
+        if (result?.error) {
+          dirtyRef.current = true;
+          setNotice(humanizeError(result.error, 'Błąd zapisu zadania'));
+          return;
+        }
+        setNotice('');
+      } catch (error) {
+        dirtyRef.current = true;
+        setNotice(humanizeError(error, 'Błąd zapisu zadania'));
+      }
     });
+    return savingRef.current;
+  };
+
+  const flushPendingChanges = () => {
+    clearAutosaveTimer();
+    return saveDraft(formRef.current);
+  };
+
+  useEffect(() => {
+    flushPendingChanges();
+    const nextForm = buildFormFromTask();
+    formRef.current = nextForm;
+    dirtyRef.current = false;
+    setForm(nextForm);
     setNotice('');
+    return () => { flushPendingChanges(); };
   }, [taskId]);
 
-  const set = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
-  const handleSave = async () => {
-    if (!task) return;
-    if (!String(form.title ?? '').trim()) { setNotice('Tytuł zadania jest wymagany.'); return; }
-    setBusy(true);
-    await onSaveTask?.({
-      ...form,
-      section_id: form.section_id || null,
-      reminder_at: form.reminder_at ? new Date(form.reminder_at).toISOString() : null
-    });
-    setBusy(false);
+  useEffect(() => {
+    if (!autosaveRef) return undefined;
+    autosaveRef.current = { flush: flushPendingChanges };
+    return () => {
+      flushPendingChanges();
+      autosaveRef.current = null;
+    };
+  }, [autosaveRef, taskId]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => { flushPendingChanges(); };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  const scheduleSave = (delay = 700) => {
+    clearAutosaveTimer();
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      saveDraft(formRef.current);
+    }, delay);
+  };
+
+  const set = (field, value, options = {}) => {
+    const next = { ...formRef.current, [field]: value };
+    formRef.current = next;
+    dirtyRef.current = true;
+    setForm(next);
+    if (options.immediate) {
+      window.setTimeout(() => {
+        clearAutosaveTimer();
+        saveDraft(formRef.current);
+      }, 0);
+      return;
+    }
+    scheduleSave();
   };
 
   if (collapsed) {
@@ -8868,7 +9043,7 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     {!task && <EmptyState title="Wybierz zadanie." />}
     {task && <div className="project-details-body">
       <div className="project-details-toolbar">
-        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>{done && <CheckCircle2 size={16} />}</button>
+        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>{done && <CheckCircle2 size={16} />}</button>
         <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>
       </div>
       <div className="project-details-body-scroll project-inspector-fields">
@@ -8878,29 +9053,26 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
         </FormField>
         <div className="project-inspector-grid">
           <FormField label="Status">
-            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value)}>
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })}>
               {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value)}>
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })}>
               {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Termin">
-            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value)} />
+            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} />
           </FormField>
           <FormField label="Przypomnienie">
-            <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value)} />
+            <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value, { immediate: true })} />
           </FormField>
         </div>
         <FormField label="Opis">
           <AppTextarea resizeKey={`fixer:ui-resize:project-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} />
         </FormField>
         <ProjectTaskInlineComments task={task} onChanged={onChanged} colorTheme={colorTheme} />
-      </div>
-      <div className="project-details-footer">
-        <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />Zapisz</ButtonPrimary>
       </div>
     </div>}
   </aside>;
@@ -9022,7 +9194,24 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const [projectPanelRefreshKey, setProjectPanelRefreshKey] = useState(0);
   const [workPriorityNames, setWorkPriorityNames] = useState(DEFAULT_WORK_PRIORITIES);
   const projectsWorkspaceRef = useRef(null);
+  const detailsAutosaveRef = useRef(null);
+  const projectAutosaveCacheRef = useRef(new Map());
+  const projectTaskAutosaveCacheRef = useRef(new Map());
   const documentSettings = getDocumentSettings();
+
+  const getWorkRecordKey = (record) => String(record?.id ?? record?.localId ?? '').trim();
+  const mergeSavedProjectDraft = (project) => {
+    const key = getWorkRecordKey(project);
+    return key && projectAutosaveCacheRef.current.has(key)
+      ? { ...project, ...projectAutosaveCacheRef.current.get(key) }
+      : project;
+  };
+  const mergeSavedProjectTaskDraft = (task) => {
+    const key = getWorkRecordKey(task);
+    return key && projectTaskAutosaveCacheRef.current.has(key)
+      ? { ...task, ...projectTaskAutosaveCacheRef.current.get(key) }
+      : task;
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -9033,7 +9222,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       fetchOrganizerCategories(),
       fetchWorkDictionary(WORK_DICTIONARY_TYPES.priority)
     ]);
-    setRows(projectsResult.data ?? []);
+    setRows((projectsResult.data ?? []).map(mergeSavedProjectDraft));
     setClients(clientsResult.data ?? []);
     setOrganizerRows(tasksResult.data ?? []);
     setCategories((catsResult.data ?? []).map((item) => item.name).filter(Boolean));
@@ -9088,7 +9277,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     const project = rows.find((r) => String(r.id ?? r.localId) === String(pendingOpenProjectId));
     if (project) {
       setSelectedProjectKey(`project:${project.id ?? project.localId}`);
-      setSelectedDetailsWork(mapProjectRow(project));
+      setSelectedDetailsWork(mapProjectRow(mergeSavedProjectDraft(project)));
       setSelectedProjectTask(null);
       setHighlightedProjectTask(null);
       setDetailsOpen(true);
@@ -9148,6 +9337,39 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       return;
     }
     await doSave(form);
+  };
+
+  const saveProjectFromInspector = async (form) => {
+    if (!String(form.name ?? '').trim()) {
+      const error = new Error('Nazwa projektu jest wymagana.');
+      setNotice(error.message);
+      return { data: null, error };
+    }
+    const projectId = form.id ?? form.localId;
+    if (!projectId) return { data: null, error: new Error('ID projektu jest wymagane.') };
+    const payload = {
+      ...form,
+      project_number: String(form.project_number ?? '').trim() || generateNextProjectNumber(rows, documentSettings),
+      client_id: form.client_id || null
+    };
+    const result = await updateProject(projectId, payload);
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Błąd zapisu projektu'));
+      return result;
+    }
+    const updatedProject = { ...payload, ...(result.data ?? {}) };
+    projectAutosaveCacheRef.current.set(String(projectId), updatedProject);
+    const sourceProject = rows.find((row) => String(row.id ?? row.localId) === String(projectId));
+    const shouldSyncProjectList = PROJECT_LIST_SYNC_FIELDS.some((field) => String(sourceProject?.[field] ?? '') !== String(updatedProject?.[field] ?? ''));
+    if (shouldSyncProjectList) {
+      setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, ...updatedProject } : row));
+    }
+    setSelectedDetailsWork((current) => {
+      if (current?._workType !== 'project') return current;
+      if (String(current.id ?? current.localId) !== String(projectId)) return current;
+      return mapProjectRow({ ...current._source, ...updatedProject });
+    });
+    return { ...result, data: updatedProject };
   };
 
   const handleDelete = async (project) => {
@@ -9246,17 +9468,28 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const saveProjectTaskFromInspector = async (taskForm) => {
     const taskId = taskForm.id ?? taskForm.localId;
-    if (!taskId) return;
+    if (!taskId) return { data: null, error: new Error('ID zadania jest wymagane.') };
+    if (!String(taskForm.title ?? '').trim()) {
+      const error = new Error('Tytuł zadania jest wymagany.');
+      setNotice(error.message);
+      return { data: null, error };
+    }
     const completed = isCompletedStatus(taskForm.status);
     const payload = completed
       ? { ...taskForm, archived: false, completed_at: taskForm.completed_at || new Date().toISOString() }
       : { ...taskForm, archived: false, completed_at: null };
     const result = await updateProjectTask(taskId, payload);
-    if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu zadania')); return; }
-    setSelectedProjectTask(result.data ?? payload);
-    setHighlightedProjectTask(result.data ?? payload);
-    setProjectPanelRefreshKey((value) => value + 1);
-    await loadData();
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Błąd zapisu zadania'));
+      return result;
+    }
+    const updatedTask = result.data ?? payload;
+    projectTaskAutosaveCacheRef.current.set(String(taskId), updatedTask);
+    const sourceTask = selectedProjectTask ?? highlightedProjectTask;
+    const shouldSyncProjectPanelTask = PROJECT_TASK_PANEL_SYNC_FIELDS.some((field) => String(sourceTask?.[field] ?? '') !== String(updatedTask?.[field] ?? ''));
+    setSelectedProjectTask(updatedTask);
+    if (shouldSyncProjectPanelTask) setHighlightedProjectTask(updatedTask);
+    return { ...result, data: updatedTask };
   };
 
   const deleteProjectTaskFromInspector = async (task) => {
@@ -9401,7 +9634,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   useEffect(() => {
     if (!detailsOpen || selectedDetailsWork || !selectedWork) return;
-    setSelectedDetailsWork(selectedWork);
+    setSelectedDetailsWork(selectedWork._workType === 'project' ? mapProjectRow(mergeSavedProjectDraft(selectedWork._source ?? selectedWork)) : selectedWork);
   }, [detailsOpen, selectedDetailsWork, selectedWork?.work_key]);
 
   useEffect(() => {
@@ -9418,20 +9651,36 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     }
   }, [selectedProject?.id, selectedProject?.localId, highlightedProjectTask?.id, highlightedProjectTask?.localId]);
 
-  const selectWorkItem = (row) => {
-    setSelectedProjectKey(row.work_key ?? `${row._workType}:${row.id ?? row.localId}`);
+  const flushDetailsAutosave = () => detailsAutosaveRef.current?.flush?.() ?? Promise.resolve();
+
+  const selectWorkItem = async (row) => {
+    await flushDetailsAutosave();
+    const detailsRow = row._workType === 'project'
+      ? mapProjectRow(mergeSavedProjectDraft(row._source ?? row))
+      : row;
+    setSelectedProjectKey(detailsRow.work_key ?? `${detailsRow._workType}:${detailsRow.id ?? detailsRow.localId}`);
     setSelectedProjectTask(null);
     setHighlightedProjectTask(null);
-    if (row._workType === 'task') {
-      setSelectedDetailsWork(row);
+
+    if (detailsRow._workType === 'task') {
+      setSelectedDetailsWork(detailsRow);
       setDetailsOpen(true);
       setDetailsCollapsed(false);
+      return;
+    }
+
+    if (detailsOpen && !detailsCollapsed) {
+      setSelectedDetailsWork(detailsRow);
     }
   };
 
-  const openWorkItem = (row) => {
-    setSelectedProjectKey(row.work_key ?? `${row._workType}:${row.id ?? row.localId}`);
-    setSelectedDetailsWork(row);
+  const openWorkItem = async (row) => {
+    await flushDetailsAutosave();
+    const detailsRow = row._workType === 'project'
+      ? mapProjectRow(mergeSavedProjectDraft(row._source ?? row))
+      : row;
+    setSelectedProjectKey(detailsRow.work_key ?? `${detailsRow._workType}:${detailsRow.id ?? detailsRow.localId}`);
+    setSelectedDetailsWork(detailsRow);
     setSelectedProjectTask(null);
     setHighlightedProjectTask(null);
     setDetailsOpen(true);
@@ -9439,19 +9688,27 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   };
 
   const highlightProjectTask = (task) => {
-    setHighlightedProjectTask(task);
+    setHighlightedProjectTask(mergeSavedProjectTaskDraft(task));
   };
 
-  const openProjectTaskDetails = (task) => {
-    setHighlightedProjectTask(task);
-    setSelectedProjectTask(task);
+  const openProjectTaskDetails = async (task) => {
+    await flushDetailsAutosave();
+    const mergedTask = mergeSavedProjectTaskDraft(task);
+    setHighlightedProjectTask(mergedTask);
+    setSelectedProjectTask(mergedTask);
     setDetailsOpen(true);
     setDetailsCollapsed(false);
   };
 
-  const closeDetailsPanel = () => {
+  const closeDetailsPanel = async () => {
+    await flushDetailsAutosave();
     setDetailsOpen(false);
     setDetailsCollapsed(false);
+  };
+
+  const toggleDetailsCollapsed = async () => {
+    await flushDetailsAutosave();
+    setDetailsCollapsed((value) => !value);
   };
 
   const deleteWorkItem = (row) => row._workType === 'project' ? handleDelete(row._source) : deleteSimpleTask(row._source);
@@ -9584,6 +9841,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         style={{ flexGrow: leftCollapsed ? 1 : centerColumnFlex }}
         onResizeStart={!leftCollapsed ? startProjectColumnsResize : null}
         selectedTaskKey={highlightedProjectTask ? String(highlightedProjectTask.id ?? highlightedProjectTask.localId) : null}
+        latestTask={highlightedProjectTask}
         detailsPanelActive={detailsOpen && !detailsCollapsed}
         onSelectTask={highlightProjectTask}
         onOpenTask={openProjectTaskDetails}
@@ -9593,10 +9851,10 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         colorTheme={colorTheme}
       />}
       {detailsOpen && (selectedSimpleTask
-        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
+        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
         : selectedProjectTask
-          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onClose={closeDetailsPanel} onSaveTask={saveProjectTaskFromInspector} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} />
-          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={() => setDetailsCollapsed((value) => !value)} onClose={closeDetailsPanel} onSaveProject={saveProject} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} />)}
+          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} />
+          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveProject={saveProjectFromInspector} autosaveRef={detailsAutosaveRef} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} />)}
     </div>
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}

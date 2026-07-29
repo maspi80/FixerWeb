@@ -122,6 +122,7 @@ import {
   setAppSettingCache,
   subscribeAppSettings
 } from './services/appSettingsService';
+import { loadUserAccess } from './services/userAccessService';
 
 const PROJECTS_TABLE_KEY = 'projects-table';
 const PROJECTS_HISTORY_TABLE_KEY = 'projects-history-table';
@@ -736,6 +737,26 @@ function normalizeModuleNavigation(moduleId, intent = null) {
 
 const demoUser = { name: 'Mariusz', role: 'Administrator', email: 'admin@fixer.local' };
 
+function createEmptyUserAccess(user = null) {
+  return {
+    profile: user?.id
+      ? {
+        id: user.id,
+        email: user.email ?? '',
+        full_name: '',
+        role: 'user',
+        is_active: true,
+        created_at: null,
+        updated_at: null
+      }
+      : null,
+    permissions: [],
+    hasPermission: () => false,
+    errors: [],
+    fallback: true
+  };
+}
+
 function NotificationsBell({ onNavigate }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -909,6 +930,7 @@ class AppErrorBoundary extends React.Component {
 function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
   const [session, setSession] = useState(null);
+  const [userAccess, setUserAccess] = useState(createEmptyUserAccess);
   const [demoAuth, setDemoAuth] = useState(() => localStorage.getItem('fixer-demo-auth') === 'true');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('fixer-sidebar') === 'collapsed');
   const [globalSearch, setGlobalSearch] = useState('');
@@ -965,8 +987,37 @@ function App() {
 
   const isAuthenticated = isSupabaseConfigured ? Boolean(session) : demoAuth;
   const currentUser = isSupabaseConfigured && session?.user
-    ? { name: session.user.email?.split('@')[0] ?? 'Użytkownik', role: 'Użytkownik', email: session.user.email ?? '' }
+    ? {
+      id: session.user.id,
+      name: session.user.email?.split('@')[0] ?? 'Użytkownik',
+      role: 'Użytkownik',
+      email: session.user.email ?? '',
+      profile: userAccess.profile,
+      permissions: userAccess.permissions,
+      hasPermission: userAccess.hasPermission
+    }
     : demoUser;
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !session?.user) {
+      setUserAccess(createEmptyUserAccess());
+      return undefined;
+    }
+
+    let cancelled = false;
+    loadUserAccess(session.user)
+      .then((nextAccess) => {
+        if (!cancelled) setUserAccess(nextAccess);
+      })
+      .catch((error) => {
+        console.warn('User access foundation load failed', error);
+        if (!cancelled) setUserAccess(createEmptyUserAccess(session.user));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -1011,6 +1062,7 @@ function App() {
     localStorage.removeItem('fixer-demo-auth');
     setDemoAuth(false);
     setSession(null);
+    setUserAccess(createEmptyUserAccess());
   };
 
   const openGlobalSearchResult = (result) => {

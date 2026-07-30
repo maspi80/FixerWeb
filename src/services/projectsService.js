@@ -655,7 +655,6 @@ export async function createTaskComment(taskId, body, type = 'Komentarz', author
 }
 
 export async function updateTaskComment(id, body, comment = null) {
-  if (!canUseProjectPermission('projects.edit')) return denyProjectPermission('projects.edit', !isSupabaseConfigured);
   if (!body?.trim()) return { data: null, error: new Error('Treść komentarza jest wymagana.'), local: false };
   if (!isSupabaseConfigured || comment?.localId) {
     const now = new Date().toISOString();
@@ -668,7 +667,6 @@ export async function updateTaskComment(id, body, comment = null) {
 }
 
 export async function deleteTaskComment(id, comment = null) {
-  if (!canUseProjectPermission('projects.delete')) return { error: projectPermissionError('projects.delete'), local: !isSupabaseConfigured };
   if (!isSupabaseConfigured || comment?.localId) {
     writeLocal(LOCAL_COMMENTS_KEY, readLocal(LOCAL_COMMENTS_KEY).filter((c) => String(c.id ?? c.localId) !== String(id)));
     return { error: null, local: true };

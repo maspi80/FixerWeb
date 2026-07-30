@@ -10489,10 +10489,79 @@ body.rental-items-section-resizing *{
   justify-self:end;
 }
 .project-inspector-fields{
+  display:flex;
+  flex-direction:column;
   gap:10px;
   min-width:0;
   max-width:100%;
   box-sizing:border-box;
+}
+.project-task-inspector-layout{
+  flex:1 1 auto;
+  min-width:0;
+  min-height:0;
+  max-width:100%;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.project-task-inspector-layout.is-details-collapsed{
+  gap:0;
+}
+.project-task-inspector-data{
+  flex:0 0 auto;
+  min-width:0;
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding-right:2px;
+}
+.project-task-description-textarea{
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+}
+.project-task-inspector-resizer{
+  position:relative;
+  flex:0 0 12px;
+  min-height:12px;
+  margin:5px 0;
+  cursor:row-resize;
+  touch-action:none;
+}
+.project-task-inspector-resizer::before{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  top:50%;
+  height:1px;
+  border-radius:999px;
+  background:rgba(148,163,184,.16);
+  transform:translateY(-50%);
+  transition:background .15s ease, box-shadow .15s ease;
+}
+.project-task-inspector-resizer:hover::before,
+.project-task-inspector-resizer:active::before,
+body.resizing-project-task-inspector .project-task-inspector-resizer::before{
+  background:rgba(96,165,250,.54);
+  box-shadow:0 0 0 1px rgba(96,165,250,.10);
+}
+body.resizing-project-task-inspector,
+body.resizing-project-task-inspector *{
+  cursor:row-resize!important;
+  user-select:none!important;
+}
+.project-task-details-toggle{
+  width:26px;
+  height:26px;
+  min-width:26px;
+  min-height:26px;
+}
+.project-task-details-toggle.is-collapsed{
+  background:rgba(96,165,250,.11);
+  border-color:rgba(96,165,250,.24);
 }
 .project-inspector-grid{
   display:grid;
@@ -11251,6 +11320,22 @@ body.rental-items-section-resizing *{
   padding:0;
   border-top:0;
 }
+.project-inspector-panel .project-task-inline-comments-panel{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  margin-top:0;
+  padding-top:0;
+  border-top:0;
+}
+.project-comments-section-label{
+  flex:0 0 auto;
+  color:var(--fw-color-text-soft);
+  font-size:var(--fw-font-size-label);
+  font-weight:var(--fw-weight-medium);
+  margin:0 0 8px;
+}
 .project-comments-popup{
   width:min(620px,calc(100vw - 48px));
 }
@@ -11315,6 +11400,26 @@ body.rental-items-section-resizing *{
   gap:6px;
   margin-top:8px;
 }
+.project-task-inline-comments-panel .project-comments-list{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:0 2px 8px 0;
+  margin-top:0;
+  align-content:start;
+}
+.project-task-inline-comments-panel .project-comments-add{
+  flex:0 0 auto;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid rgba(148,163,184,.12);
+}
+.project-task-inline-comments-panel .project-comment-field .app-textarea{
+  min-height:78px;
+  max-height:150px;
+}
 .project-comment-row{
   position:relative;
   border:1px solid rgba(148,163,184,.12);
@@ -11322,7 +11427,7 @@ body.rental-items-section-resizing *{
   border-left-color:var(--project-comment-author-color,#2563eb);
   border-radius:12px;
   background:rgba(148,163,184,.06);
-  padding:8px 10px;
+  padding:6px 9px;
 }
 .project-comments-list .project-comment-row:nth-of-type(even){
   background:rgba(148,163,184,.085);
@@ -11330,23 +11435,34 @@ body.rental-items-section-resizing *{
 .project-comments-list .project-comment-row.is-alt{
   background:rgba(148,163,184,.12);
 }
-.project-comment-row strong,
-.project-comment-row span{
-  display:block;
+.project-comment-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  min-width:0;
 }
 .project-comment-row strong{
+  flex:1 1 auto;
+  min-width:0;
   color:#eef4ff;
   font-size:13px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .project-comment-row span{
+  flex:0 0 auto;
   color:#94a3b8;
   font-size:11px;
   font-weight:800;
+  white-space:nowrap;
 }
 .project-comment-row p{
-  margin:6px 0 0;
+  margin:3px 0 0;
   color:#dbe7f8;
   font-size:13px;
+  line-height:1.35;
 }
 .project-comment-delete{
   position:absolute;

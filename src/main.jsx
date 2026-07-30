@@ -775,6 +775,13 @@ function getCurrentCommentAuthor(user) {
   };
 }
 
+function canManageProjectComment(comment, commentAuthor, canManageAllComments = false) {
+  if (canManageAllComments) return true;
+  const commentAuthorId = String(comment?.author_user_id ?? '').trim();
+  const currentUserId = String(commentAuthor?.user_id ?? commentAuthor?.author_user_id ?? '').trim();
+  return Boolean(commentAuthorId && currentUserId && commentAuthorId === currentUserId);
+}
+
 function getCommentAuthorAccentColor(comment) {
   const normalized = normalizeUserColor(comment?.author_user_color);
   if (comment?.author_user_id && !comment?.author_user_color) return '#94A3B8';
@@ -7037,7 +7044,7 @@ function generateNextProjectNumber(projectsList, documentSettings) {
   return formatDocumentNumber(settings, getNextProjectSequence(projectsList, settings));
 }
 
-function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
+function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
   const taskId = task?.id ?? task?.localId;
   const [activeTab, setActiveTab] = useState('data');
   const [form, setForm] = useState(() => ({
@@ -7066,6 +7073,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   const canCreateProjectItems = permissions.create === true;
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
+  const canManageComment = (comment) => canManageProjectComment(comment, commentAuthor, canManageAllComments);
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -7100,7 +7108,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const saveCommentEdit = async (comment) => {
-    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
+    if (!canManageComment(comment)) { setNotice('Nie możesz edytować tego komentarza.'); return; }
     const result = await updateTaskComment(comment.id ?? comment.localId, editingCommentText, comment);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setEditingCommentId(null);
@@ -7109,7 +7117,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const startCommentEdit = (comment) => {
-    if (!canEditProjectItems) return;
+    if (!canManageComment(comment)) return;
     setCommentContextMenu(null);
     setEditingCommentId(comment.id ?? comment.localId);
     setEditingCommentText(comment.body);
@@ -7121,7 +7129,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const openCommentContextMenu = (event, comment) => {
-    if (!canEditProjectItems && !canDeleteProjectItems) return;
+    if (!canManageComment(comment)) return;
     event.preventDefault();
     event.stopPropagation();
     setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
@@ -7139,7 +7147,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const removeComment = async (comment) => {
-    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
+    if (!canManageComment(comment)) { setNotice('Nie możesz usunąć tego komentarza.'); return; }
     setConfirmDialog({
       title: 'Usuń komentarz',
       message: 'Usunąć komentarz?',
@@ -7242,14 +7250,14 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
       y={commentContextMenu.y}
       onClose={() => setCommentContextMenu(null)}
       items={[
-        canEditProjectItems ? { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) } : null,
-        canDeleteProjectItems ? { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) } : null
+        canManageComment(commentContextMenu.comment) ? { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) } : null,
+        canManageComment(commentContextMenu.comment) ? { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) } : null
       ].filter(Boolean)}
     />}
   </ResizableModalFrame>;
 }
 
-function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
+function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
   const isNew = !project;
   const canSaveProject = isNew ? permissions.create === true : permissions.edit === true;
   const canCreateProjectItems = permissions.create === true;
@@ -7746,7 +7754,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
     {clientEditorOpen && <ClientEditor client={null} initialTab="data" onClose={() => { setClientEditorOpen(false); setClientPickerOpen(true); }} onSave={saveNewClientFromProject} />}
 
-    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} permissions={permissions} commentAuthor={commentAuthor} />}
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} />}
 
     {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={closeSectionModal} footer={<><ButtonSecondary onClick={closeSectionModal}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
       <FormField label="Nazwa sekcji" error={sectionNameError}>
@@ -7777,6 +7785,12 @@ const PROJECT_DETAILS_DEFAULT_WIDTH = 420;
 const PROJECT_DETAILS_LAYOUT_BUFFER = 16;
 const PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH = 252;
 const PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH = 56;
+const PROJECT_TASK_INSPECTOR_SPLIT_KEY = buildUiResizeStorageKey('project-task-inspector', 'dataSection');
+const PROJECT_TASK_INSPECTOR_COLLAPSED_KEY = 'fixer.projects.taskInspectorDetailsCollapsed';
+const PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT = 460;
+const PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT = 220;
+const PROJECT_TASK_INSPECTOR_COMMENTS_MIN_HEIGHT = 250;
+const PROJECT_TASK_INSPECTOR_RESIZER_SPACE = 22;
 const NOTES_DETAILS_WIDTH_KEY = 'fixer-notes-details-panel-width';
 const NOTES_DETAILS_COLLAPSED_KEY = 'fixer.notes.detailsPanelCollapsed';
 const NOTES_DETAILS_SELECTED_KEY = 'fixer.notes.selectedNoteId';
@@ -7788,6 +7802,126 @@ function getSavedNotesDetailsWidth() {
 
 function getSavedNotesDetailsCollapsed() {
   return localStorage.getItem(NOTES_DETAILS_COLLAPSED_KEY) === 'true';
+}
+
+function getProjectTaskInspectorSplitStorageKey(userId) {
+  const scopedUserId = String(userId ?? '').trim();
+  return scopedUserId ? `${PROJECT_TASK_INSPECTOR_SPLIT_KEY}:${scopedUserId}` : PROJECT_TASK_INSPECTOR_SPLIT_KEY;
+}
+
+function getProjectTaskInspectorCollapsedStorageKey(userId) {
+  const scopedUserId = String(userId ?? '').trim();
+  return scopedUserId ? `${PROJECT_TASK_INSPECTOR_COLLAPSED_KEY}:${scopedUserId}` : PROJECT_TASK_INSPECTOR_COLLAPSED_KEY;
+}
+
+function getSavedProjectTaskInspectorDetailsCollapsed(storageKey) {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(storageKey) === 'true';
+}
+
+function clampProjectTaskInspectorDataHeight(value, maxHeight) {
+  const max = Math.max(PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT, Number(maxHeight) || PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return Math.min(PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT, max);
+  return Math.min(max, Math.max(PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT, Math.round(numeric)));
+}
+
+function getSavedProjectTaskInspectorDataHeight(storageKey) {
+  if (typeof window === 'undefined') return PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT;
+  const saved = readPersistedUiSize(storageKey, {
+    minHeight: PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT,
+    maxHeight: 2000
+  });
+  if (saved?.height) return Math.max(PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT, Math.round(saved.height));
+  return PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT;
+}
+
+function useProjectTaskInspectorSplit(layoutRef, storageKey) {
+  const [height, setHeight] = useState(() => getSavedProjectTaskInspectorDataHeight(storageKey));
+  const heightRef = useRef(height);
+  const resizeStateRef = useRef(null);
+  const storageKeyRef = useRef(storageKey);
+
+  const measureMaxHeight = useCallback(() => {
+    const layout = layoutRef.current;
+    if (!layout) return PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT;
+    return Math.max(
+      PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT,
+      Math.floor(layout.clientHeight - PROJECT_TASK_INSPECTOR_COMMENTS_MIN_HEIGHT - PROJECT_TASK_INSPECTOR_RESIZER_SPACE)
+    );
+  }, [layoutRef]);
+
+  const syncHeightToBounds = useCallback(() => {
+    const nextMax = measureMaxHeight();
+    setHeight((current) => clampProjectTaskInspectorDataHeight(current, nextMax));
+  }, [measureMaxHeight]);
+
+  useEffect(() => {
+    heightRef.current = height;
+  }, [height]);
+
+  useEffect(() => {
+    setHeight(clampProjectTaskInspectorDataHeight(getSavedProjectTaskInspectorDataHeight(storageKey), measureMaxHeight()));
+  }, [storageKey, measureMaxHeight]);
+
+  useEffect(() => {
+    if (storageKeyRef.current !== storageKey) {
+      storageKeyRef.current = storageKey;
+      return;
+    }
+    writePersistedUiSize(storageKey, { height });
+  }, [height, storageKey]);
+
+  useEffect(() => {
+    syncHeightToBounds();
+    const layout = layoutRef.current;
+    if (!layout || typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', syncHeightToBounds);
+      return () => window.removeEventListener('resize', syncHeightToBounds);
+    }
+    const observer = new ResizeObserver(syncHeightToBounds);
+    observer.observe(layout);
+    window.addEventListener('resize', syncHeightToBounds);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncHeightToBounds);
+    };
+  }, [layoutRef, syncHeightToBounds]);
+
+  useEffect(() => {
+    const handlePointerMove = (event) => {
+      const state = resizeStateRef.current;
+      if (!state) return;
+      event.preventDefault();
+      setHeight(clampProjectTaskInspectorDataHeight(state.startHeight + event.clientY - state.startY, state.maxHeight));
+    };
+    const handlePointerUp = () => {
+      if (!resizeStateRef.current) return;
+      resizeStateRef.current = null;
+      document.body.classList.remove('resizing-project-task-inspector');
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      document.body.classList.remove('resizing-project-task-inspector');
+    };
+  }, []);
+
+  const startResize = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeStateRef.current = {
+      startY: event.clientY,
+      startHeight: heightRef.current,
+      maxHeight: measureMaxHeight()
+    };
+    document.body.classList.add('resizing-project-task-inspector');
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [measureMaxHeight]);
+
+  return { dataSectionHeight: height, startDataSectionResize: startResize };
 }
 
 function resolveProjectAccentColor(project) {
@@ -8120,8 +8254,9 @@ function getSavedProjectDetailsCollapsed() {
   return localStorage.getItem(PROJECT_DETAILS_COLLAPSED_KEY) === 'true';
 }
 
-function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
+function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false, layout = 'inline' }) {
   const taskId = task?.id ?? task?.localId;
+  const isPanelLayout = layout === 'panel';
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -8131,8 +8266,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
   const canCreateProjectItems = permissions.create === true;
-  const canEditProjectItems = permissions.edit === true;
-  const canDeleteProjectItems = permissions.delete === true;
+  const canManageComment = (comment) => canManageProjectComment(comment, commentAuthor, canManageAllComments);
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -8187,7 +8321,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   };
 
   const removeComment = async (comment) => {
-    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
+    if (!canManageComment(comment)) { setNotice('Nie możesz usunąć tego komentarza.'); return; }
     setCommentContextMenu(null);
     setConfirmDialog({
       title: 'Usuń komentarz',
@@ -8206,7 +8340,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   };
 
   const saveCommentEdit = async (comment) => {
-    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
+    if (!canManageComment(comment)) { setNotice('Nie możesz edytować tego komentarza.'); return; }
     const nextBody = editingCommentText.trim();
     if (!nextBody) return;
     const result = await updateTaskComment(comment.id ?? comment.localId, nextBody, comment);
@@ -8218,7 +8352,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   };
 
   const startCommentEdit = (comment) => {
-    if (!canEditProjectItems) return;
+    if (!canManageComment(comment)) return;
     setCommentContextMenu(null);
     setEditingCommentId(comment.id ?? comment.localId);
     setEditingCommentText(comment.body);
@@ -8230,7 +8364,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   };
 
   const openCommentContextMenu = (event, comment) => {
-    if (!canEditProjectItems && !canDeleteProjectItems) return;
+    if (!canManageComment(comment)) return;
     event.preventDefault();
     event.stopPropagation();
     setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
@@ -8247,42 +8381,47 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
     }
   };
 
-  return <div className="project-task-inline-comments">
-    {notice && <div className="notice">{notice}</div>}
-    {canCreateProjectItems && <div className="project-comments-add">
-      <div className="project-comment-field">
-        <span className="project-comment-label">Komentarz</span>
-        <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
-      </div>
-      <div className="project-comment-add-actions">
-        <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
-      </div>
-    </div>}
-    <div className="project-comments-list">
-      {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
-      {!loading && comments.map((comment, index) => {
-        const isEditing = editingCommentId === (comment.id ?? comment.localId);
-        return <div
-          className={`project-comment-row project-comment-interactive-row ${index % 2 === 1 ? 'is-alt' : ''} ${isEditing ? 'is-editing' : ''}`.trim()}
-          style={{ '--project-comment-author-color': getCommentAuthorAccentColor(comment) }}
-          key={comment.id ?? comment.localId}
-          onDoubleClick={() => !isEditing && startCommentEdit(comment)}
-          onContextMenu={(event) => !isEditing && openCommentContextMenu(event, comment)}
-        >
-          <div><strong>{comment.author || 'Operator'}</strong><span>{comment.type} · {formatServiceDateTime(comment.created_at)}</span></div>
-          {isEditing
-            ? <div className="project-comment-edit">
-              <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
-              <div className="project-comment-edit-actions">
-                <ButtonSecondary onClick={cancelCommentEdit}>Anuluj</ButtonSecondary>
-                <ButtonPrimary onClick={() => saveCommentEdit(comment)} disabled={!editingCommentText.trim()}>Zapisz</ButtonPrimary>
-              </div>
+  const commentsList = <div className="project-comments-list">
+    {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
+    {!loading && comments.map((comment, index) => {
+      const isEditing = editingCommentId === (comment.id ?? comment.localId);
+      return <div
+        className={`project-comment-row project-comment-interactive-row ${index % 2 === 1 ? 'is-alt' : ''} ${isEditing ? 'is-editing' : ''}`.trim()}
+        style={{ '--project-comment-author-color': getCommentAuthorAccentColor(comment) }}
+        key={comment.id ?? comment.localId}
+        onDoubleClick={() => !isEditing && startCommentEdit(comment)}
+        onContextMenu={(event) => !isEditing && openCommentContextMenu(event, comment)}
+      >
+        <div className="project-comment-header"><strong>{comment.author || 'Operator'}</strong><span>{formatServiceDateTime(comment.created_at)}</span></div>
+        {isEditing
+          ? <div className="project-comment-edit">
+            <AppTextarea value={editingCommentText} onChange={(event) => setEditingCommentText(event.target.value)} rows={3} autoFocus onKeyDown={(event) => handleCommentEditKeyDown(event, comment)} placeholder="Ctrl+Enter — zapisz, Esc — anuluj" />
+            <div className="project-comment-edit-actions">
+              <ButtonSecondary onClick={cancelCommentEdit}>Anuluj</ButtonSecondary>
+              <ButtonPrimary onClick={() => saveCommentEdit(comment)} disabled={!editingCommentText.trim()}>Zapisz</ButtonPrimary>
             </div>
-            : <p>{comment.body}</p>}
-        </div>;
-      })}
-      {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
+          </div>
+          : <p>{comment.body}</p>}
+      </div>;
+    })}
+    {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
+  </div>;
+
+  const commentComposer = canCreateProjectItems && <div className="project-comments-add">
+    <div className="project-comment-field">
+      {!isPanelLayout && <span className="project-comment-label">Komentarz</span>}
+      <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder={isPanelLayout ? 'Napisz komentarz...' : 'Treść komentarza...'} rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
     </div>
+    <div className="project-comment-add-actions">
+      <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
+    </div>
+  </div>;
+
+  return <div className={`project-task-inline-comments ${isPanelLayout ? 'project-task-inline-comments-panel' : ''}`.trim()}>
+    {notice && <div className="notice">{notice}</div>}
+    {isPanelLayout && <div className="project-comments-section-label">Komentarze</div>}
+    {isPanelLayout ? commentsList : commentComposer}
+    {isPanelLayout ? commentComposer : commentsList}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     {commentContextMenu && <AppRowContextMenu
       x={commentContextMenu.x}
@@ -8290,8 +8429,8 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
       colorTheme={colorTheme}
       onClose={() => setCommentContextMenu(null)}
       items={[
-        canEditProjectItems ? { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) } : null,
-        canDeleteProjectItems ? { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) } : null
+        canManageComment(commentContextMenu.comment) ? { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) } : null,
+        canManageComment(commentContextMenu.comment) ? { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) } : null
       ].filter(Boolean)}
     />}
   </div>;
@@ -8445,7 +8584,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions 
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, refreshKey = 0, style = null, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, refreshKey = 0, style = null, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -9099,7 +9238,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
         </button>
         <button type="button" className={`project-detail-task-comments ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
       </div>
-      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />}
+      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} />}
     </div>;
   };
 
@@ -9184,7 +9323,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       </div>}
       </div>
     </div>}
-    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} permissions={permissions} commentAuthor={commentAuthor} />}
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} />}
     {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={() => setSectionModalOpen(false)} footer={<><ButtonSecondary onClick={() => setSectionModalOpen(false)}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
       <FormField label="Nazwa sekcji" error={sectionNameError}>
         <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
@@ -9426,7 +9565,7 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
   </aside>;
 }
 
-function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
+function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
   const taskId = task?.id ?? task?.localId;
   const taskProjectId = task?.project_id;
   const [form, setForm] = useState(() => ({}));
@@ -9436,6 +9575,12 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
   const formRef = useRef({});
   const dirtyRef = useRef(false);
   const savingRef = useRef(Promise.resolve());
+  const splitLayoutRef = useRef(null);
+  const splitStorageKey = useMemo(() => getProjectTaskInspectorSplitStorageKey(commentAuthor?.user_id), [commentAuthor?.user_id]);
+  const collapseStorageKey = useMemo(() => getProjectTaskInspectorCollapsedStorageKey(commentAuthor?.user_id), [commentAuthor?.user_id]);
+  const { dataSectionHeight, startDataSectionResize } = useProjectTaskInspectorSplit(splitLayoutRef, splitStorageKey);
+  const [taskDetailsCollapsed, setTaskDetailsCollapsed] = useState(() => getSavedProjectTaskInspectorDetailsCollapsed(collapseStorageKey));
+  const collapseStorageKeyRef = useRef(collapseStorageKey);
   const done = isCompletedStatus(form.status);
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
@@ -9551,6 +9696,18 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
+  useEffect(() => {
+    setTaskDetailsCollapsed(getSavedProjectTaskInspectorDetailsCollapsed(collapseStorageKey));
+  }, [collapseStorageKey]);
+
+  useEffect(() => {
+    if (collapseStorageKeyRef.current !== collapseStorageKey) {
+      collapseStorageKeyRef.current = collapseStorageKey;
+      return;
+    }
+    localStorage.setItem(collapseStorageKey, taskDetailsCollapsed ? 'true' : 'false');
+  }, [collapseStorageKey, taskDetailsCollapsed]);
+
   const scheduleSave = (delay = 700) => {
     clearAutosaveTimer();
     autosaveTimerRef.current = window.setTimeout(() => {
@@ -9595,43 +9752,49 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     {!task && <EmptyState title="Wybierz zadanie." />}
     {task && <div className="project-details-body">
       <div className="project-details-toolbar">
+        <button type="button" className={`project-icon-action project-task-details-toggle ${taskDetailsCollapsed ? 'is-collapsed' : ''}`} onClick={() => setTaskDetailsCollapsed((value) => !value)} aria-label={taskDetailsCollapsed ? 'Rozwiń szczegóły zadania' : 'Zwiń szczegóły zadania'} title={taskDetailsCollapsed ? 'Rozwiń szczegóły' : 'Zwiń szczegóły'}>
+          {taskDetailsCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+        </button>
         {canEditProjectItems && <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>{done && <CheckCircle2 size={16} />}</button>}
         {canDeleteProjectItems && <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>}
       </div>
-      <div className="project-details-body-scroll project-inspector-fields">
-        {notice && <div className="notice">{notice}</div>}
-        {!canEditProjectItems && <div className="notice">Tryb tylko do odczytu: brak uprawnienia projects.edit.</div>}
-        <FormField label="Nazwa zadania *">
-          <AppInput value={form.title ?? ''} onChange={(event) => set('title', event.target.value)} readOnly={!canEditProjectItems} />
-        </FormField>
-        <div className="project-inspector-grid">
-          <FormField label="Status">
-            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
-              {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
-            </AppSelect>
+      <div className={`project-task-inspector-layout ${taskDetailsCollapsed ? 'is-details-collapsed' : ''}`.trim()} ref={splitLayoutRef}>
+        {!taskDetailsCollapsed && <><div className="project-task-inspector-data project-inspector-fields" style={{ height: `${dataSectionHeight}px` }}>
+          {notice && <div className="notice">{notice}</div>}
+          {!canEditProjectItems && <div className="notice">Tryb tylko do odczytu: brak uprawnienia projects.edit.</div>}
+          <FormField label="Nazwa zadania *">
+            <AppInput value={form.title ?? ''} onChange={(event) => set('title', event.target.value)} readOnly={!canEditProjectItems} />
           </FormField>
-          <FormField label="Priorytet">
-            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
-              {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
-            </AppSelect>
-          </FormField>
-          <FormField label="Sekcja">
-            <AppSelect value={form.section_id ?? ''} onChange={(event) => set('section_id', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
-              <option value="">Bez sekcji</option>
-              {sections.map((section) => <option key={section.id ?? section.localId} value={section.id ?? section.localId}>{section.name}</option>)}
-            </AppSelect>
-          </FormField>
-          <FormField label="Termin">
-            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
-          </FormField>
-          <FormField label="Przypomnienie">
-            <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
+          <div className="project-inspector-grid">
+            <FormField label="Status">
+              <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
+                {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
+              </AppSelect>
+            </FormField>
+            <FormField label="Priorytet">
+              <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
+                {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
+              </AppSelect>
+            </FormField>
+            <FormField label="Sekcja">
+              <AppSelect value={form.section_id ?? ''} onChange={(event) => set('section_id', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
+                <option value="">Bez sekcji</option>
+                {sections.map((section) => <option key={section.id ?? section.localId} value={section.id ?? section.localId}>{section.name}</option>)}
+              </AppSelect>
+            </FormField>
+            <FormField label="Termin">
+              <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
+            </FormField>
+            <FormField label="Przypomnienie">
+              <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
+            </FormField>
+          </div>
+          <FormField label="Opis">
+            <AppTextarea className="project-task-description-textarea" resizeKey={`fixer:ui-resize:project-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
           </FormField>
         </div>
-        <FormField label="Opis">
-          <AppTextarea resizeKey={`fixer:ui-resize:project-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
-        </FormField>
-        <ProjectTaskInlineComments task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
+        <div className="project-task-inspector-resizer" role="separator" aria-orientation="horizontal" onPointerDown={startDataSectionResize} /></>}
+        <ProjectTaskInlineComments task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} layout="panel" />
       </div>
     </div>}
   </aside>;
@@ -9764,6 +9927,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const documentSettings = getDocumentSettings();
   const isTasksOnlyView = (filters.type ?? 'all') === 'task';
   const commentAuthor = useMemo(() => getCurrentCommentAuthor(currentUser), [currentUser?.id, currentUser?.email, currentUser?.name, currentUser?.profile?.full_name, currentUser?.profile?.email, currentUser?.profile?.user_color]);
+  const canManageAllProjectComments = currentUser?.profile?.role === 'admin' && currentUser?.profile?.is_active === true;
   const canCreateProjects = permissions.create === true;
   const canEditProjects = permissions.edit === true;
   const canDeleteProjects = permissions.delete === true;
@@ -10527,15 +10691,16 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         colorTheme={colorTheme}
         permissions={permissions}
         commentAuthor={commentAuthor}
+        canManageAllComments={canManageAllProjectComments}
       />}
       {detailsOpen && (selectedSimpleTask
         ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
         : selectedProjectTask
-          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
+          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} />
           : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveProject={saveProjectFromInspector} autosaveRef={detailsAutosaveRef} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} />)}
     </div>
 
-    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
+    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
     {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} workPriorities={workPriorityNames} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;

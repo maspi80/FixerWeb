@@ -129,10 +129,11 @@ import {
 import { loadUserAccess } from './services/userAccessService';
 import {
   CHAT_ALL_CONVERSATION_ID,
+  fetchChatConversations,
   fetchChatReadState,
   fetchChatUsers,
   fetchVisibleChatMessages,
-  getChatConversationId,
+  getChatConversationKey,
   getChatMessageConversationId,
   getChatUserDisplayName,
   normalizeChatMessage,
@@ -1106,6 +1107,7 @@ function App() {
   const [appSettingsReady, setAppSettingsReady] = useState(() => !isSupabaseConfigured);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [chatUsers, setChatUsers] = useState([]);
+  const [chatConversations, setChatConversations] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatReadState, setChatReadState] = useState({});
   const [chatActiveConversationId, setChatActiveConversationId] = useState(CHAT_ALL_CONVERSATION_ID);
@@ -1189,7 +1191,7 @@ function App() {
       hasPermission: userAccess.hasPermission
     }
     : demoUser;
-  const currentUserId = currentUser?.id ?? null;
+  const currentUserId = currentUser?.profile?.id ?? currentUser?.id ?? null;
   const currentChatProfile = currentUser?.profile ? {
     id: currentUser.profile.id,
     email: currentUser.profile.email,
@@ -1210,6 +1212,7 @@ function App() {
     chatUsers.forEach((user) => map.set(user.id, user));
     return map;
   }, [chatUsers, currentChatProfile?.id, currentChatProfile?.email, currentChatProfile?.full_name, currentChatProfile?.username, currentChatProfile?.user_color]);
+  const chatConversationsByKey = useMemo(() => new Map(chatConversations.map((conversation) => [conversation.conversation_key, conversation])), [chatConversations]);
   const chatUnreadCounts = useMemo(
     () => calculateChatUnreadCounts(chatMessages, chatReadState, currentUserId),
     [chatMessages, chatReadState, currentUserId]
@@ -1293,6 +1296,14 @@ function App() {
     setChatMessages((current) => current.filter((message) => message.id !== messageId));
   }, []);
 
+  const loadChatConversations = useCallback(() => {
+    if (!currentUserId || chatPermissions.view !== true) return;
+    fetchChatConversations({ currentUserId, profilesById: chatProfilesById }).then((result) => {
+      setChatConversations(result.data ?? []);
+      if (result.error) console.warn('Chat conversations load failed', result.error);
+    });
+  }, [chatPermissions.view, chatProfilesById, currentUserId]);
+
   const markChatConversationRead = useCallback((conversationId, lastReadAt) => {
     if (!currentUserId || !conversationId || !lastReadAt) return;
     setChatReadState((current) => {
@@ -1317,19 +1328,21 @@ function App() {
     const sender = chatProfilesById.get(message.sender_user_id);
     const senderName = message.author_name || getChatUserDisplayName(sender);
     const isPublic = !message.recipient_user_id;
+    const conversation = chatConversationsByKey.get(conversationId);
     const toast = {
       id: `chat:${message.id}:${Date.now()}`,
       conversationId,
-      title: isPublic ? 'Nowa wiadomość — Wszyscy' : `Nowa wiadomość od ${senderName}`,
+      title: isPublic ? 'Nowa wiadomość — Wszyscy' : `Nowa wiadomość od ${conversation?.partner_name || senderName}`,
       detail: isPublic ? `${senderName}: ${previewChatMessageText(message.message)}` : previewChatMessageText(message.message)
     };
     setChatToasts((current) => [...current.filter((item) => item.id !== toast.id), toast].slice(-3));
     window.setTimeout(() => closeChatToast(toast.id), 6000);
-  }, [chatProfilesById, closeChatToast]);
+  }, [chatConversationsByKey, chatProfilesById, closeChatToast]);
 
   useEffect(() => {
     if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) {
       setChatUsers([]);
+      setChatConversations([]);
       setChatMessages([]);
       setChatReadState({});
       return undefined;
@@ -1347,6 +1360,18 @@ function App() {
       cancelled = true;
     };
   }, [isAuthenticated, currentUserId, chatPermissions.view]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
+    let cancelled = false;
+    fetchChatConversations({ currentUserId, profilesById: chatProfilesById }).then((result) => {
+      if (!cancelled) setChatConversations(result.data ?? []);
+      if (result.error) console.warn('Chat conversations load failed', result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, currentUserId, chatPermissions.view, chatProfilesById]);
 
   useEffect(() => {
     if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
@@ -1405,6 +1430,25 @@ function App() {
     removeChatMessage,
     upsertChatMessage
   ]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
+    let active = true;
+    const channel = supabase
+      .channel(`chat-conversations:${currentUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_conversations' }, () => {
+        if (active) loadChatConversations();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_conversation_members' }, () => {
+        if (active) loadChatConversations();
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [chatPermissions.view, currentUserId, isAuthenticated, loadChatConversations]);
 
   useEffect(() => {
     if (!accessReady || !isAuthenticated) return;
@@ -1503,6 +1547,7 @@ function App() {
             permissions={chatPermissions}
             isAdmin={isAdmin}
             users={chatUsers}
+            conversations={chatConversations}
             visibleMessages={chatMessages}
             readState={chatReadState}
             requestedConversationId={moduleIntent?.type === 'chat' ? moduleIntent.conversationId : null}
@@ -1511,6 +1556,27 @@ function App() {
             onMarkConversationRead={markChatConversationRead}
             onMessageCreated={upsertChatMessage}
             onMessageDeleted={removeChatMessage}
+            onConversationCreated={loadChatConversations}
+            onConversationDeleted={(conversationId) => {
+              const conversationKey = getChatConversationKey(conversationId);
+              setChatConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
+              setChatMessages((current) => current.filter((message) => message.conversation_id !== conversationId));
+              setChatReadState((current) => {
+                const next = { ...current };
+                delete next[conversationKey];
+                return next;
+              });
+              loadChatConversations();
+              if (chatActiveConversationId === conversationKey) setChatActiveConversationId(CHAT_ALL_CONVERSATION_ID);
+            }}
+            onPublicHistoryCleared={() => {
+              setChatMessages((current) => current.filter((message) => message.conversation_id || message.recipient_user_id));
+              setChatReadState((current) => {
+                const next = { ...current };
+                delete next[CHAT_ALL_CONVERSATION_ID];
+                return next;
+              });
+            }}
           />}
           {allowedModuleIds.has('settings') && activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} currentUser={currentUser} />}
         </section>
@@ -1592,7 +1658,7 @@ function Sidebar({ activeModule, setActiveModule, modules: sidebarModules = modu
         {sidebarModules.map((module) => {
           const Icon = module.icon;
           const badge = Number(moduleBadges[module.id] ?? 0);
-          return <button key={module.id} className={`nav-item ${activeModule === module.id ? 'active' : ''}`} onClick={() => setActiveModule(module.id)} title={module.label}><Icon size={18} />{!collapsed && <span>{module.label}</span>}{badge > 0 && <span className="nav-item-count">{badge > 99 ? '99+' : badge}</span>}</button>;
+          return <button key={module.id} className={`nav-item ${activeModule === module.id ? 'active' : ''} ${badge > 0 ? 'has-unread' : ''}`} onClick={() => setActiveModule(module.id)} title={module.label}><Icon size={18} />{!collapsed && <span>{module.label}</span>}{badge > 0 && <span className="nav-item-count">{badge > 99 ? '99+' : badge}</span>}</button>;
         })}
       </nav>
       <div className="sidebar-footer">
@@ -8682,8 +8748,6 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
     <div className="project-comment-field">
       {!isPanelLayout && <span className="project-comment-label">Komentarz</span>}
       <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder={isPanelLayout ? 'Napisz komentarz...' : 'Treść komentarza...'} rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
-    </div>
-    <div className="project-comment-add-actions">
       <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
     </div>
   </div>;
@@ -8811,8 +8875,6 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions 
       <div className="project-comment-field">
         <span className="project-comment-label">Komentarz</span>
         <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza lub postępu..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
-      </div>
-      <div className="project-comment-add-actions">
         <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
       </div>
     </div>}

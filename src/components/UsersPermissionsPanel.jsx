@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCcw, Save, ShieldCheck, UserCheck } from 'lucide-react';
+import { Plus, RefreshCcw, Save, ShieldCheck, Trash2, UserCheck } from 'lucide-react';
 import {
   AppButton,
   AppInput,
@@ -13,6 +13,7 @@ import {
   buildEmptyPermissionMap,
   buildPermissionKey,
   createAdminUser,
+  deleteAdminUser,
   listAdminUsers,
   permissionsToMap,
   saveAdminUserPermissions,
@@ -38,6 +39,8 @@ function normalizeUserColor(value) {
 function normalizeUserForm(profile = {}) {
   return {
     fullName: profile.full_name ?? '',
+    username: profile.username ?? '',
+    email: profile.email ?? '',
     role: profile.role === 'admin' ? 'admin' : 'user',
     userColor: normalizeUserColor(profile.user_color),
     isActive: profile.is_active !== false
@@ -45,17 +48,30 @@ function normalizeUserForm(profile = {}) {
 }
 
 function getDisplayName(profile) {
-  return profile.full_name?.trim() || profile.email?.split('@')[0] || 'Użytkownik';
+  return profile.full_name?.trim() || profile.username?.trim() || profile.email?.split('@')[0] || 'Użytkownik';
 }
 
-export default function UsersPermissionsPanel() {
+function isValidUserEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? '').trim());
+}
+
+function normalizeUsernameInput(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function isValidUsername(value) {
+  return /^[a-z0-9._-]{3,40}$/.test(normalizeUsernameInput(value));
+}
+
+export default function UsersPermissionsPanel({ currentUser = null }) {
   const [profiles, setProfiles] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [userForm, setUserForm] = useState(normalizeUserForm());
   const [permissionMap, setPermissionMap] = useState(buildEmptyPermissionMap);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({ fullName: '', email: '', password: '', role: 'user' });
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ fullName: '', username: '', email: '', password: '', role: 'user' });
   const [passwordForm, setPasswordForm] = useState({ password: '', repeatPassword: '' });
   const [passwordNotice, setPasswordNotice] = useState('');
   const [notice, setNotice] = useState('');
@@ -69,6 +85,7 @@ export default function UsersPermissionsPanel() {
     [permissions, selectedProfile?.id]
   );
   const selectedIsAdmin = userForm.role === 'admin';
+  const isSelectedCurrentUser = selectedProfile?.id && currentUser?.id && selectedProfile.id === currentUser.id;
 
   const loadUsers = async () => {
     setLoading(true);
@@ -102,7 +119,7 @@ export default function UsersPermissionsPanel() {
     setPermissionMap(permissionsToMap(selectedPermissions));
     setPasswordForm({ password: '', repeatPassword: '' });
     setPasswordNotice('');
-  }, [selectedProfile?.id, selectedProfile?.user_color, selectedProfile?.full_name, selectedProfile?.role, selectedProfile?.is_active, selectedPermissions]);
+  }, [selectedProfile?.id, selectedProfile?.user_color, selectedProfile?.username, selectedProfile?.email, selectedProfile?.full_name, selectedProfile?.role, selectedProfile?.is_active, selectedPermissions]);
 
   const selectProfile = (profileId) => {
     setSelectedUserId(profileId);
@@ -125,14 +142,18 @@ export default function UsersPermissionsPanel() {
     setError('');
     setNotice('');
     try {
+      const username = normalizeUsernameInput(createForm.username);
+      if (!username || !isValidUsername(username)) throw new Error('Login musi mieć 3-40 znaków i może zawierać litery, cyfry, kropkę, myślnik lub podkreślenie.');
+      if (profiles.some((profile) => normalizeUsernameInput(profile.username) === username)) throw new Error('Ten login jest już używany.');
       const result = await createAdminUser({
         fullName: createForm.fullName,
+        username,
         email: createForm.email,
         password: createForm.password,
         role: createForm.role
       });
       setCreateModalOpen(false);
-      setCreateForm({ fullName: '', email: '', password: '', role: 'user' });
+      setCreateForm({ fullName: '', username: '', email: '', password: '', role: 'user' });
       await loadUsers();
       if (result.profile?.id) setSelectedUserId(result.profile.id);
       setNotice('Użytkownik został utworzony.');
@@ -145,6 +166,26 @@ export default function UsersPermissionsPanel() {
 
   const saveSelectedUser = async () => {
     if (!selectedProfile) return;
+    const nextUsername = normalizeUsernameInput(userForm.username);
+    if (!nextUsername || !isValidUsername(nextUsername)) {
+      setError('Login musi mieć 3-40 znaków i może zawierać litery, cyfry, kropkę, myślnik lub podkreślenie.');
+      return;
+    }
+    const usernameOwner = profiles.find((profile) => profile.id !== selectedProfile.id && normalizeUsernameInput(profile.username) === nextUsername);
+    if (usernameOwner) {
+      setError('Ten login jest już używany.');
+      return;
+    }
+    const nextEmail = userForm.email.trim().toLowerCase();
+    if (!nextEmail || !isValidUserEmail(nextEmail)) {
+      setError('Podaj poprawny adres email użytkownika.');
+      return;
+    }
+    const emailOwner = profiles.find((profile) => profile.id !== selectedProfile.id && String(profile.email ?? '').trim().toLowerCase() === nextEmail);
+    if (emailOwner) {
+      setError('Ten email jest już przypisany do innego użytkownika.');
+      return;
+    }
     setSaving(true);
     setError('');
     setNotice('');
@@ -152,6 +193,8 @@ export default function UsersPermissionsPanel() {
       await updateAdminUser({
         userId: selectedProfile.id,
         fullName: userForm.fullName,
+        username: nextUsername,
+        email: nextEmail,
         role: userForm.role,
         userColor: userForm.userColor,
         isActive: userForm.isActive
@@ -165,6 +208,28 @@ export default function UsersPermissionsPanel() {
       setNotice('Dane użytkownika zostały zapisane.');
     } catch (saveError) {
       setError(saveError.message || 'Nie udało się zapisać użytkownika.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDeleteSelectedUser = async () => {
+    if (!selectedProfile) return;
+    if (isSelectedCurrentUser) {
+      setError('Nie można usunąć własnego konta z aktywnej sesji.');
+      setDeleteModalOpen(false);
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      await deleteAdminUser(selectedProfile.id);
+      setDeleteModalOpen(false);
+      await loadUsers();
+      setNotice('Użytkownik został usunięty.');
+    } catch (deleteError) {
+      setError(deleteError.message || 'Nie udało się usunąć użytkownika.');
     } finally {
       setSaving(false);
     }
@@ -215,6 +280,7 @@ export default function UsersPermissionsPanel() {
         <div className="settings-action-row">
           <AppButton variant="secondary" size="sm" onClick={loadUsers} disabled={loading || saving}><RefreshCcw size={14} />Odśwież</AppButton>
           <AppButton variant="primary" size="sm" onClick={() => setCreateModalOpen(true)} disabled={saving}><Plus size={14} />Dodaj użytkownika</AppButton>
+          <AppButton variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)} disabled={saving || !selectedProfile || isSelectedCurrentUser}><Trash2 size={14} />Usuń użytkownika</AppButton>
         </div>
       </div>
 
@@ -229,7 +295,7 @@ export default function UsersPermissionsPanel() {
             return <button key={profile.id} type="button" className={`users-admin-row ${active ? 'active' : ''}`} onClick={() => selectProfile(profile.id)}>
               <span>
                 <strong>{getDisplayName(profile)}</strong>
-                <small>{profile.email}</small>
+                <small>{profile.username ? `${profile.username} · ${profile.email}` : profile.email}</small>
               </span>
               <span className="users-admin-row-meta">
                 <StatusPill value={ROLE_LABELS[profile.role] ?? 'Użytkownik'} tone={profile.role === 'admin' ? 'info' : 'neutral'} />
@@ -244,14 +310,17 @@ export default function UsersPermissionsPanel() {
           <section className="settings-form-section">
             <div className="settings-section-title">
               <h4>Dane użytkownika</h4>
-              <p className="muted">Edycja profilu nie zmienia hasła ani nie usuwa konta Auth.</p>
+              <p className="muted">Email jest synchronizowany z kontem Supabase Auth.</p>
             </div>
             <div className="users-profile-form-grid">
               <FormField label="Imię / nazwa">
                 <AppInput value={userForm.fullName} onChange={(event) => setUserForm((current) => ({ ...current, fullName: event.target.value }))} />
               </FormField>
+              <FormField label="Login">
+                <AppInput value={userForm.username} onChange={(event) => setUserForm((current) => ({ ...current, username: event.target.value }))} placeholder="np. maspixtest" />
+              </FormField>
               <FormField label="Email">
-                <AppInput value={selectedProfile.email ?? ''} disabled />
+                <AppInput type="email" value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} />
               </FormField>
               <FormField label="Rola">
                 <AppSelect value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value }))}>
@@ -339,6 +408,9 @@ export default function UsersPermissionsPanel() {
         <FormField label="Imię / nazwa">
           <AppInput value={createForm.fullName} onChange={(event) => updateCreateForm('fullName', event.target.value)} placeholder="np. Jan" />
         </FormField>
+        <FormField label="Login" required>
+          <AppInput value={createForm.username} onChange={(event) => updateCreateForm('username', event.target.value)} placeholder="np. maspixtest" required />
+        </FormField>
         <FormField label="Email" required>
           <AppInput type="email" value={createForm.email} onChange={(event) => updateCreateForm('email', event.target.value)} placeholder="jan@example.com" required />
         </FormField>
@@ -353,6 +425,17 @@ export default function UsersPermissionsPanel() {
         </FormField>
         <AppNotice variant="info"><ShieldCheck size={14} />Hasło nie jest zapisywane w tabelach FIXERA.</AppNotice>
       </form>
+    </ModalFrame>}
+    {deleteModalOpen && selectedProfile && <ModalFrame
+      title="Usuń użytkownika"
+      onClose={() => setDeleteModalOpen(false)}
+      footer={<>
+        <AppButton variant="secondary" size="sm" onClick={() => setDeleteModalOpen(false)} disabled={saving}>Anuluj</AppButton>
+        <AppButton variant="danger" size="sm" onClick={confirmDeleteSelectedUser} disabled={saving}>Usuń</AppButton>
+      </>}
+    >
+      <p className="confirm-dialog-message">Czy na pewno chcesz usunąć tego użytkownika?</p>
+      {isSelectedCurrentUser && <AppNotice variant="warning">Nie można usunąć własnego konta z aktywnej sesji.</AppNotice>}
     </ModalFrame>}
   </div>;
 }

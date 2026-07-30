@@ -70,6 +70,10 @@ export async function updateAdminUser(payload) {
   return invokeAdminUsers('updateUser', payload);
 }
 
+export async function deleteAdminUser(userId) {
+  return invokeAdminUsers('deleteUser', { userId });
+}
+
 export async function saveAdminUserPermissions(userId, permissions) {
   return invokeAdminUsers('savePermissions', { userId, permissions });
 }

@@ -1290,7 +1290,7 @@ function App() {
 }
 
 function LoginScreen({ onDemoLogin }) {
-  const [email, setEmail] = useState('');
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const loginTheme = normalizeColorThemeMode(getInitialUiAppearance().colorTheme);
@@ -1302,8 +1302,24 @@ function LoginScreen({ onDemoLogin }) {
       onDemoLogin();
       return;
     }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setLoginError('Nieprawidłowy email lub hasło.');
+    const loginValue = login.trim();
+    if (loginValue.includes('@')) {
+      const { error } = await supabase.auth.signInWithPassword({ email: loginValue, password });
+      if (error) setLoginError('Nieprawidłowy login lub hasło.');
+      return;
+    }
+    const { data, error } = await supabase.functions.invoke('login-with-username', {
+      body: { username: loginValue, password }
+    });
+    if (error || data?.error || !data?.session?.access_token || !data?.session?.refresh_token) {
+      setLoginError('Nieprawidłowy login lub hasło.');
+      return;
+    }
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token
+    });
+    if (sessionError) setLoginError('Nieprawidłowy login lub hasło.');
   };
 
   return (
@@ -1315,7 +1331,7 @@ function LoginScreen({ onDemoLogin }) {
         </div>
         <h1>Zaloguj się</h1>
         <form onSubmit={handleSupabaseLogin} className="login-form">
-          <label>Email<AppInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email użytkownika" /></label>
+          <label>Login<AppInput value={login} onChange={(event) => setLogin(event.target.value)} placeholder="Wpisz login" /></label>
           <label>Hasło<AppInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="hasło" /></label>
           {loginError && <div className="login-error">{loginError}</div>}
           <AppButton variant="primary" type="submit">Zaloguj</AppButton>
@@ -18645,7 +18661,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     <div className="settings-v2-header">
       <div>
         <p className="eyebrow">{isDocumentsMode ? 'Moduł biznesowy' : 'Panel administracyjny'}</p>
-        <h2>{isDocumentsMode ? 'Dokumenty' : 'Ustawienia'}</h2>
+        {isDocumentsMode && <h2>Dokumenty</h2>}
         <p className="muted">{isDocumentsMode ? 'Szablony, numeracja, dane firmy, projektant A4 i archiwum PDF.' : 'Centralne miejsce konfiguracji FIXER WEB, słowników, integracji i systemu.'}</p>
       </div>
       {!isDocumentsMode && <SettingsSearch value={settingsSearch} onChange={setSettingsSearch} results={settingsSearchResults} onOpenResult={openSettingsSearchTarget} />}
@@ -18911,7 +18927,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
         {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.progressTemplate, 'Szablony postępów', 'Szybkie wpisy dodawane w historii zgłoszenia.', 'np. Klient poinformowany')}
       </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'users' && isAdmin && <UsersPermissionsPanel />}
+      {activeSection === 'users' && isAdmin && <UsersPermissionsPanel currentUser={currentUser} />}
 
       {activeSection === 'documents' && <DocumentsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace">
         <aside className="documents-nav-panel documents-v2-nav">

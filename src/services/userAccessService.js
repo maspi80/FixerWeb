@@ -7,9 +7,9 @@ function normalizeEmail(value) {
   return String(value ?? '').trim();
 }
 
-function isMissingUserColorColumnError(error) {
+function isMissingOptionalProfileColumnError(error) {
   const text = `${error?.code ?? ''} ${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase();
-  return text.includes('user_color') && (text.includes('column') || text.includes('schema cache') || text.includes('pgrst204'));
+  return (text.includes('user_color') || text.includes('username')) && (text.includes('column') || text.includes('schema cache') || text.includes('pgrst204'));
 }
 
 function getProfileFallback(user) {
@@ -17,6 +17,7 @@ function getProfileFallback(user) {
   return {
     id: user.id,
     email: normalizeEmail(user.email),
+    username: null,
     full_name: '',
     role: DEFAULT_PROFILE_ROLE,
     user_color: DEFAULT_USER_COLOR,
@@ -54,18 +55,18 @@ export async function fetchUserProfile(user) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name, role, user_color, is_active, created_at, updated_at')
+    .select('id, email, username, full_name, role, user_color, is_active, created_at, updated_at')
     .eq('id', user.id)
     .maybeSingle();
 
-  if (error && isMissingUserColorColumnError(error)) {
+  if (error && isMissingOptionalProfileColumnError(error)) {
     const fallbackProfileResult = await supabase
       .from('profiles')
       .select('id, email, full_name, role, is_active, created_at, updated_at')
       .eq('id', user.id)
       .maybeSingle();
     if (fallbackProfileResult.error) return { data: getProfileFallback(user), error: fallbackProfileResult.error, fallback: true };
-    if (fallbackProfileResult.data) return { data: { ...fallbackProfileResult.data, user_color: DEFAULT_USER_COLOR }, error: null, fallback: false };
+    if (fallbackProfileResult.data) return { data: { ...fallbackProfileResult.data, username: null, user_color: DEFAULT_USER_COLOR }, error: null, fallback: false };
   }
 
   if (error) return { data: getProfileFallback(user), error, fallback: true };
@@ -82,10 +83,10 @@ export async function fetchUserProfile(user) {
       user_color: profile.user_color,
       is_active: profile.is_active
     })
-    .select('id, email, full_name, role, user_color, is_active, created_at, updated_at')
+    .select('id, email, username, full_name, role, user_color, is_active, created_at, updated_at')
     .single();
 
-  if (insertError && isMissingUserColorColumnError(insertError)) {
+  if (insertError && isMissingOptionalProfileColumnError(insertError)) {
     const { data: createdWithoutColor, error: insertWithoutColorError } = await supabase
       .from('profiles')
       .insert({

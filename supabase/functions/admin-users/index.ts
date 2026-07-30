@@ -9,6 +9,8 @@ const ROLE_VALUES = new Set(['admin', 'user']);
 const PERMISSION_KEY_PATTERN = /^[a-z0-9_]+(\.[a-z0-9_]+)+$/;
 const DEFAULT_USER_COLOR = '#2563EB';
 const HEX_COLOR_PATTERN = /^#([0-9a-f]{6})$/i;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,40}$/;
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -29,6 +31,25 @@ function normalizeRole(value: unknown) {
 function normalizeUserColor(value: unknown) {
   const color = cleanText(value).toUpperCase();
   return HEX_COLOR_PATTERN.test(color) ? color : DEFAULT_USER_COLOR;
+}
+
+function normalizeEmail(value: unknown) {
+  return cleanText(value).toLowerCase();
+}
+
+function normalizeUsername(value: unknown) {
+  return cleanText(value).toLowerCase();
+}
+
+function adminErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const lower = message.toLowerCase();
+  if (lower.includes('already') || lower.includes('duplicate') || lower.includes('registered') || lower.includes('unique')) {
+    return 'Ten email jest już przypisany do innego użytkownika.';
+  }
+  if (lower.includes('invalid') && lower.includes('email')) return 'Podaj poprawny adres email.';
+  if (lower.includes('username') || lower.includes('login')) return 'Ten login jest już używany.';
+  return message || 'Operacja administracyjna nie powiodła się.';
 }
 
 function normalizePermissionRows(userId: string, permissions: unknown) {
@@ -96,10 +117,41 @@ Deno.serve(async (req) => {
       }
     };
 
+    const getProfile = async (targetUserId: string) => {
+      const { data, error } = await adminClient
+        .from('profiles')
+        .select('id, email, username, full_name, role, user_color, is_active, created_at, updated_at')
+        .eq('id', targetUserId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Użytkownik nie istnieje.');
+      return data;
+    };
+
+    const assertEmailAvailable = async (email: string, targetUserId: string) => {
+      const { data: profilesByEmail, error: profileEmailError } = await adminClient
+        .from('profiles')
+        .select('id, email');
+      if (profileEmailError) throw profileEmailError;
+      if ((profilesByEmail ?? []).some((profile) => profile.id !== targetUserId && normalizeEmail(profile.email) === email)) {
+        throw new Error('Ten email jest już przypisany do innego użytkownika.');
+      }
+    };
+
+    const assertUsernameAvailable = async (username: string, targetUserId: string) => {
+      const { data: profilesByUsername, error: profileUsernameError } = await adminClient
+        .from('profiles')
+        .select('id, username');
+      if (profileUsernameError) throw profileUsernameError;
+      if ((profilesByUsername ?? []).some((profile) => profile.id !== targetUserId && normalizeUsername(profile.username) === username)) {
+        throw new Error('Ten login jest już używany.');
+      }
+    };
+
     if (action === 'listUsers') {
       const { data: profiles, error: profilesError } = await adminClient
         .from('profiles')
-        .select('id, email, full_name, role, user_color, is_active, created_at, updated_at')
+        .select('id, email, username, full_name, role, user_color, is_active, created_at, updated_at')
         .order('email', { ascending: true });
       if (profilesError) throw profilesError;
 
@@ -113,7 +165,8 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'createUser') {
-      const email = cleanText(body.email).toLowerCase();
+      const email = normalizeEmail(body.email);
+      const username = normalizeUsername(body.username);
       const password = String(body.password ?? '');
       const fullName = cleanText(body.fullName);
       const role = normalizeRole(body.role);
@@ -121,6 +174,11 @@ Deno.serve(async (req) => {
       if (!email || !password || password.length < 6) {
         return jsonResponse({ error: 'Podaj email i hasło tymczasowe o długości co najmniej 6 znaków.' }, 400);
       }
+      if (!EMAIL_PATTERN.test(email)) return jsonResponse({ error: 'Podaj poprawny adres email.' }, 400);
+      if (!username || !USERNAME_PATTERN.test(username)) {
+        return jsonResponse({ error: 'Login musi mieć 3-40 znaków i może zawierać litery, cyfry, kropkę, myślnik lub podkreślenie.' }, 400);
+      }
+      await assertUsernameAvailable(username, '');
 
       const { data: created, error: createError } = await adminClient.auth.admin.createUser({
         email,
@@ -128,7 +186,7 @@ Deno.serve(async (req) => {
         email_confirm: true,
         user_metadata: { full_name: fullName }
       });
-      if (createError) throw createError;
+      if (createError) return jsonResponse({ error: adminErrorMessage(createError) }, 400);
       const user = created.user;
       if (!user) return jsonResponse({ error: 'Nie udało się utworzyć użytkownika Auth.' }, 500);
 
@@ -137,13 +195,14 @@ Deno.serve(async (req) => {
         .upsert({
           id: user.id,
           email,
+          username,
           full_name: fullName,
           role,
           user_color: userColor,
           is_active: true,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' })
-        .select('id, email, full_name, role, user_color, is_active, created_at, updated_at')
+        .select('id, email, username, full_name, role, user_color, is_active, created_at, updated_at')
         .single();
       if (profileError) throw profileError;
 
@@ -152,17 +211,35 @@ Deno.serve(async (req) => {
 
     if (action === 'updateUser') {
       const userId = cleanText(body.userId);
+      const email = normalizeEmail(body.email);
+      const username = normalizeUsername(body.username);
       const fullName = cleanText(body.fullName);
       const role = normalizeRole(body.role);
       const userColor = normalizeUserColor(body.userColor);
       const isActive = Boolean(body.isActive);
       if (!userId) return jsonResponse({ error: 'Brak ID użytkownika.' }, 400);
+      if (!email || !EMAIL_PATTERN.test(email)) return jsonResponse({ error: 'Podaj poprawny adres email.' }, 400);
+      if (!username || !USERNAME_PATTERN.test(username)) {
+        return jsonResponse({ error: 'Login musi mieć 3-40 znaków i może zawierać litery, cyfry, kropkę, myślnik lub podkreślenie.' }, 400);
+      }
 
+      await getProfile(userId);
       await assertNotLastActiveAdmin(userId, role, isActive);
+      await assertEmailAvailable(email, userId);
+      await assertUsernameAvailable(username, userId);
+
+      const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(userId, {
+        email,
+        email_confirm: true,
+        user_metadata: { full_name: fullName }
+      });
+      if (authUpdateError) return jsonResponse({ error: adminErrorMessage(authUpdateError) }, 400);
 
       const { data: profile, error: profileError } = await adminClient
         .from('profiles')
         .update({
+          email,
+          username,
           full_name: fullName,
           role,
           user_color: userColor,
@@ -170,15 +247,27 @@ Deno.serve(async (req) => {
           updated_at: new Date().toISOString()
         })
         .eq('id', userId)
-        .select('id, email, full_name, role, user_color, is_active, created_at, updated_at')
+        .select('id, email, username, full_name, role, user_color, is_active, created_at, updated_at')
         .single();
       if (profileError) throw profileError;
 
-      await adminClient.auth.admin.updateUserById(userId, {
-        user_metadata: { full_name: fullName }
-      });
-
       return jsonResponse({ profile });
+    }
+
+    if (action === 'deleteUser') {
+      const userId = cleanText(body.userId);
+      if (!userId) return jsonResponse({ error: 'Brak ID użytkownika.' }, 400);
+      if (userId === callerId) return jsonResponse({ error: 'Nie można usunąć własnego konta z aktywnej sesji.' }, 400);
+
+      const targetProfile = await getProfile(userId);
+      if (targetProfile.role === 'admin' && targetProfile.is_active === true) {
+        await assertNotLastActiveAdmin(userId, 'user', false);
+      }
+
+      const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+      if (deleteError) return jsonResponse({ error: adminErrorMessage(deleteError) }, 400);
+
+      return jsonResponse({ deleted: true });
     }
 
     if (action === 'savePermissions') {

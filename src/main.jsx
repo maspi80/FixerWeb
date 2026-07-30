@@ -8282,25 +8282,42 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   useEffect(() => {
     if (!isSupabaseConfigured || !taskId || task?.localId || permissions.view !== true) return undefined;
     let active = true;
+    const taskCommentsFilter = `task_id=eq.${taskId}`;
+    const upsertRealtimeComment = (payload) => {
+      const fallbackComment = normalizeRealtimeTaskCommentFallback(payload.new);
+      setComments((current) => upsertTaskCommentRows(current, fallbackComment));
+      resolveRealtimeTaskComment(payload.new).then((nextComment) => {
+        if (!active) return;
+        setComments((current) => upsertTaskCommentRows(current, nextComment));
+      }).catch(() => {});
+    };
     const channel = supabase
       .channel(`project-task-comments:${taskId}`)
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
         table: 'project_task_comments',
-        filter: `task_id=eq.${taskId}`
-      }, async (payload) => {
+        filter: taskCommentsFilter
+      }, (payload) => {
         if (!active) return;
-        if (payload.eventType === 'DELETE') {
-          setComments((current) => removeTaskCommentRow(current, payload.old));
-          return;
-        }
-        const fallbackComment = normalizeRealtimeTaskCommentFallback(payload.new);
-        setComments((current) => upsertTaskCommentRows(current, fallbackComment));
-        resolveRealtimeTaskComment(payload.new).then((nextComment) => {
-          if (!active) return;
-          setComments((current) => upsertTaskCommentRows(current, nextComment));
-        }).catch(() => {});
+        upsertRealtimeComment(payload);
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'project_task_comments',
+        filter: taskCommentsFilter
+      }, (payload) => {
+        if (!active) return;
+        upsertRealtimeComment(payload);
+      })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'project_task_comments'
+      }, (payload) => {
+        if (!active) return;
+        setComments((current) => removeTaskCommentRow(current, payload.old));
       })
       .subscribe();
 

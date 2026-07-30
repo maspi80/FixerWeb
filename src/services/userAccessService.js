@@ -1,9 +1,15 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 const DEFAULT_PROFILE_ROLE = 'user';
+const DEFAULT_USER_COLOR = '#2563EB';
 
 function normalizeEmail(value) {
   return String(value ?? '').trim();
+}
+
+function isMissingUserColorColumnError(error) {
+  const text = `${error?.code ?? ''} ${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase();
+  return text.includes('user_color') && (text.includes('column') || text.includes('schema cache') || text.includes('pgrst204'));
 }
 
 function getProfileFallback(user) {
@@ -13,6 +19,7 @@ function getProfileFallback(user) {
     email: normalizeEmail(user.email),
     full_name: '',
     role: DEFAULT_PROFILE_ROLE,
+    user_color: DEFAULT_USER_COLOR,
     is_active: true,
     created_at: null,
     updated_at: null
@@ -30,7 +37,9 @@ function normalizePermission(row) {
   };
 }
 
-export function createPermissionChecker(permissions = []) {
+export function createPermissionChecker(permissions = [], profile = null) {
+  if (profile?.role === 'admin' && profile?.is_active !== false) return () => true;
+
   const permissionMap = new Map(
     permissions
       .filter((permission) => permission.permission_key)
@@ -45,9 +54,19 @@ export async function fetchUserProfile(user) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name, role, is_active, created_at, updated_at')
+    .select('id, email, full_name, role, user_color, is_active, created_at, updated_at')
     .eq('id', user.id)
     .maybeSingle();
+
+  if (error && isMissingUserColorColumnError(error)) {
+    const fallbackProfileResult = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role, is_active, created_at, updated_at')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (fallbackProfileResult.error) return { data: getProfileFallback(user), error: fallbackProfileResult.error, fallback: true };
+    if (fallbackProfileResult.data) return { data: { ...fallbackProfileResult.data, user_color: DEFAULT_USER_COLOR }, error: null, fallback: false };
+  }
 
   if (error) return { data: getProfileFallback(user), error, fallback: true };
   if (data) return { data, error: null, fallback: false };
@@ -60,10 +79,27 @@ export async function fetchUserProfile(user) {
       email: profile.email,
       full_name: profile.full_name,
       role: profile.role,
+      user_color: profile.user_color,
       is_active: profile.is_active
     })
-    .select('id, email, full_name, role, is_active, created_at, updated_at')
+    .select('id, email, full_name, role, user_color, is_active, created_at, updated_at')
     .single();
+
+  if (insertError && isMissingUserColorColumnError(insertError)) {
+    const { data: createdWithoutColor, error: insertWithoutColorError } = await supabase
+      .from('profiles')
+      .insert({
+        id: profile.id,
+        email: profile.email,
+        full_name: profile.full_name,
+        role: profile.role,
+        is_active: profile.is_active
+      })
+      .select('id, email, full_name, role, is_active, created_at, updated_at')
+      .single();
+    if (insertWithoutColorError) return { data: profile, error: insertWithoutColorError, fallback: true };
+    return { data: { ...(createdWithoutColor ?? profile), user_color: DEFAULT_USER_COLOR }, error: null, fallback: false };
+  }
 
   if (insertError) return { data: profile, error: insertError, fallback: true };
   return { data: created ?? profile, error: null, fallback: false };
@@ -90,7 +126,7 @@ export async function loadUserAccess(user) {
   return {
     profile: profileResult.data,
     permissions,
-    hasPermission: createPermissionChecker(permissions),
+    hasPermission: createPermissionChecker(permissions, profileResult.data),
     errors: [profileResult.error, permissionsResult.error].filter(Boolean),
     fallback: Boolean(profileResult.fallback || permissionsResult.fallback)
   };

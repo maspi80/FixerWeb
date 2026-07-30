@@ -92,6 +92,49 @@ const LOCAL_SECTIONS_KEY = 'fixer-project-task-sections';
 const LOCAL_COMMENTS_KEY = 'fixer-project-task-comments';
 const LOCAL_SECTION_COLORS_KEY = 'fixer-project-section-colors';
 const LOCAL_PROJECT_ACCENT_COLORS_KEY = 'fixer-project-accent-colors';
+const DEFAULT_USER_COLOR = '#2563EB';
+
+let projectPermissionChecker = () => true;
+
+function projectPermissionError(permissionKey) {
+  return new Error(`Brak uprawnienia ${permissionKey}.`);
+}
+
+function canUseProjectPermission(permissionKey) {
+  try {
+    return projectPermissionChecker(permissionKey) === true;
+  } catch {
+    return false;
+  }
+}
+
+function denyProjectPermission(permissionKey, local = false, data = null) {
+  return { data, error: projectPermissionError(permissionKey), local };
+}
+
+function normalizeCommentAuthor(author) {
+  if (author && typeof author === 'object') {
+    return {
+      author: String(author.author ?? author.name ?? author.email ?? '').trim(),
+      author_user_id: author.user_id ?? author.author_user_id ?? null,
+      author_user_color: normalizeUserColor(author.user_color ?? author.author_user_color)
+    };
+  }
+  return {
+    author: String(author ?? '').trim(),
+    author_user_id: null,
+    author_user_color: DEFAULT_USER_COLOR
+  };
+}
+
+function isMissingAuthorUserIdColumnError(error) {
+  const text = `${error?.code ?? ''} ${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase();
+  return text.includes('author_user_id') && (text.includes('column') || text.includes('schema cache') || text.includes('pgrst204'));
+}
+
+export function setProjectPermissionChecker(checker) {
+  projectPermissionChecker = typeof checker === 'function' ? checker : () => true;
+}
 
 function readLocal(key) {
   try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
@@ -121,6 +164,45 @@ export function normalizeAccentColor(value) {
   const hex = raw.slice(1).toUpperCase();
   const expanded = hex.length === 3 ? hex.split('').map((part) => `${part}${part}`).join('') : hex;
   return `#${expanded}`;
+}
+
+function normalizeUserColor(value) {
+  return normalizeAccentColor(value) ?? DEFAULT_USER_COLOR;
+}
+
+function normalizeTaskComment(row) {
+  const comment = row ?? {};
+  return {
+    ...comment,
+    author_user_color: comment.author_user_id
+      ? normalizeAccentColor(comment.author_user_color)
+      : normalizeUserColor(comment.author_user_color)
+  };
+}
+
+async function fetchAuthorColorMap(authorIds = []) {
+  if (!isSupabaseConfigured) return new Map();
+  const userIds = [...new Set(authorIds.map((id) => String(id ?? '').trim()).filter(Boolean))];
+  if (!userIds.length) return new Map();
+  try {
+    const { data, error } = await supabase.functions.invoke('profile-colors', { body: { userIds } });
+    if (error || data?.error) return new Map();
+    return new Map(Object.entries(data?.colors ?? {}).map(([id, color]) => [id, normalizeUserColor(color)]));
+  } catch {
+    return new Map();
+  }
+}
+
+async function attachAuthorColors(comments = []) {
+  const normalized = comments.map(normalizeTaskComment);
+  const colorMap = await fetchAuthorColorMap(normalized.map((comment) => comment.author_user_id));
+  if (!colorMap.size) return normalized;
+  return normalized.map((comment) => ({
+    ...comment,
+    author_user_color: comment.author_user_id
+      ? (colorMap.get(String(comment.author_user_id)) ?? normalizeAccentColor(comment.author_user_color))
+      : normalizeUserColor(comment.author_user_color)
+  }));
 }
 
 function getProjectStorageKey(project) {
@@ -239,6 +321,7 @@ function compareProjectTaskOrder(a, b) {
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 export async function fetchProjects() {
+  if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
     return { data: mergeProjectAccentColors(readLocal(LOCAL_PROJECTS_KEY)), error: null, local: true };
   }
@@ -250,6 +333,7 @@ export async function fetchProjects() {
 }
 
 export async function createProject(project) {
+  if (!canUseProjectPermission('projects.create')) return denyProjectPermission('projects.create', !isSupabaseConfigured);
   const payload = normalizeProject(project);
   if (!payload.name) return { data: null, error: new Error('Nazwa projektu jest wymagana.'), local: false };
   if (!isSupabaseConfigured) {
@@ -272,6 +356,7 @@ export async function createProject(project) {
 }
 
 export async function updateProject(id, project) {
+  if (!canUseProjectPermission('projects.edit')) return denyProjectPermission('projects.edit', !isSupabaseConfigured);
   const payload = normalizeProject(project);
   if (!isSupabaseConfigured || project.localId) {
     const now = new Date().toISOString();
@@ -296,6 +381,7 @@ export async function updateProject(id, project) {
 }
 
 export async function deleteProject(id, project = null) {
+  if (!canUseProjectPermission('projects.delete')) return { error: projectPermissionError('projects.delete'), local: !isSupabaseConfigured };
   persistProjectAccentColor(String(id ?? project?.localId ?? ''), null);
   if (!isSupabaseConfigured || project?.localId) {
     writeLocal(LOCAL_PROJECTS_KEY, readLocal(LOCAL_PROJECTS_KEY).filter((row) => String(row.id ?? row.localId) !== String(id)));
@@ -308,6 +394,7 @@ export async function deleteProject(id, project = null) {
 // ─── Project Tasks ─────────────────────────────────────────────────────────────
 
 export async function fetchProjectTasks(projectId) {
+  if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
     const all = readLocal(LOCAL_PROJECT_TASKS_KEY);
     return { data: all.filter((t) => String(t.project_id) === String(projectId)).sort(compareProjectTaskOrder), error: null, local: true };
@@ -322,6 +409,7 @@ export async function fetchProjectTasks(projectId) {
 }
 
 export async function fetchAllProjectTasks() {
+  if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
     return { data: readLocal(LOCAL_PROJECT_TASKS_KEY), error: null, local: true };
   }
@@ -333,6 +421,7 @@ export async function fetchAllProjectTasks() {
 }
 
 export async function createProjectTask(task) {
+  if (!canUseProjectPermission('projects.create')) return denyProjectPermission('projects.create', !isSupabaseConfigured);
   const payload = normalizeProjectTask(task);
   if (!payload.title) return { data: null, error: new Error('Tytuł zadania jest wymagany.'), local: false };
   if (!payload.project_id) return { data: null, error: new Error('ID projektu jest wymagane.'), local: false };
@@ -347,6 +436,7 @@ export async function createProjectTask(task) {
 }
 
 export async function updateProjectTask(id, task) {
+  if (!canUseProjectPermission('projects.edit')) return denyProjectPermission('projects.edit', !isSupabaseConfigured);
   const payload = normalizeProjectTask(task);
   if (!isSupabaseConfigured || task.localId) {
     const now = new Date().toISOString();
@@ -366,6 +456,7 @@ export async function updateProjectTask(id, task) {
 }
 
 export async function deleteProjectTask(id, task = null) {
+  if (!canUseProjectPermission('projects.delete')) return { error: projectPermissionError('projects.delete'), local: !isSupabaseConfigured };
   if (!isSupabaseConfigured || task?.localId) {
     writeLocal(LOCAL_PROJECT_TASKS_KEY, readLocal(LOCAL_PROJECT_TASKS_KEY).filter((row) => String(row.id ?? row.localId) !== String(id)));
     writeLocal(LOCAL_COMMENTS_KEY, readLocal(LOCAL_COMMENTS_KEY).filter((row) => String(row.task_id) !== String(id)));
@@ -378,6 +469,7 @@ export async function deleteProjectTask(id, task = null) {
 // ─── Project Task Sections ─────────────────────────────────────────────────────
 
 export async function reorderProjectTasksInSection(projectId, sectionId, orderedTasks = []) {
+  if (!canUseProjectPermission('projects.edit')) return { error: projectPermissionError('projects.edit'), local: !isSupabaseConfigured };
   const normalizedSectionId = sectionId || null;
   const updates = orderedTasks
     .map((task, index) => ({
@@ -418,6 +510,7 @@ export async function reorderProjectTasksInSection(projectId, sectionId, ordered
 }
 
 export async function fetchProjectSections(projectId) {
+  if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
     return { data: mergeSectionColors(readLocal(LOCAL_SECTIONS_KEY).filter((s) => String(s.project_id) === String(projectId))), error: null, local: true };
   }
@@ -431,6 +524,7 @@ export async function fetchProjectSections(projectId) {
 }
 
 export async function createProjectSection(projectId, name, sortOrder = 100, headerColor = null) {
+  if (!canUseProjectPermission('projects.create')) return denyProjectPermission('projects.create', !isSupabaseConfigured);
   if (!projectId) return { data: null, error: new Error('ID projektu jest wymagane.'), local: false };
   if (!name?.trim()) return { data: null, error: new Error('Nazwa sekcji jest wymagana.'), local: false };
   const color = normalizeAccentColor(headerColor);
@@ -462,6 +556,7 @@ export async function createProjectSection(projectId, name, sortOrder = 100, hea
 }
 
 export async function updateProjectSection(id, updates, section = null) {
+  if (!canUseProjectPermission('projects.edit')) return denyProjectPermission('projects.edit', !isSupabaseConfigured);
   const patch = normalizeSectionUpdates(updates);
   if (patch.name !== undefined && !patch.name) return { data: null, error: new Error('Nazwa sekcji jest wymagana.'), local: false };
   if (!isSupabaseConfigured || section?.localId) {
@@ -496,6 +591,7 @@ export async function updateProjectSection(id, updates, section = null) {
 }
 
 export async function deleteProjectSection(id) {
+  if (!canUseProjectPermission('projects.delete')) return { error: projectPermissionError('projects.delete'), local: !isSupabaseConfigured };
   persistSectionColor(String(id), null);
   if (!isSupabaseConfigured) {
     writeLocal(LOCAL_SECTIONS_KEY, readLocal(LOCAL_SECTIONS_KEY).filter((s) => String(s.id ?? s.localId) !== String(id)));
@@ -509,31 +605,44 @@ export async function deleteProjectSection(id) {
 // ─── Project Task Comments ─────────────────────────────────────────────────────
 
 export async function fetchTaskComments(taskId) {
+  if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
-    return { data: readLocal(LOCAL_COMMENTS_KEY).filter((c) => String(c.task_id) === String(taskId)), error: null, local: true };
+    return { data: readLocal(LOCAL_COMMENTS_KEY).filter((c) => String(c.task_id) === String(taskId)).map(normalizeTaskComment), error: null, local: true };
   }
   const { data, error } = await supabase
     .from('project_task_comments')
     .select('*')
     .eq('task_id', taskId)
     .order('created_at', { ascending: true });
-  return { data: data ?? [], error, local: false };
+  if (error) return { data: [], error, local: false };
+  return { data: await attachAuthorColors(data ?? []), error: null, local: false };
 }
 
 export async function createTaskComment(taskId, body, type = 'Komentarz', author = '') {
+  if (!canUseProjectPermission('projects.create')) return denyProjectPermission('projects.create', !isSupabaseConfigured);
   if (!taskId) return { data: null, error: new Error('ID zadania jest wymagane.'), local: false };
   if (!body?.trim()) return { data: null, error: new Error('Treść komentarza jest wymagana.'), local: false };
+  const commentAuthor = normalizeCommentAuthor(author);
+  const authorName = commentAuthor.author || 'Operator';
   if (!isSupabaseConfigured) {
     const now = new Date().toISOString();
-    const created = { id: crypto.randomUUID(), localId: crypto.randomUUID(), task_id: taskId, body: body.trim(), type, author, created_at: now, updated_at: now };
+    const created = { id: crypto.randomUUID(), localId: crypto.randomUUID(), task_id: taskId, body: body.trim(), type, author: authorName, author_user_id: commentAuthor.author_user_id, author_user_color: commentAuthor.author_user_color, created_at: now, updated_at: now };
     writeLocal(LOCAL_COMMENTS_KEY, [...readLocal(LOCAL_COMMENTS_KEY), created]);
     return { data: created, error: null, local: true };
   }
-  const { data, error } = await supabase.from('project_task_comments').insert({ task_id: taskId, body: body.trim(), type, author }).select('*').single();
+  const payload = { task_id: taskId, body: body.trim(), type, author: authorName };
+  if (commentAuthor.author_user_id) payload.author_user_id = commentAuthor.author_user_id;
+  const { data, error } = await supabase.from('project_task_comments').insert(payload).select('*').single();
+  if (error && payload.author_user_id && isMissingAuthorUserIdColumnError(error)) {
+    const { author_user_id, ...fallbackPayload } = payload;
+    const fallback = await supabase.from('project_task_comments').insert(fallbackPayload).select('*').single();
+    return { data: fallback.data, error: fallback.error, local: false };
+  }
   return { data, error, local: false };
 }
 
 export async function updateTaskComment(id, body, comment = null) {
+  if (!canUseProjectPermission('projects.edit')) return denyProjectPermission('projects.edit', !isSupabaseConfigured);
   if (!body?.trim()) return { data: null, error: new Error('Treść komentarza jest wymagana.'), local: false };
   if (!isSupabaseConfigured || comment?.localId) {
     const now = new Date().toISOString();
@@ -546,6 +655,7 @@ export async function updateTaskComment(id, body, comment = null) {
 }
 
 export async function deleteTaskComment(id, comment = null) {
+  if (!canUseProjectPermission('projects.delete')) return { error: projectPermissionError('projects.delete'), local: !isSupabaseConfigured };
   if (!isSupabaseConfigured || comment?.localId) {
     writeLocal(LOCAL_COMMENTS_KEY, readLocal(LOCAL_COMMENTS_KEY).filter((c) => String(c.id ?? c.localId) !== String(id)));
     return { error: null, local: true };
@@ -557,6 +667,7 @@ export async function deleteTaskComment(id, comment = null) {
 // ─── Comment counts for all tasks in a project ────────────────────────────────
 
 export async function fetchProjectAllComments(projectId) {
+  if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
     const taskIds = new Set(
       readLocal(LOCAL_PROJECT_TASKS_KEY)

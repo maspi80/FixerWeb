@@ -251,28 +251,36 @@ function buildCalendarResults(rows, query) {
   return limitAndSort(results, query);
 }
 
-export async function searchGlobalRecords(query) {
+function canSearchModule(allowedModuleIds, moduleId) {
+  if (!allowedModuleIds) return true;
+  if (allowedModuleIds instanceof Set) return allowedModuleIds.has(moduleId);
+  if (Array.isArray(allowedModuleIds)) return allowedModuleIds.includes(moduleId);
+  return true;
+}
+
+export async function searchGlobalRecords(query, options = {}) {
   if (normalizeSearchText(query).length < 2) return [];
+  const { allowedModuleIds = null } = options;
 
   const [clients, equipment, rentals, service, organizer, projects, projectTasks, calendar] = await Promise.all([
-    safeLoad('clients', fetchClients),
-    safeLoad('equipment', fetchEquipment),
-    safeLoad('rentals', fetchRentals),
-    safeLoad('service', fetchServiceOrders),
-    safeLoad('organizer', fetchOrganizerTasks),
-    safeLoad('projects', fetchProjects),
-    safeLoad('project-tasks', fetchAllProjectTasks),
-    safeLoad('calendar', fetchCalendarManualEvents)
+    canSearchModule(allowedModuleIds, 'clients') ? safeLoad('clients', fetchClients) : [],
+    canSearchModule(allowedModuleIds, 'equipment') ? safeLoad('equipment', fetchEquipment) : [],
+    canSearchModule(allowedModuleIds, 'rentals') ? safeLoad('rentals', fetchRentals) : [],
+    canSearchModule(allowedModuleIds, 'service') ? safeLoad('service', fetchServiceOrders) : [],
+    canSearchModule(allowedModuleIds, 'projects') ? safeLoad('organizer', fetchOrganizerTasks) : [],
+    canSearchModule(allowedModuleIds, 'projects') ? safeLoad('projects', fetchProjects) : [],
+    canSearchModule(allowedModuleIds, 'projects') ? safeLoad('project-tasks', fetchAllProjectTasks) : [],
+    canSearchModule(allowedModuleIds, 'calendar') ? safeLoad('calendar', fetchCalendarManualEvents) : []
   ]);
 
   const workResults = limitAndSort([...buildOrganizerResults(organizer, query), ...buildProjectResults(projects, projectTasks, query)], query);
 
   return [
-    { module: 'clients', label: MODULE_LABELS.clients, results: buildClientResults(clients, query) },
-    { module: 'equipment', label: MODULE_LABELS.equipment, results: buildEquipmentResults(equipment, query) },
-    { module: 'rentals', label: MODULE_LABELS.rentals, results: buildRentalResults(rentals, query) },
-    { module: 'service', label: MODULE_LABELS.service, results: buildServiceResults(service, query) },
-    { module: 'projects', label: MODULE_LABELS.projects, results: workResults },
-    { module: 'calendar', label: MODULE_LABELS.calendar, results: buildCalendarResults(calendar, query) }
-  ];
+    canSearchModule(allowedModuleIds, 'clients') ? { module: 'clients', label: MODULE_LABELS.clients, results: buildClientResults(clients, query) } : null,
+    canSearchModule(allowedModuleIds, 'equipment') ? { module: 'equipment', label: MODULE_LABELS.equipment, results: buildEquipmentResults(equipment, query) } : null,
+    canSearchModule(allowedModuleIds, 'rentals') ? { module: 'rentals', label: MODULE_LABELS.rentals, results: buildRentalResults(rentals, query) } : null,
+    canSearchModule(allowedModuleIds, 'service') ? { module: 'service', label: MODULE_LABELS.service, results: buildServiceResults(service, query) } : null,
+    canSearchModule(allowedModuleIds, 'projects') ? { module: 'projects', label: MODULE_LABELS.projects, results: workResults } : null,
+    canSearchModule(allowedModuleIds, 'calendar') ? { module: 'calendar', label: MODULE_LABELS.calendar, results: buildCalendarResults(calendar, query) } : null
+  ].filter(Boolean);
 }

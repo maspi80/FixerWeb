@@ -2,9 +2,9 @@
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import {
-  AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard, LockKeyhole,
+  AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard,
   LogOut, MessageSquare, MoreHorizontal, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Pencil, Pin, Plus, Printer, RotateCcw, Save, StickyNote, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Pencil, Pin, Plus, Printer, RotateCcw, Save, ShieldCheck, StickyNote, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -88,6 +88,7 @@ import {
 } from './services/organizerService';
 import { createNote, deleteNote, fetchNotes, NOTE_COLORS, NOTE_STATUSES, updateNote } from './services/notesService';
 import NoteRichTextEditor from './components/NoteRichTextEditor.jsx';
+import UsersPermissionsPanel from './components/UsersPermissionsPanel.jsx';
 import { noteContentPreviewText, noteMatchesSearch } from './utils/noteContent.js';
 import { createCalendarManualEvent, deleteCalendarManualEvent, fetchCalendarManualEvents, updateCalendarManualEvent } from './services/calendarService';
 import {
@@ -98,6 +99,7 @@ import {
   PROJECT_TASK_COMMENT_TYPES, WORK_STATUSES, WORK_DONE_STATUS, WORK_TERMINAL_STATUSES,
   displayWorkStatus, getDefaultWorkPriority, isCompletedStatus, normalizeWorkPriority, normalizeWorkStatus,
   normalizeAccentColor,
+  setProjectPermissionChecker,
   reorderProjectTasksInSection,
   updateProject, updateProjectTask
 } from './services/projectsService';
@@ -696,6 +698,12 @@ const modules = [
   { id: 'settings', label: 'Ustawienia', icon: Settings }
 ];
 
+const MODULE_VIEW_PERMISSIONS = Object.fromEntries(modules.map((module) => [module.id, `${module.id}.view`]));
+
+function getFirstAllowedModule(hasPermission) {
+  return modules.find((module) => hasPermission(MODULE_VIEW_PERMISSIONS[module.id]))?.id ?? null;
+}
+
 const BACKUP_TABLE_LABELS = {
   clients: 'Klienci',
   equipment: 'Sprzęt',
@@ -736,6 +744,41 @@ function normalizeModuleNavigation(moduleId, intent = null) {
 }
 
 const demoUser = { name: 'Mariusz', role: 'Administrator', email: 'admin@fixer.local' };
+const DEFAULT_USER_COLOR = '#2563EB';
+
+function normalizeUserColor(value) {
+  const raw = String(value ?? '').trim();
+  return /^#([0-9a-f]{6})$/i.test(raw) ? raw.toUpperCase() : DEFAULT_USER_COLOR;
+}
+
+function getReadableTextColor(backgroundColor) {
+  const hex = normalizeUserColor(backgroundColor).slice(1);
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const luminance = [r, g, b].map((channel) => (
+    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  ));
+  const relativeLuminance = 0.2126 * luminance[0] + 0.7152 * luminance[1] + 0.0722 * luminance[2];
+  return relativeLuminance > 0.48 ? '#0F172A' : '#FFFFFF';
+}
+
+function getCurrentCommentAuthor(user) {
+  const profileName = String(user?.profile?.full_name ?? '').trim();
+  const email = String(user?.email ?? user?.profile?.email ?? '').trim();
+  const fallbackName = String(user?.name ?? '').trim();
+  return {
+    user_id: user?.id ?? user?.profile?.id ?? null,
+    author: profileName || email || fallbackName || 'Operator',
+    user_color: normalizeUserColor(user?.profile?.user_color)
+  };
+}
+
+function getCommentAuthorAccentColor(comment) {
+  const normalized = normalizeUserColor(comment?.author_user_color);
+  if (comment?.author_user_id && !comment?.author_user_color) return '#94A3B8';
+  return normalized;
+}
 
 function createEmptyUserAccess(user = null) {
   return {
@@ -755,6 +798,18 @@ function createEmptyUserAccess(user = null) {
     errors: [],
     fallback: true
   };
+}
+
+function InactiveAccountScreen({ onLogout }) {
+  return <div className="login-page">
+    <div className="login-card">
+      <div className="brand-mark">F</div>
+      <p className="eyebrow">Fixer WEB</p>
+      <h1>Konto nieaktywne</h1>
+      <p className="muted">Dostęp do programu został wyłączony przez administratora.</p>
+      <AppButton variant="primary" className="full-width" onClick={onLogout}><LogOut size={18} />Wyloguj</AppButton>
+    </div>
+  </div>;
 }
 
 function NotificationsBell({ onNavigate }) {
@@ -941,7 +996,22 @@ function App() {
   const [statusColors, setStatusColors] = useState(getStatusColors);
   const [activeUiTheme, setActiveUiTheme] = useState(() => getInitialUiAppearance().activeUiTheme);
   const [appSettingsReady, setAppSettingsReady] = useState(() => !isSupabaseConfigured);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens, colorTheme), [activeUiTheme.tokens, colorTheme]);
+  const accessReady = !isSupabaseConfigured || !session?.user || Boolean(userAccess.profile);
+  const hasPermission = useCallback((permissionKey) => {
+    if (!isSupabaseConfigured) return true;
+    return userAccess.hasPermission(permissionKey);
+  }, [userAccess.hasPermission]);
+  const visibleModules = useMemo(() => modules.filter((module) => hasPermission(MODULE_VIEW_PERMISSIONS[module.id])), [hasPermission]);
+  const allowedModuleIds = useMemo(() => new Set(visibleModules.map((module) => module.id)), [visibleModules]);
+  const currentModule = modules.find((module) => module.id === activeModule) ?? visibleModules[0] ?? modules[0];
+  const projectPermissions = useMemo(() => ({
+    view: hasPermission('projects.view'),
+    create: hasPermission('projects.create'),
+    edit: hasPermission('projects.edit'),
+    delete: hasPermission('projects.delete')
+  }), [hasPermission]);
 
   const handleColorThemeCollection = useCallback((mode) => {
     const nextMode = normalizeColorThemeMode(mode);
@@ -968,6 +1038,10 @@ function App() {
     saveActiveUiTheme(activeUiTheme);
   }, [activeUiTheme]);
 
+  useEffect(() => {
+    setProjectPermissionChecker((permissionKey) => hasPermission(permissionKey));
+  }, [hasPermission]);
+
   useEffect(() => { injectStatusColorStyles(statusColors); }, [statusColors]);
 
   const handleStatusColorChange = (statusName, hex) => {
@@ -989,7 +1063,7 @@ function App() {
   const currentUser = isSupabaseConfigured && session?.user
     ? {
       id: session.user.id,
-      name: session.user.email?.split('@')[0] ?? 'Użytkownik',
+      name: userAccess.profile?.full_name?.trim() || session.user.email || 'Użytkownik',
       role: 'Użytkownik',
       email: session.user.email ?? '',
       profile: userAccess.profile,
@@ -1050,12 +1124,25 @@ function App() {
     });
   }, []);
 
-  const currentModule = modules.find((module) => module.id === activeModule) ?? modules[0];
   const navigateToModule = (moduleId, intent = null) => {
     const next = normalizeModuleNavigation(moduleId, intent);
+    if (!hasPermission(MODULE_VIEW_PERMISSIONS[next.moduleId])) {
+      setModuleIntent(null);
+      const fallbackModule = getFirstAllowedModule(hasPermission);
+      if (fallbackModule && fallbackModule !== activeModule) setActiveModule(fallbackModule);
+      return;
+    }
     setModuleIntent(next.intent);
     setActiveModule(next.moduleId);
   };
+
+  useEffect(() => {
+    if (!accessReady || !isAuthenticated) return;
+    if (hasPermission(MODULE_VIEW_PERMISSIONS[activeModule])) return;
+    const fallbackModule = getFirstAllowedModule(hasPermission);
+    setModuleIntent(null);
+    if (fallbackModule) setActiveModule(fallbackModule);
+  }, [accessReady, isAuthenticated, activeModule, hasPermission]);
 
   const handleLogout = async () => {
     if (isSupabaseConfigured) await supabase.auth.signOut();
@@ -1063,6 +1150,11 @@ function App() {
     setDemoAuth(false);
     setSession(null);
     setUserAccess(createEmptyUserAccess());
+    setLogoutConfirmOpen(false);
+  };
+
+  const requestLogout = () => {
+    setLogoutConfirmOpen(true);
   };
 
   const openGlobalSearchResult = (result) => {
@@ -1075,18 +1167,37 @@ function App() {
     return <LoginScreen onDemoLogin={() => { localStorage.setItem('fixer-demo-auth', 'true'); setDemoAuth(true); }} />;
   }
 
+  if (!accessReady) {
+    return <div className="login-page">
+      <div className="login-card">
+        <div className="brand-mark">F</div>
+        <p className="eyebrow">Fixer WEB</p>
+        <h1>Sprawdzam dostęp</h1>
+        <p className="muted">Ładuję profil i uprawnienia użytkownika.</p>
+      </div>
+    </div>;
+  }
+
+  if (isSupabaseConfigured && userAccess.profile?.is_active === false && !userAccess.fallback) {
+    return <>
+      <InactiveAccountScreen onLogout={requestLogout} />
+      {logoutConfirmOpen && <ConfirmDialog title="Wylogowanie" message="Czy na pewno chcesz się wylogować?" confirmLabel="Wyloguj" cancelLabel="Anuluj" variant="danger" onConfirm={handleLogout} onCancel={() => setLogoutConfirmOpen(false)} />}
+    </>;
+  }
+
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}${tableVerticalLines ? ' table-vertical-lines-enabled' : ''}`} style={uiThemeCssVariables}>
       <Sidebar
         activeModule={activeModule}
         setActiveModule={(moduleId) => navigateToModule(moduleId)}
+        modules={visibleModules}
         collapsed={sidebarCollapsed}
         onToggle={() => {
           const next = !sidebarCollapsed;
           setSidebarCollapsed(next);
           localStorage.setItem('fixer-sidebar', next ? 'collapsed' : 'expanded');
         }}
-        onLogout={handleLogout}
+        onLogout={requestLogout}
         user={currentUser}
       />
       <main className="main-area">
@@ -1104,19 +1215,22 @@ function App() {
           colorTheme={colorTheme}
           onChangeColorTheme={handleColorThemeCollection}
           onNavigate={navigateToModule}
+          allowedModuleIds={allowedModuleIds}
         />
         <section className="page-content">
-          {activeModule === 'dashboard' && <Dashboard onNavigate={navigateToModule} />}
-          {activeModule === 'clients' && <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
-          {activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
-          {activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} />}
-          {activeModule === 'notes' && <NotatkiModule />}
-          {activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} />}
+          {!visibleModules.length && <EmptyState title="Brak przypisanych modułów." />}
+          {allowedModuleIds.has('dashboard') && activeModule === 'dashboard' && <Dashboard onNavigate={navigateToModule} />}
+          {allowedModuleIds.has('clients') && activeModule === 'clients' && <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {allowedModuleIds.has('equipment') && activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
+          {allowedModuleIds.has('rentals') && activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {allowedModuleIds.has('service') && activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
+          {allowedModuleIds.has('calendar') && activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
+          {allowedModuleIds.has('projects') && activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} permissions={projectPermissions} currentUser={currentUser} />}
+          {allowedModuleIds.has('notes') && activeModule === 'notes' && <NotatkiModule />}
+          {allowedModuleIds.has('settings') && activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} currentUser={currentUser} />}
         </section>
       </main>
+      {logoutConfirmOpen && <ConfirmDialog title="Wylogowanie" message="Czy na pewno chcesz się wylogować?" confirmLabel="Wyloguj" cancelLabel="Anuluj" variant="danger" onConfirm={handleLogout} onCancel={() => setLogoutConfirmOpen(false)} />}
     </div>
   );
 }
@@ -1124,37 +1238,43 @@ function App() {
 function LoginScreen({ onDemoLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const loginTheme = normalizeColorThemeMode(getInitialUiAppearance().colorTheme);
 
   const handleSupabaseLogin = async (event) => {
     event.preventDefault();
+    setLoginError('');
     if (!isSupabaseConfigured) {
       onDemoLogin();
       return;
     }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert(error.message);
+    if (error) setLoginError('Nieprawidłowy email lub hasło.');
   };
 
   return (
-    <div className="login-page">
+    <div className={`login-page theme-${loginTheme}`}>
       <div className="login-card">
-        <div className="brand-mark">F</div>
-        <p className="eyebrow">Fixer WEB</p>
-        <h1>Logowanie do systemu</h1>
-        <p className="muted">System logowania i zapisu danych działa przez Supabase.</p>
+        <div className="login-brand">
+          <div className="brand-mark">F</div>
+          <p>FIXER WEB</p>
+        </div>
+        <h1>Zaloguj się</h1>
         <form onSubmit={handleSupabaseLogin} className="login-form">
           <label>Email<AppInput type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email użytkownika" /></label>
           <label>Hasło<AppInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="hasło" /></label>
-          <AppButton variant="primary" type="submit"><LockKeyhole size={18} />Zaloguj</AppButton>
+          {loginError && <div className="login-error">{loginError}</div>}
+          <AppButton variant="primary" type="submit">Zaloguj</AppButton>
         </form>
         {!isSupabaseConfigured && <AppButton variant="secondary" className="full-width" onClick={onDemoLogin}>Wejdź lokalnie</AppButton>}
-        <div className="login-note">Baza danych: {isSupabaseConfigured ? 'połączona' : 'brak konfiguracji Supabase'}</div>
       </div>
     </div>
   );
 }
 
-function Sidebar({ activeModule, setActiveModule, collapsed, onToggle, onLogout, user }) {
+function Sidebar({ activeModule, setActiveModule, modules: sidebarModules = modules, collapsed, onToggle, onLogout, user }) {
+  const userColor = normalizeUserColor(user?.profile?.user_color);
+  const userTextColor = getReadableTextColor(userColor);
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -1162,14 +1282,14 @@ function Sidebar({ activeModule, setActiveModule, collapsed, onToggle, onLogout,
         {!collapsed && <div><h2>Fixer WEB</h2><p>Service · Rental · CRM</p></div>}
       </div>
       <nav className="nav-list">
-        {modules.map((module) => {
+        {sidebarModules.map((module) => {
           const Icon = module.icon;
           return <button key={module.id} className={`nav-item ${activeModule === module.id ? 'active' : ''}`} onClick={() => setActiveModule(module.id)} title={module.label}><Icon size={18} />{!collapsed && <span>{module.label}</span>}</button>;
         })}
       </nav>
       <div className="sidebar-footer">
         <button className="ghost-button" onClick={onToggle}><PanelLeft size={18} />{!collapsed && <span>Zwiń panel</span>}</button>
-        <div className="user-card"><div className="avatar">{user.name[0]?.toUpperCase() ?? 'U'}</div>{!collapsed && <div><strong>{user.name}</strong><span>{user.role}</span></div>}</div>
+        <div className="user-card"><div className="avatar" style={{ '--user-avatar-color': userColor, '--user-avatar-text-color': userTextColor }}>{user.name[0]?.toUpperCase() ?? 'U'}</div>{!collapsed && <div><strong>{user.name}</strong><span>{user.role}</span></div>}</div>
         <button className="ghost-button danger" onClick={onLogout}><LogOut size={18} />{!collapsed && <span>Wyloguj</span>}</button>
       </div>
     </aside>
@@ -1201,7 +1321,7 @@ function getColorThemeLabel(mode) {
   return COLOR_THEME_LABELS[normalizeColorThemeMode(mode)];
 }
 
-function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme, onNavigate }) {
+function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme, onNavigate, allowedModuleIds = null }) {
   const [searchGroups, setSearchGroups] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1221,7 +1341,7 @@ function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onT
     let active = true;
     setSearchLoading(true);
     const timer = window.setTimeout(() => {
-      searchGlobalRecords(trimmedSearch).then((groups) => {
+      searchGlobalRecords(trimmedSearch, { allowedModuleIds }).then((groups) => {
         if (!active) return;
         setSearchGroups(groups.filter((group) => group.results.length));
         setActiveIndex(0);
@@ -1238,7 +1358,7 @@ function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onT
       active = false;
       window.clearTimeout(timer);
     };
-  }, [trimmedSearch]);
+  }, [trimmedSearch, allowedModuleIds]);
 
   useEffect(() => {
     const handleOutside = (event) => {
@@ -6870,7 +6990,7 @@ function generateNextProjectNumber(projectsList, documentSettings) {
   return formatDocumentNumber(settings, getNextProjectSequence(projectsList, settings));
 }
 
-function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave }) {
+function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const taskId = task?.id ?? task?.localId;
   const [activeTab, setActiveTab] = useState('data');
   const [form, setForm] = useState(() => ({
@@ -6894,6 +7014,11 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   const [editingCommentText, setEditingCommentText] = useState('');
   const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const isNewTask = !taskId;
+  const canSaveTask = isNewTask ? permissions.create === true : permissions.edit === true;
+  const canCreateProjectItems = permissions.create === true;
+  const canEditProjectItems = permissions.edit === true;
+  const canDeleteProjectItems = permissions.delete === true;
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -6906,6 +7031,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   useEffect(() => { if (activeTab === 'comments') loadComments(); }, [activeTab, taskId]);
 
   const handleSave = async () => {
+    if (!canSaveTask) { setNotice(`Brak uprawnienia ${isNewTask ? 'projects.create' : 'projects.edit'}.`); return; }
     if (!form.title.trim()) { setNotice('Tytuł zadania jest wymagany.'); return; }
     setBusy(true);
     await onSave({
@@ -6917,15 +7043,17 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const addComment = async () => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     if (!newComment.trim()) return;
     if (!taskId) { setNotice('Najpierw zapisz zadanie, aby dodać komentarz.'); return; }
-    const result = await createTaskComment(taskId, newComment, newCommentType, demoUser.name);
+    const result = await createTaskComment(taskId, newComment, newCommentType, commentAuthor);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setNewComment('');
     await loadComments();
   };
 
   const saveCommentEdit = async (comment) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const result = await updateTaskComment(comment.id ?? comment.localId, editingCommentText, comment);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setEditingCommentId(null);
@@ -6934,6 +7062,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const startCommentEdit = (comment) => {
+    if (!canEditProjectItems) return;
     setCommentContextMenu(null);
     setEditingCommentId(comment.id ?? comment.localId);
     setEditingCommentText(comment.body);
@@ -6945,6 +7074,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const openCommentContextMenu = (event, comment) => {
+    if (!canEditProjectItems && !canDeleteProjectItems) return;
     event.preventDefault();
     event.stopPropagation();
     setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
@@ -6962,6 +7092,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   };
 
   const removeComment = async (comment) => {
+    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
     setConfirmDialog({
       title: 'Usuń komentarz',
       message: 'Usunąć komentarz?',
@@ -6982,7 +7113,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   ].filter((tab) => !task ? tab.id === 'data' : true);
 
   return <ResizableModalFrame storageKey="fixer-project-task-modal" defaultSize={{ width: 680, height: 520 }} minSize={{ width: 500, height: 400 }} eyebrow="Zadanie projektu" title={task ? 'Edytuj zadanie' : 'Nowe zadanie'} onClose={onClose}
-    footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary><ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{task ? 'Zapisz' : 'Dodaj'}</ButtonPrimary></>}>
+    footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary>{canSaveTask && <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{task ? 'Zapisz' : 'Dodaj'}</ButtonPrimary>}</>}>
     {notice && <div className="notice">{notice}</div>}
     <div className="record-tabs" role="tablist">
       {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
@@ -6990,25 +7121,25 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
 
     {activeTab === 'data' && <div className="project-task-form">
       <FormField label="Tytuł *">
-        <AppInput value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Tytuł zadania" autoFocus />
+        <AppInput value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Tytuł zadania" autoFocus readOnly={!canSaveTask} />
       </FormField>
       <FormField label="Opis">
-        <AppTextarea resizeKey="fixer:ui-resize:task-editor:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis lub notatki do zadania" />
+        <AppTextarea resizeKey="fixer:ui-resize:task-editor:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis lub notatki do zadania" readOnly={!canSaveTask} />
       </FormField>
       <div className="project-task-meta-grid">
         <div className="project-task-meta-column">
           <FormField label="Status">
-            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(e) => set('status', e.target.value)}>
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(e) => set('status', e.target.value)} disabled={!canSaveTask}>
               {WORK_STATUSES.map((s) => <option key={s}>{s}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(e) => set('priority', e.target.value)}>
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(e) => set('priority', e.target.value)} disabled={!canSaveTask}>
               {workPriorities.map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
           </FormField>
           {sections.length > 0 && <FormField label="Sekcja">
-            <AppSelect value={form.section_id ?? ''} onChange={(e) => set('section_id', e.target.value)}>
+            <AppSelect value={form.section_id ?? ''} onChange={(e) => set('section_id', e.target.value)} disabled={!canSaveTask}>
               <option value="">Brak sekcji</option>
               {sections.map((s) => <option key={s.id ?? s.localId} value={s.id ?? s.localId}>{s.name}</option>)}
             </AppSelect>
@@ -7016,17 +7147,17 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
         </div>
         <div className="project-task-meta-column">
           <FormField label="Termin">
-            <AppInput type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} />
+            <AppInput type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} readOnly={!canSaveTask} />
           </FormField>
           <FormField label="Przypomnienie">
-            <AppInput type="datetime-local" value={form.reminder_at} onChange={(e) => set('reminder_at', e.target.value)} />
+            <AppInput type="datetime-local" value={form.reminder_at} onChange={(e) => set('reminder_at', e.target.value)} readOnly={!canSaveTask} />
           </FormField>
         </div>
       </div>
     </div>}
 
     {activeTab === 'comments' && <div className="service-tab-content">
-      <div className="service-progress-add">
+      {canCreateProjectItems && <div className="service-progress-add">
         <div className="service-estimate-add-bar">
           <AppSelect value={newCommentType} onChange={(e) => setNewCommentType(e.target.value)} style={{ flex: '0 0 auto', width: 130 }}>
             {PROJECT_TASK_COMMENT_TYPES.map((t) => <option key={t}>{t}</option>)}
@@ -7034,7 +7165,7 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
           <AppInput value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="Treść komentarza..." onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && addComment()} style={{ flex: 1 }} />
           <button type="button" className="project-icon-action primary-action" onClick={addComment} disabled={!newComment.trim()} aria-label="Dodaj komentarz" title="Dodaj komentarz"><Plus size={15} /></button>
         </div>
-      </div>
+      </div>}
       <div className="service-progress-list">
         {commentsLoading && <div className="loading-line">Ładowanie komentarzy...</div>}
         {!commentsLoading && comments.map((c) => {
@@ -7064,15 +7195,19 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
       y={commentContextMenu.y}
       onClose={() => setCommentContextMenu(null)}
       items={[
-        { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) },
-        { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) }
-      ]}
+        canEditProjectItems ? { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) } : null,
+        canDeleteProjectItems ? { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) } : null
+      ].filter(Boolean)}
     />}
   </ResizableModalFrame>;
 }
 
-function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, colorTheme = 'dark' }) {
+function ProjectEditor({ project, clients = [], allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, onClose, onSave, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const isNew = !project;
+  const canSaveProject = isNew ? permissions.create === true : permissions.edit === true;
+  const canCreateProjectItems = permissions.create === true;
+  const canEditProjectItems = permissions.edit === true;
+  const canDeleteProjectItems = permissions.delete === true;
   const [activeTab, setActiveTab] = useState('data');
   const projectTasksListRef = useRef(null);
   const [form, setForm] = useState(() => {
@@ -7164,6 +7299,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   useEffect(() => { if (activeTab === 'tasks') loadTasks(); }, [activeTab, projectId]);
 
   const handleSave = async () => {
+    if (!canSaveProject) { setNotice(`Brak uprawnienia ${isNew ? 'projects.create' : 'projects.edit'}.`); return; }
     if (!form.name.trim()) { setNotice('Nazwa projektu jest wymagana.'); return; }
     setBusy(true);
     await onSave({
@@ -7175,12 +7311,19 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const openNewTask = (sectionId = null) => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     setEditingTask(sectionId ? { section_id: sectionId, project_id: projectId } : null);
     setTaskEditorOpen(true);
   };
-  const openEditTask = (row) => { setEditingTask(row._task ?? row); setTaskEditorOpen(true); };
+  const openEditTask = (row) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
+    setEditingTask(row._task ?? row);
+    setTaskEditorOpen(true);
+  };
 
   const saveTask = async (taskForm) => {
+    if (!taskForm.id && !taskForm.localId && !canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
+    if ((taskForm.id || taskForm.localId) && !canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const tid = taskForm.id ?? taskForm.localId;
     const completed = isCompletedStatus(taskForm.status);
     const payload = completed
@@ -7195,6 +7338,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
   const setTaskStatus = async (task, newStatus) => {
     if (newStatus === task.status) return;
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const tid = task.id ?? task.localId;
     const completed = isCompletedStatus(newStatus);
     await updateProjectTask(tid, {
@@ -7207,6 +7351,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const deleteTask = async (row) => {
+    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
     const task = row._task ?? row;
     setConfirmDialog({
       title: 'Usuń zadanie',
@@ -7223,6 +7368,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const openSectionModal = () => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     setNewSectionName('');
     setSectionNameError('');
     setSectionModalOpen(true);
@@ -7235,6 +7381,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const addSection = async () => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     const sectionName = newSectionName.trim();
     if (!sectionName) { setSectionNameError('Podaj nazwę sekcji.'); return; }
     if (sectionName.length > 100) { setSectionNameError('Nazwa sekcji może mieć maksymalnie 100 znaków.'); return; }
@@ -7247,6 +7394,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const saveSectionName = async (section, nextName) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return false; }
     const sid = section.id ?? section.localId;
     const result = await updateProjectSection(sid, nextName, section);
     if (result.error) {
@@ -7262,11 +7410,13 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const openSectionRename = (section) => {
+    if (!canEditProjectItems) return;
     setSectionMenu(null);
     setSectionRenameTarget(section);
   };
 
   const saveSectionColor = async (section, nextColor) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const sid = section.id ?? section.localId;
     const normalized = normalizeAccentColor(nextColor);
     if (!normalized) return;
@@ -7285,6 +7435,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const resetSectionColor = async (section) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const sid = section.id ?? section.localId;
     const result = await updateProjectSection(sid, { header_color: null }, section);
     if (result.error) { setNotice(humanizeError(result.error, 'Nie udało się przywrócić koloru sekcji')); return; }
@@ -7293,6 +7444,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   };
 
   const removeSection = async (section) => {
+    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
     const sid = section.id ?? section.localId;
     const sectionTasks = tasks.filter((t) => !t.archived && String(t.section_id) === String(sid));
     setSectionMenu(null);
@@ -7353,7 +7505,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     },
     {
       key: 'status', label: 'Status',
-      renderCell: (row) => <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} />
+            renderCell: (row) => canEditProjectItems ? <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(s) => setTaskStatus(row._task, s)} /> : <StatusPill value={row.status} />
     },
     { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'due_date', label: 'Termin' },
@@ -7369,7 +7521,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
   }));
 
   const taskCustomActions = [
-    { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCheck, visible: (row) => !isCompletedStatus(row.status), onClick: (row) => setTaskStatus(row._task, WORK_DONE_STATUS) }
+    { key: 'done', label: 'Oznacz jako zrobione', icon: CheckCheck, visible: (row) => canEditProjectItems && !isCompletedStatus(row.status), onClick: (row) => setTaskStatus(row._task, WORK_DONE_STATUS) }
   ];
 
   const historyTaskColumns = [
@@ -7388,7 +7540,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
   return <>
     <ResizableModalFrame storageKey="fixer-project-modal" defaultSize={{ width: 900, height: 640 }} minSize={{ width: 640, height: 480 }} eyebrow="Projekt" title={isNew ? 'Nowy projekt' : String(project?.name || 'Projekt bez nazwy')} onClose={onClose}
-      footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary><ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{isNew ? 'Utwórz projekt' : 'Zapisz'}</ButtonPrimary></>}>
+      footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary>{canSaveProject && <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{isNew ? 'Utwórz projekt' : 'Zapisz'}</ButtonPrimary>}</>}>
       {notice && <div className="notice">{notice}</div>}
       <div className="record-tabs" role="tablist">
         {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
@@ -7396,23 +7548,23 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
       {activeTab === 'data' && <div className="service-order-form-body">
         <FormField label="Nazwa projektu *">
-          <AppInput value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nazwa projektu" autoFocus={isNew} />
+          <AppInput value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Nazwa projektu" autoFocus={isNew} readOnly={!canSaveProject} />
         </FormField>
         <div className="service-order-strip project-main-strip">
           <FormField label="Status">
-            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(e) => set('status', e.target.value)}>
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(e) => set('status', e.target.value)} disabled={!canSaveProject}>
               {WORK_STATUSES.map((s) => <option key={s}>{s}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(e) => set('priority', e.target.value)}>
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(e) => set('priority', e.target.value)} disabled={!canSaveProject}>
               {workPriorities.map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
           </FormField>
         </div>
         <div className="project-date-row">
-          <FormField label="Start"><AppInput type="date" value={form.start_date} onChange={(e) => set('start_date', e.target.value)} /></FormField>
-          <FormField label="Termin"><AppInput type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} /></FormField>
+          <FormField label="Start"><AppInput type="date" value={form.start_date} onChange={(e) => set('start_date', e.target.value)} readOnly={!canSaveProject} /></FormField>
+          <FormField label="Termin"><AppInput type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} readOnly={!canSaveProject} /></FormField>
         </div>
         <div className="project-meta-row">
           <FormField label="Kolor projektu">
@@ -7427,6 +7579,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
                   className="project-accent-color-input"
                   value={normalizeAccentColor(form.accent_color) || '#2563EB'}
                   onChange={(event) => set('accent_color', event.target.value.toUpperCase())}
+                  disabled={!canSaveProject}
                   aria-label="Wybierz kolor projektu"
                 />
               </label>
@@ -7434,6 +7587,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
                 value={form.accent_color ?? ''}
                 onChange={(event) => set('accent_color', event.target.value)}
                 placeholder="Domyślny akcent motywu"
+                readOnly={!canSaveProject}
               />
             </div>
           </FormField>
@@ -7441,19 +7595,19 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
             <div className="client-choice-row">
               {selectedClient
                 ? <span className="project-client-chip"><strong>{selectedClient.name}</strong><span className="project-client-actions"><button type="button" className="project-icon-action" onClick={() => setClientPickerOpen(true)} aria-label="Zmień klienta" title="Zmień klienta"><Search size={14} /></button><button type="button" className="project-icon-action danger-action" onClick={() => set('client_id', '')} aria-label="Usuń powiązanie klienta" title="Usuń powiązanie klienta"><X size={14} /></button></span></span>
-                : <ButtonSecondary size="sm" onClick={() => setClientPickerOpen(true)}>Wybierz klienta</ButtonSecondary>}
+                : canSaveProject && <ButtonSecondary size="sm" onClick={() => setClientPickerOpen(true)}>Wybierz klienta</ButtonSecondary>}
             </div>
           </FormField>
         </div>
         <FormField label="Opis">
-          <AppTextarea resizeKey="fixer:ui-resize:project-editor:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." />
+          <AppTextarea resizeKey="fixer:ui-resize:project-editor:description" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} placeholder="Opis projektu, cel, zakres..." readOnly={!canSaveProject} />
         </FormField>
       </div>}
 
       {activeTab === 'tasks' && <div className="project-tasks-panel">
         <div className="project-tasks-toolbar">
-          <AppButton variant="primary" className="compact-table-button" size="sm" onClick={() => openNewTask(null)}><Plus size={14} />Nowe zadanie</AppButton>
-          <AppButton variant="secondary" className="compact-table-button project-section-add-button" size="sm" onClick={openSectionModal}><Plus size={14} />Sekcja</AppButton>
+          {canCreateProjectItems && <AppButton variant="primary" className="compact-table-button" size="sm" onClick={() => openNewTask(null)}><Plus size={14} />Nowe zadanie</AppButton>}
+          {canCreateProjectItems && <AppButton variant="secondary" className="compact-table-button project-section-add-button" size="sm" onClick={openSectionModal}><Plus size={14} />Sekcja</AppButton>}
         </div>
         {tasksLoading && <div className="loading-line">Ładowanie zadań...</div>}
         {!tasksLoading && <div className="project-sections-list" ref={projectTasksListRef} tabIndex={-1}>
@@ -7478,8 +7632,8 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
                 columns={makeTaskColumns(skey)}
                 rows={makeTaskRows(sectionTasks)}
                 onOpen={openEditTask}
-                onEdit={openEditTask}
-                onDelete={deleteTask}
+                onEdit={canEditProjectItems ? openEditTask : null}
+                onDelete={canDeleteProjectItems ? deleteTask : null}
                 openLabel="Otwórz zadanie"
                 editLabel="Edytuj zadanie"
                 deleteLabel="Usuń zadanie"
@@ -7499,8 +7653,8 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
               columns={makeTaskColumns('pt-unsect')}
               rows={makeTaskRows(unsectionedTasks)}
               onOpen={openEditTask}
-              onEdit={openEditTask}
-              onDelete={deleteTask}
+              onEdit={canEditProjectItems ? openEditTask : null}
+              onDelete={canDeleteProjectItems ? deleteTask : null}
               openLabel="Otwórz zadanie"
               editLabel="Edytuj zadanie"
               deleteLabel="Usuń zadanie"
@@ -7513,7 +7667,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
         {historyTaskRows.length > 0 && <HistorySection title="Historia zadań" count={historyTaskRows.length} collapsed={historyTasksCollapsed} onToggle={() => setHistoryTasksCollapsed((value) => !value)} className="project-history-section">
           <DataTable storageKey={`pt-hist-${projectId?.slice(0,8) ?? 'new'}`} columns={historyTaskColumns} rows={historyTaskRows} enableSelectionActions={false}
             onOpen={openEditTask} openLabel="Podgląd zadania"
-            customRowActions={[{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: WORK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }]}
+            customRowActions={canEditProjectItems ? [{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: WORK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }] : []}
           />
         </HistorySection>}
         {sectionMenu && <ProjectSectionContextMenu
@@ -7522,21 +7676,21 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
           y={sectionMenu.y}
           colorTheme={colorTheme}
           onClose={() => setSectionMenu(null)}
-          onChangeColor={(nextColor) => saveSectionColor(sectionMenu.section, nextColor)}
-          onResetColor={() => resetSectionColor(sectionMenu.section)}
-          onAddTask={() => {
+          onChangeColor={canEditProjectItems ? (nextColor) => saveSectionColor(sectionMenu.section, nextColor) : null}
+          onResetColor={canEditProjectItems ? () => resetSectionColor(sectionMenu.section) : null}
+          onAddTask={canCreateProjectItems ? () => {
             const sid = sectionMenu.section.id ?? sectionMenu.section.localId;
             setSectionMenu(null);
             openNewTask(sid);
-          }}
-          onRename={() => openSectionRename(sectionMenu.section)}
-          onDelete={() => removeSection(sectionMenu.section)}
+          } : null}
+          onRename={canEditProjectItems ? () => openSectionRename(sectionMenu.section) : null}
+          onDelete={canDeleteProjectItems ? () => removeSection(sectionMenu.section) : null}
         />}
       </div>}
 
       {activeTab === 'notes' && <div className="service-order-form-body">
         <FormField label="Notatki">
-          <AppTextarea resizeKey="fixer:ui-resize:project-editor:notes" value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={10} placeholder="Notatki do projektu..." />
+          <AppTextarea resizeKey="fixer:ui-resize:project-editor:notes" value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={10} placeholder="Notatki do projektu..." readOnly={!canSaveProject} />
         </FormField>
       </div>}
     </ResizableModalFrame>
@@ -7545,7 +7699,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
 
     {clientEditorOpen && <ClientEditor client={null} initialTab="data" onClose={() => { setClientEditorOpen(false); setClientPickerOpen(true); }} onSave={saveNewClientFromProject} />}
 
-    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} permissions={permissions} commentAuthor={commentAuthor} />}
 
     {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={closeSectionModal} footer={<><ButtonSecondary onClick={closeSectionModal}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
       <FormField label="Nazwa sekcji" error={sectionNameError}>
@@ -7846,7 +8000,7 @@ function ProjectSectionContextMenu({
     >
       <div className="context-menu-title">Sekcja · {section.name}</div>
 
-      <div className="project-section-menu-color-block">
+      {onChangeColor && <div className="project-section-menu-color-block">
         <div className="project-section-menu-color-label">Kolor paska</div>
         <div className="project-section-color-palette" role="group" aria-label="Presety koloru paska">
           {PROJECT_SECTION_COLOR_PRESETS.map((preset) => {
@@ -7882,13 +8036,13 @@ function ProjectSectionContextMenu({
             />
           </label>
         </div>
-      </div>
+      </div>}
 
       <div className="context-menu-separator" aria-hidden="true" />
 
       {onRename && <button type="button" onClick={() => runAction(onRename)}><Pencil size={14} />Zmień nazwę sekcji</button>}
-      <button type="button" onClick={() => runAction(onAddTask)}><Plus size={14} />Dodaj zadanie do sekcji</button>
-      <button type="button" className="danger-action" onClick={() => runAction(onDelete)}><Trash2 size={14} />Usuń sekcję</button>
+      {onAddTask && <button type="button" onClick={() => runAction(onAddTask)}><Plus size={14} />Dodaj zadanie do sekcji</button>}
+      {onDelete && <button type="button" className="danger-action" onClick={() => runAction(onDelete)}><Trash2 size={14} />Usuń sekcję</button>}
     </div>,
     document.body
   );
@@ -7919,7 +8073,7 @@ function getSavedProjectDetailsCollapsed() {
   return localStorage.getItem(PROJECT_DETAILS_COLLAPSED_KEY) === 'true';
 }
 
-function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
+function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const taskId = task?.id ?? task?.localId;
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -7929,6 +8083,9 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   const [editingCommentText, setEditingCommentText] = useState('');
   const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const canCreateProjectItems = permissions.create === true;
+  const canEditProjectItems = permissions.edit === true;
+  const canDeleteProjectItems = permissions.delete === true;
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -7942,8 +8099,9 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   useEffect(() => { loadComments(); }, [taskId]);
 
   const addComment = async () => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     if (!newComment.trim()) return;
-    const result = await createTaskComment(taskId, newComment, PROJECT_TASK_COMMENT_TYPES[0] ?? 'Komentarz', demoUser.name);
+    const result = await createTaskComment(taskId, newComment, PROJECT_TASK_COMMENT_TYPES[0] ?? 'Komentarz', commentAuthor);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setNewComment('');
     await loadComments();
@@ -7951,6 +8109,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const removeComment = async (comment) => {
+    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
     setCommentContextMenu(null);
     setConfirmDialog({
       title: 'Usuń komentarz',
@@ -7969,6 +8128,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const saveCommentEdit = async (comment) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const nextBody = editingCommentText.trim();
     if (!nextBody) return;
     const result = await updateTaskComment(comment.id ?? comment.localId, nextBody, comment);
@@ -7980,6 +8140,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const startCommentEdit = (comment) => {
+    if (!canEditProjectItems) return;
     setCommentContextMenu(null);
     setEditingCommentId(comment.id ?? comment.localId);
     setEditingCommentText(comment.body);
@@ -7991,6 +8152,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const openCommentContextMenu = (event, comment) => {
+    if (!canEditProjectItems && !canDeleteProjectItems) return;
     event.preventDefault();
     event.stopPropagation();
     setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
@@ -8009,18 +8171,22 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
 
   return <div className="project-task-inline-comments">
     {notice && <div className="notice">{notice}</div>}
-    <div className="project-comments-add">
-      <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+    {canCreateProjectItems && <div className="project-comments-add">
+      <div className="project-comment-field">
+        <span className="project-comment-label">Komentarz</span>
+        <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+      </div>
       <div className="project-comment-add-actions">
         <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
       </div>
-    </div>
+    </div>}
     <div className="project-comments-list">
       {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
-      {!loading && comments.map((comment) => {
+      {!loading && comments.map((comment, index) => {
         const isEditing = editingCommentId === (comment.id ?? comment.localId);
         return <div
-          className={`project-comment-row project-comment-interactive-row ${isEditing ? 'is-editing' : ''}`}
+          className={`project-comment-row project-comment-interactive-row ${index % 2 === 1 ? 'is-alt' : ''} ${isEditing ? 'is-editing' : ''}`.trim()}
+          style={{ '--project-comment-author-color': getCommentAuthorAccentColor(comment) }}
           key={comment.id ?? comment.localId}
           onDoubleClick={() => !isEditing && startCommentEdit(comment)}
           onContextMenu={(event) => !isEditing && openCommentContextMenu(event, comment)}
@@ -8046,14 +8212,14 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark' }) {
       colorTheme={colorTheme}
       onClose={() => setCommentContextMenu(null)}
       items={[
-        { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) },
-        { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) }
-      ]}
+        canEditProjectItems ? { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) } : null,
+        canDeleteProjectItems ? { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) } : null
+      ].filter(Boolean)}
     />}
   </div>;
 }
 
-function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
+function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const taskId = task?.id ?? task?.localId;
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -8063,6 +8229,9 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   const [editingCommentText, setEditingCommentText] = useState('');
   const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const canCreateProjectItems = permissions.create === true;
+  const canEditProjectItems = permissions.edit === true;
+  const canDeleteProjectItems = permissions.delete === true;
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -8077,8 +8246,9 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   useEffect(() => { loadComments(); }, [taskId]);
 
   const addComment = async () => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     if (!newComment.trim()) return;
-    const result = await createOrganizerTaskComment(taskId, newComment, PROJECT_TASK_COMMENT_TYPES[0] ?? 'Komentarz', demoUser.name);
+    const result = await createOrganizerTaskComment(taskId, newComment, PROJECT_TASK_COMMENT_TYPES[0] ?? 'Komentarz', commentAuthor.author);
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setNewComment('');
     await loadComments();
@@ -8086,6 +8256,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const removeComment = async (comment) => {
+    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
     setCommentContextMenu(null);
     setConfirmDialog({
       title: 'Usuń komentarz',
@@ -8104,6 +8275,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const saveCommentEdit = async (comment) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const nextBody = editingCommentText.trim();
     if (!nextBody) return;
     const result = await updateOrganizerTaskComment(comment.id ?? comment.localId, nextBody, comment);
@@ -8115,6 +8287,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const startCommentEdit = (comment) => {
+    if (!canEditProjectItems) return;
     setCommentContextMenu(null);
     setEditingCommentId(comment.id ?? comment.localId);
     setEditingCommentText(comment.body);
@@ -8126,6 +8299,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   };
 
   const openCommentContextMenu = (event, comment) => {
+    if (!canEditProjectItems && !canDeleteProjectItems) return;
     event.preventDefault();
     event.stopPropagation();
     setCommentContextMenu({ x: event.clientX, y: event.clientY, comment });
@@ -8145,18 +8319,22 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
   return <div className={`simple-task-comments ${comments.length > 0 ? 'has-comments' : ''}`}>
     <div className="simple-task-comments-title">Komentarze / postęp <span>({comments.length})</span></div>
     {notice && <div className="notice">{notice}</div>}
-    <div className="project-comments-add">
-      <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza lub postępu..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+    {canCreateProjectItems && <div className="project-comments-add">
+      <div className="project-comment-field">
+        <span className="project-comment-label">Komentarz</span>
+        <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza lub postępu..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+      </div>
       <div className="project-comment-add-actions">
         <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
       </div>
-    </div>
+    </div>}
     <div className="project-comments-list">
       {loading && <div className="loading-line">Ładowanie komentarzy...</div>}
-      {!loading && comments.map((comment) => {
+      {!loading && comments.map((comment, index) => {
         const isEditing = editingCommentId === (comment.id ?? comment.localId);
         return <div
-          className={`project-comment-row project-comment-interactive-row ${isEditing ? 'is-editing' : ''}`}
+          className={`project-comment-row project-comment-interactive-row ${index % 2 === 1 ? 'is-alt' : ''} ${isEditing ? 'is-editing' : ''}`.trim()}
+          style={{ '--project-comment-author-color': getCommentAuthorAccentColor(comment) }}
           key={comment.id ?? comment.localId}
           onDoubleClick={() => !isEditing && startCommentEdit(comment)}
           onContextMenu={(event) => !isEditing && openCommentContextMenu(event, comment)}
@@ -8182,14 +8360,14 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark' }) {
       colorTheme={colorTheme}
       onClose={() => setCommentContextMenu(null)}
       items={[
-        { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) },
-        { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) }
-      ]}
+        canEditProjectItems ? { key: 'edit', label: 'Edytuj komentarz', icon: <Pencil size={14} />, onClick: () => startCommentEdit(commentContextMenu.comment) } : null,
+        canDeleteProjectItems ? { key: 'delete', label: 'Usuń komentarz', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => removeComment(commentContextMenu.comment) } : null
+      ].filter(Boolean)}
     />}
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, refreshKey = 0, style = null }) {
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, refreshKey = 0, style = null, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -8213,6 +8391,9 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const sectionItemClickTimeoutRef = useRef(null);
   const taskDragRef = useRef(null);
   const suppressTaskClickRef = useRef(false);
+  const canCreateProjectItems = permissions.create === true;
+  const canEditProjectItems = permissions.edit === true;
+  const canDeleteProjectItems = permissions.delete === true;
 
   useEffect(() => () => {
     if (sectionItemClickTimeoutRef.current) window.clearTimeout(sectionItemClickTimeoutRef.current);
@@ -8253,6 +8434,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   }, [latestTask?.id, latestTask?.localId, latestTask?.title, latestTask?.status, latestTask?.priority, latestTask?.due_date, latestTask?.reminder_at, latestTask?.section_id, latestTask?.completed_at, latestTask?.archived, projectId]);
 
   const openNewTask = (sectionId = null) => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     if (sectionId) {
       setCollapsedSections((current) => {
         const next = new Set(current);
@@ -8265,6 +8447,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const saveTask = async (taskForm) => {
+    if (!taskForm.id && !taskForm.localId && !canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
+    if ((taskForm.id || taskForm.localId) && !canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const tid = taskForm.id ?? taskForm.localId;
     const completed = isCompletedStatus(taskForm.status);
     const payload = completed
@@ -8281,6 +8465,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
 
   const toggleTaskDone = async (task) => {
     if (!task) return;
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const tid = task.id ?? task.localId;
     const done = isCompletedStatus(task.status);
     await updateProjectTask(tid, done
@@ -8303,6 +8488,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const unsectionedTasks = displayTasks.filter((task) => !task.section_id).sort(comparePanelTasks);
 
   const addSection = async () => {
+    if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     const sectionName = newSectionName.trim();
     if (!sectionName) { setSectionNameError('Podaj nazwę sekcji.'); return; }
     if (sectionName.length > 100) { setSectionNameError('Nazwa sekcji może mieć maksymalnie 100 znaków.'); return; }
@@ -8319,6 +8505,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const saveSectionName = async (section, nextName) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return false; }
     const sid = section.id ?? section.localId;
     const result = await updateProjectSection(sid, nextName, section);
     if (result.error) {
@@ -8335,11 +8522,13 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const openSectionRename = (section) => {
+    if (!canEditProjectItems) return;
     setSectionMenu(null);
     setSectionRenameTarget(section);
   };
 
   const saveSectionColor = async (section, nextColor) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const sid = section.id ?? section.localId;
     const normalized = normalizeAccentColor(nextColor);
     if (!normalized) return;
@@ -8361,6 +8550,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const resetSectionColor = async (section) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return; }
     const sid = section.id ?? section.localId;
     const result = await updateProjectSection(sid, { header_color: null }, section);
     if (result.error) {
@@ -8372,6 +8562,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const openSectionMenu = (event, section) => {
+    if (!canCreateProjectItems && !canEditProjectItems && !canDeleteProjectItems) return;
     event.preventDefault();
     event.stopPropagation();
     setSectionMenu({ x: event.clientX, y: event.clientY, section });
@@ -8387,6 +8578,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const removeSection = async (section, sectionTasks = []) => {
+    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
     const sid = String(section.id ?? section.localId);
     setSectionMenu(null);
     if (sectionTasks.length > 0) {
@@ -8437,11 +8629,13 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const openEditSectionItem = (task) => {
+    if (!canEditProjectItems) return;
     setTaskContextMenu(null);
     onOpenTask?.(task);
   };
 
   const openTaskContextMenu = (event, task) => {
+    if (!canEditProjectItems && !canCreateProjectItems && !canDeleteProjectItems) return;
     event.preventDefault();
     event.stopPropagation();
     setTaskContextMenu({ x: event.clientX, y: event.clientY, task });
@@ -8458,6 +8652,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const deletePanelTask = (task) => {
+    if (!canDeleteProjectItems) { setNotice('Brak uprawnienia projects.delete.'); return; }
     setTaskContextMenu(null);
     setConfirmDialog({
       title: 'Usuń zadanie',
@@ -8499,6 +8694,10 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const startTaskDrag = (event, task, sectionId) => {
+    if (!canEditProjectItems) {
+      event.preventDefault();
+      return;
+    }
     if (event.target.closest('.project-task-done-toggle, .project-detail-task-comments')) {
       event.preventDefault();
       return;
@@ -8549,6 +8748,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const moveProjectTaskToSection = async (task, targetSectionId, targetIndex = null) => {
+    if (!canEditProjectItems) { setNotice('Brak uprawnienia projects.edit.'); return false; }
     const taskId = task?.id ?? task?.localId;
     if (!taskId) return false;
     const targetSectionKey = getSectionKey(targetSectionId);
@@ -8614,6 +8814,10 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const finishTaskDrop = async (event, sectionId, sectionTasks) => {
+    if (!canEditProjectItems) {
+      event.preventDefault();
+      return;
+    }
     const sectionKey = getSectionKey(sectionId);
     const drag = taskDragRef.current;
     if (!drag) return;
@@ -8725,7 +8929,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     return <div
       className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''} ${String(selectedTaskKey ?? '') === taskKey ? 'is-selected' : ''} ${dragging ? 'is-dragging' : ''} ${dropBefore ? 'is-drop-before' : ''} ${dropAfter ? 'is-drop-after' : ''}`}
       key={taskKey}
-      draggable
+      draggable={canEditProjectItems}
       onDragStart={(event) => startTaskDrag(event, task, sectionId)}
       onDragOver={(event) => updateTaskDragTarget(event, sectionId, getTaskDropIndex(event, sectionId))}
       onDragEnd={endTaskDrag}
@@ -8736,9 +8940,9 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
         className="project-detail-task-row"
         onContextMenu={(event) => openTaskContextMenu(event, task)}
       >
-        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskDone(task); }} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
+        {canEditProjectItems && <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskDone(task); }} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
           {done && <CheckCircle2 size={16} />}
-        </button>
+        </button>}
         <button
           type="button"
           className="project-detail-task-main"
@@ -8753,7 +8957,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
         </button>
         <button type="button" className={`project-detail-task-comments ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
       </div>
-      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} colorTheme={colorTheme} />}
+      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />}
     </div>;
   };
 
@@ -8798,8 +9002,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     {!project && <EmptyState title="Wybierz projekt z listy." />}
     {project && <div className="project-details-body">
       <div className="project-details-toolbar project-board-actions">
-        <AppButton variant="primary" className="module-action-button project-board-action-button" onClick={() => openNewTask(null)}><Plus size={15} />Dodaj zadanie</AppButton>
-        <AppButton variant="secondary" className="module-action-button project-board-action-button" onClick={() => { setNewSectionName(''); setSectionNameError(''); setSectionModalOpen(true); }}><Columns3 size={15} />Dodaj sekcję</AppButton>
+        {canCreateProjectItems && <AppButton variant="primary" className="module-action-button project-board-action-button" onClick={() => openNewTask(null)}><Plus size={15} />Dodaj zadanie</AppButton>}
+        {canCreateProjectItems && <AppButton variant="secondary" className="module-action-button project-board-action-button" onClick={() => { setNewSectionName(''); setSectionNameError(''); setSectionModalOpen(true); }}><Columns3 size={15} />Dodaj sekcję</AppButton>}
       </div>
       <div className="project-details-body-scroll">
         {notice && <div className="notice">{notice}</div>}
@@ -8821,8 +9025,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
               <button type="button" className="project-detail-section-toggle" onClick={() => toggleSection(sid)}>
                 <span>{sectionCollapsed ? '▸' : '▾'}</span><strong onDoubleClick={(event) => { event.stopPropagation(); openSectionRename(section); }}>{section.name}</strong><em>({sectionTasks.length})</em>
               </button>
-              <button type="button" className="project-detail-section-action" onClick={(event) => { event.stopPropagation(); openNewTask(sid); }} aria-label={`Dodaj zadanie do sekcji ${section.name}`} title="Dodaj zadanie do sekcji"><Plus size={13} /></button>
-              <button type="button" className="project-detail-section-delete" onClick={(event) => { event.stopPropagation(); removeSection(section, sectionTasks); }} aria-label={`Usuń sekcję ${section.name}`} title="Usuń sekcję"><Trash2 size={13} /></button>
+              {canCreateProjectItems && <button type="button" className="project-detail-section-action" onClick={(event) => { event.stopPropagation(); openNewTask(sid); }} aria-label={`Dodaj zadanie do sekcji ${section.name}`} title="Dodaj zadanie do sekcji"><Plus size={13} /></button>}
+              {canDeleteProjectItems && <button type="button" className="project-detail-section-delete" onClick={(event) => { event.stopPropagation(); removeSection(section, sectionTasks); }} aria-label={`Usuń sekcję ${section.name}`} title="Usuń sekcję"><Trash2 size={13} /></button>}
             </div>
             {!sectionCollapsed && renderTaskList(sectionTasks, sid)}
           </section>;
@@ -8838,7 +9042,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       </div>}
       </div>
     </div>}
-    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} />}
+    {taskEditorOpen && <ProjectTaskEditor task={editingTask} projectId={projectId} sections={sections} workPriorities={workPriorities} onClose={() => { setTaskEditorOpen(false); setEditingTask(null); }} onSave={saveTask} permissions={permissions} commentAuthor={commentAuthor} />}
     {sectionModalOpen && <ModalFrame className="project-section-modal" title="Nowa sekcja" onClose={() => setSectionModalOpen(false)} footer={<><ButtonSecondary onClick={() => setSectionModalOpen(false)}>Anuluj</ButtonSecondary><ButtonPrimary onClick={addSection}><Plus size={15} />Dodaj</ButtonPrimary></>}>
       <FormField label="Nazwa sekcji" error={sectionNameError}>
         <AppInput value={newSectionName} onChange={(event) => { setNewSectionName(event.target.value.slice(0, 100)); setSectionNameError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') addSection(); }} maxLength={100} autoFocus />
@@ -8850,18 +9054,18 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       y={sectionMenu.y}
       colorTheme={colorTheme}
       onClose={() => setSectionMenu(null)}
-      onChangeColor={(nextColor) => saveSectionColor(sectionMenu.section, nextColor)}
-      onResetColor={() => resetSectionColor(sectionMenu.section)}
-      onAddTask={() => {
+      onChangeColor={canEditProjectItems ? (nextColor) => saveSectionColor(sectionMenu.section, nextColor) : null}
+      onResetColor={canEditProjectItems ? () => resetSectionColor(sectionMenu.section) : null}
+      onAddTask={canCreateProjectItems ? () => {
         const sid = sectionMenu.section.id ?? sectionMenu.section.localId;
         setSectionMenu(null);
         openNewTask(sid);
-      }}
-      onRename={() => openSectionRename(sectionMenu.section)}
-      onDelete={() => {
+      } : null}
+      onRename={canEditProjectItems ? () => openSectionRename(sectionMenu.section) : null}
+      onDelete={canDeleteProjectItems ? () => {
         const section = sectionMenu.section;
         removeSection(section, tasksBySection(String(section.id ?? section.localId)));
-      }}
+      } : null}
     />}
     {sectionRenameTarget && <ProjectSectionRenameModal
       section={sectionRenameTarget}
@@ -8875,21 +9079,21 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       colorTheme={colorTheme}
       onClose={() => setTaskContextMenu(null)}
       items={[
-        { key: 'edit', label: 'Pokaż szczegóły', icon: <Pencil size={14} />, onClick: () => openEditSectionItem(taskContextMenu.task) },
-        { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => addCommentToTask(taskContextMenu.task) },
-        {
+        canEditProjectItems ? { key: 'edit', label: 'Pokaż szczegóły', icon: <Pencil size={14} />, onClick: () => openEditSectionItem(taskContextMenu.task) } : null,
+        canCreateProjectItems ? { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => addCommentToTask(taskContextMenu.task) } : null,
+        canEditProjectItems ? {
           key: 'toggle-done',
           label: isCompletedStatus(taskContextMenu.task?.status) ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
           icon: <CheckCheck size={14} />,
           onClick: () => toggleTaskDone(taskContextMenu.task)
-        },
-        { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => deletePanelTask(taskContextMenu.task) }
-      ]}
+        } : null,
+        canDeleteProjectItems ? { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: () => deletePanelTask(taskContextMenu.task) } : null
+      ].filter(Boolean)}
     />}
   </PanelTag>;
 }
 
-function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveProject, autosaveRef = null, allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
+function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveProject, autosaveRef = null, allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true } }) {
   const projectId = project?.id ?? project?.localId;
   const projectAccentColor = resolveProjectAccentColor(project);
   const [form, setForm] = useState(() => ({}));
@@ -8898,6 +9102,7 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
   const formRef = useRef({});
   const dirtyRef = useRef(false);
   const savingRef = useRef(Promise.resolve());
+  const canEditProjectItems = permissions.edit === true;
 
   const buildFormFromProject = () => {
     const safeProject = project ?? {};
@@ -8926,6 +9131,7 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
   };
 
   const saveDraft = (draft = formRef.current) => {
+    if (!canEditProjectItems) return savingRef.current;
     const draftProjectId = draft?.id ?? draft?.localId;
     if (!draftProjectId || !dirtyRef.current) return savingRef.current;
     if (!String(draft.name ?? '').trim()) {
@@ -8999,6 +9205,7 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
   };
 
   const set = (field, value, options = {}) => {
+    if (!canEditProjectItems) return;
     const next = { ...formRef.current, [field]: value };
     formRef.current = next;
     dirtyRef.current = true;
@@ -9035,40 +9242,41 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
     {project && <div className="project-details-body">
       <div className="project-details-body-scroll project-inspector-fields">
         {notice && <div className="notice">{notice}</div>}
+        {!canEditProjectItems && <div className="notice">Tryb tylko do odczytu: brak uprawnienia projects.edit.</div>}
         <FormField label="Nazwa projektu *">
-          <AppInput value={form.name ?? ''} onChange={(event) => set('name', event.target.value)} />
+          <AppInput value={form.name ?? ''} onChange={(event) => set('name', event.target.value)} readOnly={!canEditProjectItems} />
         </FormField>
         <div className="project-inspector-grid">
           <FormField label="Status">
-            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })}>
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
               {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })}>
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
               {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Start">
-            <AppInput type="date" value={form.start_date ?? ''} onChange={(event) => set('start_date', event.target.value, { immediate: true })} />
+            <AppInput type="date" value={form.start_date ?? ''} onChange={(event) => set('start_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
           </FormField>
           <FormField label="Termin">
-            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} />
+            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
           </FormField>
         </div>
         <FormField label="Kolor projektu">
           <div className="project-accent-field">
             <label className="project-accent-color-swatch" style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }} title="Wybierz kolor projektu">
-              <input type="color" className="project-accent-color-input" value={normalizeAccentColor(form.accent_color) || '#2563EB'} onChange={(event) => set('accent_color', event.target.value.toUpperCase(), { immediate: true })} aria-label="Wybierz kolor projektu" />
+              <input type="color" className="project-accent-color-input" value={normalizeAccentColor(form.accent_color) || '#2563EB'} onChange={(event) => set('accent_color', event.target.value.toUpperCase(), { immediate: true })} aria-label="Wybierz kolor projektu" disabled={!canEditProjectItems} />
             </label>
-            <AppInput value={form.accent_color ?? ''} onChange={(event) => set('accent_color', event.target.value, { immediate: true })} placeholder="Domyślny akcent motywu" />
+            <AppInput value={form.accent_color ?? ''} onChange={(event) => set('accent_color', event.target.value, { immediate: true })} placeholder="Domyślny akcent motywu" readOnly={!canEditProjectItems} />
           </div>
         </FormField>
         <FormField label="Opis">
-          <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} />
+          <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
         </FormField>
         <FormField label="Notatki">
-          <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:notes`} value={form.notes ?? ''} onChange={(event) => set('notes', event.target.value)} rows={5} />
+          <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:notes`} value={form.notes ?? ''} onChange={(event) => set('notes', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
         </FormField>
         {project.clients?.name && <div className="project-inspector-related"><span>Klient</span><strong>{project.clients.name}</strong></div>}
       </div>
@@ -9076,7 +9284,7 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
   </aside>;
 }
 
-function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark' }) {
+function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const taskId = task?.id ?? task?.localId;
   const taskProjectId = task?.project_id;
   const [form, setForm] = useState(() => ({}));
@@ -9087,6 +9295,8 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
   const dirtyRef = useRef(false);
   const savingRef = useRef(Promise.resolve());
   const done = isCompletedStatus(form.status);
+  const canEditProjectItems = permissions.edit === true;
+  const canDeleteProjectItems = permissions.delete === true;
 
   const buildFormFromTask = () => {
     const safeTask = task ?? {};
@@ -9114,6 +9324,7 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
   };
 
   const saveDraft = (draft = formRef.current) => {
+    if (!canEditProjectItems) return savingRef.current;
     const draftTaskId = draft?.id ?? draft?.localId;
     if (!draftTaskId || !dirtyRef.current) return savingRef.current;
     if (!String(draft.title ?? '').trim()) {
@@ -9207,6 +9418,7 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
   };
 
   const set = (field, value, options = {}) => {
+    if (!canEditProjectItems) return;
     const next = { ...formRef.current, [field]: value };
     formRef.current = next;
     dirtyRef.current = true;
@@ -9241,54 +9453,58 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     {!task && <EmptyState title="Wybierz zadanie." />}
     {task && <div className="project-details-body">
       <div className="project-details-toolbar">
-        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>{done && <CheckCircle2 size={16} />}</button>
-        <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>
+        {canEditProjectItems && <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>{done && <CheckCircle2 size={16} />}</button>}
+        {canDeleteProjectItems && <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>}
       </div>
       <div className="project-details-body-scroll project-inspector-fields">
         {notice && <div className="notice">{notice}</div>}
+        {!canEditProjectItems && <div className="notice">Tryb tylko do odczytu: brak uprawnienia projects.edit.</div>}
         <FormField label="Nazwa zadania *">
-          <AppInput value={form.title ?? ''} onChange={(event) => set('title', event.target.value)} />
+          <AppInput value={form.title ?? ''} onChange={(event) => set('title', event.target.value)} readOnly={!canEditProjectItems} />
         </FormField>
         <div className="project-inspector-grid">
           <FormField label="Status">
-            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })}>
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
               {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Priorytet">
-            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })}>
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
               {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Sekcja">
-            <AppSelect value={form.section_id ?? ''} onChange={(event) => set('section_id', event.target.value, { immediate: true })}>
+            <AppSelect value={form.section_id ?? ''} onChange={(event) => set('section_id', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
               <option value="">Bez sekcji</option>
               {sections.map((section) => <option key={section.id ?? section.localId} value={section.id ?? section.localId}>{section.name}</option>)}
             </AppSelect>
           </FormField>
           <FormField label="Termin">
-            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} />
+            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
           </FormField>
           <FormField label="Przypomnienie">
-            <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value, { immediate: true })} />
+            <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
           </FormField>
         </div>
         <FormField label="Opis">
-          <AppTextarea resizeKey={`fixer:ui-resize:project-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} />
+          <AppTextarea resizeKey={`fixer:ui-resize:project-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
         </FormField>
-        <ProjectTaskInlineComments task={task} onChanged={onChanged} colorTheme={colorTheme} />
+        <ProjectTaskInlineComments task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
       </div>
     </div>}
   </aside>;
 }
 
-function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose = null, onEditTask, onStatusChange, onDeleteTask, onChanged, colorTheme = 'dark' }) {
+function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose = null, onEditTask, onStatusChange, onDeleteTask, onChanged, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const done = Boolean(task?.archived) || isCompletedStatus(task?.status);
   const title = String(task?.title ?? '').trim() || 'Zadanie bez tytułu';
   const [taskContextMenu, setTaskContextMenu] = useState(null);
+  const canEditProjectItems = permissions.edit === true;
+  const canDeleteProjectItems = permissions.delete === true;
 
   const openTaskContextMenu = (event) => {
     if (!task) return;
+    if (!canEditProjectItems && !canDeleteProjectItems) return;
     event.preventDefault();
     event.stopPropagation();
     setTaskContextMenu({ x: event.clientX, y: event.clientY });
@@ -9296,6 +9512,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
 
   const handleDeleteTask = () => {
     if (!task) return;
+    if (!canDeleteProjectItems) return;
     setTaskContextMenu(null);
     onDeleteTask?.(task);
   };
@@ -9320,16 +9537,16 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
     {!task && <EmptyState title="Wybierz zadanie lub projekt z listy." />}
     {task && <div className="project-details-body">
       <div className="project-details-toolbar">
-        <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
+        {canEditProjectItems && <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
           {done && <CheckCircle2 size={16} />}
-        </button>
+        </button>}
       </div>
       <div className="project-details-body-scroll">
         <div
           className={`simple-task-details-card ${done ? 'is-done' : ''} project-comment-interactive-row`}
-          onDoubleClick={() => onEditTask(task)}
+          onDoubleClick={() => canEditProjectItems && onEditTask(task)}
           onContextMenu={openTaskContextMenu}
-          onKeyDown={(event) => { if (event.key === 'Enter') onEditTask(task); }}
+          onKeyDown={(event) => { if (event.key === 'Enter' && canEditProjectItems) onEditTask(task); }}
           tabIndex={0}
           title="Dwuklik — edycja, prawy klik — menu"
         >
@@ -9344,7 +9561,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
           </dl>
           <p>{task.description || 'Brak opisu.'}</p>
         </div>
-        <SimpleTaskComments task={task} onChanged={onChanged} colorTheme={colorTheme} />
+        <SimpleTaskComments task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
       </div>
     </div>}
     {taskContextMenu && <AppRowContextMenu
@@ -9353,21 +9570,21 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
       colorTheme={colorTheme}
       onClose={() => setTaskContextMenu(null)}
       items={[
-        { key: 'edit', label: 'Edytuj', icon: <Pencil size={14} />, onClick: () => onEditTask(task) },
-        { key: 'comment', label: 'Dodaj komentarz', icon: <MessageSquare size={14} />, onClick: () => setTaskContextMenu(null) },
+        canEditProjectItems ? { key: 'edit', label: 'Edytuj', icon: <Pencil size={14} />, onClick: () => onEditTask(task) } : null,
         {
           key: 'toggle-done',
           label: done ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
           icon: <CheckCheck size={14} />,
+          visible: canEditProjectItems,
           onClick: () => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)
         },
-        { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: handleDeleteTask }
-      ]}
+        canDeleteProjectItems ? { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: handleDeleteTask } : null
+      ].filter(Boolean)}
     />}
   </aside>;
 }
 
-function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme = 'dark' }) {
+function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme = 'dark', permissions = { view: true, create: true, edit: true, delete: true }, currentUser = null }) {
   const [rows, setRows] = useState([]);
   const [organizerRows, setOrganizerRows] = useState([]);
   const [clients, setClients] = useState([]);
@@ -9401,8 +9618,18 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const detailsAutosaveRef = useRef(null);
   const projectAutosaveCacheRef = useRef(new Map());
   const projectTaskAutosaveCacheRef = useRef(new Map());
+  const initialProjectLoadKeyRef = useRef(null);
   const documentSettings = getDocumentSettings();
   const isTasksOnlyView = (filters.type ?? 'all') === 'task';
+  const commentAuthor = useMemo(() => getCurrentCommentAuthor(currentUser), [currentUser?.id, currentUser?.email, currentUser?.name, currentUser?.profile?.full_name, currentUser?.profile?.email, currentUser?.profile?.user_color]);
+  const canCreateProjects = permissions.create === true;
+  const canEditProjects = permissions.edit === true;
+  const canDeleteProjects = permissions.delete === true;
+  const requireProjectPermission = (allowed, permissionKey) => {
+    if (allowed) return true;
+    setNotice(`Brak uprawnienia ${permissionKey}.`);
+    return false;
+  };
 
   const getWorkRecordKey = (record) => String(record?.id ?? record?.localId ?? '').trim();
   const mergeSavedProjectDraft = (project) => {
@@ -9419,6 +9646,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   };
 
   const loadData = async () => {
+    if (permissions.view !== true) return;
     setLoading(true);
     const [projectsResult, clientsResult, tasksResult, catsResult, prioritiesResult] = await Promise.all([
       fetchProjects(),
@@ -9438,7 +9666,26 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    setProjectPermissionChecker((permissionKey) => {
+      if (permissionKey === 'projects.view') return permissions.view === true;
+      if (permissionKey === 'projects.create') return permissions.create === true;
+      if (permissionKey === 'projects.edit') return permissions.edit === true;
+      if (permissionKey === 'projects.delete') return permissions.delete === true;
+      return false;
+    });
+  }, [permissions.view, permissions.create, permissions.edit, permissions.delete]);
+
+  useEffect(() => {
+    if (permissions.view !== true) {
+      initialProjectLoadKeyRef.current = null;
+      return;
+    }
+    const loadKey = String(currentUser?.id ?? currentUser?.email ?? 'local');
+    if (initialProjectLoadKeyRef.current === loadKey) return;
+    initialProjectLoadKeyRef.current = loadKey;
+    loadData();
+  }, [permissions.view, currentUser?.id, currentUser?.email]);
 
   useEffect(() => {
     localStorage.setItem(PROJECT_DETAILS_COLLAPSED_KEY, detailsCollapsed ? 'true' : 'false');
@@ -9513,6 +9760,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const historyOrganizerRows = organizerRows.filter((t) => t.archived || isCompletedStatus(t.status));
 
   const saveProject = async (form) => {
+    if (!requireProjectPermission(form.id || form.localId ? canEditProjects : canCreateProjects, form.id || form.localId ? 'projects.edit' : 'projects.create')) return;
     if (!String(form.name ?? '').trim()) { setNotice('Nazwa projektu jest wymagana'); return; }
     const projectId = form.id ?? form.localId;
     const isTerminal = projectId && isCompletedStatus(form.status);
@@ -9545,6 +9793,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   };
 
   const saveProjectFromInspector = async (form) => {
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return { data: null, error: new Error('Brak uprawnienia projects.edit.') };
     if (!String(form.name ?? '').trim()) {
       const error = new Error('Nazwa projektu jest wymagana.');
       setNotice(error.message);
@@ -9578,6 +9827,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   };
 
   const handleDelete = async (project) => {
+    if (!requireProjectPermission(canDeleteProjects, 'projects.delete')) return;
     setConfirmDialog({
       title: 'Usuń projekt',
       message: `Usunąć projekt "${project.name}"?`,
@@ -9595,12 +9845,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const handleRestore = async (project) => {
     if (!project) return;
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return;
     await updateProject(project.id ?? project.localId, { ...project, archived: false, status: WORK_STATUSES[0], completed_at: null });
     await loadData();
   };
 
   const setProjectStatus = async (project, nextStatus) => {
     if (!project || nextStatus === project.status) return;
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return;
     const projectId = project.id ?? project.localId;
     const isTerminal = isCompletedStatus(nextStatus);
     const doUpdate = async (payload) => {
@@ -9627,6 +9879,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const setProjectPriority = async (project, nextPriority) => {
     if (!project || nextPriority === project.priority) return;
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return;
     const projectId = project.id ?? project.localId;
     const result = await updateProject(projectId, { ...project, priority: nextPriority });
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany priorytetu projektu')); return; }
@@ -9634,6 +9887,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   };
 
   const saveSimpleTask = async (task) => {
+    if (!requireProjectPermission(task.id || task.localId ? canEditProjects : canCreateProjects, task.id || task.localId ? 'projects.edit' : 'projects.create')) return;
     if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
     const completed = isCompletedStatus(task.status);
     const payload = {
@@ -9652,6 +9906,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const setSimpleTaskStatus = async (task, nextStatus) => {
     if (!task || nextStatus === task.status) return;
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return;
     const done = isCompletedStatus(nextStatus);
     const payload = {
       ...task,
@@ -9666,12 +9921,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const setSimpleTaskPriority = async (task, nextPriority) => {
     if (!task || nextPriority === task.priority) return;
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return;
     const result = await updateOrganizerTask(task.id ?? task.localId, { ...task, priority: nextPriority });
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany priorytetu zadania')); return; }
     setOrganizerRows((current) => current.map((row) => String(row.id ?? row.localId) === String(task.id ?? task.localId) ? { ...row, priority: nextPriority, ...(result.data ?? {}) } : row));
   };
 
   const saveProjectTaskFromInspector = async (taskForm) => {
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return { data: null, error: new Error('Brak uprawnienia projects.edit.') };
     const taskId = taskForm.id ?? taskForm.localId;
     if (!taskId) return { data: null, error: new Error('ID zadania jest wymagane.') };
     if (!String(taskForm.title ?? '').trim()) {
@@ -9699,6 +9956,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const deleteProjectTaskFromInspector = async (task) => {
     if (!task) return;
+    if (!requireProjectPermission(canDeleteProjects, 'projects.delete')) return;
     setConfirmDialog({
       title: 'Usuń zadanie',
       message: `Usunąć zadanie "${task.title}"?`,
@@ -9718,6 +9976,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   };
 
   const deleteSimpleTask = async (task) => {
+    if (!requireProjectPermission(canDeleteProjects, 'projects.delete')) return;
     setConfirmDialog({
       title: 'Usuń zadanie',
       message: `Usunąć zadanie "${task.title}"?`,
@@ -9733,7 +9992,11 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     });
   };
 
-  const openNewProject = () => { setEditingProject(null); setEditorOpen(true); };
+  const openNewProject = () => {
+    if (!requireProjectPermission(canCreateProjects, 'projects.create')) return;
+    setEditingProject(null);
+    setEditorOpen(true);
+  };
   const openProject = (project) => {
     setSelectedProjectKey(`project:${project.id ?? project.localId}`);
     setSelectedDetailsWork(mapProjectRow(project));
@@ -9742,8 +10005,16 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setDetailsOpen(true);
     setDetailsCollapsed(false);
   };
-  const openNewSimpleTask = () => { setEditingSimpleTask(null); setTaskEditorOpen(true); };
-  const openSimpleTask = (task) => { setEditingSimpleTask(task); setTaskEditorOpen(true); };
+  const openNewSimpleTask = () => {
+    if (!requireProjectPermission(canCreateProjects, 'projects.create')) return;
+    setEditingSimpleTask(null);
+    setTaskEditorOpen(true);
+  };
+  const openSimpleTask = (task) => {
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return;
+    setEditingSimpleTask(task);
+    setTaskEditorOpen(true);
+  };
 
   const activeColumns = [
     { key: 'type_label', label: 'Typ', align: 'center', renderCell: (row) => <span className={`work-type-pill ${row._workType}`}>{row.type_label}</span> },
@@ -9755,8 +10026,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         : <span className={`${row._workType === 'task' && (row._source?.archived || isCompletedStatus(row._source?.status)) ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span>
     },
     { key: 'client_name', label: 'Klient / powiązanie' },
-    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> },
-    { key: 'priority', label: 'Priorytet', renderCell: (row) => <ServiceStatusCell value={row.priority} statuses={workPriorityNames} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> },
+    { key: 'status', label: 'Status', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> : <StatusPill value={row.status} /> },
+    { key: 'priority', label: 'Priorytet', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.priority} statuses={workPriorityNames} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> : <StatusPill value={row.priority} /> },
     { key: 'due_date', label: 'Termin' }
   ];
 
@@ -9770,7 +10041,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         : <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName="work-title-project" />
     },
     { key: 'client_name', label: 'Klient' },
-    { key: 'status', label: 'Status', renderCell: (row) => <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'task' ? setSimpleTaskStatus(row._source ?? row, status) : setProjectStatus(row._project ?? row, status)} /> },
+    { key: 'status', label: 'Status', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'task' ? setSimpleTaskStatus(row._source ?? row, status) : setProjectStatus(row._project ?? row, status)} /> : <StatusPill value={row.status} /> },
     { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'due_date', label: 'Termin' },
     { key: 'completed_display', label: 'Zakończono' }
@@ -10009,8 +10280,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         <button type="button" className="project-icon-action projects-left-collapse-button" onClick={() => setLeftCollapsed(true)} aria-label="Zwiń listę" title="Zwiń listę"><ChevronLeft size={15} /></button>
         <section className="panel hero-panel projects-actions-panel">
           <div className="module-actions">
-            <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Zadanie</AppButton>
-            <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>
+            {canCreateProjects && <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Zadanie</AppButton>}
+            {canCreateProjects && <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>}
             <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania i projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
@@ -10047,13 +10318,13 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
               const activeClass = row.work_key === selectedProjectKey ? 'active-row' : '';
               return `${typeClass} ${activeClass}`.trim();
             }}
-            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
+            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? openWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
         </section>
 
         <HistorySection title="Historia projektów" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
           <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
-            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={openWorkItem} onDelete={deleteWorkItem} openLabel="Otwórz"
-            customRowActions={[{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }]}
+            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? openWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz"
+            customRowActions={canEditProjects ? [{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }] : []}
           />
         </HistorySection>
       </div>}
@@ -10072,15 +10343,17 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         refreshKey={projectPanelRefreshKey}
         workPriorities={workPriorityNames}
         colorTheme={colorTheme}
+        permissions={permissions}
+        commentAuthor={commentAuthor}
       />}
       {detailsOpen && (selectedSimpleTask
-        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} />
+        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
         : selectedProjectTask
-          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} />
-          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveProject={saveProjectFromInspector} autosaveRef={detailsAutosaveRef} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} />)}
+          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
+          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveProject={saveProjectFromInspector} autosaveRef={detailsAutosaveRef} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} />)}
     </div>
 
-    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
+    {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
     {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} workPriorities={workPriorityNames} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
   </div>;
@@ -10570,9 +10843,9 @@ function OrganizerTaskEditor({ task, categories, workPriorities = DEFAULT_WORK_P
   </ResizableModalFrame>;
 }
 
-function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
+function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true, currentUser = null }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} onApplyUiThemePreset={onApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} onPreferenceChange={onPreferenceChange} appSettingsReady={appSettingsReady} />
+    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} onApplyUiThemePreset={onApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} onPreferenceChange={onPreferenceChange} appSettingsReady={appSettingsReady} currentUser={currentUser} />
   </div>;
 }
 
@@ -16347,8 +16620,9 @@ function DocumentTemplateRowActions({ type, menuOpen, onToggleMenu, onEdit, onPr
   </div>;
 }
 
-function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true }) {
+function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true, currentUser = null }) {
   const isDocumentsMode = mode === 'documents';
+  const isAdmin = currentUser?.profile?.role === 'admin' && currentUser?.profile?.is_active !== false;
   const themeOptions = [
     { id: 'light', label: 'Jasny', icon: Sun },
     { id: 'soft-dark', label: 'Soft Dark', icon: Moon },
@@ -16361,7 +16635,8 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
       { id: 'dictionaries', label: 'Słowniki', icon: List, description: 'Statusy, kategorie, priorytety, lokalizacje i stany w modułach.' },
       { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, dashboard, tabele, widoki i preferencje pracy.' },
       { id: 'integrations', label: 'Integracje', icon: CalendarDays, description: 'Kalendarz, powiadomienia, import, eksport i przyszłe połączenia.' },
-      { id: 'system', label: 'System', icon: Settings, description: 'Backup, restore, diagnostyka, migracje i przyszła administracja.' }
+      { id: 'system', label: 'System', icon: Settings, description: 'Backup, restore, diagnostyka, migracje i przyszła administracja.' },
+      ...(isAdmin ? [{ id: 'users', label: 'Użytkownicy i uprawnienia', icon: ShieldCheck, description: 'Konta, role, statusy i przyszłe permissions.' }] : [])
     ];
   const [activeSection, setActiveSection] = useState(isDocumentsMode ? 'documents' : 'interface');
   const [activeSubs, setActiveSubs] = useState({});
@@ -16376,6 +16651,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     ],
     integrations: [],
     system: [],
+    users: [],
     documents: [],
     interface: []
   };
@@ -17931,6 +18207,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     { section: 'system', systemPanel: 'restore', label: 'Restore', keywords: 'restore przywroc import backup przywracanie' },
     { section: 'system', systemPanel: 'csv', label: 'Eksport CSV', keywords: 'csv eksport klienci sprzet wypozyczenia serwis zadania' },
     { section: 'system', systemPanel: 'diagnostics', label: 'Diagnostyka', keywords: 'diagnostyka zakres kopii status konfiguracja' },
+    ...(isAdmin ? [{ section: 'users', label: 'Użytkownicy i uprawnienia', keywords: 'uzytkownicy użytkownicy uprawnienia permissions role admin konta' }] : []),
     { section: 'dictionaries', sub: 'service', label: 'Statusy serwisu', keywords: 'status statusy serwis zlecenia priorytet priorytety' },
     { section: 'dictionaries', sub: 'equipment', label: 'Statusy i kategorie sprzętu', keywords: 'status statusy sprzet kategorie lokalizacje stany' },
     { section: 'dictionaries', sub: 'rentals', label: 'Wypożyczenia', keywords: 'wypozyczenia zwroty termin waluta numeracja typy stany' },
@@ -18269,6 +18546,8 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
         {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.externalService, 'Serwisy zewnętrzne', 'Lista serwisów, do których może zostać przekazany sprzęt klienta.', 'np. Sony Polska')}
         {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.progressTemplate, 'Szablony postępów', 'Szybkie wpisy dodawane w historii zgłoszenia.', 'np. Klient poinformowany')}
       </div></DictionariesSettingsPanel>}
+
+      {activeSection === 'users' && isAdmin && <UsersPermissionsPanel />}
 
       {activeSection === 'documents' && <DocumentsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace">
         <aside className="documents-nav-panel documents-v2-nav">

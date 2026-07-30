@@ -99,6 +99,7 @@ import {
   PROJECT_TASK_COMMENT_TYPES, WORK_STATUSES, WORK_DONE_STATUS, WORK_TERMINAL_STATUSES,
   displayWorkStatus, getDefaultWorkPriority, isCompletedStatus, normalizeWorkPriority, normalizeWorkStatus,
   normalizeAccentColor,
+  prepareTaskComments,
   setProjectPermissionChecker,
   reorderProjectTasksInSection,
   updateProject, updateProjectTask
@@ -778,6 +779,52 @@ function getCommentAuthorAccentColor(comment) {
   const normalized = normalizeUserColor(comment?.author_user_color);
   if (comment?.author_user_id && !comment?.author_user_color) return '#94A3B8';
   return normalized;
+}
+
+async function resolveRealtimeTaskComment(payload) {
+  const rows = await prepareTaskComments([payload]);
+  return rows[0] ?? payload;
+}
+
+function normalizeRealtimeTaskCommentFallback(payload) {
+  if (!payload) return payload;
+  return {
+    ...payload,
+    author_user_color: payload.author_user_id
+      ? normalizeAccentColor(payload.author_user_color)
+      : normalizeUserColor(payload.author_user_color)
+  };
+}
+
+function upsertTaskCommentRows(currentComments, incomingComment) {
+  const incomingId = String(incomingComment?.id ?? incomingComment?.localId ?? '').trim();
+  const next = incomingId
+    ? currentComments.some((comment) => String(comment.id ?? comment.localId) === incomingId)
+      ? currentComments.map((comment) => String(comment.id ?? comment.localId) === incomingId ? { ...comment, ...incomingComment } : comment)
+      : [incomingComment, ...currentComments]
+    : [incomingComment, ...currentComments];
+  return [...next].sort((a, b) => new Date(b?.created_at ?? b?.updated_at ?? 0).getTime() - new Date(a?.created_at ?? a?.updated_at ?? 0).getTime());
+}
+
+function removeTaskCommentRow(currentComments, removedComment) {
+  const removedId = String(removedComment?.id ?? removedComment?.localId ?? '').trim();
+  if (!removedId) return currentComments;
+  return currentComments.filter((comment) => String(comment.id ?? comment.localId) !== removedId);
+}
+
+function upsertRecordById(currentRows, incomingRow) {
+  const incomingId = String(incomingRow?.id ?? incomingRow?.localId ?? '').trim();
+  if (!incomingId) return currentRows;
+  const exists = currentRows.some((row) => String(row.id ?? row.localId) === incomingId);
+  return exists
+    ? currentRows.map((row) => String(row.id ?? row.localId) === incomingId ? { ...row, ...incomingRow } : row)
+    : [...currentRows, incomingRow];
+}
+
+function removeRecordById(currentRows, removedRow) {
+  const removedId = String(removedRow?.id ?? removedRow?.localId ?? '').trim();
+  if (!removedId) return currentRows;
+  return currentRows.filter((row) => String(row.id ?? row.localId) !== removedId);
 }
 
 function createEmptyUserAccess(user = null) {
@@ -8098,6 +8145,37 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
 
   useEffect(() => { loadComments(); }, [taskId]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !taskId || task?.localId || permissions.view !== true) return undefined;
+    let active = true;
+    const channel = supabase
+      .channel(`project-task-comments:${taskId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_task_comments',
+        filter: `task_id=eq.${taskId}`
+      }, async (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'DELETE') {
+          setComments((current) => removeTaskCommentRow(current, payload.old));
+          return;
+        }
+        const fallbackComment = normalizeRealtimeTaskCommentFallback(payload.new);
+        setComments((current) => upsertTaskCommentRows(current, fallbackComment));
+        resolveRealtimeTaskComment(payload.new).then((nextComment) => {
+          if (!active) return;
+          setComments((current) => upsertTaskCommentRows(current, nextComment));
+        }).catch(() => {});
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [taskId, task?.localId, permissions.view]);
+
   const addComment = async () => {
     if (!canCreateProjectItems) { setNotice('Brak uprawnienia projects.create.'); return; }
     if (!newComment.trim()) return;
@@ -8391,6 +8469,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const sectionItemClickTimeoutRef = useRef(null);
   const taskDragRef = useRef(null);
   const suppressTaskClickRef = useRef(false);
+  const onTaskChangedRef = useRef(onTaskChanged);
   const canCreateProjectItems = permissions.create === true;
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
@@ -8398,6 +8477,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   useEffect(() => () => {
     if (sectionItemClickTimeoutRef.current) window.clearTimeout(sectionItemClickTimeoutRef.current);
   }, []);
+  useEffect(() => { onTaskChangedRef.current = onTaskChanged; }, [onTaskChanged]);
 
   const loadPanelData = async () => {
     if (!projectId || collapsed) return;
@@ -8421,6 +8501,68 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   useEffect(() => { loadPanelData(); }, [projectId, collapsed, refreshKey]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !projectId || project?.localId || collapsed || permissions.view !== true) return undefined;
+    let active = true;
+    const channel = supabase
+      .channel(`project-panel:${projectId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_tasks',
+        filter: `project_id=eq.${projectId}`
+      }, (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'DELETE') {
+          const removedTaskId = String(payload.old?.id ?? '');
+          setTasks((current) => removeRecordById(current, payload.old));
+          setExpandedTasks((current) => {
+            if (!removedTaskId || !current.has(removedTaskId)) return current;
+            const next = new Set(current);
+            next.delete(removedTaskId);
+            return next;
+          });
+          setCommentCounts((current) => {
+            if (!removedTaskId || !Object.prototype.hasOwnProperty.call(current, removedTaskId)) return current;
+            const next = { ...current };
+            delete next[removedTaskId];
+            return next;
+          });
+          return;
+        }
+        const nextTask = payload.new;
+        setTasks((current) => upsertRecordById(current, nextTask));
+        onTaskChangedRef.current?.(nextTask);
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_task_sections',
+        filter: `project_id=eq.${projectId}`
+      }, (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'DELETE') {
+          const removedSectionId = String(payload.old?.id ?? '');
+          setSections((current) => removeRecordById(current, payload.old));
+          setCollapsedSections((current) => {
+            if (!removedSectionId || !current.has(removedSectionId)) return current;
+            const next = new Set(current);
+            next.delete(removedSectionId);
+            return next;
+          });
+          return;
+        }
+        setSections((current) => upsertRecordById(current, payload.new));
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [projectId, project?.localId, collapsed, permissions.view]);
+
   useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
   useEffect(() => {
     if (!latestTask || String(latestTask.project_id) !== String(projectId)) return;
@@ -10107,6 +10249,46 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const selectedProject = selectedWork?._workType === 'project' ? selectedWork._source : null;
   const selectedDetailsProject = selectedDetailsWork?._workType === 'project' ? selectedDetailsWork._source : null;
   const selectedSimpleTask = selectedDetailsWork?._workType === 'task' ? selectedDetailsWork._source : null;
+
+  useEffect(() => {
+    const projectId = selectedProject?.id;
+    if (!isSupabaseConfigured || !projectId || selectedProject?.localId || permissions.view !== true) return undefined;
+    let active = true;
+    const channel = supabase
+      .channel(`project:${projectId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'projects',
+        filter: `id=eq.${projectId}`
+      }, (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'DELETE') {
+          setRows((current) => removeRecordById(current, payload.old));
+          setSelectedDetailsWork((current) => (
+            current?._workType === 'project' && String(current.id ?? current.localId) === String(payload.old?.id)
+              ? null
+              : current
+          ));
+          setSelectedProjectTask(null);
+          setHighlightedProjectTask(null);
+          return;
+        }
+        const nextProject = mergeSavedProjectDraft(payload.new);
+        setRows((current) => upsertRecordById(current, nextProject));
+        setSelectedDetailsWork((current) => (
+          current?._workType === 'project' && String(current.id ?? current.localId) === String(nextProject.id ?? nextProject.localId)
+            ? mapProjectRow({ ...current._source, ...nextProject })
+            : current
+        ));
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [selectedProject?.id, selectedProject?.localId, permissions.view]);
 
   useEffect(() => {
     if (!detailsOpen || selectedDetailsWork || !selectedWork) return;

@@ -205,6 +205,19 @@ async function attachAuthorColors(comments = []) {
   }));
 }
 
+function sortTaskCommentsNewestFirst(comments = []) {
+  return [...comments].sort((a, b) => {
+    const bTime = new Date(b?.created_at ?? b?.updated_at ?? 0).getTime();
+    const aTime = new Date(a?.created_at ?? a?.updated_at ?? 0).getTime();
+    if (bTime !== aTime) return bTime - aTime;
+    return String(b?.id ?? b?.localId ?? '').localeCompare(String(a?.id ?? a?.localId ?? ''));
+  });
+}
+
+export async function prepareTaskComments(comments = []) {
+  return sortTaskCommentsNewestFirst(await attachAuthorColors(comments));
+}
+
 function getProjectStorageKey(project) {
   return String(project?.id ?? project?.localId ?? '').trim();
 }
@@ -607,15 +620,15 @@ export async function deleteProjectSection(id) {
 export async function fetchTaskComments(taskId) {
   if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
-    return { data: readLocal(LOCAL_COMMENTS_KEY).filter((c) => String(c.task_id) === String(taskId)).map(normalizeTaskComment), error: null, local: true };
+    return { data: sortTaskCommentsNewestFirst(readLocal(LOCAL_COMMENTS_KEY).filter((c) => String(c.task_id) === String(taskId)).map(normalizeTaskComment)), error: null, local: true };
   }
   const { data, error } = await supabase
     .from('project_task_comments')
     .select('*')
     .eq('task_id', taskId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false });
   if (error) return { data: [], error, local: false };
-  return { data: await attachAuthorColors(data ?? []), error: null, local: false };
+  return { data: await prepareTaskComments(data ?? []), error: null, local: false };
 }
 
 export async function createTaskComment(taskId, body, type = 'Komentarz', author = '') {

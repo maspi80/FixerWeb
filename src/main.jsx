@@ -1316,13 +1316,37 @@ function App() {
     });
   }, [currentUserId]);
 
+  const markChatConversationReadFromMessages = useCallback((conversationId) => {
+    if (!conversationId) return;
+    const lastMessage = [...chatMessages].reverse().find((message) => getChatMessageConversationId(message, currentUserId) === conversationId);
+    if (lastMessage?.created_at) markChatConversationRead(conversationId, lastMessage.created_at);
+  }, [chatMessages, currentUserId, markChatConversationRead]);
+
+  const markAllChatConversationsReadFromMessages = useCallback(() => {
+    const latestByConversation = new Map();
+    chatMessages.forEach((message) => {
+      if (!message?.id || message.sender_user_id === currentUserId) return;
+      const conversationId = getChatMessageConversationId(message, currentUserId);
+      const current = latestByConversation.get(conversationId);
+      if (!current || new Date(message.created_at).getTime() > new Date(current.created_at).getTime()) {
+        latestByConversation.set(conversationId, message);
+      }
+    });
+    latestByConversation.forEach((message, conversationId) => {
+      markChatConversationRead(conversationId, message.created_at);
+    });
+  }, [chatMessages, currentUserId, markChatConversationRead]);
+
   const closeChatToast = useCallback((toastId) => {
     setChatToasts((current) => current.filter((toast) => toast.id !== toastId));
   }, []);
 
   const openChatConversation = useCallback((conversationId) => {
-    navigateToModule('chat', { type: 'chat', conversationId: conversationId || CHAT_ALL_CONVERSATION_ID });
-  }, [hasPermission, activeModule]);
+    const targetConversationId = conversationId || CHAT_ALL_CONVERSATION_ID;
+    markChatConversationReadFromMessages(targetConversationId);
+    setChatToasts((current) => current.filter((toast) => toast.conversationId !== targetConversationId));
+    navigateToModule('chat', { type: 'chat', conversationId: targetConversationId });
+  }, [markChatConversationReadFromMessages, navigateToModule]);
 
   const pushChatToast = useCallback((message, conversationId) => {
     const sender = chatProfilesById.get(message.sender_user_id);
@@ -1503,7 +1527,13 @@ function App() {
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}${tableVerticalLines ? ' table-vertical-lines-enabled' : ''}`} style={uiThemeCssVariables}>
       <Sidebar
         activeModule={activeModule}
-        setActiveModule={(moduleId) => navigateToModule(moduleId)}
+        setActiveModule={(moduleId) => {
+          if (moduleId === 'chat') {
+            markAllChatConversationsReadFromMessages();
+            setChatToasts([]);
+          }
+          navigateToModule(moduleId);
+        }}
         modules={visibleModules}
         collapsed={sidebarCollapsed}
         onToggle={() => {
@@ -1584,7 +1614,7 @@ function App() {
       {chatToasts.length > 0 && <div className="chat-toast-stack">
         {chatToasts.map((toast) => <button key={toast.id} type="button" className="chat-toast" onClick={() => { closeChatToast(toast.id); openChatConversation(toast.conversationId); }}>
           <strong>{toast.title}</strong>
-          <span>{toast.detail}</span>
+          {toast.detail.includes(': ') ? <span><b>{toast.detail.slice(0, toast.detail.indexOf(': ') + 1)}</b> {toast.detail.slice(toast.detail.indexOf(': ') + 2)}</span> : <span>{toast.detail}</span>}
         </button>)}
       </div>}
       {logoutConfirmOpen && <ConfirmDialog title="Wylogowanie" message="Czy na pewno chcesz się wylogować?" confirmLabel="Wyloguj" cancelLabel="Anuluj" variant="danger" onConfirm={handleLogout} onCancel={() => setLogoutConfirmOpen(false)} />}

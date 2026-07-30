@@ -8,6 +8,7 @@ export const USER_PERMISSION_MODULES = [
   { id: 'service', label: 'Serwis' },
   { id: 'projects', label: 'Zadania i projekty' },
   { id: 'notes', label: 'Notatki' },
+  { id: 'chat', label: 'Czat', actions: ['view', 'create'] },
   { id: 'calendar', label: 'Kalendarz' },
   { id: 'settings', label: 'Ustawienia' }
 ];
@@ -23,10 +24,15 @@ export function buildPermissionKey(moduleId, actionId) {
   return `${moduleId}.${actionId}`;
 }
 
+export function getPermissionActionsForModule(module) {
+  const actionIds = Array.isArray(module?.actions) ? new Set(module.actions) : null;
+  return USER_PERMISSION_ACTIONS.filter((action) => !actionIds || actionIds.has(action.id));
+}
+
 export function buildEmptyPermissionMap() {
   return Object.fromEntries(
     USER_PERMISSION_MODULES.flatMap((module) =>
-      USER_PERMISSION_ACTIONS.map((action) => [buildPermissionKey(module.id, action.id), false])
+      getPermissionActionsForModule(module).map((action) => [buildPermissionKey(module.id, action.id), false])
     )
   );
 }

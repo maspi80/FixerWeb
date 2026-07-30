@@ -14,6 +14,7 @@ import {
   buildPermissionKey,
   createAdminUser,
   deleteAdminUser,
+  getPermissionActionsForModule,
   listAdminUsers,
   permissionsToMap,
   saveAdminUserPermissions,
@@ -368,6 +369,8 @@ export default function UsersPermissionsPanel({ currentUser = null }) {
               {USER_PERMISSION_MODULES.map((module) => <div className="permissions-grid-row" key={module.id}>
                 <strong>{module.label}</strong>
                 {USER_PERMISSION_ACTIONS.map((action) => {
+                  const supported = getPermissionActionsForModule(module).some((item) => item.id === action.id);
+                  if (!supported) return <span key={`${module.id}.${action.id}`} />;
                   const key = buildPermissionKey(module.id, action.id);
                   return <label key={key} className="permissions-check" title={key}>
                     <input

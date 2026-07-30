@@ -89,6 +89,7 @@ import {
 import { createNote, deleteNote, fetchNotes, NOTE_COLORS, NOTE_STATUSES, updateNote } from './services/notesService';
 import NoteRichTextEditor from './components/NoteRichTextEditor.jsx';
 import UsersPermissionsPanel from './components/UsersPermissionsPanel.jsx';
+import ChatModule from './components/ChatModule.jsx';
 import { noteContentPreviewText, noteMatchesSearch } from './utils/noteContent.js';
 import { createCalendarManualEvent, deleteCalendarManualEvent, fetchCalendarManualEvents, updateCalendarManualEvent } from './services/calendarService';
 import {
@@ -126,6 +127,18 @@ import {
   subscribeAppSettings
 } from './services/appSettingsService';
 import { loadUserAccess } from './services/userAccessService';
+import {
+  CHAT_ALL_CONVERSATION_ID,
+  fetchChatReadState,
+  fetchChatUsers,
+  fetchVisibleChatMessages,
+  getChatConversationId,
+  getChatMessageConversationId,
+  getChatUserDisplayName,
+  normalizeChatMessage,
+  saveChatReadState,
+  sortChatMessages
+} from './services/chatService';
 
 const PROJECTS_TABLE_KEY = 'projects-table';
 const PROJECTS_HISTORY_TABLE_KEY = 'projects-history-table';
@@ -695,6 +708,7 @@ const modules = [
   { id: 'service', label: 'Serwis', icon: Wrench },
   { id: 'projects', label: 'Zadania i projekty', icon: Briefcase },
   { id: 'notes', label: 'Notatki', icon: StickyNote },
+  { id: 'chat', label: 'Czat', icon: MessageSquare },
   { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
   { id: 'settings', label: 'Ustawienia', icon: Settings }
 ];
@@ -773,6 +787,46 @@ function getCurrentCommentAuthor(user) {
     author: profileName || email || fallbackName || 'Operator',
     user_color: normalizeUserColor(user?.profile?.user_color)
   };
+}
+
+function previewChatMessageText(value, limit = 96) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit - 1)}…`;
+}
+
+function playChatNotificationSound() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(720, context.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(540, context.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.045, context.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.13);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.14);
+    window.setTimeout(() => context.close().catch(() => {}), 240);
+  } catch {}
+}
+
+function calculateChatUnreadCounts(messages = [], readState = {}, currentUserId = null) {
+  const counts = {};
+  messages.forEach((message) => {
+    if (!message?.id || message.sender_user_id === currentUserId) return;
+    const conversationId = getChatMessageConversationId(message, currentUserId);
+    const lastRead = readState[conversationId];
+    if (!lastRead || new Date(message.created_at).getTime() > new Date(lastRead).getTime()) {
+      counts[conversationId] = (counts[conversationId] ?? 0) + 1;
+    }
+  });
+  return counts;
 }
 
 function canManageProjectComment(comment, commentAuthor, canManageAllComments = false) {
@@ -1051,6 +1105,11 @@ function App() {
   const [activeUiTheme, setActiveUiTheme] = useState(() => getInitialUiAppearance().activeUiTheme);
   const [appSettingsReady, setAppSettingsReady] = useState(() => !isSupabaseConfigured);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [chatUsers, setChatUsers] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatReadState, setChatReadState] = useState({});
+  const [chatActiveConversationId, setChatActiveConversationId] = useState(CHAT_ALL_CONVERSATION_ID);
+  const [chatToasts, setChatToasts] = useState([]);
   const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens, colorTheme), [activeUiTheme.tokens, colorTheme]);
   const accessReady = !isSupabaseConfigured || !session?.user || Boolean(userAccess.profile);
   const hasPermission = useCallback((permissionKey) => {
@@ -1066,6 +1125,11 @@ function App() {
     edit: hasPermission('projects.edit'),
     delete: hasPermission('projects.delete')
   }), [hasPermission]);
+  const chatPermissions = useMemo(() => ({
+    view: hasPermission('chat.view'),
+    create: hasPermission('chat.create')
+  }), [hasPermission]);
+  const isAdmin = userAccess.profile?.role === 'admin' && userAccess.profile?.is_active !== false;
 
   const handleColorThemeCollection = useCallback((mode) => {
     const nextMode = normalizeColorThemeMode(mode);
@@ -1125,6 +1189,35 @@ function App() {
       hasPermission: userAccess.hasPermission
     }
     : demoUser;
+  const currentUserId = currentUser?.id ?? null;
+  const currentChatProfile = currentUser?.profile ? {
+    id: currentUser.profile.id,
+    email: currentUser.profile.email,
+    username: currentUser.profile.username,
+    full_name: currentUser.profile.full_name,
+    user_color: currentUser.profile.user_color,
+    is_active: currentUser.profile.is_active
+  } : currentUserId ? {
+    id: currentUserId,
+    email: currentUser.email,
+    full_name: currentUser.name,
+    user_color: DEFAULT_USER_COLOR,
+    is_active: true
+  } : null;
+  const chatProfilesById = useMemo(() => {
+    const map = new Map();
+    if (currentChatProfile?.id) map.set(currentChatProfile.id, currentChatProfile);
+    chatUsers.forEach((user) => map.set(user.id, user));
+    return map;
+  }, [chatUsers, currentChatProfile?.id, currentChatProfile?.email, currentChatProfile?.full_name, currentChatProfile?.username, currentChatProfile?.user_color]);
+  const chatUnreadCounts = useMemo(
+    () => calculateChatUnreadCounts(chatMessages, chatReadState, currentUserId),
+    [chatMessages, chatReadState, currentUserId]
+  );
+  const chatUnreadTotal = useMemo(
+    () => Object.values(chatUnreadCounts).reduce((total, count) => total + count, 0),
+    [chatUnreadCounts]
+  );
 
   useEffect(() => {
     if (!isSupabaseConfigured || !session?.user) {
@@ -1190,6 +1283,129 @@ function App() {
     setActiveModule(next.moduleId);
   };
 
+  const upsertChatMessage = useCallback((message) => {
+    if (!message?.id) return;
+    setChatMessages((current) => sortChatMessages([...current.filter((item) => item.id !== message.id), message]));
+  }, []);
+
+  const removeChatMessage = useCallback((messageId) => {
+    if (!messageId) return;
+    setChatMessages((current) => current.filter((message) => message.id !== messageId));
+  }, []);
+
+  const markChatConversationRead = useCallback((conversationId, lastReadAt) => {
+    if (!currentUserId || !conversationId || !lastReadAt) return;
+    setChatReadState((current) => {
+      const currentValue = current[conversationId];
+      if (currentValue && new Date(currentValue).getTime() >= new Date(lastReadAt).getTime()) return current;
+      return { ...current, [conversationId]: lastReadAt };
+    });
+    saveChatReadState(currentUserId, conversationId, lastReadAt).catch((error) => {
+      console.warn('Chat read state save failed', error);
+    });
+  }, [currentUserId]);
+
+  const closeChatToast = useCallback((toastId) => {
+    setChatToasts((current) => current.filter((toast) => toast.id !== toastId));
+  }, []);
+
+  const openChatConversation = useCallback((conversationId) => {
+    navigateToModule('chat', { type: 'chat', conversationId: conversationId || CHAT_ALL_CONVERSATION_ID });
+  }, [hasPermission, activeModule]);
+
+  const pushChatToast = useCallback((message, conversationId) => {
+    const sender = chatProfilesById.get(message.sender_user_id);
+    const senderName = message.author_name || getChatUserDisplayName(sender);
+    const isPublic = !message.recipient_user_id;
+    const toast = {
+      id: `chat:${message.id}:${Date.now()}`,
+      conversationId,
+      title: isPublic ? 'Nowa wiadomość — Wszyscy' : `Nowa wiadomość od ${senderName}`,
+      detail: isPublic ? `${senderName}: ${previewChatMessageText(message.message)}` : previewChatMessageText(message.message)
+    };
+    setChatToasts((current) => [...current.filter((item) => item.id !== toast.id), toast].slice(-3));
+    window.setTimeout(() => closeChatToast(toast.id), 6000);
+  }, [chatProfilesById, closeChatToast]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) {
+      setChatUsers([]);
+      setChatMessages([]);
+      setChatReadState({});
+      return undefined;
+    }
+    let cancelled = false;
+    fetchChatUsers(currentUserId).then((result) => {
+      if (!cancelled) setChatUsers(result.data ?? []);
+      if (result.error) console.warn('Chat users load failed', result.error);
+    });
+    fetchChatReadState(currentUserId).then((result) => {
+      if (!cancelled) setChatReadState(result.data ?? {});
+      if (result.error) console.warn('Chat read state load failed', result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, currentUserId, chatPermissions.view]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
+    let cancelled = false;
+    fetchVisibleChatMessages({ profilesById: chatProfilesById }).then((result) => {
+      if (!cancelled) setChatMessages(result.data ?? []);
+      if (result.error) console.warn('Chat messages load failed', result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, currentUserId, chatPermissions.view, chatProfilesById]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
+    let active = true;
+    const channel = supabase
+      .channel(`chat-global:${currentUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'DELETE') {
+          removeChatMessage(payload.old?.id);
+          return;
+        }
+
+        const message = normalizeChatMessage(payload.new, chatProfilesById);
+        const conversationId = getChatMessageConversationId(message, currentUserId);
+        upsertChatMessage(message);
+
+        if (message.sender_user_id === currentUserId) return;
+
+        const isActiveConversation = activeModule === 'chat' && chatActiveConversationId === conversationId;
+        if (isActiveConversation) {
+          markChatConversationRead(conversationId, message.created_at);
+          return;
+        }
+
+        pushChatToast(message, conversationId);
+        playChatNotificationSound();
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [
+    activeModule,
+    chatActiveConversationId,
+    chatPermissions.view,
+    chatProfilesById,
+    currentUserId,
+    isAuthenticated,
+    markChatConversationRead,
+    pushChatToast,
+    removeChatMessage,
+    upsertChatMessage
+  ]);
+
   useEffect(() => {
     if (!accessReady || !isAuthenticated) return;
     if (hasPermission(MODULE_VIEW_PERMISSIONS[activeModule])) return;
@@ -1253,6 +1469,7 @@ function App() {
         }}
         onLogout={requestLogout}
         user={currentUser}
+        moduleBadges={{ chat: chatUnreadTotal }}
       />
       <main className="main-area">
         <Topbar
@@ -1281,9 +1498,29 @@ function App() {
           {allowedModuleIds.has('calendar') && activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
           {allowedModuleIds.has('projects') && activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} permissions={projectPermissions} currentUser={currentUser} />}
           {allowedModuleIds.has('notes') && activeModule === 'notes' && <NotatkiModule />}
+          {allowedModuleIds.has('chat') && activeModule === 'chat' && <ChatModule
+            currentUser={currentUser}
+            permissions={chatPermissions}
+            isAdmin={isAdmin}
+            users={chatUsers}
+            visibleMessages={chatMessages}
+            readState={chatReadState}
+            requestedConversationId={moduleIntent?.type === 'chat' ? moduleIntent.conversationId : null}
+            onConsumeConversationRequest={() => setModuleIntent(null)}
+            onActiveConversationChange={setChatActiveConversationId}
+            onMarkConversationRead={markChatConversationRead}
+            onMessageCreated={upsertChatMessage}
+            onMessageDeleted={removeChatMessage}
+          />}
           {allowedModuleIds.has('settings') && activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} currentUser={currentUser} />}
         </section>
       </main>
+      {chatToasts.length > 0 && <div className="chat-toast-stack">
+        {chatToasts.map((toast) => <button key={toast.id} type="button" className="chat-toast" onClick={() => { closeChatToast(toast.id); openChatConversation(toast.conversationId); }}>
+          <strong>{toast.title}</strong>
+          <span>{toast.detail}</span>
+        </button>)}
+      </div>}
       {logoutConfirmOpen && <ConfirmDialog title="Wylogowanie" message="Czy na pewno chcesz się wylogować?" confirmLabel="Wyloguj" cancelLabel="Anuluj" variant="danger" onConfirm={handleLogout} onCancel={() => setLogoutConfirmOpen(false)} />}
     </div>
   );
@@ -1342,7 +1579,7 @@ function LoginScreen({ onDemoLogin }) {
   );
 }
 
-function Sidebar({ activeModule, setActiveModule, modules: sidebarModules = modules, collapsed, onToggle, onLogout, user }) {
+function Sidebar({ activeModule, setActiveModule, modules: sidebarModules = modules, collapsed, onToggle, onLogout, user, moduleBadges = {} }) {
   const userColor = normalizeUserColor(user?.profile?.user_color);
   const userTextColor = getReadableTextColor(userColor);
   return (
@@ -1354,7 +1591,8 @@ function Sidebar({ activeModule, setActiveModule, modules: sidebarModules = modu
       <nav className="nav-list">
         {sidebarModules.map((module) => {
           const Icon = module.icon;
-          return <button key={module.id} className={`nav-item ${activeModule === module.id ? 'active' : ''}`} onClick={() => setActiveModule(module.id)} title={module.label}><Icon size={18} />{!collapsed && <span>{module.label}</span>}</button>;
+          const badge = Number(moduleBadges[module.id] ?? 0);
+          return <button key={module.id} className={`nav-item ${activeModule === module.id ? 'active' : ''}`} onClick={() => setActiveModule(module.id)} title={module.label}><Icon size={18} />{!collapsed && <span>{module.label}</span>}{badge > 0 && <span className="nav-item-count">{badge > 99 ? '99+' : badge}</span>}</button>;
         })}
       </nav>
       <div className="sidebar-footer">

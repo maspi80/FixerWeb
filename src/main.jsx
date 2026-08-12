@@ -97,6 +97,10 @@ import {
   createProjectSection, updateProjectSection, deleteProjectSection, fetchProjectSections,
   createTaskComment, updateTaskComment, deleteTaskComment, fetchTaskComments,
   fetchAllProjectTasks, fetchProjectAllComments, fetchProjects, fetchProjectTasks,
+  clearProjectsLastWorkspace,
+  readProjectsLastWorkspace,
+  resolveProjectsLastWorkspace,
+  writeProjectsLastWorkspace,
   PROJECT_TASK_COMMENT_TYPES, WORK_STATUSES, WORK_DONE_STATUS, WORK_TERMINAL_STATUSES,
   displayWorkStatus, getDefaultWorkPriority, isCompletedStatus, normalizeWorkPriority, normalizeWorkStatus,
   normalizeAccentColor,
@@ -129,14 +133,23 @@ import {
 import { loadUserAccess } from './services/userAccessService';
 import {
   CHAT_ALL_CONVERSATION_ID,
+  CHAT_GENERAL_LABEL,
+  applyConversationTitleUpdate,
+  buildChatProfilesById,
   fetchChatConversations,
+  fetchPublicChatThreads,
+  deletePublicChatThread,
   fetchChatReadState,
   fetchChatUsers,
   fetchVisibleChatMessages,
+  findLatestUnreadChatConversationId,
   getChatConversationKey,
   getChatMessageConversationId,
   getChatUserDisplayName,
+  isChatConversationSamePartnerThread,
+  mergeFetchedChatConversations,
   normalizeChatMessage,
+  resolveChatMessageAuthor,
   saveChatReadState,
   sortChatMessages
 } from './services/chatService';
@@ -1091,8 +1104,25 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+function ModuleKeepAlive({ moduleId, activeModule, mounted, children }) {
+  if (!mounted) return null;
+  const isActive = activeModule === moduleId;
+  return (
+    <div
+      hidden={!isActive}
+      aria-hidden={!isActive}
+      className="module-keep-alive"
+      style={isActive ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
+  const [visitedModuleIds, setVisitedModuleIds] = useState(() => new Set(['dashboard']));
+  const keepAliveUserIdRef = useRef(null);
   const [session, setSession] = useState(null);
   const [userAccess, setUserAccess] = useState(createEmptyUserAccess);
   const [demoAuth, setDemoAuth] = useState(() => localStorage.getItem('fixer-demo-auth') === 'true');
@@ -1108,10 +1138,12 @@ function App() {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [chatUsers, setChatUsers] = useState([]);
   const [chatConversations, setChatConversations] = useState([]);
+  const [chatPublicThreads, setChatPublicThreads] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatReadState, setChatReadState] = useState({});
   const [chatActiveConversationId, setChatActiveConversationId] = useState(CHAT_ALL_CONVERSATION_ID);
   const [chatToasts, setChatToasts] = useState([]);
+  const chatConversationsLoadRequestRef = useRef(0);
   const uiThemeCssVariables = useMemo(() => createUiThemeCssVariables(activeUiTheme.tokens, colorTheme), [activeUiTheme.tokens, colorTheme]);
   const accessReady = !isSupabaseConfigured || !session?.user || Boolean(userAccess.profile);
   const hasPermission = useCallback((permissionKey) => {
@@ -1206,13 +1238,18 @@ function App() {
     user_color: DEFAULT_USER_COLOR,
     is_active: true
   } : null;
-  const chatProfilesById = useMemo(() => {
-    const map = new Map();
-    if (currentChatProfile?.id) map.set(currentChatProfile.id, currentChatProfile);
-    chatUsers.forEach((user) => map.set(user.id, user));
-    return map;
-  }, [chatUsers, currentChatProfile?.id, currentChatProfile?.email, currentChatProfile?.full_name, currentChatProfile?.username, currentChatProfile?.user_color]);
+  const chatProfilesById = useMemo(() => buildChatProfilesById({
+    currentProfile: currentChatProfile,
+    users: chatUsers
+  }), [chatUsers, currentChatProfile]);
+  const chatProfilesByIdRef = useRef(chatProfilesById);
+  chatProfilesByIdRef.current = chatProfilesById;
+  const chatUsersSignature = useMemo(
+    () => chatUsers.map((user) => `${user.id}\u0001${user.full_name ?? ''}\u0001${user.username ?? ''}`).join('\u0002'),
+    [chatUsers]
+  );
   const chatConversationsByKey = useMemo(() => new Map(chatConversations.map((conversation) => [conversation.conversation_key, conversation])), [chatConversations]);
+  const chatPublicThreadsByKey = useMemo(() => new Map(chatPublicThreads.map((thread) => [thread.conversation_key, thread])), [chatPublicThreads]);
   const chatUnreadCounts = useMemo(
     () => calculateChatUnreadCounts(chatMessages, chatReadState, currentUserId),
     [chatMessages, chatReadState, currentUserId]
@@ -1288,7 +1325,8 @@ function App() {
 
   const upsertChatMessage = useCallback((message) => {
     if (!message?.id) return;
-    setChatMessages((current) => sortChatMessages([...current.filter((item) => item.id !== message.id), message]));
+    const nextMessage = normalizeChatMessage(message, chatProfilesByIdRef.current);
+    setChatMessages((current) => sortChatMessages([...current.filter((item) => item.id !== nextMessage.id), nextMessage]));
   }, []);
 
   const removeChatMessage = useCallback((messageId) => {
@@ -1298,11 +1336,81 @@ function App() {
 
   const loadChatConversations = useCallback(() => {
     if (!currentUserId || chatPermissions.view !== true) return;
-    fetchChatConversations({ currentUserId, profilesById: chatProfilesById }).then((result) => {
-      setChatConversations(result.data ?? []);
+    const requestId = chatConversationsLoadRequestRef.current + 1;
+    chatConversationsLoadRequestRef.current = requestId;
+    fetchChatConversations({ currentUserId, profilesById: chatProfilesByIdRef.current }).then((result) => {
+      if (requestId !== chatConversationsLoadRequestRef.current) return;
+      if (result.local && !(result.data?.length)) return;
+      setChatConversations((current) => mergeFetchedChatConversations(current, result.data ?? []));
       if (result.error) console.warn('Chat conversations load failed', result.error);
     });
-  }, [chatPermissions.view, chatProfilesById, currentUserId]);
+  }, [chatPermissions.view, currentUserId]);
+
+  const loadPublicChatThreads = useCallback(() => {
+    if (chatPermissions.view !== true) return;
+    fetchPublicChatThreads({ profilesById: chatProfilesByIdRef.current }).then((result) => {
+      if (result.local && !(result.data?.length)) return;
+      setChatPublicThreads(result.data ?? []);
+      if (result.error) console.warn('Chat public threads load failed', result.error);
+    });
+  }, [chatPermissions.view]);
+
+  const handlePublicThreadCreated = useCallback((thread) => {
+    if (thread?.conversation_key) {
+      setChatPublicThreads((current) => {
+        if (current.some((entry) => entry.id === thread.id)) return current;
+        return [thread, ...current];
+      });
+    }
+    loadPublicChatThreads();
+  }, [loadPublicChatThreads]);
+
+  const handlePublicThreadUpdated = useCallback((threadId, { title = '' } = {}) => {
+    const nextTitle = String(title ?? '').trim();
+    if (!threadId || !nextTitle) return;
+    setChatPublicThreads((current) => current.map((thread) => (
+      thread.id === threadId ? { ...thread, title: nextTitle } : thread
+    )));
+  }, []);
+
+  const handlePublicThreadDeleted = useCallback((threadId) => {
+    if (!threadId) return;
+    const threadKey = getChatConversationKey(threadId);
+    setChatPublicThreads((current) => current.filter((thread) => thread.id !== threadId));
+    setChatMessages((current) => current.filter((message) => message.conversation_id !== threadId));
+    setChatReadState((current) => {
+      const next = { ...current };
+      delete next[threadKey];
+      return next;
+    });
+    if (chatActiveConversationId === threadKey) {
+      setChatActiveConversationId(CHAT_ALL_CONVERSATION_ID);
+    }
+  }, [chatActiveConversationId]);
+
+  const handleChatConversationReplaced = useCallback(() => {
+    loadChatConversations();
+  }, [loadChatConversations]);
+
+  const handleChatConversationUpdated = useCallback((conversationId, { title = '' } = {}) => {
+    const nextTitle = String(title ?? '').trim();
+    setChatConversations((current) => applyConversationTitleUpdate(current, conversationId, nextTitle));
+  }, []);
+
+  const pendingChatReadStateRef = useRef({});
+  const chatReadStateFlushTimerRef = useRef(null);
+
+  const flushChatReadState = useCallback(() => {
+    chatReadStateFlushTimerRef.current = null;
+    if (!currentUserId) return;
+    const pending = { ...pendingChatReadStateRef.current };
+    pendingChatReadStateRef.current = {};
+    Object.entries(pending).forEach(([conversationKey, lastReadAt]) => {
+      saveChatReadState(currentUserId, conversationKey, lastReadAt).catch((error) => {
+        console.warn('Chat read state save failed', error);
+      });
+    });
+  }, [currentUserId]);
 
   const markChatConversationRead = useCallback((conversationId, lastReadAt) => {
     if (!currentUserId || !conversationId || !lastReadAt) return;
@@ -1311,10 +1419,19 @@ function App() {
       if (currentValue && new Date(currentValue).getTime() >= new Date(lastReadAt).getTime()) return current;
       return { ...current, [conversationId]: lastReadAt };
     });
-    saveChatReadState(currentUserId, conversationId, lastReadAt).catch((error) => {
-      console.warn('Chat read state save failed', error);
-    });
-  }, [currentUserId]);
+    pendingChatReadStateRef.current[conversationId] = lastReadAt;
+    if (chatReadStateFlushTimerRef.current) clearTimeout(chatReadStateFlushTimerRef.current);
+    chatReadStateFlushTimerRef.current = setTimeout(flushChatReadState, 500);
+  }, [currentUserId, flushChatReadState]);
+
+  const activeModuleRef = useRef(activeModule);
+  activeModuleRef.current = activeModule;
+  const chatActiveConversationIdRef = useRef(chatActiveConversationId);
+  chatActiveConversationIdRef.current = chatActiveConversationId;
+  const chatConversationsRef = useRef(chatConversations);
+  chatConversationsRef.current = chatConversations;
+  const markChatConversationReadRef = useRef(markChatConversationRead);
+  markChatConversationReadRef.current = markChatConversationRead;
 
   const markChatConversationReadFromMessages = useCallback((conversationId) => {
     if (!conversationId) return;
@@ -1349,24 +1466,40 @@ function App() {
   }, [markChatConversationReadFromMessages, navigateToModule]);
 
   const pushChatToast = useCallback((message, conversationId) => {
-    const sender = chatProfilesById.get(message.sender_user_id);
-    const senderName = message.author_name || getChatUserDisplayName(sender);
-    const isPublic = !message.recipient_user_id;
+    const senderName = resolveChatMessageAuthor(message, chatProfilesById);
+    const isGeneral = conversationId === CHAT_ALL_CONVERSATION_ID;
+    const publicThread = chatPublicThreadsByKey.get(conversationId);
     const conversation = chatConversationsByKey.get(conversationId);
     const toast = {
       id: `chat:${message.id}:${Date.now()}`,
       conversationId,
-      title: isPublic ? 'Nowa wiadomość — Wszyscy' : `Nowa wiadomość od ${conversation?.partner_name || senderName}`,
-      detail: isPublic ? `${senderName}: ${previewChatMessageText(message.message)}` : previewChatMessageText(message.message)
+      title: isGeneral
+        ? `Nowa wiadomość — ${CHAT_GENERAL_LABEL}`
+        : publicThread
+          ? `Nowa wiadomość — ${publicThread.title}`
+          : `Nowa wiadomość od ${conversation?.partner_name || senderName}`,
+      detail: isGeneral || publicThread
+        ? `${senderName}: ${previewChatMessageText(message.message)}`
+        : previewChatMessageText(message.message)
     };
     setChatToasts((current) => [...current.filter((item) => item.id !== toast.id), toast].slice(-3));
     window.setTimeout(() => closeChatToast(toast.id), 6000);
-  }, [chatConversationsByKey, chatProfilesById, closeChatToast]);
+  }, [chatConversationsByKey, chatPublicThreadsByKey, chatProfilesById, closeChatToast]);
+
+  const pushChatToastRef = useRef(pushChatToast);
+  pushChatToastRef.current = pushChatToast;
+  const loadChatConversationsRef = useRef(loadChatConversations);
+  loadChatConversationsRef.current = loadChatConversations;
+  const loadPublicChatThreadsRef = useRef(loadPublicChatThreads);
+  loadPublicChatThreadsRef.current = loadPublicChatThreads;
+  const handlePublicThreadDeletedRef = useRef(handlePublicThreadDeleted);
+  handlePublicThreadDeletedRef.current = handlePublicThreadDeleted;
 
   useEffect(() => {
     if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) {
       setChatUsers([]);
       setChatConversations([]);
+      setChatPublicThreads([]);
       setChatMessages([]);
       setChatReadState({});
       return undefined;
@@ -1386,28 +1519,67 @@ function App() {
   }, [isAuthenticated, currentUserId, chatPermissions.view]);
 
   useEffect(() => {
-    if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
-    let cancelled = false;
-    fetchChatConversations({ currentUserId, profilesById: chatProfilesById }).then((result) => {
-      if (!cancelled) setChatConversations(result.data ?? []);
-      if (result.error) console.warn('Chat conversations load failed', result.error);
-    });
-    return () => {
-      cancelled = true;
+    if (!isSupabaseConfigured || !isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
+    let active = true;
+    const refreshChatUsers = () => {
+      fetchChatUsers(currentUserId).then((result) => {
+        if (!active) return;
+        setChatUsers(result.data ?? []);
+        if (result.error) console.warn('Chat users load failed', result.error);
+      });
     };
-  }, [isAuthenticated, currentUserId, chatPermissions.view, chatProfilesById]);
+    const channel = supabase
+      .channel(`chat-profiles:${currentUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refreshChatUsers)
+      .subscribe();
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated, currentUserId, chatPermissions.view]);
 
   useEffect(() => {
     if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
     let cancelled = false;
-    fetchVisibleChatMessages({ profilesById: chatProfilesById }).then((result) => {
+    fetchChatConversations({ currentUserId, profilesById: chatProfilesByIdRef.current }).then((result) => {
+      if (!cancelled) setChatConversations(result.data ?? []);
+      if (result.error) console.warn('Chat conversations load failed', result.error);
+    });
+    fetchPublicChatThreads({ profilesById: chatProfilesByIdRef.current }).then((result) => {
+      if (!cancelled) setChatPublicThreads(result.data ?? []);
+      if (result.error) console.warn('Chat public threads load failed', result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, currentUserId, chatPermissions.view]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
+    let cancelled = false;
+    fetchVisibleChatMessages({ profilesById: new Map() }).then((result) => {
       if (!cancelled) setChatMessages(result.data ?? []);
       if (result.error) console.warn('Chat messages load failed', result.error);
     });
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, currentUserId, chatPermissions.view, chatProfilesById]);
+  }, [isAuthenticated, currentUserId, chatPermissions.view]);
+
+  useEffect(() => {
+    if (!chatUsersSignature) return;
+    setChatMessages((current) => {
+      if (!current.length) return current;
+      const next = sortChatMessages(current.map((message) => normalizeChatMessage(message, chatProfilesByIdRef.current)));
+      if (next.length === current.length && next.every((message, index) => (
+        message.author_name === current[index]?.author_name
+        && message.author_color === current[index]?.author_color
+      ))) {
+        return current;
+      }
+      return next;
+    });
+  }, [chatUsersSignature]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
@@ -1421,19 +1593,22 @@ function App() {
           return;
         }
 
-        const message = normalizeChatMessage(payload.new, chatProfilesById);
+        const message = normalizeChatMessage(payload.new, chatProfilesByIdRef.current);
         const conversationId = getChatMessageConversationId(message, currentUserId);
         upsertChatMessage(message);
 
         if (message.sender_user_id === currentUserId) return;
 
-        const isActiveConversation = activeModule === 'chat' && chatActiveConversationId === conversationId;
+        const isActiveConversation = activeModuleRef.current === 'chat' && (
+          chatActiveConversationIdRef.current === conversationId
+          || isChatConversationSamePartnerThread(conversationId, chatActiveConversationIdRef.current, chatConversationsRef.current)
+        );
         if (isActiveConversation) {
-          markChatConversationRead(conversationId, message.created_at);
+          markChatConversationReadRef.current(conversationId, message.created_at);
           return;
         }
 
-        pushChatToast(message, conversationId);
+        pushChatToastRef.current(message, conversationId);
         playChatNotificationSound();
       })
       .subscribe();
@@ -1442,29 +1617,44 @@ function App() {
       active = false;
       supabase.removeChannel(channel);
     };
-  }, [
-    activeModule,
-    chatActiveConversationId,
-    chatPermissions.view,
-    chatProfilesById,
-    currentUserId,
-    isAuthenticated,
-    markChatConversationRead,
-    pushChatToast,
-    removeChatMessage,
-    upsertChatMessage
-  ]);
+  }, [chatPermissions.view, currentUserId, isAuthenticated, removeChatMessage, upsertChatMessage]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !isAuthenticated || !currentUserId || chatPermissions.view !== true) return undefined;
     let active = true;
     const channel = supabase
       .channel(`chat-conversations:${currentUserId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_conversations' }, () => {
-        if (active) loadChatConversations();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_conversations' }, (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'UPDATE' && payload.new?.id) {
+          if (payload.new.conversation_type === 'public_thread') {
+            setChatPublicThreads((current) => current.map((thread) => (
+              thread.id === payload.new.id
+                ? { ...thread, title: String(payload.new.title ?? '').trim() }
+                : thread
+            )));
+          } else {
+            setChatConversations((current) => applyConversationTitleUpdate(
+              current,
+              payload.new.id,
+              payload.new.title ?? ''
+            ));
+          }
+          return;
+        }
+        if (payload.eventType === 'INSERT' && payload.new?.conversation_type === 'public_thread') {
+          loadPublicChatThreadsRef.current();
+          return;
+        }
+        if (payload.eventType === 'DELETE' && payload.old?.id) {
+          handlePublicThreadDeletedRef.current(payload.old.id);
+          loadChatConversationsRef.current();
+          return;
+        }
+        loadChatConversationsRef.current();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_conversation_members' }, () => {
-        if (active) loadChatConversations();
+        if (active) loadChatConversationsRef.current();
       })
       .subscribe();
 
@@ -1472,7 +1662,7 @@ function App() {
       active = false;
       supabase.removeChannel(channel);
     };
-  }, [chatPermissions.view, currentUserId, isAuthenticated, loadChatConversations]);
+  }, [chatPermissions.view, currentUserId, isAuthenticated]);
 
   useEffect(() => {
     if (!accessReady || !isAuthenticated) return;
@@ -1482,12 +1672,50 @@ function App() {
     if (fallbackModule) setActiveModule(fallbackModule);
   }, [accessReady, isAuthenticated, activeModule, hasPermission]);
 
+  useEffect(() => {
+    if (!accessReady || !isAuthenticated) return;
+    if (!allowedModuleIds.has(activeModule)) return;
+    setVisitedModuleIds((current) => {
+      if (current.has(activeModule)) return current;
+      const next = new Set(current);
+      next.add(activeModule);
+      return next;
+    });
+  }, [accessReady, isAuthenticated, activeModule, allowedModuleIds]);
+
+  useEffect(() => {
+    setVisitedModuleIds((current) => {
+      const nextIds = [...current].filter((moduleId) => allowedModuleIds.has(moduleId));
+      if (nextIds.length === current.size) return current;
+      return new Set(nextIds);
+    });
+  }, [allowedModuleIds]);
+
+  useEffect(() => {
+    if (!accessReady || !isAuthenticated || !currentUserId) return;
+    if (keepAliveUserIdRef.current !== null && keepAliveUserIdRef.current !== currentUserId) {
+      setVisitedModuleIds(() => {
+        const next = new Set();
+        if (allowedModuleIds.has(activeModule)) next.add(activeModule);
+        return next;
+      });
+    }
+    keepAliveUserIdRef.current = currentUserId;
+  }, [accessReady, isAuthenticated, currentUserId, activeModule, allowedModuleIds]);
+
   const handleLogout = async () => {
+    if (chatReadStateFlushTimerRef.current) {
+      clearTimeout(chatReadStateFlushTimerRef.current);
+      chatReadStateFlushTimerRef.current = null;
+    }
+    flushChatReadState();
     if (isSupabaseConfigured) await supabase.auth.signOut();
     localStorage.removeItem('fixer-demo-auth');
     setDemoAuth(false);
     setSession(null);
     setUserAccess(createEmptyUserAccess());
+    keepAliveUserIdRef.current = null;
+    setVisitedModuleIds(new Set());
     setLogoutConfirmOpen(false);
   };
 
@@ -1529,8 +1757,20 @@ function App() {
         activeModule={activeModule}
         setActiveModule={(moduleId) => {
           if (moduleId === 'chat') {
-            markAllChatConversationsReadFromMessages();
             setChatToasts([]);
+            const latestUnreadConversationId = findLatestUnreadChatConversationId(
+              chatMessages,
+              chatReadState,
+              currentUserId
+            );
+            if (latestUnreadConversationId) {
+              navigateToModule('chat', {
+                type: 'chat',
+                conversationId: latestUnreadConversationId,
+                openLatestUnread: true
+              });
+              return;
+            }
           }
           navigateToModule(moduleId);
         }}
@@ -1564,51 +1804,86 @@ function App() {
         />
         <section className="page-content">
           {!visibleModules.length && <EmptyState title="Brak przypisanych modułów." />}
-          {allowedModuleIds.has('dashboard') && activeModule === 'dashboard' && <Dashboard onNavigate={navigateToModule} />}
-          {allowedModuleIds.has('clients') && activeModule === 'clients' && <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {allowedModuleIds.has('equipment') && activeModule === 'equipment' && <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
-          {allowedModuleIds.has('rentals') && activeModule === 'rentals' && <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {allowedModuleIds.has('service') && activeModule === 'service' && <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />}
-          {allowedModuleIds.has('calendar') && activeModule === 'calendar' && <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />}
-          {allowedModuleIds.has('projects') && activeModule === 'projects' && <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} permissions={projectPermissions} currentUser={currentUser} />}
-          {allowedModuleIds.has('notes') && activeModule === 'notes' && <NotatkiModule />}
-          {allowedModuleIds.has('chat') && activeModule === 'chat' && <ChatModule
-            currentUser={currentUser}
-            permissions={chatPermissions}
-            isAdmin={isAdmin}
-            users={chatUsers}
-            conversations={chatConversations}
-            visibleMessages={chatMessages}
-            readState={chatReadState}
-            requestedConversationId={moduleIntent?.type === 'chat' ? moduleIntent.conversationId : null}
-            onConsumeConversationRequest={() => setModuleIntent(null)}
-            onActiveConversationChange={setChatActiveConversationId}
-            onMarkConversationRead={markChatConversationRead}
-            onMessageCreated={upsertChatMessage}
-            onMessageDeleted={removeChatMessage}
-            onConversationCreated={loadChatConversations}
-            onConversationDeleted={(conversationId) => {
-              const conversationKey = getChatConversationKey(conversationId);
-              setChatConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
-              setChatMessages((current) => current.filter((message) => message.conversation_id !== conversationId));
-              setChatReadState((current) => {
-                const next = { ...current };
-                delete next[conversationKey];
-                return next;
-              });
-              loadChatConversations();
-              if (chatActiveConversationId === conversationKey) setChatActiveConversationId(CHAT_ALL_CONVERSATION_ID);
-            }}
-            onPublicHistoryCleared={() => {
-              setChatMessages((current) => current.filter((message) => message.conversation_id || message.recipient_user_id));
-              setChatReadState((current) => {
-                const next = { ...current };
-                delete next[CHAT_ALL_CONVERSATION_ID];
-                return next;
-              });
-            }}
-          />}
-          {allowedModuleIds.has('settings') && activeModule === 'settings' && <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} currentUser={currentUser} />}
+          <ModuleKeepAlive moduleId="dashboard" activeModule={activeModule} mounted={allowedModuleIds.has('dashboard') && visitedModuleIds.has('dashboard')}>
+            <Dashboard onNavigate={navigateToModule} />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="clients" activeModule={activeModule} mounted={allowedModuleIds.has('clients') && visitedModuleIds.has('clients')}>
+            <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="equipment" activeModule={activeModule} mounted={allowedModuleIds.has('equipment') && visitedModuleIds.has('equipment')}>
+            <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="rentals" activeModule={activeModule} mounted={allowedModuleIds.has('rentals') && visitedModuleIds.has('rentals')}>
+            <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="service" activeModule={activeModule} mounted={allowedModuleIds.has('service') && visitedModuleIds.has('service')}>
+            <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="calendar" activeModule={activeModule} mounted={allowedModuleIds.has('calendar') && visitedModuleIds.has('calendar')}>
+            <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="projects" activeModule={activeModule} mounted={allowedModuleIds.has('projects') && visitedModuleIds.has('projects')}>
+            <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} permissions={projectPermissions} currentUser={currentUser} />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="notes" activeModule={activeModule} mounted={allowedModuleIds.has('notes') && visitedModuleIds.has('notes')}>
+            <NotatkiModule />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="chat" activeModule={activeModule} mounted={allowedModuleIds.has('chat') && visitedModuleIds.has('chat')}>
+            <ChatModule
+              isActive={activeModule === 'chat'}
+              currentUser={currentUser}
+              permissions={chatPermissions}
+              isAdmin={isAdmin}
+              users={chatUsers}
+              conversations={chatConversations}
+              publicThreads={chatPublicThreads}
+              visibleMessages={chatMessages}
+              readState={chatReadState}
+              requestedConversationId={moduleIntent?.type === 'chat' ? moduleIntent.conversationId : null}
+              onConsumeConversationRequest={() => setModuleIntent(null)}
+              onActiveConversationChange={setChatActiveConversationId}
+              onMarkConversationRead={markChatConversationRead}
+              onMessageCreated={upsertChatMessage}
+              onMessageDeleted={removeChatMessage}
+              onConversationCreated={loadChatConversations}
+              onConversationReplaced={handleChatConversationReplaced}
+              onConversationUpdated={handleChatConversationUpdated}
+              onPublicThreadCreated={handlePublicThreadCreated}
+              onPublicThreadUpdated={handlePublicThreadUpdated}
+              onPublicThreadDeleted={handlePublicThreadDeleted}
+              onConversationDeleted={(conversationId, { threadConversationIds = [] } = {}) => {
+                const hiddenIds = new Set(
+                  threadConversationIds.length ? threadConversationIds : [conversationId].filter(Boolean)
+                );
+                const hiddenKeys = new Set(
+                  [...hiddenIds].map((id) => getChatConversationKey(id))
+                );
+                setChatConversations((current) => current.filter((conversation) => (
+                  !hiddenIds.has(conversation.id)
+                  && !(conversation.thread_conversation_ids ?? []).some((id) => hiddenIds.has(id))
+                )));
+                setChatMessages((current) => current.filter((message) => !hiddenIds.has(message.conversation_id)));
+                setChatReadState((current) => {
+                  const next = { ...current };
+                  hiddenKeys.forEach((key) => { delete next[key]; });
+                  return next;
+                });
+                loadChatConversations();
+                if (hiddenKeys.has(chatActiveConversationId)) setChatActiveConversationId(CHAT_ALL_CONVERSATION_ID);
+              }}
+              onPublicHistoryCleared={() => {
+                setChatMessages((current) => current.filter((message) => message.conversation_id || message.recipient_user_id));
+                setChatReadState((current) => {
+                  const next = { ...current };
+                  delete next[CHAT_ALL_CONVERSATION_ID];
+                  return next;
+                });
+              }}
+            />
+          </ModuleKeepAlive>
+          <ModuleKeepAlive moduleId="settings" activeModule={activeModule} mounted={allowedModuleIds.has('settings') && visitedModuleIds.has('settings')}>
+            <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} currentUser={currentUser} />
+          </ModuleKeepAlive>
         </section>
       </main>
       {chatToasts.length > 0 && <div className="chat-toast-stack">
@@ -2478,7 +2753,6 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
           <AppButton variant="secondary" className="module-action-button" onClick={loadClients}>Odśwież</AppButton>
           <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><Download size={16} />CSV</AppButton>
           <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Baza klientów', CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />PDF</AppButton>
-
         </div>
         {notice && <div className="notice">{notice}</div>}
       </section>
@@ -8947,7 +9221,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions 
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, refreshKey = 0, style = null, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, onTaskDeleted = null, refreshKey = 0, style = null, ensureExpandedSectionId = null, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -8972,6 +9246,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const taskDragRef = useRef(null);
   const suppressTaskClickRef = useRef(false);
   const onTaskChangedRef = useRef(onTaskChanged);
+  const onTaskDeletedRef = useRef(onTaskDeleted);
   const canCreateProjectItems = permissions.create === true;
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
@@ -8980,6 +9255,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     if (sectionItemClickTimeoutRef.current) window.clearTimeout(sectionItemClickTimeoutRef.current);
   }, []);
   useEffect(() => { onTaskChangedRef.current = onTaskChanged; }, [onTaskChanged]);
+  useEffect(() => { onTaskDeletedRef.current = onTaskDeleted; }, [onTaskDeleted]);
 
   const loadPanelData = async () => {
     if (!projectId || collapsed) return;
@@ -9005,65 +9281,122 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   useEffect(() => { loadPanelData(); }, [projectId, collapsed, refreshKey]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !projectId || project?.localId || collapsed || permissions.view !== true) return undefined;
+    if (!ensureExpandedSectionId) return;
+    const sectionId = String(ensureExpandedSectionId);
+    setCollapsedSections((current) => {
+      if (!current.has(sectionId)) return current;
+      const next = new Set(current);
+      next.delete(sectionId);
+      return next;
+    });
+  }, [ensureExpandedSectionId, projectId]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !projectId || project?.localId || permissions.view !== true) return undefined;
     let active = true;
+    const projectFilter = `project_id=eq.${projectId}`;
+
+    const handleTaskUpsert = (payload) => {
+      if (!active) return;
+      const nextTask = payload.new;
+      if (String(nextTask?.project_id ?? '') !== String(projectId)) return;
+      setTasks((current) => upsertRecordById(current, nextTask));
+      onTaskChangedRef.current?.(nextTask);
+    };
+
+    const handleTaskDelete = (payload) => {
+      if (!active) return;
+      const removedId = String(payload.old?.id ?? payload.old?.localId ?? '').trim();
+      if (!removedId) return;
+      let removed = false;
+      setTasks((current) => {
+        const belongsToProject = current.some((task) => String(task.id ?? task.localId) === removedId);
+        if (!belongsToProject) return current;
+        removed = true;
+        return removeRecordById(current, payload.old);
+      });
+      if (!removed) return;
+      setExpandedTasks((current) => {
+        if (!current.has(removedId)) return current;
+        const next = new Set(current);
+        next.delete(removedId);
+        return next;
+      });
+      setCommentCounts((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, removedId)) return current;
+        const next = { ...current };
+        delete next[removedId];
+        return next;
+      });
+      onTaskDeletedRef.current?.(payload.old);
+    };
+
+    const handleSectionUpsert = (payload) => {
+      if (!active) return;
+      if (String(payload.new?.project_id ?? '') !== String(projectId)) return;
+      setSections((current) => upsertRecordById(current, payload.new));
+    };
+
+    const handleSectionDelete = (payload) => {
+      if (!active) return;
+      const removedSectionId = String(payload.old?.id ?? payload.old?.localId ?? '').trim();
+      if (!removedSectionId) return;
+      setSections((current) => {
+        const belongsToProject = current.some((section) => String(section.id ?? section.localId) === removedSectionId);
+        if (!belongsToProject) return current;
+        return removeRecordById(current, payload.old);
+      });
+      setCollapsedSections((current) => {
+        if (!current.has(removedSectionId)) return current;
+        const next = new Set(current);
+        next.delete(removedSectionId);
+        return next;
+      });
+    };
+
     const channel = supabase
       .channel(`project-panel:${projectId}`)
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
         table: 'project_tasks',
-        filter: `project_id=eq.${projectId}`
-      }, (payload) => {
-        if (!active) return;
-        if (payload.eventType === 'DELETE') {
-          const removedTaskId = String(payload.old?.id ?? '');
-          setTasks((current) => removeRecordById(current, payload.old));
-          setExpandedTasks((current) => {
-            if (!removedTaskId || !current.has(removedTaskId)) return current;
-            const next = new Set(current);
-            next.delete(removedTaskId);
-            return next;
-          });
-          setCommentCounts((current) => {
-            if (!removedTaskId || !Object.prototype.hasOwnProperty.call(current, removedTaskId)) return current;
-            const next = { ...current };
-            delete next[removedTaskId];
-            return next;
-          });
-          return;
-        }
-        const nextTask = payload.new;
-        setTasks((current) => upsertRecordById(current, nextTask));
-        onTaskChangedRef.current?.(nextTask);
-      })
+        filter: projectFilter
+      }, handleTaskUpsert)
       .on('postgres_changes', {
-        event: '*',
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'project_tasks',
+        filter: projectFilter
+      }, handleTaskUpsert)
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'project_tasks'
+      }, handleTaskDelete)
+      .on('postgres_changes', {
+        event: 'INSERT',
         schema: 'public',
         table: 'project_task_sections',
-        filter: `project_id=eq.${projectId}`
-      }, (payload) => {
-        if (!active) return;
-        if (payload.eventType === 'DELETE') {
-          const removedSectionId = String(payload.old?.id ?? '');
-          setSections((current) => removeRecordById(current, payload.old));
-          setCollapsedSections((current) => {
-            if (!removedSectionId || !current.has(removedSectionId)) return current;
-            const next = new Set(current);
-            next.delete(removedSectionId);
-            return next;
-          });
-          return;
-        }
-        setSections((current) => upsertRecordById(current, payload.new));
-      })
+        filter: projectFilter
+      }, handleSectionUpsert)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'project_task_sections',
+        filter: projectFilter
+      }, handleSectionUpsert)
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'project_task_sections'
+      }, handleSectionDelete)
       .subscribe();
 
     return () => {
       active = false;
       supabase.removeChannel(channel);
     };
-  }, [projectId, project?.localId, collapsed, permissions.view]);
+  }, [projectId, project?.localId, permissions.view]);
 
   useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
   useEffect(() => {
@@ -10253,6 +10586,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
 }
 
 function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme = 'dark', permissions = { view: true, create: true, edit: true, delete: true }, currentUser = null }) {
+  const currentUserId = currentUser?.profile?.id ?? currentUser?.id ?? null;
   const [rows, setRows] = useState([]);
   const [organizerRows, setOrganizerRows] = useState([]);
   const [clients, setClients] = useState([]);
@@ -10268,25 +10602,26 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const [categories, setCategories] = useState(DEFAULT_ORGANIZER_CATEGORIES);
   const [pendingOpenProjectId, setPendingOpenProjectId] = useState(null);
   const [pendingOpenSimpleTaskId, setPendingOpenSimpleTaskId] = useState(null);
-  const [selectedProjectKey, setSelectedProjectKey] = useState(() => localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY));
+  const [workspaceRestoreDone, setWorkspaceRestoreDone] = useState(false);
+  const [projectsDataReady, setProjectsDataReady] = useState(false);
+  const [restoreExpandedSectionId, setRestoreExpandedSectionId] = useState(null);
+  const [selectedProjectKey, setSelectedProjectKey] = useState(null);
   const [selectedDetailsWork, setSelectedDetailsWork] = useState(null);
   const [selectedProjectTask, setSelectedProjectTask] = useState(null);
   const [highlightedProjectTask, setHighlightedProjectTask] = useState(null);
-  const [detailsOpen, setDetailsOpen] = useState(() => Boolean(localStorage.getItem(PROJECT_DETAILS_SELECTED_KEY)));
-  const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedProjectDetailsCollapsed);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
   const [detailsWidth, setDetailsWidth] = useState(getSavedProjectDetailsWidth);
-  const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem(PROJECTS_LEFT_COLLAPSED_KEY) === 'true');
-  const [columnsSplit, setColumnsSplit] = useState(() => {
-    const saved = Number(localStorage.getItem(PROJECTS_COLUMNS_SPLIT_KEY));
-    return Number.isFinite(saved) && saved > 0 ? saved : 0.54;
-  });
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [columnsSplit, setColumnsSplit] = useState(0.54);
   const [projectPanelRefreshKey, setProjectPanelRefreshKey] = useState(0);
   const [workPriorityNames, setWorkPriorityNames] = useState(DEFAULT_WORK_PRIORITIES);
   const projectsWorkspaceRef = useRef(null);
   const detailsAutosaveRef = useRef(null);
   const projectAutosaveCacheRef = useRef(new Map());
   const projectTaskAutosaveCacheRef = useRef(new Map());
-  const initialProjectLoadKeyRef = useRef(null);
+  const workspaceRestoreStartedRef = useRef(false);
+  const pendingMiddleTaskIdRef = useRef(null);
   const documentSettings = getDocumentSettings();
   const isTasksOnlyView = (filters.type ?? 'all') === 'task';
   const commentAuthor = useMemo(() => getCurrentCommentAuthor(currentUser), [currentUser?.id, currentUser?.email, currentUser?.name, currentUser?.profile?.full_name, currentUser?.profile?.email, currentUser?.profile?.user_color]);
@@ -10314,26 +10649,60 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       : task;
   };
 
-  const loadData = async () => {
+  const loadData = async ({ cancelled = () => false } = {}) => {
     if (permissions.view !== true) return;
     setLoading(true);
-    const [projectsResult, clientsResult, tasksResult, catsResult, prioritiesResult] = await Promise.all([
-      fetchProjects(),
-      fetchClients(),
-      fetchOrganizerTasks(),
-      fetchOrganizerCategories(),
-      fetchWorkDictionary(WORK_DICTIONARY_TYPES.priority)
-    ]);
-    setRows((projectsResult.data ?? []).map(mergeSavedProjectDraft));
-    setClients(clientsResult.data ?? []);
-    setOrganizerRows(tasksResult.data ?? []);
-    setCategories((catsResult.data ?? []).map((item) => item.name).filter(Boolean));
-    const names = (prioritiesResult.data ?? []).filter((row) => row.active !== false).map((row) => row.name);
-    setWorkPriorityNames(names.length ? names : DEFAULT_WORK_PRIORITIES);
-    if (projectsResult.error) setNotice(`Nie udało się pobrać projektów: ${humanizeError(projectsResult.error)}`);
-    else if (tasksResult.error) setNotice(`Nie udało się pobrać prostych zadań: ${humanizeError(tasksResult.error)}`);
-    setLoading(false);
+    try {
+      const [projectsResult, clientsResult, tasksResult, catsResult, prioritiesResult] = await Promise.all([
+        fetchProjects(),
+        fetchClients(),
+        fetchOrganizerTasks(),
+        fetchOrganizerCategories(),
+        fetchWorkDictionary(WORK_DICTIONARY_TYPES.priority)
+      ]);
+      if (cancelled()) return;
+      setRows((projectsResult.data ?? []).map(mergeSavedProjectDraft));
+      setClients(clientsResult.data ?? []);
+      setOrganizerRows(tasksResult.data ?? []);
+      setCategories((catsResult.data ?? []).map((item) => item.name).filter(Boolean));
+      const names = (prioritiesResult.data ?? []).filter((row) => row.active !== false).map((row) => row.name);
+      setWorkPriorityNames(names.length ? names : DEFAULT_WORK_PRIORITIES);
+      if (projectsResult.error) setNotice(`Nie udało się pobrać projektów: ${humanizeError(projectsResult.error)}`);
+      else if (tasksResult.error) setNotice(`Nie udało się pobrać prostych zadań: ${humanizeError(tasksResult.error)}`);
+      if (import.meta.env.DEV) {
+        console.debug('[Projects] load success', {
+          projects: (projectsResult.data ?? []).length,
+          organizerTasks: (tasksResult.data ?? []).length
+        });
+      }
+    } catch (error) {
+      if (!cancelled()) {
+        console.warn('[Projects] load failed', error);
+        setNotice('Nie udało się pobrać danych modułu.');
+      }
+    } finally {
+      if (!cancelled()) {
+        setProjectsDataReady(true);
+        setLoading(false);
+      }
+    }
   };
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.debug('[Projects] mount', { userId: currentUserId });
+    }
+    workspaceRestoreStartedRef.current = false;
+    pendingMiddleTaskIdRef.current = null;
+    setProjectsDataReady(false);
+    setWorkspaceRestoreDone(false);
+    setRestoreExpandedSectionId(null);
+    return () => {
+      if (import.meta.env.DEV) {
+        console.debug('[Projects] unmount', { userId: currentUserId });
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setProjectPermissionChecker((permissionKey) => {
@@ -10343,26 +10712,22 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       if (permissionKey === 'projects.delete') return permissions.delete === true;
       return false;
     });
+    return () => {
+      setProjectPermissionChecker(() => true);
+    };
   }, [permissions.view, permissions.create, permissions.edit, permissions.delete]);
 
   useEffect(() => {
-    if (permissions.view !== true) {
-      initialProjectLoadKeyRef.current = null;
-      return;
+    if (permissions.view !== true) return undefined;
+    let cancelled = false;
+    if (import.meta.env.DEV) {
+      console.debug('[Projects] load start', { userId: currentUser?.id ?? currentUser?.email ?? 'local' });
     }
-    const loadKey = String(currentUser?.id ?? currentUser?.email ?? 'local');
-    if (initialProjectLoadKeyRef.current === loadKey) return;
-    initialProjectLoadKeyRef.current = loadKey;
-    loadData();
+    loadData({ cancelled: () => cancelled });
+    return () => {
+      cancelled = true;
+    };
   }, [permissions.view, currentUser?.id, currentUser?.email]);
-
-  useEffect(() => {
-    localStorage.setItem(PROJECT_DETAILS_COLLAPSED_KEY, detailsCollapsed ? 'true' : 'false');
-  }, [detailsCollapsed]);
-
-  useEffect(() => {
-    localStorage.setItem(PROJECTS_LEFT_COLLAPSED_KEY, leftCollapsed ? 'true' : 'false');
-  }, [leftCollapsed]);
 
   useEffect(() => {
     const clampDetailsWidth = () => {
@@ -10381,9 +10746,12 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   }, [leftCollapsed, isTasksOnlyView]);
 
   useEffect(() => {
-    if (selectedProjectKey) localStorage.setItem(PROJECT_DETAILS_SELECTED_KEY, selectedProjectKey);
-    else localStorage.removeItem(PROJECT_DETAILS_SELECTED_KEY);
-  }, [selectedProjectKey]);
+    workspaceRestoreStartedRef.current = false;
+    pendingMiddleTaskIdRef.current = null;
+    setProjectsDataReady(false);
+    setWorkspaceRestoreDone(false);
+    setRestoreExpandedSectionId(null);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!['projects', 'organizer'].includes(dashboardIntent?.type)) return;
@@ -10391,6 +10759,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     if (dashboardIntent.taskId) setPendingOpenSimpleTaskId(dashboardIntent.taskId);
     if (dashboardIntent.filter === 'tasks') setFilters((current) => ({ ...current, type: 'task' }));
     onConsumeDashboardIntent?.();
+    setWorkspaceRestoreDone(true);
   }, [dashboardIntent, onConsumeDashboardIntent]);
 
   useEffect(() => {
@@ -10427,6 +10796,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const historyProjectRows = rows.filter((r) => r.archived || isCompletedStatus(r.status));
   const activeOrganizerRows = organizerRows.filter((t) => !t.archived && !isCompletedStatus(t.status));
   const historyOrganizerRows = organizerRows.filter((t) => t.archived || isCompletedStatus(t.status));
+  const activeRowsSignature = useMemo(
+    () => activeRows.map((row) => String(row.id ?? row.localId)).join('\u0001'),
+    [rows]
+  );
+  const activeOrganizerRowsSignature = useMemo(
+    () => activeOrganizerRows.map((row) => String(row.id ?? row.localId)).join('\u0001'),
+    [organizerRows]
+  );
 
   const saveProject = async (form) => {
     if (!requireProjectPermission(form.id || form.localId ? canEditProjects : canCreateProjects, form.id || form.localId ? 'projects.edit' : 'projects.create')) return;
@@ -10759,23 +11136,258 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const historyTableRows = [...historyProjectRows.map(mapProjectRow), ...historyOrganizerRows.map(mapTaskRow)];
   const activeTableRowsSignature = activeTableRows.map((row) => row.work_key).join('\u0001');
 
+  const applyOpenProjectTaskState = (task, projectId = null) => {
+    const mergedTask = mergeSavedProjectTaskDraft({
+      ...task,
+      project_id: task?.project_id ?? projectId ?? null
+    });
+    setHighlightedProjectTask(mergedTask);
+    setSelectedProjectTask(mergedTask);
+    setDetailsOpen(true);
+    setDetailsCollapsed(false);
+    const sectionId = mergedTask.section_id;
+    if (sectionId) setRestoreExpandedSectionId(String(sectionId));
+  };
+
   useEffect(() => {
+    if (workspaceRestoreDone || loading || !projectsDataReady || workspaceRestoreStartedRef.current) return;
+    if (pendingOpenProjectId || pendingOpenSimpleTaskId) return;
+
+    let cancelled = false;
+    const finishRestore = () => {
+      if (!cancelled) setWorkspaceRestoreDone(true);
+    };
+
+    if (!currentUserId) {
+      finishRestore();
+      return undefined;
+    }
+    if (!activeRowsSignature && !activeOrganizerRowsSignature) {
+      finishRestore();
+      return undefined;
+    }
+
+    workspaceRestoreStartedRef.current = true;
+
+    const runRestore = async () => {
+      const saved = readProjectsLastWorkspace(currentUserId);
+      if (!saved) {
+        finishRestore();
+        return;
+      }
+
+      const resolved = resolveProjectsLastWorkspace(saved, {
+        projects: activeRows,
+        organizerTasks: activeOrganizerRows
+      });
+
+      if (!resolved.valid) {
+        if (resolved.stale) clearProjectsLastWorkspace(currentUserId);
+        finishRestore();
+        return;
+      }
+
+      if (cancelled) return;
+
+      setFilters((current) => ({ ...current, type: resolved.filterType ?? current.type ?? 'all' }));
+      setLeftCollapsed(resolved.leftCollapsed === true);
+      setDetailsCollapsed(resolved.detailsCollapsed === true);
+      setHistoryCollapsed(resolved.historyCollapsed !== false);
+      setDetailsOpen(resolved.detailsOpen);
+      if (resolved.columnsSplit != null) {
+        setColumnsSplit(resolved.columnsSplit);
+        localStorage.setItem(PROJECTS_COLUMNS_SPLIT_KEY, String(Number(resolved.columnsSplit.toFixed(4))));
+      }
+
+      setSelectedProjectKey(resolved.projectKey);
+
+      if (resolved.projectKey?.startsWith('project:')) {
+        const project = activeRows.find((row) => `project:${row.id ?? row.localId}` === resolved.projectKey);
+        if (project) {
+          setSelectedDetailsWork(mapProjectRow(mergeSavedProjectDraft(project)));
+        }
+
+        const middleTaskId = resolved.selectedMiddleTaskId ?? resolved.selectedTaskId ?? resolved.taskId;
+        const projectId = resolved.projectId || resolved.projectKey.slice(8);
+        if (middleTaskId && projectId) {
+          pendingMiddleTaskIdRef.current = String(middleTaskId);
+        }
+      } else if (resolved.projectKey?.startsWith('task:')) {
+        const task = activeOrganizerRows.find((row) => `task:${row.id ?? row.localId}` === resolved.projectKey);
+        if (task) {
+          setSelectedDetailsWork(mapTaskRow(task));
+        }
+        setSelectedProjectTask(null);
+        setHighlightedProjectTask(null);
+      }
+
+      finishRestore();
+    };
+
+    runRestore();
+    return () => { cancelled = true; };
+  }, [
+    activeOrganizerRows,
+    activeOrganizerRowsSignature,
+    activeRows,
+    activeRowsSignature,
+    currentUserId,
+    loading,
+    pendingOpenProjectId,
+    pendingOpenSimpleTaskId,
+    projectsDataReady,
+    workspaceRestoreDone
+  ]);
+
+  useEffect(() => {
+    if (!workspaceRestoreDone) return;
     setSelectedProjectKey((currentKey) => {
-      if (!activeTableRows.length) return null;
+      if (!activeTableRows.length) {
+        if (!currentKey) return null;
+        if (currentKey.startsWith('project:')) {
+          const projectId = currentKey.slice(8);
+          if (activeRows.some((row) => String(row.id ?? row.localId) === projectId)) return currentKey;
+        }
+        if (currentKey.startsWith('task:')) {
+          const taskId = currentKey.slice(5);
+          if (activeOrganizerRows.some((row) => String(row.id ?? row.localId) === taskId)) return currentKey;
+        }
+        return null;
+      }
+      if (!currentKey) return activeTableRows[0].work_key;
       const matching = activeTableRows.find((row) => row.work_key === currentKey)
-        ?? activeTableRows.find((row) => currentKey && !String(currentKey).includes(':') && String(row.id ?? row.localId) === String(currentKey));
+        ?? activeTableRows.find((row) => !String(currentKey).includes(':') && String(row.id ?? row.localId) === String(currentKey));
       if (matching) return matching.work_key;
+      if (currentKey.startsWith('project:')) {
+        const projectId = currentKey.slice(8);
+        if (activeRows.some((row) => String(row.id ?? row.localId) === projectId)) return currentKey;
+      }
+      if (currentKey.startsWith('task:')) {
+        const taskId = currentKey.slice(5);
+        if (activeOrganizerRows.some((row) => String(row.id ?? row.localId) === taskId)) return currentKey;
+      }
       return activeTableRows[0].work_key;
     });
-  }, [activeTableRowsSignature]);
+  }, [activeOrganizerRows, activeRows, activeTableRowsSignature, workspaceRestoreDone]);
 
   const selectedWork = activeTableRows.find((row) => row.work_key === selectedProjectKey)
     ?? activeTableRows.find((row) => selectedProjectKey && String(row.id ?? row.localId) === String(selectedProjectKey))
-    ?? activeTableRows[0]
     ?? null;
-  const selectedProject = selectedWork?._workType === 'project' ? selectedWork._source : null;
+  const selectedProjectFromKey = useMemo(() => {
+    if (!selectedProjectKey?.startsWith('project:')) return null;
+    const projectId = selectedProjectKey.slice(8);
+    return activeRows.find((row) => String(row.id ?? row.localId) === projectId) ?? null;
+  }, [activeRows, selectedProjectKey]);
+  const selectedProject = selectedProjectFromKey
+    ?? (selectedWork?._workType === 'project' ? selectedWork._source : null);
   const selectedDetailsProject = selectedDetailsWork?._workType === 'project' ? selectedDetailsWork._source : null;
   const selectedSimpleTask = selectedDetailsWork?._workType === 'task' ? selectedDetailsWork._source : null;
+
+  useEffect(() => {
+    if (!workspaceRestoreDone || !selectedProject) return;
+    const middleTaskId = pendingMiddleTaskIdRef.current;
+    if (!middleTaskId) return;
+
+    let cancelled = false;
+    const projectId = selectedProject.id ?? selectedProject.localId;
+    if (!projectId) return undefined;
+    fetchProjectTasks(projectId).then((result) => {
+      if (cancelled) return;
+      pendingMiddleTaskIdRef.current = null;
+      const task = (result.data ?? []).find((row) => String(row.id ?? row.localId) === String(middleTaskId));
+      if (task) {
+        applyOpenProjectTaskState(task, projectId);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [workspaceRestoreDone, selectedProject?.id, selectedProject?.localId]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || permissions.view !== true) return undefined;
+    let active = true;
+    const userKey = String(currentUserId ?? 'local');
+
+    const applyProjectListChange = (nextProject) => {
+      const merged = mergeSavedProjectDraft(nextProject);
+      setRows((current) => upsertRecordById(current, merged));
+      setSelectedDetailsWork((current) => (
+        current?._workType === 'project' && String(current.id ?? current.localId) === String(merged.id ?? merged.localId)
+          ? mapProjectRow({ ...current._source, ...merged })
+          : current
+      ));
+    };
+
+    const removeProjectFromList = (removedProject) => {
+      const removedId = String(removedProject?.id ?? removedProject?.localId ?? '');
+      setRows((current) => removeRecordById(current, removedProject));
+      setSelectedDetailsWork((current) => (
+        current?._workType === 'project' && String(current.id ?? current.localId) === removedId
+          ? null
+          : current
+      ));
+      setSelectedProjectTask(null);
+      setHighlightedProjectTask(null);
+    };
+
+    const enrichProjectFromRemote = (projectId) => {
+      if (!projectId) return;
+      supabase
+        .from('projects')
+        .select('*, clients(id, name)')
+        .eq('id', projectId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!active || !data) return;
+          applyProjectListChange(data);
+        })
+        .catch(() => {});
+    };
+
+    const channel = supabase
+      .channel(`projects-list:${userKey}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'projects'
+      }, (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'DELETE') {
+          removeProjectFromList(payload.old);
+          return;
+        }
+        applyProjectListChange(payload.new);
+        enrichProjectFromRemote(payload.new?.id);
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'organizer_tasks'
+      }, (payload) => {
+        if (!active) return;
+        if (payload.eventType === 'DELETE') {
+          const removedId = String(payload.old?.id ?? payload.old?.localId ?? '');
+          setOrganizerRows((current) => removeRecordById(current, payload.old));
+          setSelectedDetailsWork((current) => (
+            current?._workType === 'task' && String(current.id ?? current.localId) === removedId
+              ? null
+              : current
+          ));
+          return;
+        }
+        setOrganizerRows((current) => upsertRecordById(current, payload.new));
+        setSelectedDetailsWork((current) => (
+          current?._workType === 'task' && String(current.id ?? current.localId) === String(payload.new?.id ?? payload.new?.localId)
+            ? mapTaskRow(payload.new)
+            : current
+        ));
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [permissions.view, currentUserId]);
 
   useEffect(() => {
     const projectId = selectedProject?.id;
@@ -10823,18 +11435,73 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   }, [detailsOpen, selectedDetailsWork, selectedWork?.work_key]);
 
   useEffect(() => {
-    if (!selectedProjectTask) return;
-    if (!selectedProject || String(selectedProjectTask.project_id) !== String(selectedProject.id ?? selectedProject.localId)) {
+    if (pendingMiddleTaskIdRef.current) return;
+    if (!workspaceRestoreDone || !selectedProjectTask) return;
+    const taskProjectId = selectedProjectTask.project_id ?? selectedProject?.id ?? selectedProject?.localId;
+    if (!selectedProject || String(taskProjectId) !== String(selectedProject.id ?? selectedProject.localId)) {
       setSelectedProjectTask(null);
     }
-  }, [selectedProject?.id, selectedProject?.localId, selectedProjectTask?.id, selectedProjectTask?.localId]);
+  }, [selectedProject?.id, selectedProject?.localId, selectedProjectTask, workspaceRestoreDone]);
 
   useEffect(() => {
-    if (!highlightedProjectTask) return;
-    if (!selectedProject || String(highlightedProjectTask.project_id) !== String(selectedProject.id ?? selectedProject.localId)) {
+    if (pendingMiddleTaskIdRef.current) return;
+    if (!workspaceRestoreDone || !highlightedProjectTask) return;
+    const taskProjectId = highlightedProjectTask.project_id ?? selectedProject?.id ?? selectedProject?.localId;
+    if (!selectedProject || String(taskProjectId) !== String(selectedProject.id ?? selectedProject.localId)) {
       setHighlightedProjectTask(null);
     }
-  }, [selectedProject?.id, selectedProject?.localId, highlightedProjectTask?.id, highlightedProjectTask?.localId]);
+  }, [selectedProject?.id, selectedProject?.localId, highlightedProjectTask, workspaceRestoreDone]);
+
+  useEffect(() => {
+    if (!currentUserId || !workspaceRestoreDone) return;
+    const activeProjectId = selectedProject?.id ?? selectedProject?.localId ?? (
+      selectedProjectKey?.startsWith('project:') ? selectedProjectKey.slice(8) : null
+    );
+    const selectedMiddleTaskId = highlightedProjectTask?.id ?? highlightedProjectTask?.localId ?? null;
+    const selectedTaskId = selectedProjectTask?.id ?? selectedProjectTask?.localId ?? selectedMiddleTaskId;
+    const rightPanelMode = !detailsOpen
+      ? 'closed'
+      : selectedSimpleTask
+        ? 'simple-task'
+        : selectedProjectTask
+          ? 'task'
+          : 'project';
+    writeProjectsLastWorkspace(currentUserId, {
+      projectKey: selectedProjectKey,
+      projectId: activeProjectId,
+      activeProjectId,
+      selectedMiddleTaskId,
+      selectedTaskId,
+      activeTaskId: selectedMiddleTaskId ?? selectedTaskId,
+      activeSectionId: (selectedProjectTask ?? highlightedProjectTask)?.section_id ?? null,
+      sectionId: (selectedProjectTask ?? highlightedProjectTask)?.section_id ?? null,
+      taskId: selectedTaskId,
+      taskHighlightedId: highlightedProjectTask?.id ?? highlightedProjectTask?.localId ?? null,
+      taskDetailsOpen: Boolean(selectedProjectTask),
+      rightPanelMode,
+      centerPanelOpen: Boolean(selectedProjectKey?.startsWith('project:') && selectedProject),
+      filterType: filters.type ?? 'all',
+      detailsOpen,
+      detailsCollapsed,
+      leftCollapsed,
+      historyCollapsed,
+      columnsSplit
+    });
+  }, [
+    columnsSplit,
+    currentUserId,
+    detailsCollapsed,
+    detailsOpen,
+    filters.type,
+    highlightedProjectTask,
+    historyCollapsed,
+    leftCollapsed,
+    selectedProject,
+    selectedProjectKey,
+    selectedProjectTask,
+    selectedSimpleTask,
+    workspaceRestoreDone
+  ]);
 
   const flushDetailsAutosave = () => detailsAutosaveRef.current?.flush?.() ?? Promise.resolve();
 
@@ -10887,13 +11554,20 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     ));
   };
 
+  const clearDeletedProjectTask = (task) => {
+    const removedId = String(task?.id ?? task?.localId ?? '').trim();
+    if (!removedId) return;
+    setSelectedProjectTask((current) => (
+      current && String(current.id ?? current.localId) === removedId ? null : current
+    ));
+    setHighlightedProjectTask((current) => (
+      current && String(current.id ?? current.localId) === removedId ? null : current
+    ));
+  };
+
   const openProjectTaskDetails = async (task) => {
     await flushDetailsAutosave();
-    const mergedTask = mergeSavedProjectTaskDraft(task);
-    setHighlightedProjectTask(mergedTask);
-    setSelectedProjectTask(mergedTask);
-    setDetailsOpen(true);
-    setDetailsCollapsed(false);
+    applyOpenProjectTaskState(task, task?.project_id ?? selectedProject?.id ?? selectedProject?.localId);
   };
 
   const closeDetailsPanel = async () => {
@@ -11048,8 +11722,10 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         onSelectTask={highlightProjectTask}
         onOpenTask={openProjectTaskDetails}
         onTaskChanged={syncProjectTaskPanels}
+        onTaskDeleted={clearDeletedProjectTask}
         onRefreshProject={loadData}
         refreshKey={projectPanelRefreshKey}
+        ensureExpandedSectionId={restoreExpandedSectionId}
         workPriorities={workPriorityNames}
         colorTheme={colorTheme}
         permissions={permissions}

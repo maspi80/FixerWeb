@@ -698,3 +698,155 @@ export async function fetchProjectAllComments(projectId) {
     .in('task_id', taskRows.map((t) => t.id));
   return { data: data ?? [], error, local: false };
 }
+
+const PROJECTS_LAST_WORKSPACE_PREFIX = 'fixer:projects:last-workspace';
+const LEGACY_PROJECTS_SELECTED_KEY = 'fixer.projects.selectedProjectId';
+
+export function getProjectsLastWorkspaceStorageKey(userId) {
+  const scopedUserId = String(userId ?? '').trim();
+  return scopedUserId ? `${PROJECTS_LAST_WORKSPACE_PREFIX}:${scopedUserId}` : null;
+}
+
+function parseProjectsWorkspace(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const projectKey = String(raw.projectKey ?? '').trim() || null;
+  const projectId = String(raw.activeProjectId ?? raw.projectId ?? '').trim() || null;
+  const sectionId = raw.activeSectionId ?? raw.sectionId;
+  const normalizedSectionId = sectionId != null && String(sectionId).trim() ? String(sectionId).trim() : null;
+  const selectedMiddleTaskId = String(raw.selectedMiddleTaskId ?? raw.taskHighlightedId ?? '').trim() || null;
+  const selectedTaskId = String(raw.selectedTaskId ?? '').trim() || null;
+  const taskId = selectedMiddleTaskId
+    || selectedTaskId
+    || String(raw.activeTaskId ?? raw.taskId ?? '').trim()
+    || null;
+  const filterType = ['all', 'task', 'project'].includes(raw.filterType) ? raw.filterType : null;
+  const columnsSplit = Number(raw.columnsSplit);
+  const rightPanelMode = ['task', 'project', 'closed', 'simple-task'].includes(raw.rightPanelMode)
+    ? raw.rightPanelMode
+    : null;
+  return {
+    projectKey,
+    projectId,
+    sectionId: normalizedSectionId,
+    selectedMiddleTaskId,
+    selectedTaskId,
+    taskId,
+    taskHighlightedId: selectedMiddleTaskId || String(raw.taskHighlightedId ?? '').trim() || null,
+    taskDetailsOpen: raw.taskDetailsOpen === true,
+    rightPanelMode,
+    filterType,
+    detailsOpen: raw.detailsOpen !== false,
+    detailsCollapsed: raw.detailsCollapsed === true,
+    leftCollapsed: raw.leftCollapsed === true,
+    historyCollapsed: raw.historyCollapsed !== false,
+    centerPanelOpen: raw.centerPanelOpen !== false,
+    columnsSplit: Number.isFinite(columnsSplit) && columnsSplit > 0 ? columnsSplit : null
+  };
+}
+
+export function readProjectsLastWorkspace(userId) {
+  const storageKey = getProjectsLastWorkspaceStorageKey(userId);
+  if (!storageKey || typeof window === 'undefined') return null;
+  try {
+    const parsed = parseProjectsWorkspace(JSON.parse(localStorage.getItem(storageKey) || 'null'));
+    if (parsed) return parsed;
+  } catch {
+    // ignore storage failures
+  }
+  try {
+    const legacyKey = localStorage.getItem(LEGACY_PROJECTS_SELECTED_KEY);
+    if (legacyKey) {
+      return parseProjectsWorkspace({ projectKey: legacyKey, detailsOpen: true });
+    }
+  } catch {
+    // ignore storage failures
+  }
+  return null;
+}
+
+export function writeProjectsLastWorkspace(userId, workspace) {
+  const storageKey = getProjectsLastWorkspaceStorageKey(userId);
+  if (!storageKey || typeof window === 'undefined') return;
+  const parsed = parseProjectsWorkspace(workspace);
+  if (!parsed?.projectKey) {
+    clearProjectsLastWorkspace(userId);
+    return;
+  }
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(parsed));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function clearProjectsLastWorkspace(userId) {
+  const storageKey = getProjectsLastWorkspaceStorageKey(userId);
+  if (!storageKey || typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(storageKey);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function resolveProjectsLastWorkspace(workspace, { projects = [], organizerTasks = [] } = {}) {
+  const parsed = parseProjectsWorkspace(workspace);
+  if (!parsed) {
+    return { valid: false, stale: true };
+  }
+
+  const resolved = {
+    valid: true,
+    stale: false,
+    projectKey: null,
+    projectId: null,
+    sectionId: parsed.sectionId,
+    selectedMiddleTaskId: parsed.selectedMiddleTaskId ?? parsed.taskHighlightedId ?? parsed.selectedTaskId,
+    selectedTaskId: parsed.selectedTaskId,
+    taskId: parsed.taskId,
+    taskDetailsOpen: parsed.taskDetailsOpen,
+    rightPanelMode: parsed.rightPanelMode,
+    filterType: parsed.filterType ?? 'all',
+    detailsOpen: parsed.detailsOpen,
+    detailsCollapsed: parsed.detailsCollapsed,
+    leftCollapsed: parsed.leftCollapsed,
+    historyCollapsed: parsed.historyCollapsed,
+    columnsSplit: parsed.columnsSplit
+  };
+
+  const key = parsed.projectKey || (parsed.projectId ? `project:${parsed.projectId}` : null);
+  if (!key) {
+    return { valid: false, stale: true };
+  }
+
+  if (key.startsWith('task:')) {
+    const organizerTaskId = key.slice(5);
+    const task = organizerTasks.find((row) => (
+      String(row.id ?? row.localId) === organizerTaskId
+      && !row.archived
+      && !isCompletedStatus(row.status)
+    ));
+    if (!task) {
+      return { valid: false, stale: true };
+    }
+    resolved.projectKey = `task:${task.id ?? task.localId}`;
+    resolved.taskId = null;
+    resolved.sectionId = null;
+    resolved.taskDetailsOpen = parsed.taskDetailsOpen;
+    return resolved;
+  }
+
+  const projectId = parsed.projectId || key.slice(8);
+  const project = projects.find((row) => (
+    String(row.id ?? row.localId) === String(projectId)
+    && !row.archived
+    && !isCompletedStatus(row.status)
+  ));
+  if (!project) {
+    return { valid: false, stale: true };
+  }
+
+  resolved.projectKey = `project:${project.id ?? project.localId}`;
+  resolved.projectId = String(project.id ?? project.localId);
+  return resolved;
+}

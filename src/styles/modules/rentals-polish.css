@@ -1,0 +1,131 @@
+/* Rentals UI follow-up: shared module actions, semantic badges, overdue rows. */
+.module-actions .app-button,
+.module-actions .ds-button{
+  min-height:var(--fw-control-height-md);
+  border-radius:var(--fw-radius-md);
+  padding:0 11px;
+  font-size:var(--fw-font-size-control);
+  gap:var(--fw-space-3);
+}
+.status-pill.info{
+  background:var(--fw-color-primary-soft);
+  color:#bfdbfe;
+}
+.status-pill.success{
+  background:var(--fw-color-success-bg);
+  color:var(--fw-color-success-text);
+}
+.status-pill.warning{
+  background:var(--fw-color-warning-bg);
+  color:var(--fw-color-warning-text);
+}
+.status-pill.danger{
+  background:var(--fw-color-danger-bg);
+  color:var(--fw-color-danger-text);
+}
+.table-shell tbody tr.row-tone-overdue{
+  background:rgba(239,68,68,.10);
+  box-shadow:inset 3px 0 0 rgba(248,113,113,.78);
+}
+.table-shell tbody tr.row-tone-overdue td{
+  color:#fee2e2;
+}
+.table-shell tbody tr.row-tone-overdue:hover{
+  background:rgba(239,68,68,.14);
+}
+.app-shell.theme-light .status-pill.info{
+  color:#1e40af;
+}
+.app-shell.theme-light .table-shell tbody tr.row-tone-overdue{
+  background:rgba(254,226,226,.72);
+  box-shadow:inset 3px 0 0 rgba(225,29,72,.62);
+}
+.app-shell.theme-light .table-shell tbody tr.row-tone-overdue td{
+  color:#7f1d1d;
+}
+.app-shell.theme-light .table-shell tbody tr.row-tone-overdue:hover{
+  background:rgba(254,202,202,.72);
+}
+.rental-status-field .ds-status-pill.tone-info,
+.rental-items-table .ds-status-pill.tone-info{
+  color:#bfdbfe;
+  background:var(--fw-color-primary-soft);
+  border-color:var(--fw-color-primary-border);
+}
+.rental-status-field .ds-status-pill.tone-success,
+.rental-items-table .ds-status-pill.tone-success{
+  color:var(--fw-color-success-text);
+  background:var(--fw-color-success-bg);
+  border-color:rgba(74,222,128,.28);
+}
+.rental-status-field .ds-status-pill.tone-warning,
+.rental-items-table .ds-status-pill.tone-warning{
+  color:var(--fw-color-warning-text);
+  background:var(--fw-color-warning-bg);
+  border-color:rgba(251,191,36,.30);
+}
+.rental-status-field .ds-status-pill.tone-danger,
+.rental-items-table .ds-status-pill.tone-danger{
+  color:var(--fw-color-danger-text);
+  background:var(--fw-color-danger-bg);
+  border-color:rgba(248,113,113,.34);
+}
+.app-shell.theme-light .rental-status-field .ds-status-pill.tone-info,
+.app-shell.theme-light .rental-items-table .ds-status-pill.tone-info{
+  color:#1e40af;
+}
+.app-shell.theme-light .rental-status-field .ds-status-pill.tone-success,
+.app-shell.theme-light .rental-items-table .ds-status-pill.tone-success{
+  color:#166534;
+}
+.app-shell.theme-light .rental-status-field .ds-status-pill.tone-warning,
+.app-shell.theme-light .rental-items-table .ds-status-pill.tone-warning{
+  color:#92400e;
+}
+.app-shell.theme-light .rental-status-field .ds-status-pill.tone-danger,
+.app-shell.theme-light .rental-items-table .ds-status-pill.tone-danger{
+  color:#991b1b;
+}
+
+/* Rental card proportions and numbering settings */
+.rental-document-grid{
+  grid-template-columns:minmax(172px,1fr) 104px minmax(220px,300px) 150px 150px 150px;
+}
+.rental-document-grid input[type="date"],
+.rental-document-grid .app-select{
+  width:150px;
+  max-width:150px;
+}
+.rental-date-field,
+.rental-date-field .app-input{
+  width:150px;
+  min-width:150px;
+  max-width:150px;
+}
+.app-shell.theme-light .money-input span{
+  background:rgba(241,245,249,.88);
+  border-color:rgba(15,23,42,.12);
+}
+@media(max-width:1250px){
+  .rental-document-grid{
+    grid-template-columns:minmax(172px,1fr) 104px minmax(220px,300px);
+  }
+  .rental-document-grid input[type="date"],
+  .rental-document-grid .app-select{
+    width:150px;
+    max-width:150px;
+  }
+  .rental-date-field,
+  .rental-date-field .app-input{
+    width:150px;
+    min-width:150px;
+    max-width:150px;
+  }
+}
+.dictionary-row-compact.inactive{
+  opacity:.58;
+}
+.dictionary-row-compact.inactive .dictionary-name-button{
+  text-decoration:line-through;
+}
+

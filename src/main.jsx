@@ -14,14 +14,17 @@ import {
   AppSelect,
   AppTable,
   AppTextarea,
+  ColorSwatchPicker,
+  SaveStatusIndicator,
   ButtonPrimary,
   ButtonSecondary,
   ButtonGhost,
   ModalFrame,
   ModalCloseButton,
   FormField,
+  formatStatusLabel,
   SectionPanel,
-  StatusPill as DSStatusPill,
+  StatusPill as DesignSystemStatusPill,
   EmptyState,
   AppNotice,
   buildUiResizeStorageKey,
@@ -86,7 +89,7 @@ import {
   updateOrganizerCategory,
   updateOrganizerTask
 } from './services/organizerService';
-import { createNote, deleteNote, fetchNotes, NOTE_COLORS, NOTE_STATUSES, updateNote } from './services/notesService';
+import { createNote, deleteNote, fetchNotes, NOTE_COLORS, NOTE_STATUSES, reorderNotes, updateNote } from './services/notesService';
 import NoteRichTextEditor from './components/NoteRichTextEditor.jsx';
 import UsersPermissionsPanel from './components/UsersPermissionsPanel.jsx';
 import ChatModule from './components/ChatModule.jsx';
@@ -106,6 +109,7 @@ import {
   normalizeAccentColor,
   prepareTaskComments,
   setProjectPermissionChecker,
+  reorderProjects,
   reorderProjectTasksInSection,
   updateProject, updateProjectTask
 } from './services/projectsService';
@@ -288,11 +292,13 @@ function getSafeMenuPosition(event, width = 240, height = 320) {
 
 function clampFloatingModalSize(size, minSize) {
   if (typeof window === 'undefined') return size;
-  const maxWidth = Math.max(minSize.width, window.innerWidth - 32);
-  const maxHeight = Math.max(minSize.height, window.innerHeight - 32);
+  const maxWidth = Math.max(160, window.innerWidth - 32);
+  const maxHeight = Math.max(160, window.innerHeight - 32);
+  const minWidth = Math.min(minSize.width, maxWidth);
+  const minHeight = Math.min(minSize.height, maxHeight);
   return {
-    width: Math.min(Math.max(size.width, minSize.width), maxWidth),
-    height: Math.min(Math.max(size.height, minSize.height), maxHeight)
+    width: Math.min(Math.max(size.width, minWidth), maxWidth),
+    height: Math.min(Math.max(size.height, minHeight), maxHeight)
   };
 }
 
@@ -1193,8 +1199,6 @@ function App() {
   useEffect(() => {
     setProjectPermissionChecker((permissionKey) => hasPermission(permissionKey));
   }, [hasPermission]);
-
-  useEffect(() => { injectStatusColorStyles(statusColors); }, [statusColors]);
 
   const handleStatusColorChange = (statusName, hex) => {
     const key = statusName.toLowerCase().trim();
@@ -3757,7 +3761,7 @@ const RENTAL_SELECTED_EQUIPMENT_COLUMNS = [
   { key: 'code_display', label: 'Kod / Nr inw.' },
   { key: 'category', label: 'Kategoria' },
   { key: 'location', label: 'Lokalizacja' },
-  { key: 'issue_status', label: 'Status', renderCell: (row) => <DSStatusPill value={row.issue_status} /> }
+  { key: 'issue_status', label: 'Status', renderCell: (row) => <StatusPill value={row.issue_status} /> }
 ];
 
 const RENTAL_EXPANDED_ITEMS_COLUMNS = [
@@ -4219,6 +4223,28 @@ function buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows
     });
   });
   return rows;
+}
+
+function buildManualRentalItems(manualItems = [], itemPrices = {}) {
+  return manualItems.map((item) => ({
+    equipment_id: null,
+    parent_set_equipment_id: null,
+    item_type: 'single',
+    name_snapshot: String(item.name_snapshot ?? item.name ?? '').trim(),
+    serial_snapshot: item.serial_snapshot ?? item.serial ?? '',
+    inventory_number_snapshot: item.inventory_number_snapshot ?? '',
+    barcode_snapshot: item.barcode_snapshot ?? '',
+    status: item.status ?? 'issued',
+    planned_return_date: item.planned_return_date ?? null,
+    returned_at: item.returned_at ?? null,
+    price_day: itemPrices[item.id] ?? item.price_day ?? '',
+    price_week: item.price_week ?? '',
+    deposit: item.deposit ?? '',
+    condition_out: item.condition_out ?? '',
+    condition_in: item.condition_in ?? '',
+    damage_notes: item.damage_notes ?? '',
+    settlement_notes: item.settlement_notes ?? ''
+  }));
 }
 
 function getRentalEquipmentCode(item) {
@@ -4795,16 +4821,19 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     setEditorOpen(true);
   };
 
-  const handleSave = async ({ rental, selectedEquipmentIds, itemPrices = {} }) => {
+  const handleSave = async ({ rental, originalRental = null, selectedEquipmentIds, manualItems = [], itemPrices = {} }) => {
     const selectedEquipment = equipmentRows.filter((item) => selectedEquipmentIds.includes(item.id));
     if (!rental.client_id) return { error: new Error('Wybierz klienta.') };
-    if (!selectedEquipment.length) return { error: new Error('Wybierz przynajmniej jedną pozycję sprzętu.') };
+    if (!selectedEquipment.length && !manualItems.length) return { error: new Error('Dodaj przynajmniej jedną pozycję sprzętu.') };
     const originalEquipmentIds = new Set(
-      rental?.id ? getRentalBaseItems(rental).map(getRentalItemEquipmentId).filter(Boolean) : []
+      rental?.id ? getRentalBaseItems(originalRental).map(getRentalItemEquipmentId).filter(Boolean) : []
     );
     const unavailableEquipment = findUnavailableRentalEquipment(selectedEquipment, originalEquipmentIds);
     if (unavailableEquipment) return { error: new Error(getEquipmentUnavailableForRentalMessage(unavailableEquipment)) };
-    const items = buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows, itemPrices);
+    const items = [
+      ...buildRentalItemsFromEquipmentSelection(selectedEquipment, equipmentRows, itemPrices),
+      ...buildManualRentalItems(manualItems, itemPrices)
+    ];
     const rentalToSave = {
       ...rental,
       rental_number: String(rental.rental_number ?? '').trim() || generateNextRentalNumber(rows)
@@ -5182,7 +5211,7 @@ function RentalReturnModal({ rental, returnConditions = getActiveConfigDictionar
             <span>Uwagi</span>
             <AppTextarea value={detail.notes} onChange={(event) => updateReturnDetail(item.id, 'notes', event.target.value)} placeholder="np. zwrot kompletny" disabled={locked} />
           </label>
-          <div className="rental-return-status"><DSStatusPill value={returned ? warning ? 'Zwrócono · uwaga' : 'Zwrócono' : 'Nie zwrócono'} /></div>
+          <div className="rental-return-status"><StatusPill value={returned ? warning ? 'Zwrócono · uwaga' : 'Zwrócono' : 'Nie zwrócono'} /></div>
         </div>;
       })}
       {!baseItems.length && <EmptyState title="Brak sprzętu w wypożyczeniu." />}
@@ -5377,6 +5406,16 @@ function RentalItemPriceInput({ value, onChange, disabled = false }) {
 
 function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, rentalTypes = getActiveConfigDictionaryNames('rentalTypes'), rentalSettings = getRentalNumberingSettings(), onClose, onSave, onAgreement }) {
   const selectedBaseItems = getRentalBaseItems(rental);
+  const initialManualItems = selectedBaseItems
+    .filter((item) => !item.equipment_id)
+    .map((item) => ({
+      ...item,
+      id: item.id ?? `manual:${crypto.randomUUID()}`,
+      is_manual: true,
+      name: item.name_snapshot || 'Pozycja ręczna',
+      serial: item.serial_snapshot ?? '',
+      item_type_display: 'Pozycja ręczna'
+    }));
   const initialClient = clients.find((client) => client.id === rental?.client_id) ?? null;
   const defaultStartDate = new Date().toISOString().slice(0, 10);
   const safeRentalTypes = [...new Set([...(rentalTypes.length ? rentalTypes : DEFAULT_CONFIG_DICTIONARIES.rentalTypes), rental?.rental_type].filter(Boolean))];
@@ -5394,13 +5433,15 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     total_price: rental?.total_price ?? '',
     vat_rate: normalizeRentalVatRate(rental?.vat_rate)
   }));
-  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState(() => selectedBaseItems.map(getRentalItemEquipmentId).filter(Boolean));
+  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState(() => selectedBaseItems.map((item) => item.equipment_id).filter(Boolean));
+  const [manualItems, setManualItems] = useState(initialManualItems);
   const [itemPrices, setItemPrices] = useState(() => buildInitialRentalItemPrices(rental));
   const [localClients, setLocalClients] = useState(clients);
   const [selectedClient, setSelectedClient] = useState(initialClient);
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [equipmentPickerOpen, setEquipmentPickerOpen] = useState(false);
+  const [manualItemEditorOpen, setManualItemEditorOpen] = useState(false);
   const [equipmentPickerInitialQuery, setEquipmentPickerInitialQuery] = useState('');
   const [issueScanValue, setIssueScanValue] = useState('');
   const [issueScanNotice, setIssueScanNotice] = useState(null);
@@ -5426,19 +5467,31 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     item_type_display: isEquipmentSet(item) ? 'Zestaw' : 'Sprzęt',
     code_display: item.barcode || item.inventory_number || item.serial || '—',
     issue_status: 'Do wydania'
-  }));
+  })).concat(manualItems.map((item) => ({
+    ...item,
+    name: item.name_snapshot || item.name || 'Pozycja ręczna',
+    item_type_display: 'Pozycja ręczna',
+    brand: '—',
+    model: '—',
+    serial: item.serial_snapshot || '—',
+    code_display: item.inventory_number_snapshot || item.barcode_snapshot || '—',
+    category: 'Poza magazynem',
+    location: '—',
+    issue_status: item.status === 'returned' ? 'Zwrócony' : 'Do wydania',
+    is_manual: true
+  })));
   const selectedSetCount = selectedEquipment.filter(isEquipmentSet).length;
   const settlementOptional = form.rental_type === 'Bezpłatne' || form.rental_type === 'Wewnętrzne';
   const financialTotals = useMemo(() => computeRentalFinancialTotals({
-    equipmentIds: selectedEquipmentIds,
+    equipmentIds: [...selectedEquipmentIds, ...manualItems.map((item) => item.id)],
     itemPrices,
     vatRate: form.vat_rate,
     rentalType: form.rental_type,
     deposit: form.total_deposit
-  }), [selectedEquipmentIds, itemPrices, form.vat_rate, form.rental_type, form.total_deposit]);
+  }), [selectedEquipmentIds, manualItems, itemPrices, form.vat_rate, form.rental_type, form.total_deposit]);
   const formatTermsAmount = (amount) => (settlementOptional ? '0,00' : formatPolishMoneyAmount(roundRentalMoney(amount)));
   const rentalSummary = {
-    items: selectedEquipment.length,
+    items: selectedEquipmentRows.length,
     sets: selectedSetCount,
     price: settlementOptional ? '0' : formatTermsAmount(financialTotals.totalGross),
     deposit: form.total_deposit || '0'
@@ -5559,6 +5612,13 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     setEquipmentPickerOpen(false);
     setEquipmentPickerInitialQuery('');
   };
+  const addManualItem = (item) => {
+    const id = `manual:${crypto.randomUUID()}`;
+    const nextItem = { ...item, id, is_manual: true, item_type: 'single', status: 'issued' };
+    setManualItems((current) => [...current, nextItem]);
+    if (item.price_day) updateItemPrice(id, item.price_day);
+    setManualItemEditorOpen(false);
+  };
   const openEquipmentPicker = (initialQuery = '') => {
     setEquipmentPickerInitialQuery(initialQuery);
     setEquipmentPickerOpen(true);
@@ -5617,11 +5677,13 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   const removeSelectedEquipment = () => {
     const ids = [...selectedRentalItemIds];
     setSelectedEquipmentIds((current) => current.filter((id) => !selectedRentalItemIds.has(id)));
+    setManualItems((current) => current.filter((item) => !selectedRentalItemIds.has(item.id)));
     removeItemPrices(ids);
     setSelectedRentalItemIds(new Set());
   };
   const removeRentalEquipment = (id) => {
     setSelectedEquipmentIds((current) => current.filter((itemId) => itemId !== id));
+    setManualItems((current) => current.filter((item) => item.id !== id));
     removeItemPrices([id]);
     setSelectedRentalItemIds((current) => {
       const next = new Set(current);
@@ -5638,6 +5700,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
     const ids = items.map((item) => item.id).filter(Boolean);
     if (!ids.length) return;
     setSelectedEquipmentIds((current) => current.filter((itemId) => !ids.includes(itemId)));
+    setManualItems((current) => current.filter((item) => !ids.includes(item.id)));
     removeItemPrices(ids);
     setSelectedRentalItemIds(new Set());
   };
@@ -5657,8 +5720,8 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       setEditorError('Wybierz klienta.');
       return;
     }
-    if (!selectedEquipmentIds.length) {
-      setEditorError('Wybierz przynajmniej jedną pozycję sprzętu.');
+    if (!selectedEquipmentIds.length && !manualItems.length) {
+      setEditorError('Dodaj przynajmniej jedną pozycję sprzętu.');
       return;
     }
     const originalEquipmentIds = new Set(selectedBaseItems.map(getRentalItemEquipmentId).filter(Boolean));
@@ -5667,7 +5730,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
       setEquipmentBlockedDialog({ message: getEquipmentUnavailableForRentalMessage(unavailableEquipment) });
       return;
     }
-    const result = await onSave({ rental: form, selectedEquipmentIds, itemPrices });
+    const result = await onSave({ rental: form, originalRental: rental, selectedEquipmentIds, manualItems, itemPrices });
     if (result?.error) {
       const message = String(result.error?.message ?? '');
       if (message.startsWith('Nie można wypożyczyć')) {
@@ -5679,8 +5742,9 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   };
 
   useEffect(() => {
-    setSelectedRentalItemIds((current) => new Set([...current].filter((id) => selectedEquipmentIds.includes(id))));
-  }, [selectedEquipmentIds]);
+    const visibleIds = new Set([...selectedEquipmentIds, ...manualItems.map((item) => item.id)]);
+    setSelectedRentalItemIds((current) => new Set([...current].filter((id) => visibleIds.has(id))));
+  }, [selectedEquipmentIds, manualItems]);
 
   useEffect(() => {
     const grossValue = settlementOptional ? '0' : formatPolishMoneyAmount(financialTotals.totalGross);
@@ -5712,6 +5776,10 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
 
   if (clientEditorOpen) {
     return <ClientEditor client={null} initialTab="data" onClose={() => { setClientEditorOpen(false); setClientPickerOpen(true); }} onSave={saveNewClientFromRental} />;
+  }
+
+  if (manualItemEditorOpen) {
+    return <RentalManualItemModal onClose={() => setManualItemEditorOpen(false)} onConfirm={addManualItem} />;
   }
 
   if (equipmentPickerOpen) {
@@ -5769,7 +5837,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
           </div>
         </SectionPanel>
         <div className="rental-items-section-host" style={{ height: `${itemsSectionHeight}px` }}>
-        <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<ButtonPrimary className="rental-add-equipment-button" onClick={() => openEquipmentPicker()}><Plus size={14} />Dodaj sprzęt</ButtonPrimary>}>
+        <SectionPanel className="rental-record-section rental-items-section" title="Sprzęt do wydania" actions={<><ButtonSecondary onClick={() => setManualItemEditorOpen(true)}><Plus size={14} />Dodaj ręcznie</ButtonSecondary><ButtonPrimary className="rental-add-equipment-button" onClick={() => openEquipmentPicker()}><Plus size={14} />Dodaj z magazynu</ButtonPrimary></>}>
           <div className="rental-scanner-strip rental-issue-scanner-strip">
             <label className="rental-scanner-field">
               <Barcode size={16} />
@@ -5795,7 +5863,7 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
               customRowActions={[
                 { key: 'preview', label: 'Podgląd sprzętu', icon: FolderOpen, onClick: (item) => setPreviewEquipment(item) }
               ]}
-            /> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Użyj akcji Dodaj sprzęt w nagłówku tabeli, aby utworzyć dokument wydania." />}
+            /> : <EmptyState title="Nie dodano sprzętu do wypożyczenia" description="Dodaj pozycję z magazynu albo wpisz ją ręcznie." />}
           </div>
         </SectionPanel>
         </div>
@@ -5856,6 +5924,50 @@ function RentalEditor({ rental, nextRentalNumber = '', clients, equipmentRows, r
   </>;
 }
 
+function RentalManualItemModal({ onClose, onConfirm }) {
+  const [form, setForm] = useState({ name: '', quantity: '1', identifier: '', condition: '', price_day: '' });
+  const [error, setError] = useState('');
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const submit = () => {
+    const name = form.name.trim();
+    if (!name) {
+      setError('Wpisz nazwę pozycji.');
+      return;
+    }
+    const parsedQuantity = Number.parseInt(form.quantity, 10);
+    const quantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : 1;
+    const price = form.price_day ? normalizeRentalItemPriceDraft(form.price_day) : '';
+    if (form.price_day && !price) {
+      setError('Wpisz poprawną cenę netto za dzień.');
+      return;
+    }
+    onConfirm({
+      name_snapshot: quantity > 1 ? `${name} (${quantity} szt.)` : name,
+      serial_snapshot: form.identifier.trim(),
+      condition_out: form.condition.trim(),
+      price_day: price
+    });
+  };
+
+  return <ModalFrame
+    className="rental-manual-item-modal"
+    eyebrow="Wypożyczenia"
+    title="Dodaj pozycję ręcznie"
+    onClose={onClose}
+    footer={<><ButtonSecondary onClick={onClose}>Anuluj</ButtonSecondary><ButtonPrimary onClick={submit}><Plus size={16} />Dodaj pozycję</ButtonPrimary></>}
+  >
+    {error && <AppNotice variant="error" className="service-form-notice">{error}</AppNotice>}
+    <AppNotice variant="info">Pozycja zostanie zapisana tylko w tym wypożyczeniu i nie utworzy kartoteki sprzętu w magazynie.</AppNotice>
+    <div className="rental-manual-item-grid">
+      <FormField label="Nazwa / opis"><AppInput value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Kabel XLR 10 m" autoFocus /></FormField>
+      <FormField label="Liczba sztuk"><AppInput type="number" min="1" step="1" value={form.quantity} onChange={(event) => update('quantity', event.target.value)} /></FormField>
+      <FormField label="Oznaczenie (opcjonalnie)"><AppInput value={form.identifier} onChange={(event) => update('identifier', event.target.value)} placeholder="np. czarny, skrzynia nr 2" /></FormField>
+      <FormField label="Stan przy wydaniu (opcjonalnie)"><AppInput value={form.condition} onChange={(event) => update('condition', event.target.value)} placeholder="np. sprawny" /></FormField>
+      <FormField label="Cena netto / dzień (opcjonalnie)"><AppInput value={form.price_day} onChange={(event) => update('price_day', event.target.value)} placeholder="np. 10,00" /></FormField>
+    </div>
+  </ModalFrame>;
+}
+
 function RentalEquipmentPreviewModal({ equipment, onClose }) {
   const rows = [
     ['Typ', isEquipmentSet(equipment) ? 'Zestaw' : 'Sprzęt'],
@@ -5869,7 +5981,7 @@ function RentalEquipmentPreviewModal({ equipment, onClose }) {
   ];
 
   return <ModalFrame className="rental-equipment-preview-modal" eyebrow="Sprzęt" title={equipment.name || 'Podgląd sprzętu'} onClose={onClose} footer={<ButtonSecondary onClick={onClose}>Zamknij</ButtonSecondary>}>
-    <div className="rental-equipment-preview-status"><DSStatusPill value={equipment.status || '—'} /></div>
+    <div className="rental-equipment-preview-status"><StatusPill value={equipment.status || '—'} /></div>
     <AppTable className="rental-equipment-preview-table">
       <tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value}</td></tr>)}</tbody>
     </AppTable>
@@ -8247,28 +8359,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
         </div>
         <div className="project-meta-row">
           <FormField label="Kolor projektu">
-            <div className="project-accent-field">
-              <label
-                className="project-accent-color-swatch"
-                style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }}
-                title="Wybierz kolor projektu"
-              >
-                <input
-                  type="color"
-                  className="project-accent-color-input"
-                  value={normalizeAccentColor(form.accent_color) || '#2563EB'}
-                  onChange={(event) => set('accent_color', event.target.value.toUpperCase())}
-                  disabled={!canSaveProject}
-                  aria-label="Wybierz kolor projektu"
-                />
-              </label>
-              <AppInput
-                value={form.accent_color ?? ''}
-                onChange={(event) => set('accent_color', event.target.value)}
-                placeholder="Domyślny akcent motywu"
-                readOnly={!canSaveProject}
-              />
-            </div>
+            <ProjectColorPicker value={form.accent_color} onChange={(color) => set('accent_color', color)} disabled={!canSaveProject} />
           </FormField>
           <FormField label="Klient">
             <div className="client-choice-row">
@@ -8406,10 +8497,17 @@ const PROJECTS_CENTER_COLUMN_MIN_WIDTH = 360;
 const PROJECTS_LEFT_COLLAPSED_WIDTH = 52;
 const PROJECT_DETAILS_MIN_WIDTH = 340;
 const PROJECT_DETAILS_DEFAULT_WIDTH = 420;
+const PROJECT_DETAILS_MAX_WIDTH = 680;
 const PROJECT_DETAILS_LAYOUT_BUFFER = 16;
+const PROJECTS_OVERLAY_MAX_WIDTH = 520;
+const PROJECTS_THREE_COLUMN_MIN_WIDTH = 1240;
+const PROJECTS_COLUMNS_SPLIT_MIN = 0.25;
+const PROJECTS_COLUMNS_SPLIT_MAX = 0.75;
 const PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH = 252;
 const PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH = 56;
 const PROJECT_TASK_INSPECTOR_SPLIT_KEY = buildUiResizeStorageKey('project-task-inspector', 'dataSection');
+const PROJECT_TASK_INSPECTOR_DESCRIPTION_KEY = buildUiResizeStorageKey('project-task-inspector', 'description');
+const PROJECT_TASK_INSPECTOR_COMMENT_KEY = buildUiResizeStorageKey('project-task-inspector', 'comment');
 const PROJECT_TASK_INSPECTOR_COLLAPSED_KEY = 'fixer.projects.taskInspectorDetailsCollapsed';
 const PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT = 460;
 const PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT = 220;
@@ -8418,10 +8516,32 @@ const PROJECT_TASK_INSPECTOR_RESIZER_SPACE = 22;
 const NOTES_DETAILS_WIDTH_KEY = 'fixer-notes-details-panel-width';
 const NOTES_DETAILS_COLLAPSED_KEY = 'fixer.notes.detailsPanelCollapsed';
 const NOTES_DETAILS_SELECTED_KEY = 'fixer.notes.selectedNoteId';
+const NOTES_DETAILS_MIN_WIDTH = 340;
+const NOTES_DETAILS_DEFAULT_WIDTH = 420;
+const NOTES_DETAILS_MAX_WIDTH = 620;
+const NOTES_LIST_MIN_WIDTH = 520;
+const NOTES_LAYOUT_GAP = 8;
+const NOTES_OVERLAY_MAX_WORKSPACE_WIDTH = 980;
 
-function getSavedNotesDetailsWidth() {
+function getNotesDetailsMaxWidth(workspaceWidth) {
+  const fallbackWidth = typeof window === 'undefined' ? 1280 : window.innerWidth - PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH - PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH;
+  const resolvedWidth = Number.isFinite(workspaceWidth) && workspaceWidth > 0 ? workspaceWidth : fallbackWidth;
+  const usesOverlay = resolvedWidth < NOTES_OVERLAY_MAX_WORKSPACE_WIDTH;
+  return usesOverlay
+    ? Math.max(240, Math.min(NOTES_DETAILS_MAX_WIDTH, resolvedWidth - 16))
+    : Math.min(NOTES_DETAILS_MAX_WIDTH, resolvedWidth - NOTES_LIST_MIN_WIDTH - NOTES_LAYOUT_GAP);
+}
+
+function clampNotesDetailsWidth(width, workspaceWidth) {
+  const maxWidth = getNotesDetailsMaxWidth(workspaceWidth);
+  const minWidth = Math.min(NOTES_DETAILS_MIN_WIDTH, maxWidth);
+  const resolvedWidth = Number.isFinite(Number(width)) ? Number(width) : NOTES_DETAILS_DEFAULT_WIDTH;
+  return Math.round(Math.min(maxWidth, Math.max(minWidth, resolvedWidth)));
+}
+
+function getSavedNotesDetailsWidth(workspaceWidth) {
   const saved = Number(localStorage.getItem(NOTES_DETAILS_WIDTH_KEY));
-  return Number.isFinite(saved) && saved >= 340 ? saved : 420;
+  return clampNotesDetailsWidth(Number.isFinite(saved) && saved > 0 ? saved : NOTES_DETAILS_DEFAULT_WIDTH, workspaceWidth);
 }
 
 function getSavedNotesDetailsCollapsed() {
@@ -8436,6 +8556,11 @@ function getProjectTaskInspectorSplitStorageKey(userId) {
 function getProjectTaskInspectorCollapsedStorageKey(userId) {
   const scopedUserId = String(userId ?? '').trim();
   return scopedUserId ? `${PROJECT_TASK_INSPECTOR_COLLAPSED_KEY}:${scopedUserId}` : PROJECT_TASK_INSPECTOR_COLLAPSED_KEY;
+}
+
+function getProjectTaskInspectorFieldStorageKey(baseKey, userId) {
+  const scopedUserId = String(userId ?? '').trim();
+  return scopedUserId ? `${baseKey}:${scopedUserId}` : baseKey;
 }
 
 function getSavedProjectTaskInspectorDetailsCollapsed(storageKey) {
@@ -8552,14 +8677,34 @@ function resolveProjectAccentColor(project) {
   return normalizeAccentColor(project?.accent_color);
 }
 
-function ProjectAccentDot({ color, className = '' }) {
-  return <span className={`project-accent-dot ${color ? 'is-custom' : ''} ${className}`.trim()} style={color ? { backgroundColor: color } : undefined} aria-hidden="true" />;
+const PROJECT_COLOR_PRESETS = [
+  { id: 'default', color: '', label: 'Domyślny' },
+  { id: 'blue', color: '#3B82F6', label: 'Niebieski' },
+  { id: 'green', color: '#22C55E', label: 'Zielony' },
+  { id: 'yellow', color: '#EAB308', label: 'Żółty' },
+  { id: 'orange', color: '#F97316', label: 'Pomarańczowy' },
+  { id: 'red', color: '#EF4444', label: 'Czerwony' },
+  { id: 'purple', color: '#A855F7', label: 'Fioletowy' },
+  { id: 'gray', color: '#64748B', label: 'Szary' }
+];
+
+function ProjectColorPicker({ value, onChange, disabled = false }) {
+  const selectedColor = normalizeAccentColor(value) ?? '';
+  const presetColors = new Set(PROJECT_COLOR_PRESETS.map((preset) => preset.color));
+  const options = presetColors.has(selectedColor) || !selectedColor
+    ? PROJECT_COLOR_PRESETS
+    : [...PROJECT_COLOR_PRESETS, { id: 'custom', color: selectedColor, label: 'Aktualny kolor' }];
+  return <ColorSwatchPicker
+    options={options.map((preset) => ({ ...preset, value: preset.color }))}
+    value={selectedColor}
+    onChange={onChange}
+    disabled={disabled}
+    label="Kolor projektu"
+  />;
 }
 
 function ProjectTableTitle({ project, title, titleClassName = '' }) {
-  const accentColor = resolveProjectAccentColor(project);
   return <span className="project-table-title">
-    <ProjectAccentDot color={accentColor} />
     <span className={titleClassName}>{title}</span>
   </span>;
 }
@@ -8863,15 +9008,38 @@ function getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed = false, option
   const reserveCenterPanel = options.reserveCenterPanel !== false;
   const fallbackWorkspaceWidth = window.innerWidth - PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH - PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH;
   const resolvedWorkspaceWidth = Number.isFinite(workspaceWidth) && workspaceWidth > 0 ? workspaceWidth : fallbackWorkspaceWidth;
+  if (resolvedWorkspaceWidth < PROJECTS_THREE_COLUMN_MIN_WIDTH) {
+    return Math.max(240, Math.min(PROJECTS_OVERLAY_MAX_WIDTH, resolvedWorkspaceWidth - 16));
+  }
   const leftReserve = leftCollapsed ? PROJECTS_LEFT_COLLAPSED_WIDTH : PROJECTS_LEFT_COLUMN_MIN_WIDTH;
   const centerReserve = reserveCenterPanel ? PROJECTS_CENTER_COLUMN_MIN_WIDTH : 0;
   const maxWidth = resolvedWorkspaceWidth - leftReserve - centerReserve - PROJECT_DETAILS_LAYOUT_BUFFER;
-  return Math.max(PROJECT_DETAILS_MIN_WIDTH, maxWidth);
+  return Math.min(PROJECT_DETAILS_MAX_WIDTH, Math.max(PROJECT_DETAILS_MIN_WIDTH, maxWidth));
 }
 
 function clampProjectDetailsWidth(width, workspaceWidth, leftCollapsed = false, options = {}) {
   const resolvedWidth = Number.isFinite(width) && width > 0 ? width : PROJECT_DETAILS_DEFAULT_WIDTH;
-  return Math.min(Math.max(PROJECT_DETAILS_MIN_WIDTH, resolvedWidth), getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed, options));
+  const maxWidth = getProjectDetailsMaxWidth(workspaceWidth, leftCollapsed, options);
+  const minWidth = Math.min(PROJECT_DETAILS_MIN_WIDTH, maxWidth);
+  return Math.min(Math.max(minWidth, resolvedWidth), maxWidth);
+}
+
+function getProjectColumnsSplitBounds(workspaceWidth, rightWidth = 0) {
+  const resolvedWidth = Number.isFinite(workspaceWidth) && workspaceWidth > 0 ? workspaceWidth : PROJECTS_LEFT_COLUMN_MIN_WIDTH + PROJECTS_CENTER_COLUMN_MIN_WIDTH;
+  const inspectorReserve = resolvedWidth >= PROJECTS_THREE_COLUMN_MIN_WIDTH ? Math.max(0, Number(rightWidth) || 0) : 0;
+  const availableWidth = Math.max(1, resolvedWidth - inspectorReserve - PROJECT_DETAILS_LAYOUT_BUFFER);
+  const idealSplit = PROJECTS_CENTER_COLUMN_MIN_WIDTH / (PROJECTS_LEFT_COLUMN_MIN_WIDTH + PROJECTS_CENTER_COLUMN_MIN_WIDTH);
+  const minimum = Math.max(PROJECTS_COLUMNS_SPLIT_MIN, PROJECTS_CENTER_COLUMN_MIN_WIDTH / availableWidth);
+  const maximum = Math.min(PROJECTS_COLUMNS_SPLIT_MAX, 1 - (PROJECTS_LEFT_COLUMN_MIN_WIDTH / availableWidth));
+  if (minimum > maximum) return { min: idealSplit, max: idealSplit };
+  return { min: minimum, max: maximum };
+}
+
+function clampProjectColumnsSplit(value, workspaceWidth, rightWidth = 0) {
+  const numeric = Number(value);
+  const resolved = Number.isFinite(numeric) ? numeric : 0.54;
+  const bounds = getProjectColumnsSplitBounds(workspaceWidth, rightWidth);
+  return Math.min(bounds.max, Math.max(bounds.min, resolved));
 }
 
 function getSavedProjectDetailsCollapsed() {
@@ -8881,6 +9049,9 @@ function getSavedProjectDetailsCollapsed() {
 function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false, layout = 'inline' }) {
   const taskId = task?.id ?? task?.localId;
   const isPanelLayout = layout === 'panel';
+  const commentResizeKey = useMemo(() => (
+    isPanelLayout ? getProjectTaskInspectorFieldStorageKey(PROJECT_TASK_INSPECTOR_COMMENT_KEY, commentAuthor?.user_id) : undefined
+  ), [isPanelLayout, commentAuthor?.user_id]);
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -8891,6 +9062,14 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   const [confirmDialog, setConfirmDialog] = useState(null);
   const canCreateProjectItems = permissions.create === true;
   const canManageComment = (comment) => canManageProjectComment(comment, commentAuthor, canManageAllComments);
+
+  useEffect(() => {
+    setNewComment('');
+    setEditingCommentId(null);
+    setEditingCommentText('');
+    setCommentContextMenu(null);
+    setNotice('');
+  }, [taskId]);
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -9051,7 +9230,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   const commentComposer = canCreateProjectItems && <div className="project-comments-add">
     <div className="project-comment-field">
       {!isPanelLayout && <span className="project-comment-label">Komentarz</span>}
-      <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder={isPanelLayout ? 'Napisz komentarz...' : 'Treść komentarza...'} rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+      <AppTextarea resizeKey={commentResizeKey} value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder={isPanelLayout ? 'Napisz komentarz...' : 'Treść komentarza...'} rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
       <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
     </div>
   </div>;
@@ -9088,6 +9267,14 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions 
   const canCreateProjectItems = permissions.create === true;
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
+
+  useEffect(() => {
+    setNewComment('');
+    setEditingCommentId(null);
+    setEditingCommentText('');
+    setCommentContextMenu(null);
+    setNotice('');
+  }, [taskId]);
 
   const loadComments = async () => {
     if (!taskId) return;
@@ -9221,7 +9408,22 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions 
   </div>;
 }
 
-function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, detailsPanelActive = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, onTaskDeleted = null, refreshKey = 0, style = null, ensureExpandedSectionId = null, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
+function TaskDoneToggle({ done, onToggle }) {
+  return <button
+    type="button"
+    className={`project-task-done-toggle ${done ? 'checked' : ''}`}
+    onClick={(event) => {
+      event.stopPropagation();
+      onToggle?.();
+    }}
+    aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'}
+    title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}
+  >
+    {done && <CheckCircle2 size={16} />}
+  </button>;
+}
+
+function ProjectDetailsPanel({ project, collapsed = false, width = null, onResizeStart = null, onToggleCollapse = null, onRefreshProject, onEditProject = null, onProjectColorChange = null, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', embedded = false, selectedTaskKey = null, latestTask = null, taskInspectorOpen = false, onSelectTask = null, onOpenTask = null, onTaskChanged = null, onTaskDeleted = null, refreshKey = 0, style = null, ensureExpandedSectionId = null, permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
   const projectId = project?.id ?? project?.localId;
   const projectTitle = String(project?.name ?? '').trim() || 'Projekt bez nazwy';
   const projectAccentColor = resolveProjectAccentColor(project);
@@ -9242,7 +9444,6 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const [sectionRenameTarget, setSectionRenameTarget] = useState(null);
   const [taskContextMenu, setTaskContextMenu] = useState(null);
   const [taskDragState, setTaskDragState] = useState(null);
-  const sectionItemClickTimeoutRef = useRef(null);
   const taskDragRef = useRef(null);
   const suppressTaskClickRef = useRef(false);
   const onTaskChangedRef = useRef(onTaskChanged);
@@ -9251,9 +9452,6 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
 
-  useEffect(() => () => {
-    if (sectionItemClickTimeoutRef.current) window.clearTimeout(sectionItemClickTimeoutRef.current);
-  }, []);
   useEffect(() => { onTaskChangedRef.current = onTaskChanged; }, [onTaskChanged]);
   useEffect(() => { onTaskDeletedRef.current = onTaskDeleted; }, [onTaskDeleted]);
 
@@ -9870,12 +10068,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
 
   const handleSectionItemMainClick = (task) => {
     if (suppressTaskClickRef.current) return;
-    if (sectionItemClickTimeoutRef.current) {
-      window.clearTimeout(sectionItemClickTimeoutRef.current);
-      sectionItemClickTimeoutRef.current = null;
-    }
     onSelectTask?.(task);
-    if (detailsPanelActive && String(selectedTaskKey ?? '') !== getTaskKey(task)) {
+    if (taskInspectorOpen && String(selectedTaskKey ?? '') !== getTaskKey(task)) {
       onOpenTask?.(task);
     }
   };
@@ -9884,10 +10078,6 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     if (suppressTaskClickRef.current) return;
     event.preventDefault();
     event.stopPropagation();
-    if (sectionItemClickTimeoutRef.current) {
-      window.clearTimeout(sectionItemClickTimeoutRef.current);
-      sectionItemClickTimeoutRef.current = null;
-    }
     onOpenTask?.(task);
   };
 
@@ -9917,9 +10107,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
         className="project-detail-task-row"
         onContextMenu={(event) => openTaskContextMenu(event, task)}
       >
-        {canEditProjectItems && <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskDone(task); }} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
-          {done && <CheckCircle2 size={16} />}
-        </button>}
+        {canEditProjectItems && <TaskDoneToggle done={done} onToggle={() => toggleTaskDone(task)} />}
         <button
           type="button"
           className="project-detail-task-main"
@@ -9927,7 +10115,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
           onDoubleClick={(event) => handleSectionItemMainDoubleClick(event, task)}
           onKeyDown={(event) => { if (event.key === 'Enter') openEditSectionItem(task); }}
           aria-expanded={expanded}
-          title="Dwuklik — szczegóły, prawy klik — menu"
+          title={taskInspectorOpen ? 'Klik — pokaż w inspektorze, prawy klik — menu' : 'Dwuklik — szczegóły, prawy klik — menu'}
         >
           <strong>{task.title}</strong>
           <span>{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
@@ -9972,15 +10160,20 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       {!embedded && <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>}
       <div>
         <span className="project-details-type">Projekt</span>
-        <strong className="project-details-title"><ProjectAccentDot color={projectAccentColor} /><span>{project ? projectTitle : 'Wybierz projekt'}</span></strong>
+        <strong className="project-details-title"><span>{project ? projectTitle : 'Wybierz projekt'}</span></strong>
         {project && <span>{project.status || '—'} · Termin: {project.due_date || 'brak'}</span>}
       </div>
+      {embedded && project && canEditProjectItems && onEditProject && <button type="button" className="project-icon-action project-board-edit-action" onClick={() => onEditProject(project)} aria-label="Edytuj projekt" title="Edytuj projekt"><Pencil size={14} /></button>}
     </div>
     {!project && <EmptyState title="Wybierz projekt z listy." />}
     {project && <div className="project-details-body">
       <div className="project-details-toolbar project-board-actions">
         {canCreateProjectItems && <AppButton variant="primary" className="module-action-button project-board-action-button" onClick={() => openNewTask(null)}><Plus size={15} />Dodaj zadanie</AppButton>}
         {canCreateProjectItems && <AppButton variant="secondary" className="module-action-button project-board-action-button" onClick={() => { setNewSectionName(''); setSectionNameError(''); setSectionModalOpen(true); }}><Columns3 size={15} />Dodaj sekcję</AppButton>}
+        <div className="project-board-color-control">
+          <span>Kolor</span>
+          <ProjectColorPicker value={project?.accent_color} onChange={(color) => onProjectColorChange?.(project, color)} disabled={!canEditProjectItems} />
+        </div>
       </div>
       <div className="project-details-body-scroll">
         {notice && <div className="notice">{notice}</div>}
@@ -10072,7 +10265,6 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
 
 function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveProject, autosaveRef = null, allProjects = [], documentSettings, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true } }) {
   const projectId = project?.id ?? project?.localId;
-  const projectAccentColor = resolveProjectAccentColor(project);
   const [form, setForm] = useState(() => ({}));
   const [notice, setNotice] = useState('');
   const autosaveTimerRef = useRef(null);
@@ -10203,14 +10395,13 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
     </aside>;
   }
 
-  return <aside className="project-details-panel project-inspector-panel" style={{ width: `${width}px`, ...(projectAccentColor ? { '--project-accent-color': projectAccentColor } : {}) }}>
+  return <aside className="project-details-panel project-inspector-panel" style={{ width: `${width}px` }}>
     <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
-    {projectAccentColor && <div className="project-accent-bar" aria-hidden="true" />}
     <div className="project-details-header">
       <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
       <div>
         <span className="project-details-type">Projekt</span>
-        <strong className="project-details-title"><ProjectAccentDot color={projectAccentColor} /><span>{project ? (String(project.name ?? '').trim() || 'Projekt bez nazwy') : 'Wybierz projekt'}</span></strong>
+        <strong className="project-details-title"><span>{project ? (String(project.name ?? '').trim() || 'Projekt bez nazwy') : 'Wybierz projekt'}</span></strong>
         {project && <span>{project.status || '—'} · Termin: {project.due_date || 'brak'}</span>}
       </div>
       <button type="button" className="project-icon-action project-details-close" onClick={onClose} aria-label="Zamknij panel" title="Zamknij panel"><X size={15} /></button>
@@ -10241,18 +10432,10 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
             <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
           </FormField>
         </div>
-        <FormField label="Kolor projektu">
-          <div className="project-accent-field">
-            <label className="project-accent-color-swatch" style={{ backgroundColor: normalizeAccentColor(form.accent_color) || '#2563EB' }} title="Wybierz kolor projektu">
-              <input type="color" className="project-accent-color-input" value={normalizeAccentColor(form.accent_color) || '#2563EB'} onChange={(event) => set('accent_color', event.target.value.toUpperCase(), { immediate: true })} aria-label="Wybierz kolor projektu" disabled={!canEditProjectItems} />
-            </label>
-            <AppInput value={form.accent_color ?? ''} onChange={(event) => set('accent_color', event.target.value, { immediate: true })} placeholder="Domyślny akcent motywu" readOnly={!canEditProjectItems} />
-          </div>
-        </FormField>
-        <FormField label="Opis">
+        <FormField className="project-inspector-textarea-field" label="Opis">
           <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
         </FormField>
-        <FormField label="Notatki">
+        <FormField className="project-inspector-textarea-field" label="Notatki">
           <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:notes`} value={form.notes ?? ''} onChange={(event) => set('notes', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
         </FormField>
         {project.clients?.name && <div className="project-inspector-related"><span>Klient</span><strong>{project.clients.name}</strong></div>}
@@ -10267,13 +10450,16 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
   const [form, setForm] = useState(() => ({}));
   const [sections, setSections] = useState([]);
   const [notice, setNotice] = useState('');
+  const [saveStatus, setSaveStatus] = useState('idle');
   const autosaveTimerRef = useRef(null);
   const formRef = useRef({});
   const dirtyRef = useRef(false);
+  const saveRevisionRef = useRef(0);
   const savingRef = useRef(Promise.resolve());
   const splitLayoutRef = useRef(null);
   const splitStorageKey = useMemo(() => getProjectTaskInspectorSplitStorageKey(commentAuthor?.user_id), [commentAuthor?.user_id]);
   const collapseStorageKey = useMemo(() => getProjectTaskInspectorCollapsedStorageKey(commentAuthor?.user_id), [commentAuthor?.user_id]);
+  const descriptionResizeKey = useMemo(() => getProjectTaskInspectorFieldStorageKey(PROJECT_TASK_INSPECTOR_DESCRIPTION_KEY, commentAuthor?.user_id), [commentAuthor?.user_id]);
   const { dataSectionHeight, startDataSectionResize } = useProjectTaskInspectorSplit(splitLayoutRef, splitStorageKey);
   const [taskDetailsCollapsed, setTaskDetailsCollapsed] = useState(() => getSavedProjectTaskInspectorDetailsCollapsed(collapseStorageKey));
   const collapseStorageKeyRef = useRef(collapseStorageKey);
@@ -10312,10 +10498,12 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     if (!draftTaskId || !dirtyRef.current) return savingRef.current;
     if (!String(draft.title ?? '').trim()) {
       setNotice('Tytuł zadania jest wymagany.');
+      setSaveStatus('error');
       return savingRef.current;
     }
 
     dirtyRef.current = false;
+    const saveRevision = saveRevisionRef.current;
     const payload = {
       ...draft,
       section_id: draft.section_id || null,
@@ -10327,12 +10515,15 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
         if (result?.error) {
           dirtyRef.current = true;
           setNotice(humanizeError(result.error, 'Błąd zapisu zadania'));
+          setSaveStatus('error');
           return;
         }
         setNotice('');
+        if (saveRevisionRef.current === saveRevision) setSaveStatus('saved');
       } catch (error) {
         dirtyRef.current = true;
         setNotice(humanizeError(error, 'Błąd zapisu zadania'));
+        setSaveStatus('error');
       }
     });
     return savingRef.current;
@@ -10350,6 +10541,7 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     dirtyRef.current = false;
     setForm(nextForm);
     setNotice('');
+    setSaveStatus('idle');
     return () => { flushPendingChanges(); };
   }, [taskId]);
 
@@ -10417,7 +10609,9 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     const next = { ...formRef.current, [field]: value };
     formRef.current = next;
     dirtyRef.current = true;
+    saveRevisionRef.current += 1;
     setForm(next);
+    setSaveStatus('saving');
     if (options.immediate) {
       window.setTimeout(() => {
         clearAutosaveTimer();
@@ -10451,8 +10645,9 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
         <button type="button" className={`project-icon-action project-task-details-toggle ${taskDetailsCollapsed ? 'is-collapsed' : ''}`} onClick={() => setTaskDetailsCollapsed((value) => !value)} aria-label={taskDetailsCollapsed ? 'Rozwiń szczegóły zadania' : 'Zwiń szczegóły zadania'} title={taskDetailsCollapsed ? 'Rozwiń szczegóły' : 'Zwiń szczegóły'}>
           {taskDetailsCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
         </button>
-        {canEditProjectItems && <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>{done && <CheckCircle2 size={16} />}</button>}
+        {canEditProjectItems && <TaskDoneToggle done={done} onToggle={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })} />}
         {canDeleteProjectItems && <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>}
+        <SaveStatusIndicator status={saveStatus} className="project-task-save-status" />
       </div>
       <div className={`project-task-inspector-layout ${taskDetailsCollapsed ? 'is-details-collapsed' : ''}`.trim()} ref={splitLayoutRef}>
         {!taskDetailsCollapsed && <><div className="project-task-inspector-data project-inspector-fields" style={{ height: `${dataSectionHeight}px` }}>
@@ -10486,11 +10681,11 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
             </FormField>
           </div>
           <FormField label="Opis">
-            <AppTextarea className="project-task-description-textarea" resizeKey={`fixer:ui-resize:project-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
+            <AppTextarea className="project-task-description-textarea" resizeKey={descriptionResizeKey} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
           </FormField>
         </div>
         <div className="project-task-inspector-resizer" role="separator" aria-orientation="horizontal" onPointerDown={startDataSectionResize} /></>}
-        <ProjectTaskInlineComments task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} layout="panel" />
+        <ProjectTaskInlineComments key={String(task.id ?? task.localId)} task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} layout="panel" />
       </div>
     </div>}
   </aside>;
@@ -10538,9 +10733,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
     {!task && <EmptyState title="Wybierz zadanie lub projekt z listy." />}
     {task && <div className="project-details-body">
       <div className="project-details-toolbar">
-        {canEditProjectItems && <button type="button" className={`project-task-done-toggle ${done ? 'checked' : ''}`} onClick={() => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} aria-label={done ? 'Przywróć zadanie jako aktywne' : 'Oznacz zadanie jako wykonane'} title={done ? 'Przywróć jako aktywne' : 'Oznacz jako wykonane'}>
-          {done && <CheckCircle2 size={16} />}
-        </button>}
+        {canEditProjectItems && <TaskDoneToggle done={done} onToggle={() => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
       </div>
       <div className="project-details-body-scroll">
         <div
@@ -10562,7 +10755,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
           </dl>
           <p>{task.description || 'Brak opisu.'}</p>
         </div>
-        <SimpleTaskComments task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
+        <SimpleTaskComments key={String(task.id ?? task.localId)} task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
       </div>
     </div>}
     {taskContextMenu && <AppRowContextMenu
@@ -10612,6 +10805,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
   const [detailsWidth, setDetailsWidth] = useState(getSavedProjectDetailsWidth);
+  const detailsWidthRef = useRef(detailsWidth);
+  detailsWidthRef.current = detailsWidth;
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [columnsSplit, setColumnsSplit] = useState(0.54);
   const [projectPanelRefreshKey, setProjectPanelRefreshKey] = useState(0);
@@ -10730,20 +10925,39 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   }, [permissions.view, currentUser?.id, currentUser?.email]);
 
   useEffect(() => {
-    const clampDetailsWidth = () => {
+    const syncLayoutToBounds = () => {
       const workspaceWidth = projectsWorkspaceRef.current?.getBoundingClientRect().width;
-      setDetailsWidth((currentWidth) => {
-        const nextWidth = clampProjectDetailsWidth(currentWidth, workspaceWidth, leftCollapsed, { reserveCenterPanel: !isTasksOnlyView });
-        if (Math.round(nextWidth) !== Math.round(currentWidth)) {
-          localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
+      const currentWidth = detailsWidthRef.current;
+      const nextWidth = clampProjectDetailsWidth(currentWidth, workspaceWidth, leftCollapsed, { reserveCenterPanel: !isTasksOnlyView });
+      if (Math.round(nextWidth) !== Math.round(currentWidth)) {
+        detailsWidthRef.current = nextWidth;
+        setDetailsWidth(nextWidth);
+      }
+      const storedWidth = Number(localStorage.getItem(PROJECT_DETAILS_WIDTH_KEY));
+      if (!Number.isFinite(storedWidth) || Math.round(storedWidth) !== Math.round(nextWidth)) {
+        localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
+      }
+      const rightWidth = detailsOpen ? (detailsCollapsed ? 52 : nextWidth) : 0;
+      setColumnsSplit((current) => {
+        const next = clampProjectColumnsSplit(current, workspaceWidth, rightWidth);
+        if (Math.abs(next - current) > 0.0001) {
+          localStorage.setItem(PROJECTS_COLUMNS_SPLIT_KEY, String(Number(next.toFixed(4))));
         }
-        return nextWidth;
+        return next;
       });
     };
-    clampDetailsWidth();
-    window.addEventListener('resize', clampDetailsWidth);
-    return () => window.removeEventListener('resize', clampDetailsWidth);
-  }, [leftCollapsed, isTasksOnlyView]);
+    syncLayoutToBounds();
+    const workspace = projectsWorkspaceRef.current;
+    const observer = workspace && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncLayoutToBounds) : null;
+    if (workspace && observer) observer.observe(workspace);
+    window.addEventListener('resize', syncLayoutToBounds);
+    window.visualViewport?.addEventListener('resize', syncLayoutToBounds);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', syncLayoutToBounds);
+      window.visualViewport?.removeEventListener('resize', syncLayoutToBounds);
+    };
+  }, [detailsCollapsed, detailsOpen, leftCollapsed, isTasksOnlyView]);
 
   useEffect(() => {
     workspaceRestoreStartedRef.current = false;
@@ -10767,10 +10981,10 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     const project = rows.find((r) => String(r.id ?? r.localId) === String(pendingOpenProjectId));
     if (project) {
       setSelectedProjectKey(`project:${project.id ?? project.localId}`);
-      setSelectedDetailsWork(mapProjectRow(mergeSavedProjectDraft(project)));
+      setSelectedDetailsWork(null);
       setSelectedProjectTask(null);
       setHighlightedProjectTask(null);
-      setDetailsOpen(true);
+      setDetailsOpen(false);
       setDetailsCollapsed(false);
     }
     setPendingOpenProjectId(null);
@@ -10792,8 +11006,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setPendingOpenSimpleTaskId(null);
   }, [pendingOpenSimpleTaskId, organizerRows]);
 
-  const activeRows = rows.filter((r) => !r.archived && !isCompletedStatus(r.status));
-  const historyProjectRows = rows.filter((r) => r.archived || isCompletedStatus(r.status));
+  const orderedProjectRows = [...rows].sort((a, b) => {
+    const aOrder = a?.sort_order !== null && a?.sort_order !== undefined && Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : Number.MAX_SAFE_INTEGER;
+    const bOrder = b?.sort_order !== null && b?.sort_order !== undefined && Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return (new Date(b?.created_at ?? 0).getTime() || 0) - (new Date(a?.created_at ?? 0).getTime() || 0);
+  });
+  const activeRows = orderedProjectRows.filter((r) => !r.archived && !isCompletedStatus(r.status));
+  const historyProjectRows = orderedProjectRows.filter((r) => r.archived || isCompletedStatus(r.status));
   const activeOrganizerRows = organizerRows.filter((t) => !t.archived && !isCompletedStatus(t.status));
   const historyOrganizerRows = organizerRows.filter((t) => t.archived || isCompletedStatus(t.status));
   const activeRowsSignature = useMemo(
@@ -10814,7 +11034,15 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     const wasArchived = sourceProject?.archived;
 
     const doSave = async (finalForm) => {
-      const result = projectId ? await updateProject(projectId, finalForm) : await createProject(finalForm);
+      const savedSortOrders = rows
+        .map((row) => row?.sort_order)
+        .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+        .map(Number);
+      const payload = projectId ? finalForm : {
+        ...finalForm,
+        sort_order: savedSortOrders.length ? Math.min(...savedSortOrders) - 100 : 100
+      };
+      const result = projectId ? await updateProject(projectId, payload) : await createProject(payload);
       if (result.error) { setNotice(humanizeError(result.error, 'Błąd zapisu projektu')); return; }
       setEditorOpen(false);
       setEditingProject(null);
@@ -10932,6 +11160,24 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, priority: nextPriority, ...(result.data ?? {}) } : row));
   };
 
+  const setProjectAccentColor = async (project, nextColor) => {
+    if (!project || !requireProjectPermission(canEditProjects, 'projects.edit')) return;
+    const projectId = project.id ?? project.localId;
+    const accentColor = normalizeAccentColor(nextColor);
+    const previousColor = normalizeAccentColor(project.accent_color);
+    const cachedProject = projectAutosaveCacheRef.current.get(String(projectId));
+    if (cachedProject) projectAutosaveCacheRef.current.set(String(projectId), { ...cachedProject, accent_color: accentColor });
+    setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, accent_color: accentColor } : row));
+    const result = await updateProject(projectId, { ...project, accent_color: accentColor });
+    if (result.error) {
+      if (cachedProject) projectAutosaveCacheRef.current.set(String(projectId), { ...cachedProject, accent_color: previousColor });
+      setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, accent_color: previousColor } : row));
+      setNotice(humanizeError(result.error, 'Błąd zmiany koloru projektu'));
+      return;
+    }
+    setRows((current) => current.map((row) => String(row.id ?? row.localId) === String(projectId) ? { ...row, ...(result.data ?? {}), accent_color: accentColor } : row));
+  };
+
   const saveSimpleTask = async (task) => {
     if (!requireProjectPermission(task.id || task.localId ? canEditProjects : canCreateProjects, task.id || task.localId ? 'projects.edit' : 'projects.create')) return;
     if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
@@ -11043,13 +11289,10 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     setEditingProject(null);
     setEditorOpen(true);
   };
-  const openProject = (project) => {
-    setSelectedProjectKey(`project:${project.id ?? project.localId}`);
-    setSelectedDetailsWork(mapProjectRow(project));
-    setSelectedProjectTask(null);
-    setHighlightedProjectTask(null);
-    setDetailsOpen(true);
-    setDetailsCollapsed(false);
+  const editProject = (project) => {
+    if (!project || !requireProjectPermission(canEditProjects, 'projects.edit')) return;
+    setEditingProject(project);
+    setEditorOpen(true);
   };
   const openNewSimpleTask = () => {
     if (!requireProjectPermission(canCreateProjects, 'projects.create')) return;
@@ -11068,8 +11311,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       key: 'displayTitle',
       label: 'Nazwa',
       renderCell: (row) => row._workType === 'project'
-        ? <ProjectTableTitle project={row._source} title={row.displayTitle} titleClassName="work-title-project" />
-        : <span className={`${row._workType === 'task' && (row._source?.archived || isCompletedStatus(row._source?.status)) ? 'work-title-done' : ''}`.trim()}>{row.displayTitle}</span>
+        ? <div className="work-list-item-title">
+          {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row._source?.status)} onToggle={() => setProjectStatus(row._source, WORK_DONE_STATUS)} />}
+          <ProjectTableTitle project={row._source} title={row.displayTitle} titleClassName="work-title-project" />
+        </div>
+        : <div className="work-list-item-title">
+          {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row._source?.status)} onToggle={() => setSimpleTaskStatus(row._source, isCompletedStatus(row._source?.status) ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
+          <span className={row._source?.archived || isCompletedStatus(row._source?.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
+        </div>
     },
     { key: 'client_name', label: 'Klient / powiązanie' },
     { key: 'status', label: 'Status', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> : <StatusPill value={row.status} /> },
@@ -11083,8 +11332,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       key: 'displayTitle',
       label: 'Nazwa',
       renderCell: (row) => row._workType === 'task'
-        ? <span className={isCompletedStatus(row.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
-        : <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName="work-title-project" />
+        ? <div className="work-list-item-title">
+          {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row.status)} onToggle={() => setSimpleTaskStatus(row._source ?? row, isCompletedStatus(row.status) ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
+          <span className={isCompletedStatus(row.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
+        </div>
+        : <div className="work-list-item-title">
+          {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row.status)} onToggle={() => handleRestore(row._project ?? row)} />}
+          <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName={isCompletedStatus(row.status) ? 'work-title-project work-title-done' : 'work-title-project'} />
+        </div>
     },
     { key: 'client_name', label: 'Klient' },
     { key: 'status', label: 'Status', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'task' ? setSimpleTaskStatus(row._source ?? row, status) : setProjectStatus(row._project ?? row, status)} /> : <StatusPill value={row.status} /> },
@@ -11135,6 +11390,41 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const activeTableRows = filterWorkRows(workRows);
   const historyTableRows = [...historyProjectRows.map(mapProjectRow), ...historyOrganizerRows.map(mapTaskRow)];
   const activeTableRowsSignature = activeTableRows.map((row) => row.work_key).join('\u0001');
+  const projectOrderFiltersActive = Boolean(String(filters.search ?? '').trim() || filters.status || filters.priority);
+
+  const handleReorderProjects = async (orderedTableRows) => {
+    const orderedProjects = orderedTableRows
+      .filter((row) => row._workType === 'project')
+      .map((row) => row._source ?? row._project ?? row);
+    const previousRows = rows;
+    const orderById = new Map(orderedProjects.map((project, index) => [String(project.id ?? project.localId), (index + 1) * 100]));
+    const previousCachedOrders = new Map();
+    orderById.forEach((sortOrder, projectId) => {
+      const cached = projectAutosaveCacheRef.current.get(projectId);
+      if (!cached) return;
+      previousCachedOrders.set(projectId, cached.sort_order);
+      projectAutosaveCacheRef.current.set(projectId, { ...cached, sort_order: sortOrder });
+    });
+    setRows((current) => current.map((project) => {
+      const sortOrder = orderById.get(String(project.id ?? project.localId));
+      return sortOrder == null ? project : { ...project, sort_order: sortOrder };
+    }));
+    const result = await reorderProjects(orderedProjects);
+    if (result.error) {
+      previousCachedOrders.forEach((sortOrder, projectId) => {
+        const cached = projectAutosaveCacheRef.current.get(projectId);
+        if (!cached) return;
+        const restored = { ...cached };
+        if (sortOrder === undefined) delete restored.sort_order;
+        else restored.sort_order = sortOrder;
+        projectAutosaveCacheRef.current.set(projectId, restored);
+      });
+      setRows(previousRows);
+      setNotice(`Nie udało się zapisać kolejności projektów: ${humanizeError(result.error)}`);
+      return;
+    }
+    setNotice('');
+  };
 
   const applyOpenProjectTaskState = (task, projectId = null) => {
     const mergedTask = mergeSavedProjectTaskDraft({
@@ -11191,26 +11481,34 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
       setFilters((current) => ({ ...current, type: resolved.filterType ?? current.type ?? 'all' }));
       setLeftCollapsed(resolved.leftCollapsed === true);
-      setDetailsCollapsed(resolved.detailsCollapsed === true);
       setHistoryCollapsed(resolved.historyCollapsed !== false);
-      setDetailsOpen(resolved.detailsOpen);
+      const restoreSimpleTaskDetails = resolved.projectKey?.startsWith('task:') && resolved.detailsOpen;
+      const restoreProjectTaskDetails = resolved.projectKey?.startsWith('project:')
+        && resolved.taskDetailsOpen
+        && resolved.rightPanelMode === 'task';
+      const restoreRightPanel = Boolean(restoreSimpleTaskDetails || restoreProjectTaskDetails);
+      setDetailsOpen(restoreRightPanel);
+      setDetailsCollapsed(restoreRightPanel && resolved.detailsCollapsed === true);
       if (resolved.columnsSplit != null) {
-        setColumnsSplit(resolved.columnsSplit);
-        localStorage.setItem(PROJECTS_COLUMNS_SPLIT_KEY, String(Number(resolved.columnsSplit.toFixed(4))));
+        const workspaceWidth = projectsWorkspaceRef.current?.getBoundingClientRect().width;
+        const restoredRightWidth = restoreRightPanel && !resolved.detailsCollapsed ? detailsWidthRef.current : 0;
+        const restoredSplit = clampProjectColumnsSplit(resolved.columnsSplit, workspaceWidth, restoredRightWidth);
+        setColumnsSplit(restoredSplit);
+        localStorage.setItem(PROJECTS_COLUMNS_SPLIT_KEY, String(Number(restoredSplit.toFixed(4))));
       }
 
       setSelectedProjectKey(resolved.projectKey);
 
       if (resolved.projectKey?.startsWith('project:')) {
-        const project = activeRows.find((row) => `project:${row.id ?? row.localId}` === resolved.projectKey);
-        if (project) {
-          setSelectedDetailsWork(mapProjectRow(mergeSavedProjectDraft(project)));
-        }
+        setSelectedDetailsWork(null);
 
         const middleTaskId = resolved.selectedMiddleTaskId ?? resolved.selectedTaskId ?? resolved.taskId;
         const projectId = resolved.projectId || resolved.projectKey.slice(8);
         if (middleTaskId && projectId) {
-          pendingMiddleTaskIdRef.current = String(middleTaskId);
+          pendingMiddleTaskIdRef.current = {
+            taskId: String(middleTaskId),
+            openDetails: Boolean(restoreProjectTaskDetails)
+          };
         }
       } else if (resolved.projectKey?.startsWith('task:')) {
         const task = activeOrganizerRows.find((row) => `task:${row.id ?? row.localId}` === resolved.projectKey);
@@ -11280,12 +11578,12 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   }, [activeRows, selectedProjectKey]);
   const selectedProject = selectedProjectFromKey
     ?? (selectedWork?._workType === 'project' ? selectedWork._source : null);
-  const selectedDetailsProject = selectedDetailsWork?._workType === 'project' ? selectedDetailsWork._source : null;
   const selectedSimpleTask = selectedDetailsWork?._workType === 'task' ? selectedDetailsWork._source : null;
 
   useEffect(() => {
     if (!workspaceRestoreDone || !selectedProject) return;
-    const middleTaskId = pendingMiddleTaskIdRef.current;
+    const pendingTask = pendingMiddleTaskIdRef.current;
+    const middleTaskId = typeof pendingTask === 'object' ? pendingTask?.taskId : pendingTask;
     if (!middleTaskId) return;
 
     let cancelled = false;
@@ -11296,7 +11594,13 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       pendingMiddleTaskIdRef.current = null;
       const task = (result.data ?? []).find((row) => String(row.id ?? row.localId) === String(middleTaskId));
       if (task) {
-        applyOpenProjectTaskState(task, projectId);
+        if (typeof pendingTask === 'object' && pendingTask.openDetails) {
+          applyOpenProjectTaskState(task, projectId);
+        } else {
+          const mergedTask = mergeSavedProjectTaskDraft({ ...task, project_id: task.project_id ?? projectId });
+          setHighlightedProjectTask(mergedTask);
+          if (mergedTask.section_id) setRestoreExpandedSectionId(String(mergedTask.section_id));
+        }
       }
     });
     return () => { cancelled = true; };
@@ -11430,9 +11734,13 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   }, [selectedProject?.id, selectedProject?.localId, permissions.view]);
 
   useEffect(() => {
-    if (!detailsOpen || selectedDetailsWork || !selectedWork) return;
-    setSelectedDetailsWork(selectedWork._workType === 'project' ? mapProjectRow(mergeSavedProjectDraft(selectedWork._source ?? selectedWork)) : selectedWork);
-  }, [detailsOpen, selectedDetailsWork, selectedWork?.work_key]);
+    if (!detailsOpen || selectedDetailsWork || selectedProjectTask || !selectedWork) return;
+    if (selectedWork._workType === 'project') {
+      setDetailsOpen(false);
+      return;
+    }
+    setSelectedDetailsWork(selectedWork);
+  }, [detailsOpen, selectedDetailsWork, selectedProjectTask, selectedWork?.work_key]);
 
   useEffect(() => {
     if (pendingMiddleTaskIdRef.current) return;
@@ -11465,7 +11773,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         ? 'simple-task'
         : selectedProjectTask
           ? 'task'
-          : 'project';
+          : 'closed';
     writeProjectsLastWorkspace(currentUserId, {
       projectKey: selectedProjectKey,
       projectId: activeProjectId,
@@ -11507,9 +11815,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 
   const selectWorkItem = async (row) => {
     await flushDetailsAutosave();
-    const detailsRow = row._workType === 'project'
-      ? mapProjectRow(mergeSavedProjectDraft(row._source ?? row))
-      : row;
+    const detailsRow = row._workType === 'project' ? mapProjectRow(row._source ?? row) : row;
     setSelectedProjectKey(detailsRow.work_key ?? `${detailsRow._workType}:${detailsRow.id ?? detailsRow.localId}`);
     setSelectedProjectTask(null);
     setHighlightedProjectTask(null);
@@ -11520,23 +11826,34 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       setDetailsCollapsed(false);
       return;
     }
-
-    if (detailsOpen && !detailsCollapsed) {
-      setSelectedDetailsWork(detailsRow);
-    }
+    setSelectedDetailsWork(null);
+    setDetailsOpen(false);
+    setDetailsCollapsed(false);
   };
 
   const openWorkItem = async (row) => {
     await flushDetailsAutosave();
-    const detailsRow = row._workType === 'project'
-      ? mapProjectRow(mergeSavedProjectDraft(row._source ?? row))
-      : row;
+    const detailsRow = row._workType === 'project' ? mapProjectRow(row._source ?? row) : row;
     setSelectedProjectKey(detailsRow.work_key ?? `${detailsRow._workType}:${detailsRow.id ?? detailsRow.localId}`);
-    setSelectedDetailsWork(detailsRow);
     setSelectedProjectTask(null);
     setHighlightedProjectTask(null);
+    if (detailsRow._workType === 'project') {
+      setSelectedDetailsWork(null);
+      setDetailsOpen(false);
+      setDetailsCollapsed(false);
+      return;
+    }
+    setSelectedDetailsWork(detailsRow);
     setDetailsOpen(true);
     setDetailsCollapsed(false);
+  };
+
+  const editWorkItem = (row) => {
+    if (row?._workType === 'project') {
+      editProject(row._source ?? row._project ?? row);
+      return;
+    }
+    openSimpleTask(row?._source ?? row);
   };
 
   const highlightProjectTask = (task) => {
@@ -11593,6 +11910,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       : clampProjectDetailsWidth(Math.max(detailsWidth, PROJECT_DETAILS_DEFAULT_WIDTH), workspaceWidth, leftCollapsed, { reserveCenterPanel });
     const onMouseMove = (moveEvent) => {
       const nextWidth = clampProjectDetailsWidth(startWidth - (moveEvent.clientX - startX), workspaceWidth, leftCollapsed, { reserveCenterPanel });
+      detailsWidthRef.current = nextWidth;
       setDetailsWidth(nextWidth);
       localStorage.setItem(PROJECT_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
     };
@@ -11618,15 +11936,11 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         : detailsWidth
       : 0;
     const workspaceWidth = workspace.getBoundingClientRect().width;
-    const availableWidth = Math.max(
-      PROJECTS_LEFT_COLUMN_MIN_WIDTH + PROJECTS_CENTER_COLUMN_MIN_WIDTH,
-      workspaceWidth - rightWidth - 34
-    );
-    const minSplit = PROJECTS_CENTER_COLUMN_MIN_WIDTH / availableWidth;
-    const maxSplit = 1 - (PROJECTS_LEFT_COLUMN_MIN_WIDTH / availableWidth);
+    const inspectorReserve = workspaceWidth >= PROJECTS_THREE_COLUMN_MIN_WIDTH ? rightWidth : 0;
+    const availableWidth = Math.max(1, workspaceWidth - inspectorReserve - PROJECT_DETAILS_LAYOUT_BUFFER);
     const onMouseMove = (moveEvent) => {
       const delta = moveEvent.clientX - startX;
-      const nextSplit = Math.min(Math.max(startSplit - (delta / availableWidth), minSplit), maxSplit);
+      const nextSplit = clampProjectColumnsSplit(startSplit - (delta / availableWidth), workspaceWidth, rightWidth);
       setColumnsSplit(nextSplit);
       localStorage.setItem(PROJECTS_COLUMNS_SPLIT_KEY, String(Number(nextSplit.toFixed(4))));
     };
@@ -11696,17 +12010,30 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
             </AppSelect>
           </div>
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
+            enableSelectionActions={false}
+            onReorderRows={!isTasksOnlyView && canEditProjects ? handleReorderProjects : null}
+            isRowReorderable={(row) => row._workType === 'project'}
+            rowReorderDisabled={loading || projectOrderFiltersActive}
+            enableSorting={isTasksOnlyView}
             getRowClassName={(row) => {
               const typeClass = row._workType ? `work-row work-row-${row._workType}` : '';
               const activeClass = row.work_key === selectedProjectKey ? 'active-row' : '';
               return `${typeClass} ${activeClass}`.trim();
             }}
-            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? openWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
+            getRowStyle={(row) => row._workType === 'project' && normalizeAccentColor(row._source?.accent_color)
+              ? { '--work-row-accent': normalizeAccentColor(row._source.accent_color) }
+              : undefined}
+            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? editWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
         </section>
 
         <HistorySection title="Historia projektów" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
           <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
-            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? openWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz"
+            enableSelectionActions={false}
+            getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
+            getRowStyle={(row) => row._workType === 'project' && normalizeAccentColor(row._source?.accent_color)
+              ? { '--work-row-accent': normalizeAccentColor(row._source.accent_color) }
+              : undefined}
+            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? editWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz"
             customRowActions={canEditProjects ? [{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }] : []}
           />
         </HistorySection>
@@ -11718,12 +12045,14 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
         onResizeStart={!leftCollapsed ? startProjectColumnsResize : null}
         selectedTaskKey={highlightedProjectTask ? String(highlightedProjectTask.id ?? highlightedProjectTask.localId) : null}
         latestTask={highlightedProjectTask}
-        detailsPanelActive={detailsOpen && !detailsCollapsed}
+        taskInspectorOpen={detailsOpen && Boolean(selectedProjectTask)}
         onSelectTask={highlightProjectTask}
         onOpenTask={openProjectTaskDetails}
         onTaskChanged={syncProjectTaskPanels}
         onTaskDeleted={clearDeletedProjectTask}
         onRefreshProject={loadData}
+        onEditProject={editProject}
+        onProjectColorChange={setProjectAccentColor}
         refreshKey={projectPanelRefreshKey}
         ensureExpandedSectionId={restoreExpandedSectionId}
         workPriorities={workPriorityNames}
@@ -11735,8 +12064,8 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       {detailsOpen && (selectedSimpleTask
         ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
         : selectedProjectTask
-          ? <ProjectTaskInspectorPanel task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} />
-          : <ProjectInspectorPanel project={selectedDetailsProject} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveProject={saveProjectFromInspector} autosaveRef={detailsAutosaveRef} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} />)}
+          ? <ProjectTaskInspectorPanel key={String(selectedProjectTask.id ?? selectedProjectTask.localId)} task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} />
+          : null)}
     </div>
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
@@ -11746,19 +12075,12 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
 }
 
 function NoteColorPicker({ value, onChange, disabled = false }) {
-  return <div className="notes-color-picker" role="radiogroup" aria-label="Kolor notatki">
-    {NOTE_COLORS.map((color) => <button
-      key={color.id}
-      type="button"
-      role="radio"
-      aria-checked={value === color.id}
-      aria-label={color.label}
-      title={color.label}
-      disabled={disabled}
-      className={`notes-color-swatch notes-color-swatch-${color.id} ${value === color.id ? 'is-selected' : ''}`.trim()}
-      onClick={() => onChange(color.id)}
-    />)}
-  </div>;
+  const options = NOTE_COLORS.map((color) => ({
+    ...color,
+    value: color.id,
+    color: color.id === 'default' ? '' : `var(--notes-color-${color.id})`
+  }));
+  return <ColorSwatchPicker options={options} value={value} onChange={onChange} disabled={disabled} label="Kolor notatki" />;
 }
 
 function noteColorClass(noteColor, prefix) {
@@ -11766,7 +12088,7 @@ function noteColorClass(noteColor, prefix) {
   return `${prefix}-${color}`;
 }
 
-function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleCollapse, onSave, onDelete, onRegisterSave, busy = false }) {
+function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleCollapse, onSave, onDelete, onRegisterSave, onColorPreview, busy = false }) {
   const [form, setForm] = useState(() => ({
     title: note?.title ?? '',
     content: note?.content ?? '',
@@ -11778,6 +12100,7 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
   const noteKey = String(note?.id ?? note?.localId ?? '');
   const formRef = useRef(form);
   const skipAutosaveRef = useRef(true);
+  const colorSaveTimerRef = useRef(null);
   formRef.current = form;
 
   useEffect(() => {
@@ -11792,22 +12115,28 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
     });
   }, [noteKey]);
 
-  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const update = useCallback((key, value) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setSaveStatus('saving');
+  }, []);
+  const updateContent = useCallback((content) => update('content', content), [update]);
 
-  const buildPayload = () => ({
+  const buildPayload = (overrides = {}) => ({
     ...note,
     ...formRef.current,
+    ...overrides,
     priority: note?.priority ?? 'Normalny'
   });
 
-  const persistNote = async ({ autosave = false } = {}) => {
+  const persistNote = async ({ autosave = false, overrides = {} } = {}) => {
     if (!note) return null;
     if (!String(formRef.current.title ?? '').trim()) {
       if (!autosave) alert('Tytuł notatki jest wymagany.');
+      setSaveStatus('error');
       return null;
     }
     setSaveStatus('saving');
-    const result = await onSave?.(buildPayload(), { autosave });
+    const result = await onSave?.(buildPayload(overrides), { autosave });
     if (result?.error) {
       setSaveStatus('error');
       return result;
@@ -11833,13 +12162,11 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
       persistNote({ autosave: true });
     }, 2500);
     return () => window.clearTimeout(timer);
-  }, [form, note, noteKey]);
+  }, [form, noteKey]);
 
-  useEffect(() => {
-    if (saveStatus !== 'saved') return undefined;
-    const timer = window.setTimeout(() => setSaveStatus('idle'), 2000);
-    return () => window.clearTimeout(timer);
-  }, [saveStatus]);
+  useEffect(() => () => {
+    if (colorSaveTimerRef.current) window.clearTimeout(colorSaveTimerRef.current);
+  }, [noteKey]);
 
   const toggleArchive = () => {
     setForm((current) => {
@@ -11850,6 +12177,17 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
         pinned: nextStatus === 'Archiwum' ? false : current.pinned
       };
     });
+  };
+
+  const changeNoteColor = (noteColor) => {
+    skipAutosaveRef.current = true;
+    update('note_color', noteColor);
+    onColorPreview?.(noteKey, noteColor);
+    if (colorSaveTimerRef.current) window.clearTimeout(colorSaveTimerRef.current);
+    colorSaveTimerRef.current = window.setTimeout(() => {
+      colorSaveTimerRef.current = null;
+      persistNote({ autosave: true, overrides: { note_color: noteColor } });
+    }, 150);
   };
 
   if (collapsed) {
@@ -11880,23 +12218,19 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
           <NoteRichTextEditor
             noteKey={noteKey}
             value={form.content}
-            onChange={(content) => update('content', content)}
+            onChange={updateContent}
             disabled={busy}
             placeholder="Treść notatki..."
           />
         </FormField>
-        <div className="notes-details-meta-grid notes-details-meta-grid-single">
+        <div className="notes-details-meta-grid">
           <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{NOTE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
-          <NoteColorPicker value={form.note_color} onChange={(note_color) => update('note_color', note_color)} disabled={busy} />
+          <FormField label="Kolor" className="notes-color-field"><NoteColorPicker value={form.note_color} onChange={changeNoteColor} disabled={busy} /></FormField>
         </div>
-        <div className="notes-details-spacer" aria-hidden="true" />
       </div>
       <div className="notes-details-footer">
         <div className="notes-details-actions">
-          <span className="notes-save-status" aria-live="polite">
-            {saveStatus === 'saving' && 'Zapisywanie…'}
-            {saveStatus === 'saved' && 'Zapisano'}
-          </span>
+          <SaveStatusIndicator status={saveStatus} className="notes-save-status" />
           <ButtonSecondary className="notes-form-action-button" onClick={() => onDelete?.(note)} disabled={busy || saveStatus === 'saving'}><Trash2 size={16} />Usuń</ButtonSecondary>
           <ButtonPrimary className="notes-form-action-button" onClick={() => persistNote({ autosave: false })} disabled={busy || saveStatus === 'saving'}><Save size={16} />Zapisz</ButtonPrimary>
         </div>
@@ -11948,6 +12282,9 @@ function NotatkiModule() {
   const [selectedNoteId, setSelectedNoteId] = useState(() => localStorage.getItem(NOTES_DETAILS_SELECTED_KEY));
   const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedNotesDetailsCollapsed);
   const [detailsWidth, setDetailsWidth] = useState(getSavedNotesDetailsWidth);
+  const notesWorkspaceRef = useRef(null);
+  const detailsWidthRef = useRef(detailsWidth);
+  detailsWidthRef.current = detailsWidth;
   const searchInputRef = useRef(null);
   const saveCurrentNoteRef = useRef(null);
 
@@ -11971,12 +12308,45 @@ function NotatkiModule() {
     else localStorage.removeItem(NOTES_DETAILS_SELECTED_KEY);
   }, [selectedNoteId]);
 
+  useEffect(() => {
+    const syncDetailsWidth = () => {
+      const workspaceWidth = notesWorkspaceRef.current?.getBoundingClientRect().width;
+      const currentWidth = detailsWidthRef.current;
+      const nextWidth = clampNotesDetailsWidth(currentWidth, workspaceWidth);
+      if (nextWidth !== Math.round(currentWidth)) {
+        detailsWidthRef.current = nextWidth;
+        setDetailsWidth(nextWidth);
+      }
+      const storedWidth = Number(localStorage.getItem(NOTES_DETAILS_WIDTH_KEY));
+      if (!Number.isFinite(storedWidth) || Math.round(storedWidth) !== nextWidth) {
+        localStorage.setItem(NOTES_DETAILS_WIDTH_KEY, String(nextWidth));
+      }
+    };
+    syncDetailsWidth();
+    const workspace = notesWorkspaceRef.current;
+    const observer = workspace && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncDetailsWidth) : null;
+    if (workspace && observer) observer.observe(workspace);
+    window.addEventListener('resize', syncDetailsWidth);
+    window.visualViewport?.addEventListener('resize', syncDetailsWidth);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', syncDetailsWidth);
+      window.visualViewport?.removeEventListener('resize', syncDetailsWidth);
+    };
+  }, []);
+
   const filteredRows = useMemo(() => {
     const q = String(filters.search ?? '').trim();
     return rows.filter((row) => noteMatchesSearch(row, q));
   }, [rows, filters.search]);
 
   const sortedRows = useMemo(() => [...filteredRows].sort((a, b) => {
+    const aOrder = Number(a.sort_order);
+    const bOrder = Number(b.sort_order);
+    const aHasOrder = Number.isFinite(aOrder);
+    const bHasOrder = Number.isFinite(bOrder);
+    if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+    if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
     if (Boolean(a.pinned) !== Boolean(b.pinned)) return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
     return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
   }), [filteredRows]);
@@ -12022,7 +12392,9 @@ function NotatkiModule() {
 
   const handleCreate = async () => {
     setBusy(true);
-    const result = await createNote({ title: 'Nowa notatka', content: '', status: 'Aktywna', priority: 'Normalny', pinned: false, note_color: 'default' });
+    const existingOrders = rows.map((row) => Number(row.sort_order)).filter(Number.isFinite);
+    const sortOrder = existingOrders.length ? Math.min(...existingOrders) - 100 : 100;
+    const result = await createNote({ title: 'Nowa notatka', content: '', status: 'Aktywna', priority: 'Normalny', pinned: false, note_color: 'default', sort_order: sortOrder });
     setBusy(false);
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd tworzenia notatki')); return; }
     upsertRow(result.data);
@@ -12061,6 +12433,23 @@ function NotatkiModule() {
     });
   };
 
+  const handleReorderNotes = async (orderedTableRows) => {
+    const orderedNotes = orderedTableRows.map((row) => row._note ?? row);
+    const previousRows = rows;
+    const orderById = new Map(orderedNotes.map((note, index) => [String(note.id ?? note.localId), (index + 1) * 100]));
+    setRows((current) => current.map((note) => {
+      const sortOrder = orderById.get(String(note.id ?? note.localId));
+      return sortOrder == null ? note : { ...note, sort_order: sortOrder };
+    }));
+    const result = await reorderNotes(orderedNotes);
+    if (result.error) {
+      setRows(previousRows);
+      setNotice(`Nie udało się zapisać kolejności notatek: ${humanizeError(result.error)}`);
+      return;
+    }
+    setNotice('');
+  };
+
   useEffect(() => {
     const onKeyDown = (event) => {
       if (!(event.metaKey || event.ctrlKey)) return;
@@ -12094,8 +12483,10 @@ function NotatkiModule() {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = detailsWidth;
+    const workspaceWidth = notesWorkspaceRef.current?.getBoundingClientRect().width;
     const onMouseMove = (moveEvent) => {
-      const nextWidth = Math.min(Math.max(340, startWidth - (moveEvent.clientX - startX)), Math.max(420, window.innerWidth * 0.68));
+      const nextWidth = clampNotesDetailsWidth(startWidth - (moveEvent.clientX - startX), workspaceWidth);
+      detailsWidthRef.current = nextWidth;
       setDetailsWidth(nextWidth);
       localStorage.setItem(NOTES_DETAILS_WIDTH_KEY, String(Math.round(nextWidth)));
     };
@@ -12123,7 +12514,7 @@ function NotatkiModule() {
   ];
 
   return <div className={`module-page projects-module-page notes-module-page ${detailsCollapsed ? 'details-collapsed' : ''}`}>
-    <div className="projects-workspace">
+    <div className="projects-workspace" ref={notesWorkspaceRef}>
       <div className="projects-list-pane">
         <section className="panel hero-panel projects-actions-panel">
           <div className="module-actions">
@@ -12152,6 +12543,9 @@ function NotatkiModule() {
           {(filters.view ?? 'list') === 'board'
             ? <NotesBoardView notes={sortedRows} selectedNoteId={selectedNoteId} onSelectNote={selectNote} />
             : <DataTable storageKey={NOTES_TABLE_KEY} loading={loading} columns={listColumns} rows={tableRows}
+              onReorderRows={handleReorderNotes}
+              rowReorderDisabled={busy || loading || Boolean(String(filters.search ?? '').trim())}
+              enableSorting={false}
               getRowClassName={(row) => {
                 const classes = [noteColorClass(row.note_color, 'notes-row-color')];
                 if (row.note_key === String(selectedNoteId)) classes.push('active-row');
@@ -12174,6 +12568,9 @@ function NotatkiModule() {
         onSave={handleSave}
         onDelete={handleDelete}
         onRegisterSave={(fn) => { saveCurrentNoteRef.current = fn; }}
+        onColorPreview={(noteId, noteColor) => setRows((current) => current.map((row) => (
+          String(row.id ?? row.localId) === String(noteId) ? { ...row, note_color: noteColor } : row
+        )))}
         busy={busy}
       />
     </div>
@@ -15542,7 +15939,27 @@ function formatCompanyContact(profile) {
   return formatCompanyContactLines(profile).join('\n');
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true, getRowClassName = null, nested = false, showLpColumn = true }) {
+const TABLE_COLUMN_MIN_WIDTH = 72;
+const TABLE_COLUMN_MAX_WIDTH = 720;
+
+function getResponsiveTableColumnMaxWidth() {
+  if (typeof window === 'undefined') return TABLE_COLUMN_MAX_WIDTH;
+  return Math.min(TABLE_COLUMN_MAX_WIDTH, Math.max(240, Math.floor(window.innerWidth * 0.65)));
+}
+
+function normalizeTableColumnWidths(widths, availableKeys = []) {
+  if (!widths || typeof widths !== 'object') return {};
+  const allowed = new Set(availableKeys);
+  const maxWidth = getResponsiveTableColumnMaxWidth();
+  return Object.entries(widths).reduce((result, [key, value]) => {
+    const numeric = Number(value);
+    if (!allowed.has(key) || !Number.isFinite(numeric) || numeric <= 0) return result;
+    result[key] = Math.min(maxWidth, Math.max(TABLE_COLUMN_MIN_WIDTH, Math.round(numeric)));
+    return result;
+  }, {});
+}
+
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, onReorderRows = null, isRowReorderable = null, rowReorderDisabled = false, enableSorting = true, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true, getRowClassName = null, getRowStyle = null, nested = false, showLpColumn = true }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -15553,10 +15970,16 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     sortDir: 'asc',
     lpVisible: showLpColumn
   }), [columnsSignature, showLpColumn]);
-  const initialPreference = getLocalTablePreference(storageKey, defaultPreference);
+  const rawInitialPreference = getLocalTablePreference(storageKey, defaultPreference);
+  const initialPreference = {
+    ...rawInitialPreference,
+    columnWidths: normalizeTableColumnWidths(rawInitialPreference.columnWidths, columns.map((column) => column.key))
+  };
   const [sortKey, setSortKey] = useState(initialPreference.sortKey);
   const [sortDir, setSortDir] = useState(initialPreference.sortDir ?? 'asc');
   const [draggedColumn, setDraggedColumn] = useState(null);
+  const [draggedRowKey, setDraggedRowKey] = useState(null);
+  const [rowDropTargetKey, setRowDropTargetKey] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [rowContextMenu, setRowContextMenu] = useState(null);
   const [visibleColumns, setVisibleColumns] = useState(initialPreference.visibleColumns);
@@ -15615,7 +16038,11 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       ).map((column) => column.key);
       setVisibleColumns(visibleExisting.length ? [...visibleExisting, ...missingVisible] : availableKeys);
       setColumnOrder([...orderedExisting, ...missingOrder]);
-      setColumnWidths(data.columnWidths);
+      const normalizedWidths = normalizeTableColumnWidths(data.columnWidths, availableKeys);
+      setColumnWidths(normalizedWidths);
+      if (JSON.stringify(normalizedWidths) !== JSON.stringify(data.columnWidths ?? {})) {
+        saveTablePreference(storageKey, { ...data, columnWidths: normalizedWidths });
+      }
       setColumnAlignments(data.columnAlignments ?? {});
       setSortKey(data.sortKey ?? null);
       setSortDir(data.sortDir ?? 'asc');
@@ -15662,6 +16089,25 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     };
   }, [contextMenu, rowContextMenu]);
 
+  useEffect(() => {
+    let persistTimer = null;
+    const syncColumnWidths = () => {
+      const next = normalizeTableColumnWidths(columnWidthsRef.current, columns.map((column) => column.key));
+      if (JSON.stringify(next) === JSON.stringify(columnWidthsRef.current)) return;
+      columnWidthsRef.current = next;
+      setColumnWidths(next);
+      if (persistTimer) window.clearTimeout(persistTimer);
+      persistTimer = window.setTimeout(() => persistTablePreference({ columnWidths: next }), 150);
+    };
+    window.addEventListener('resize', syncColumnWidths);
+    window.visualViewport?.addEventListener('resize', syncColumnWidths);
+    return () => {
+      window.removeEventListener('resize', syncColumnWidths);
+      window.visualViewport?.removeEventListener('resize', syncColumnWidths);
+      if (persistTimer) window.clearTimeout(persistTimer);
+    };
+  }, [columnsSignature]);
+
   useEffect(() => () => {
     if (columnSubmenuCloseTimerRef.current) window.clearTimeout(columnSubmenuCloseTimerRef.current);
   }, []);
@@ -15673,7 +16119,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   }, [contextMenu]);
 
   const sortedRows = useMemo(() => {
-    if (!sortKey) return rows;
+    if (!enableSorting || !sortKey) return rows;
     const normalize = (value) => {
       if (value === null || value === undefined) return '';
       if (typeof value === 'number') return value;
@@ -15697,13 +16143,18 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
         : String(left).localeCompare(String(right), 'pl', { numeric: true, sensitivity: 'base' });
       return sortDir === 'asc' ? result : -result;
     });
-  }, [rows, sortKey, sortDir]);
+  }, [rows, sortKey, sortDir, enableSorting]);
 
   const getRowKey = (row, index) => String(row.id ?? row.localId ?? row.number ?? row.name ?? index);
   const selectedRows = sortedRows.filter((row, index) => selectedRowKeys.has(getRowKey(row, index)));
   const allVisibleSelected = sortedRows.length > 0 && sortedRows.every((row, index) => selectedRowKeys.has(getRowKey(row, index)));
   const hasSelectionActions = enableSelectionActions;
   const hasExpandableRows = Boolean(isRowExpandable && renderExpandedRow);
+  const hasRowReordering = typeof onReorderRows === 'function';
+  const reorderableRowsCount = typeof isRowReorderable === 'function'
+    ? sortedRows.filter((row) => isRowReorderable(row)).length
+    : sortedRows.length;
+  const canReorderRows = hasRowReordering && !rowReorderDisabled && (!enableSorting || !sortKey) && reorderableRowsCount > 1;
 
   useEffect(() => {
     setSelectedRowKeys((current) => {
@@ -15747,6 +16198,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   };
 
   const handleSort = (key) => {
+    if (!enableSorting) return;
     if (sortKey !== key) {
       applySort(key, 'asc');
       return;
@@ -15781,6 +16233,17 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   };
 
   const clearSelection = () => setSelectedRowKeys(new Set());
+
+  const moveRow = (sourceKey, targetKey) => {
+    if (!canReorderRows || !sourceKey || !targetKey || sourceKey === targetKey) return;
+    const next = [...sortedRows];
+    const sourceIndex = next.findIndex((row, index) => getRowKey(row, index) === sourceKey);
+    const targetIndex = next.findIndex((row, index) => getRowKey(row, index) === targetKey);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const [moved] = next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, moved);
+    onReorderRows(next);
+  };
 
   const toggleExpandedRow = (row, index) => {
     if (!hasExpandableRows || !isRowExpandable?.(row)) return;
@@ -15882,7 +16345,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     let lastWidth = startWidth;
 
     const onMouseMove = (moveEvent) => {
-      lastWidth = Math.max(72, startWidth + moveEvent.clientX - startX);
+      lastWidth = Math.min(getResponsiveTableColumnMaxWidth(), Math.max(TABLE_COLUMN_MIN_WIDTH, startWidth + moveEvent.clientX - startX));
       setColumnWidths((current) => ({ ...current, [key]: lastWidth }));
     };
 
@@ -15982,27 +16445,37 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       </div>}
       <div className="table-scroll">
         <AppTable>
-          <colgroup>{hasSelectionActions && <col className="selection-col" />}{lpVisible && <col className="lp-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{lpVisible && <th className="lp-cell lp-header" aria-label="Liczba porządkowa">Lp.</th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
+          <colgroup>{hasRowReordering && <col className="row-drag-col" />}{hasSelectionActions && <col className="selection-col" />}{lpVisible && <col className="lp-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
+          <thead><tr>{hasRowReordering && <th className="row-drag-cell row-drag-header" aria-label="Zmiana kolejności" />}{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{lpVisible && <th className="lp-cell lp-header" aria-label="Liczba porządkowa">Lp.</th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
             const alignment = getColumnAlignment(column, columnAlignments);
-            return <th key={column.key} draggable aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${sortKey === column.key ? 'sorted' : ''} table-align-${alignment}`.trim()}><span>{column.label}</span>{sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>;
+            return <th key={column.key} draggable aria-sort={enableSorting && sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${enableSorting && sortKey === column.key ? 'sorted' : ''} ${enableSorting ? '' : 'sorting-disabled'} table-align-${alignment}`.trim()}><span>{column.label}</span>{enableSorting && sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>;
           })}</tr></thead>
           <tbody>{sortedRows.map((row, index) => {
             const rowKey = getRowKey(row, index);
             const selected = selectedRowKeys.has(rowKey);
+            const rowSupportsReordering = typeof isRowReorderable !== 'function' || isRowReorderable(row);
+            const rowCanReorder = canReorderRows && rowSupportsReordering;
+            const rowReorderTitle = !rowSupportsReordering
+              ? 'Zmiana kolejności dotyczy tylko projektów'
+              : rowReorderDisabled
+                ? 'Wyczyść filtry, aby zmienić kolejność'
+                : enableSorting && sortKey
+                  ? 'Wyczyść sortowanie kolumn, aby zmienić kolejność'
+                  : 'Przeciągnij, aby zmienić kolejność';
             const expandable = hasExpandableRows && isRowExpandable?.(row);
             const expanded = expandable && expandedRowKeys.has(rowKey);
             const rowToneClass = row._rowTone ? `row-tone-${row._rowTone}` : '';
             const customRowClass = typeof getRowClassName === 'function' ? getRowClassName(row) : '';
-            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${rowToneClass} ${customRowClass}`.trim();
+            const customRowStyle = typeof getRowStyle === 'function' ? getRowStyle(row) : undefined;
+            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${draggedRowKey === rowKey ? 'dragging-row' : ''} ${rowDropTargetKey === rowKey ? 'row-drop-target' : ''} ${rowToneClass} ${customRowClass}`.trim();
             const rowTitle = expandable
               ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.'
               : hasActions
                 ? onRowClick ? 'Pojedynczy klik pokazuje szczegóły. Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.'
                 : 'Prawy klik pokazuje operacje tabeli.';
-            return <Fragment key={`${row.id ?? row.localId ?? row.number ?? row.name}-${index}`}>
-              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{lpVisible && <td className="lp-cell table-align-center">{index + 1}</td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-expanded={expanded} aria-label={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'} title={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
-              {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasSelectionActions ? 1 : 0) + (lpVisible ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
+            return <Fragment key={rowKey}>
+              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} style={customRowStyle} onDragOver={(event) => { if (!rowCanReorder || !draggedRowKey) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setRowDropTargetKey(rowKey); }} onDrop={(event) => { if (!rowCanReorder) return; event.preventDefault(); moveRow(draggedRowKey, rowKey); setDraggedRowKey(null); setRowDropTargetKey(null); }} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a, .row-drag-handle')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasRowReordering && <td className="row-drag-cell"><span role="button" tabIndex={rowCanReorder ? 0 : -1} className={`row-drag-handle ${rowCanReorder ? '' : 'is-disabled'}`.trim()} draggable={rowCanReorder} onClick={(event) => event.stopPropagation()} onDragStart={(event) => { if (!rowCanReorder) return; event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', rowKey); setDraggedRowKey(rowKey); setRowDropTargetKey(null); }} onDragEnd={() => { setDraggedRowKey(null); setRowDropTargetKey(null); }} aria-disabled={!rowCanReorder} aria-label={`Przeciągnij, aby zmienić kolejność: ${row.title_display ?? row.name ?? rowKey}`} title={rowReorderTitle}><GripVertical size={15} /></span></td>}{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{lpVisible && <td className="lp-cell table-align-center">{index + 1}</td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-expanded={expanded} aria-label={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'} title={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasRowReordering ? 1 : 0) + (hasSelectionActions ? 1 : 0) + (lpVisible ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>
         </AppTable>
@@ -16087,29 +16560,11 @@ const DEFAULT_STATUS_COLORS = {
   'planowany': '#3b82f6', 'wstrzymany': '#f97316', 'zakończony': '#22c55e'
 };
 
-const SYSTEM_STATUS_LABELS = {
-  active: 'Aktywne',
-  partially_returned: 'Częściowo zwrócone',
-  returned: 'Zwrócone',
-  issued: 'Wydany',
-  damaged: 'Uszkodzony',
-  lost: 'Zagubiony',
-  service_required: 'Wymaga serwisu',
-  available: 'Dostępny',
-  unavailable: 'Niedostępny',
-  pending: 'Oczekuje',
-  completed: 'Zakończone',
-  complete: 'Zakończone',
-  cancelled: 'Anulowane',
-  canceled: 'Anulowane'
-};
-
 function formatSystemStatusLabel(value) {
   const text = String(value ?? '');
-  const key = text.trim().toLowerCase();
   const workLabel = displayWorkStatus(text);
   if (workLabel && workLabel !== text.trim()) return workLabel;
-  return SYSTEM_STATUS_LABELS[key] ?? text;
+  return formatStatusLabel(text);
 }
 
 function getStatusColors() {
@@ -16124,26 +16579,6 @@ function saveStatusColors(colorMap) {
   localStorage.setItem(STATUS_COLORS_STORAGE_KEY, JSON.stringify(colorMap));
 }
 
-function statusToCssClass(text) {
-  return 'sp-' + String(text ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
-}
-
-function injectStatusColorStyles(colorMap) {
-  let el = document.getElementById('fixer-status-colors-style');
-  if (!el) { el = document.createElement('style'); el.id = 'fixer-status-colors-style'; document.head.appendChild(el); }
-  const rules = [];
-  Object.entries(colorMap).forEach(([name, hex]) => {
-    if (!hex || !String(hex).startsWith('#')) return;
-    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-    if (Number.isNaN(r + g + b)) return;
-    const cn = statusToCssClass(name);
-    rules.push(`.${cn}{background:rgba(${r},${g},${b},.17)!important;color:${hex}!important;}`);
-    const rd = Math.round(r * .65), gd = Math.round(g * .65), bd = Math.round(b * .65);
-    rules.push(`.app-shell.theme-light .${cn}{background:rgba(${r},${g},${b},.12)!important;color:rgb(${rd},${gd},${bd})!important;}`);
-  });
-  el.textContent = rules.join('');
-}
-
 function resolveStatusColorHex(value) {
   const text = formatSystemStatusLabel(value);
   const colors = getStatusColors();
@@ -16155,45 +16590,9 @@ function resolveStatusColorHex(value) {
   return null;
 }
 
-function buildStatusPillInlineStyle(value) {
-  const hex = resolveStatusColorHex(value);
-  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return null;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  if ([r, g, b].some(Number.isNaN)) return null;
-  const isLight = typeof document !== 'undefined' && document.querySelector('.app-shell.theme-light');
-  if (isLight) {
-    const rd = Math.round(r * 0.65);
-    const gd = Math.round(g * 0.65);
-    const bd = Math.round(b * 0.65);
-    return {
-      background: `rgba(${r}, ${g}, ${b}, 0.12)`,
-      color: `rgb(${rd}, ${gd}, ${bd})`
-    };
-  }
-  return {
-    background: `rgba(${r}, ${g}, ${b}, 0.17)`,
-    color: hex
-  };
-}
-
-function getStatusPillTone(value) {
-  const text = formatSystemStatusLabel(value);
-  const lower = text.toLowerCase();
-  if (lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('zagub') || lower.includes('uszk') || lower.includes('wybrak')) return 'danger';
-  if (lower.includes('zwró') || lower.includes('zwro') || lower.includes('dostęp') || lower.includes('dostep') || lower.includes('sprawny') || lower.includes('gotowe') || lower.includes('vip') || lower.includes('stały') || lower.includes('staly')) return 'success';
-  if (lower.includes('serwis') || lower.includes('kontrol') || lower.includes('brak akces') || lower.includes('rezerwacja') || lower.includes('pracownik') || lower.includes('nowy')) return 'warning';
-  if (lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') || lower.includes('wydany')) return 'info';
-  return 'neutral';
-}
-
 function StatusPill({ value }) {
   const text = formatSystemStatusLabel(value);
-  const cssClass = statusToCssClass(text);
-  const inlineStyle = buildStatusPillInlineStyle(value);
-  const tone = inlineStyle ? '' : getStatusPillTone(value);
-  return <span className={`status-pill ${cssClass}${tone ? ` ${tone}` : ''}`.trim()} style={inlineStyle ?? undefined}>{text}</span>;
+  return <DesignSystemStatusPill value={value} label={text} color={resolveStatusColorHex(value)} />;
 }
 
 function renderEquipmentStatusCell(row) {

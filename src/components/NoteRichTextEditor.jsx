@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -11,10 +11,6 @@ import {
   Heading1, Heading2, Quote, Code, Link2, Undo2, Redo2
 } from 'lucide-react';
 import { noteContentToEditorHtml, normalizeNoteEditorHtml } from '../utils/noteContent';
-import { readPersistedUiSize, usePersistentElementSize } from '../design-system/uiResize.js';
-
-export const NOTES_EDITOR_RESIZE_KEY = 'fixer:ui-resize:notes-editor:content';
-const NOTES_EDITOR_RESIZE_CONSTRAINTS = { minHeight: 160, defaultHeight: 220, maxHeight: 720 };
 
 function ToolbarButton({ label, active = false, disabled = false, onClick, children }) {
   return <button
@@ -62,19 +58,14 @@ function NoteRichTextToolbar({ editor }) {
   </div>;
 }
 
-export default function NoteRichTextEditor({
+function NoteRichTextEditor({
   value,
   onChange,
   noteKey,
   disabled = false,
-  placeholder = 'Treść notatki...',
-  resizeKey = NOTES_EDITOR_RESIZE_KEY
+  placeholder = 'Treść notatki...'
 }) {
   const lastEmittedRef = useRef(normalizeNoteEditorHtml(noteContentToEditorHtml(value)));
-  const savedSize = readPersistedUiSize(resizeKey, NOTES_EDITOR_RESIZE_CONSTRAINTS);
-  const resizeRef = usePersistentElementSize(resizeKey, {
-    constraints: NOTES_EDITOR_RESIZE_CONSTRAINTS
-  });
 
   const editor = useEditor({
     extensions: [
@@ -132,12 +123,10 @@ export default function NoteRichTextEditor({
 
   return <div className={`notes-rich-text-shell ${disabled ? 'is-disabled' : ''}`.trim()}>
     <NoteRichTextToolbar editor={editor} />
-    <div
-      ref={resizeRef}
-      className="notes-rich-text-editor-wrap"
-      style={savedSize?.height ? { height: `${savedSize.height}px` } : undefined}
-    >
+    <div className="notes-rich-text-editor-wrap">
       <EditorContent editor={editor} className="notes-rich-text-editor" />
     </div>
   </div>;
 }
+
+export default memo(NoteRichTextEditor);

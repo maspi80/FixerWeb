@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 
 const UI_RESIZE_PREFIX = 'fixer:ui-resize';
+const DEFAULT_UI_RESIZE_CONSTRAINTS = Object.freeze({});
+const EMPTY_UI_RESIZE_LEGACY_KEYS = Object.freeze([]);
 
 const LEGACY_ALIASES = {
   'fixer:ui-resize:client-editor:notes': ['fixer:textarea:client:notes'],
@@ -36,11 +38,13 @@ function getViewportLimits() {
 
 export function normalizeUiResizeConstraints(constraints = {}) {
   const viewport = getViewportLimits();
+  const requestedMaxHeight = constraints.maxHeight ?? viewport.maxHeight;
+  const requestedMaxWidth = constraints.maxWidth ?? viewport.maxWidth;
   return {
     minHeight: constraints.minHeight ?? 64,
-    maxHeight: constraints.maxHeight ?? viewport.maxHeight,
+    maxHeight: Math.min(requestedMaxHeight, viewport.maxHeight),
     minWidth: constraints.minWidth ?? 120,
-    maxWidth: constraints.maxWidth ?? viewport.maxWidth,
+    maxWidth: Math.min(requestedMaxWidth, viewport.maxWidth),
     defaultHeight: constraints.defaultHeight,
     defaultWidth: constraints.defaultWidth
   };
@@ -115,17 +119,17 @@ export function writePersistedUiSize(storageKey, size) {
 }
 
 export function usePersistentElementSize(storageKey, {
-  constraints = {},
-  legacyKeys = [],
-  debounceMs = 180
+  constraints = DEFAULT_UI_RESIZE_CONSTRAINTS,
+  legacyKeys = EMPTY_UI_RESIZE_LEGACY_KEYS,
+  persistHeight = true,
+  persistWidth = true
 } = {}) {
   const ref = useRef(null);
-  const constraintsRef = useRef(normalizeUiResizeConstraints(constraints));
-  const saveTimerRef = useRef(null);
+  const constraintsRef = useRef(constraints);
   const lastSavedRef = useRef(null);
 
   useEffect(() => {
-    constraintsRef.current = normalizeUiResizeConstraints(constraints);
+    constraintsRef.current = constraints;
   }, [constraints]);
 
   useEffect(() => {
@@ -133,10 +137,16 @@ export function usePersistentElementSize(storageKey, {
     const element = ref.current;
     if (!element) return undefined;
 
-    const saved = readPersistedUiSize(storageKey, constraintsRef.current, legacyKeys);
-    if (saved?.height != null) element.style.height = `${saved.height}px`;
-    if (saved?.width != null) element.style.width = `${saved.width}px`;
-    lastSavedRef.current = saved;
+    const getConstraints = () => normalizeUiResizeConstraints(constraintsRef.current);
+    const saved = readPersistedUiSize(storageKey, getConstraints(), legacyKeys);
+    if (persistHeight && saved?.height != null) element.style.height = `${saved.height}px`;
+    if (persistWidth && saved?.width != null) element.style.width = `${saved.width}px`;
+    const normalizedSaved = {
+      ...(persistHeight && saved?.height != null ? { height: saved.height } : {}),
+      ...(persistWidth && saved?.width != null ? { width: saved.width } : {})
+    };
+    lastSavedRef.current = normalizedSaved;
+    if (Object.keys(normalizedSaved).length) writePersistedUiSize(storageKey, normalizedSaved);
 
     let lastHeight = element.offsetHeight;
     let lastWidth = element.offsetWidth;
@@ -144,10 +154,10 @@ export function usePersistentElementSize(storageKey, {
     const persistCurrentSize = () => {
       const node = ref.current;
       if (!node || !storageKey) return;
-      const normalized = constraintsRef.current;
+      const normalized = getConstraints();
       const next = {};
-      const height = clampUiResizeValue(node.offsetHeight, normalized.minHeight, normalized.maxHeight);
-      const width = clampUiResizeValue(node.offsetWidth, normalized.minWidth, normalized.maxWidth);
+      const height = persistHeight ? clampUiResizeValue(node.offsetHeight, normalized.minHeight, normalized.maxHeight) : null;
+      const width = persistWidth ? clampUiResizeValue(node.offsetWidth, normalized.minWidth, normalized.maxWidth) : null;
       if (height != null) next.height = height;
       if (width != null) next.width = width;
       if (!Object.keys(next).length) return;
@@ -156,12 +166,34 @@ export function usePersistentElementSize(storageKey, {
       writePersistedUiSize(storageKey, next);
     };
 
-    const schedulePersist = () => {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = window.setTimeout(persistCurrentSize, debounceMs);
+    const syncSizeToViewport = () => {
+      const node = ref.current;
+      if (!node) return;
+      const normalized = getConstraints();
+      const next = {};
+      if (persistHeight && lastSavedRef.current?.height != null) {
+        const height = clampUiResizeValue(node.offsetHeight, normalized.minHeight, normalized.maxHeight);
+        if (height != null) {
+          node.style.height = `${height}px`;
+          next.height = height;
+        }
+      }
+      if (persistWidth && lastSavedRef.current?.width != null) {
+        const width = clampUiResizeValue(node.offsetWidth, normalized.minWidth, normalized.maxWidth);
+        if (width != null) {
+          node.style.width = `${width}px`;
+          next.width = width;
+        }
+      }
+      if (!Object.keys(next).length) return;
+      const unchanged = lastSavedRef.current?.height === next.height
+        && lastSavedRef.current?.width === next.width;
+      if (unchanged) return;
+      lastSavedRef.current = next;
+      writePersistedUiSize(storageKey, next);
     };
 
-    const handleMouseUp = () => {
+    const handleResizeEnd = () => {
       const node = ref.current;
       if (!node) return;
       const height = node.offsetHeight;
@@ -169,15 +201,25 @@ export function usePersistentElementSize(storageKey, {
       if (height === lastHeight && width === lastWidth) return;
       lastHeight = height;
       lastWidth = width;
-      schedulePersist();
+      persistCurrentSize();
     };
 
-    window.addEventListener('mouseup', handleMouseUp);
+    const handleBeforeUnload = () => persistCurrentSize();
+
+    window.addEventListener('mouseup', handleResizeEnd);
+    window.addEventListener('pointerup', handleResizeEnd);
+    window.addEventListener('resize', syncSizeToViewport);
+    window.visualViewport?.addEventListener('resize', syncSizeToViewport);
+    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
-      window.removeEventListener('mouseup', handleMouseUp);
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      window.removeEventListener('mouseup', handleResizeEnd);
+      window.removeEventListener('pointerup', handleResizeEnd);
+      window.removeEventListener('resize', syncSizeToViewport);
+      window.visualViewport?.removeEventListener('resize', syncSizeToViewport);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      persistCurrentSize();
     };
-  }, [storageKey, legacyKeys, debounceMs]);
+  }, [storageKey, legacyKeys, persistHeight, persistWidth]);
 
   return ref;
 }

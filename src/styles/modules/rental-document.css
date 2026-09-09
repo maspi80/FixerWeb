@@ -1,0 +1,133 @@
+/* Rental document layout: row 1 number/status/client, row 2 rental terms. */
+.rental-document-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:8px;
+  align-items:stretch;
+}
+.rental-document-row{
+  display:grid;
+  gap:8px;
+  align-items:end;
+  min-width:0;
+}
+.rental-document-primary-row{
+  grid-template-columns:minmax(150px,180px) minmax(104px,120px) minmax(0,1fr);
+}
+.rental-document-secondary-row{
+  grid-template-columns:minmax(160px,220px) repeat(3,minmax(132px,156px));
+  justify-content:start;
+}
+.rental-document-row .ds-form-field{
+  min-width:0;
+}
+.rental-document-row .app-input,
+.rental-document-row .app-select,
+.rental-document-row .ds-form-field input,
+.rental-document-row .ds-form-field select{
+  width:100%;
+  min-width:0;
+  max-width:none;
+  min-height:var(--fw-control-height-md);
+  height:var(--fw-control-height-md);
+}
+.rental-number-field,
+.rental-number-field .app-input,
+.rental-date-field,
+.rental-date-field .app-input{
+  width:auto;
+  min-width:0;
+  max-width:none;
+}
+.rental-client-field{
+  display:block;
+  min-width:0;
+}
+.rental-status-field{
+  min-width:0;
+}
+.rental-status-field .ds-status-pill{
+  min-height:58px;
+  height:58px;
+}
+@media(max-width:1400px){
+  .service-form-grid-main{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+  .service-document-strip{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+  .service-text-grid,
+  .service-estimate-grid,
+  .service-estimate-footer,
+  .service-external-grid,
+  .service-diagnosis-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .service-link-row,
+  .service-device-fields-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .service-intake-fields-grid{
+    grid-template-columns:minmax(130px,.65fr) minmax(0,1fr) minmax(0,1fr);
+  }
+  .service-estimate-item-row{
+    grid-template-columns:minmax(180px,1fr) minmax(120px,160px) auto;
+  }
+  .service-cost-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+  .service-notes-field{
+    grid-column:1/-1;
+  }
+}
+@media(max-width:900px){
+  .dashboard-metrics-grid{
+    grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  }
+  .dashboard-panels-grid{
+    grid-template-columns:1fr;
+    grid-template-rows:none;
+  }
+  .dashboard-resize-handle{
+    display:none;
+  }
+  .rental-document-primary-row,
+  .rental-document-secondary-row{
+    grid-template-columns:1fr;
+  }
+  .rental-status-field .ds-status-pill{
+    min-height:var(--fw-control-height-md);
+    height:var(--fw-control-height-md);
+  }
+  .dashboard-settings-list{
+    grid-template-columns:1fr;
+  }
+  .service-filter-bar,
+  .service-document-strip,
+  .service-form-grid-main,
+  .service-link-grid,
+  .service-text-grid,
+  .service-fault-only-grid,
+  .service-diagnosis-grid,
+  .service-cost-grid,
+  .service-customer-device-grid,
+  .service-link-row,
+  .service-device-fields-grid,
+  .service-intake-fields-grid,
+  .service-estimate-grid,
+  .service-estimate-footer,
+  .service-estimate-item-row,
+  .service-external-grid,
+  .service-progress-add,
+  .service-attachment-add-grid{
+    grid-template-columns:1fr;
+  }
+  .service-wide-field{
+    grid-column:auto;
+  }
+  .service-notes-field{
+    grid-column:auto;
+  }
+}
+

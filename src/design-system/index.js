@@ -14,6 +14,8 @@ export {
   AppTabs,
   AppTable,
   AppBadge,
+  ColorSwatchPicker,
+  SaveStatusIndicator,
   AppSection,
   AppToolbar,
   ButtonPrimary,
@@ -25,6 +27,7 @@ export {
   SectionPanel,
   ModalFrame,
   FormField,
+  formatStatusLabel,
   StatusPill,
   EmptyState,
   AppNotice

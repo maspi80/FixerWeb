@@ -448,6 +448,95 @@
   color: var(--fw-color-text-soft);
 }
 
+.ds-status-pill.has-custom-color{
+  background:color-mix(in srgb,var(--ds-status-color) 17%,transparent);
+  color:var(--ds-status-color);
+}
+
+.ds-save-status{
+  display:inline-flex;
+  align-items:center;
+  min-width:0;
+  min-height:20px;
+  color:var(--fw-color-text-muted);
+  font-size:11px;
+  font-weight:600;
+  line-height:1.2;
+  white-space:nowrap;
+}
+
+.ds-save-status.is-idle{
+  visibility:hidden;
+}
+
+.ds-save-status.is-saving{
+  color:var(--fw-color-warning-text);
+}
+
+.ds-save-status.is-saved{
+  color:var(--fw-color-success-text);
+}
+
+.ds-save-status.is-error{
+  color:var(--fw-color-danger-text);
+}
+
+.app-shell.theme-light .ds-save-status.is-saving{ color:#92400e; }
+.app-shell.theme-light .ds-save-status.is-saved{ color:#166534; }
+.app-shell.theme-light .ds-save-status.is-error{ color:#b91c1c; }
+
+.app-shell.theme-light .ds-status-pill.has-custom-color{
+  background:color-mix(in srgb,var(--ds-status-color) 12%,transparent);
+  color:color-mix(in srgb,var(--ds-status-color) 68%,#0f172a);
+}
+
+.ds-color-picker{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  min-height:28px;
+}
+
+.ds-color-swatch{
+  width:22px;
+  height:22px;
+  min-width:22px;
+  min-height:22px;
+  padding:0;
+  border:2px solid transparent;
+  border-radius:999px;
+  background:var(--fw-color-text-muted);
+  cursor:pointer;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--fw-color-text) 10%,transparent);
+  transition:transform .12s ease,border-color .12s ease,box-shadow .12s ease;
+}
+
+.ds-color-swatch:hover:not(:disabled){
+  transform:scale(1.08);
+}
+
+.ds-color-swatch:focus-visible{
+  outline:0;
+  box-shadow:0 0 0 3px var(--fw-color-primary-soft);
+}
+
+.ds-color-swatch.is-selected{
+  border-color:var(--fw-color-text-strong);
+  box-shadow:0 0 0 2px var(--fw-color-primary-border);
+}
+
+.ds-color-swatch.is-default{
+  background:var(--fw-color-section-soft);
+  border-color:var(--fw-color-border-strong);
+}
+
+.ds-color-swatch:disabled{
+  cursor:not-allowed;
+  opacity:.5;
+}
+
 .app-shell.theme-light .app-badge-info,
 .app-shell.theme-light .ds-status-pill.tone-info {
   color: #1e40af;

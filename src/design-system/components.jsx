@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { usePersistentElementSize } from './uiResize.js';
 
@@ -25,7 +25,13 @@ export function AppSelect({ className = '', children, ...props }) {
  * the user-dragged height across sessions via localStorage.
  */
 export const AppTextarea = React.forwardRef(function AppTextarea({ className = '', resizeKey, resizeConstraints, ...props }, forwardedRef) {
-  const resizeRef = usePersistentElementSize(resizeKey, { constraints: resizeConstraints });
+  // Textareas may be resized vertically, but their width always belongs to the
+  // surrounding layout. Persisting width leaves stale inline styles when a
+  // panel is resized and can permanently squeeze the field.
+  const resizeRef = usePersistentElementSize(resizeKey, {
+    constraints: resizeConstraints,
+    persistWidth: false
+  });
 
   const setRefs = (node) => {
     resizeRef.current = node;
@@ -48,6 +54,43 @@ export function AppBadge({ className = '', tone = 'neutral', children, ...props 
   return <span className={joinClassNames('app-badge', `app-badge-${tone}`, className)} {...props}>{children}</span>;
 }
 
+export function ColorSwatchPicker({ options = [], value, onChange, disabled = false, label = 'Kolor', className = '' }) {
+  return <div className={joinClassNames('ds-color-picker', className)} role="radiogroup" aria-label={label}>
+    {options.map((option) => {
+      const optionValue = option.value ?? option.id ?? option.color ?? '';
+      const selected = value === optionValue;
+      return <button
+        key={`${option.id ?? option.label}:${optionValue}`}
+        type="button"
+        role="radio"
+        aria-checked={selected}
+        aria-label={option.label}
+        title={option.label}
+        disabled={disabled}
+        className={joinClassNames('ds-color-swatch', !option.color ? 'is-default' : '', selected ? 'is-selected' : '')}
+        style={option.color ? { backgroundColor: option.color } : undefined}
+        onClick={() => onChange?.(optionValue)}
+      />;
+    })}
+  </div>;
+}
+
+const SAVE_STATE_LABELS = {
+  saving: 'Zapisywanie…',
+  saved: 'Zapisano',
+  error: 'Błąd zapisu'
+};
+
+export function SaveStatusIndicator({ status = 'idle', className = '' }) {
+  const label = SAVE_STATE_LABELS[status] ?? '';
+  return <span
+    className={joinClassNames('ds-save-status', label ? `is-${status}` : 'is-idle', className)}
+    role={status === 'error' ? 'alert' : 'status'}
+    aria-live={status === 'error' ? 'assertive' : 'polite'}
+    aria-atomic="true"
+  >{label}</span>;
+}
+
 export function AppSection({ className = '', title, actions = null, children }) {
   return <section className={joinClassNames('app-section', className)}>
     {(title || actions) && <div className="app-section-header">
@@ -62,21 +105,89 @@ export function AppToolbar({ className = '', children, ...props }) {
   return <div className={joinClassNames('app-toolbar', className)} {...props}>{children}</div>;
 }
 
-export function AppModal({ className = '', eyebrow, title, description, onClose, footer, children }) {
+const MODAL_FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'a[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',');
+
+function ModalSurface({ variant, className = '', eyebrow, title, description, onClose, footer, children }) {
+  const dialogRef = useRef(null);
+  const contentRef = useRef(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const modalPrefix = variant === 'app' ? 'app' : 'ds';
+  const modalClass = variant === 'app' ? 'app-modal' : 'ds-modal-frame';
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const initialFocus = contentRef.current?.querySelector(MODAL_FOCUSABLE_SELECTOR)
+      ?? dialogRef.current?.querySelector(MODAL_FOCUSABLE_SELECTOR);
+    initialFocus?.focus({ preventScroll: true });
+    return () => {
+      if (previousFocus instanceof HTMLElement && document.contains(previousFocus)) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Escape' && onClose) {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll(MODAL_FOCUSABLE_SELECTOR) ?? [])
+      .filter((element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true');
+    if (!focusable.length) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return <div className="modal-backdrop">
-    <div className={joinClassNames('app-modal', className)}>
-      <div className="app-modal-header">
+    <div
+      ref={dialogRef}
+      className={joinClassNames(modalClass, className)}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={title ? titleId : undefined}
+      aria-describedby={description ? descriptionId : undefined}
+      aria-label={!title ? eyebrow || 'Okno dialogowe' : undefined}
+      tabIndex={-1}
+      onKeyDown={handleKeyDown}
+    >
+      <div className={`${modalPrefix}-modal-header`}>
         <div>
-          {eyebrow && <p className="app-eyebrow">{eyebrow}</p>}
-          {title && <h2>{title}</h2>}
-          {description && <p className="app-muted">{description}</p>}
+          {eyebrow && <p className={`${modalPrefix}-eyebrow`}>{eyebrow}</p>}
+          {title && <h2 id={titleId}>{title}</h2>}
+          {description && <p id={descriptionId} className={`${modalPrefix}-muted`}>{description}</p>}
         </div>
         {onClose && <ModalCloseButton onClick={onClose} />}
       </div>
-      <div className="app-modal-content">{children}</div>
-      {footer && <div className="app-modal-footer">{footer}</div>}
+      <div ref={contentRef} className={`${modalPrefix}-modal-content`}>{children}</div>
+      {footer && <div className={`${modalPrefix}-modal-footer`}>{footer}</div>}
     </div>
   </div>;
+}
+
+export function AppModal(props) {
+  return <ModalSurface variant="app" {...props} />;
 }
 
 export function ButtonPrimary({ className = '', type = 'button', children, ...props }) {
@@ -109,21 +220,8 @@ export function SectionPanel({ className = '', title, actions = null, children }
   return <AppSection className={className} title={title} actions={actions}>{children}</AppSection>;
 }
 
-export function ModalFrame({ className = '', eyebrow, title, description, onClose, footer, children }) {
-  return <div className="modal-backdrop">
-    <div className={joinClassNames('ds-modal-frame', className)}>
-      <div className="ds-modal-header">
-        <div>
-          {eyebrow && <p className="ds-eyebrow">{eyebrow}</p>}
-          {title && <h2>{title}</h2>}
-          {description && <p className="ds-muted">{description}</p>}
-        </div>
-        {onClose && <ModalCloseButton onClick={onClose} />}
-      </div>
-      <div className="ds-modal-content">{children}</div>
-      {footer && <div className="ds-modal-footer">{footer}</div>}
-    </div>
-  </div>;
+export function ModalFrame(props) {
+  return <ModalSurface variant="ds" {...props} />;
 }
 
 export function FormField({ className = '', label, error, hint, required = false, children }) {
@@ -151,14 +249,14 @@ const SYSTEM_STATUS_LABELS = {
   canceled: 'Anulowane'
 };
 
-function formatSystemStatusLabel(value) {
+export function formatStatusLabel(value) {
   const text = String(value ?? '');
   const key = text.trim().toLowerCase();
   return SYSTEM_STATUS_LABELS[key] ?? text;
 }
 
-export function StatusPill({ value, tone = 'auto', className = '' }) {
-  const text = formatSystemStatusLabel(value);
+export function StatusPill({ value, label, tone = 'auto', color = '', className = '' }) {
+  const text = label ?? formatStatusLabel(value);
   const lower = text.toLowerCase();
   const resolvedTone = tone === 'auto'
     ? lower.includes('przetermin') || lower.includes('po terminie') || lower.includes('problematyczny') || lower.includes('zablokowany') || lower.includes('zagub') || lower.includes('uszk') ? 'danger'
@@ -167,7 +265,12 @@ export function StatusPill({ value, tone = 'auto', className = '' }) {
       : lower.includes('aktywn') || lower.includes('wypo') || lower.includes('wydania') || lower.includes('wydany') ? 'info'
       : 'neutral'
     : tone;
-  return <AppBadge tone={resolvedTone} className={joinClassNames('ds-status-pill', `tone-${resolvedTone}`, className)}>{text}</AppBadge>;
+  const customColor = /^#[0-9a-f]{6}$/i.test(String(color ?? '')) ? color : '';
+  return <AppBadge
+    tone={customColor ? 'neutral' : resolvedTone}
+    className={joinClassNames('ds-status-pill', customColor ? 'has-custom-color' : `tone-${resolvedTone}`, className)}
+    style={customColor ? { '--ds-status-color': customColor } : undefined}
+  >{text}</AppBadge>;
 }
 
 export function EmptyState({ className = '', title, description, action = null }) {

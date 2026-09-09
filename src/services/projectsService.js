@@ -23,6 +23,7 @@ export const PROJECT_TASK_PRIORITIES = WORK_PRIORITIES;
 export { getActiveWorkPriorityNames, getDefaultWorkPriority, normalizeWorkPriority };
 
 const PROJECT_TASK_ORDER_STEP = 10;
+const PROJECT_ORDER_STEP = 100;
 
 const LEGACY_WORK_STATUS_MAP = {
   nowe: 'Do zrobienia',
@@ -247,6 +248,7 @@ function splitSupabaseProjectPayload(payload) {
 }
 
 function normalizeProject(project) {
+  const sortOrder = Number(project.sort_order);
   return {
     project_number: String(project.project_number ?? '').trim(),
     name: String(project.name ?? '').trim(),
@@ -259,8 +261,32 @@ function normalizeProject(project) {
     completed_at: project.completed_at || null,
     archived: Boolean(project.archived),
     notes: String(project.notes ?? '').trim(),
-    accent_color: normalizeAccentColor(project?.accent_color)
+    accent_color: normalizeAccentColor(project?.accent_color),
+    ...(project.sort_order !== undefined && project.sort_order !== null && Number.isFinite(sortOrder) ? { sort_order: sortOrder } : {})
   };
+}
+
+function isMissingProjectSortOrderError(error) {
+  const message = `${error?.message ?? ''} ${error?.details ?? ''}`.toLocaleLowerCase('pl');
+  return String(error?.code ?? '') === '42703' || (message.includes('sort_order') && (
+    message.includes('does not exist') || message.includes('could not find') || message.includes('schema cache') || message.includes('pgrst204')
+  ));
+}
+
+function getProjectOrderError(error) {
+  if (isMissingProjectSortOrderError(error)) {
+    return new Error('Brak obsługi kolejności projektów w bazie. Uruchom migrację supabase/049_projects_sort_order.sql.');
+  }
+  return error;
+}
+
+function compareProjectOrder(a, b) {
+  const aOrder = a?.sort_order !== null && a?.sort_order !== undefined && Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : Number.MAX_SAFE_INTEGER;
+  const bOrder = b?.sort_order !== null && b?.sort_order !== undefined && Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : Number.MAX_SAFE_INTEGER;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+  const bTime = new Date(b?.created_at ?? 0).getTime();
+  const aTime = new Date(a?.created_at ?? 0).getTime();
+  return bTime - aTime;
 }
 
 function readSectionColorMap() {
@@ -336,12 +362,20 @@ function compareProjectTaskOrder(a, b) {
 export async function fetchProjects() {
   if (!canUseProjectPermission('projects.view')) return denyProjectPermission('projects.view', !isSupabaseConfigured, []);
   if (!isSupabaseConfigured) {
-    return { data: mergeProjectAccentColors(readLocal(LOCAL_PROJECTS_KEY)), error: null, local: true };
+    return { data: mergeProjectAccentColors(readLocal(LOCAL_PROJECTS_KEY)).sort(compareProjectOrder), error: null, local: true };
   }
-  const { data, error } = await supabase
+  let result = await supabase
     .from('projects')
     .select('*, clients(id, name)')
+    .order('sort_order', { ascending: true })
     .order('created_at', { ascending: false });
+  if (result.error && isMissingProjectSortOrderError(result.error)) {
+    result = await supabase
+      .from('projects')
+      .select('*, clients(id, name)')
+      .order('created_at', { ascending: false });
+  }
+  const { data, error } = result;
   return { data: mergeProjectAccentColors(data ?? []), error, local: false };
 }
 
@@ -356,11 +390,16 @@ export async function createProject(project) {
     return { data: created, error: null, local: true };
   }
   const { dbPayload, accent_color } = splitSupabaseProjectPayload(payload);
-  const { data, error } = await supabase
+  let result = await supabase
     .from('projects')
     .insert(dbPayload)
     .select('*, clients(id, name)')
     .single();
+  if (result.error && isMissingProjectSortOrderError(result.error)) {
+    const { sort_order: _sortOrder, ...legacyPayload } = dbPayload;
+    result = await supabase.from('projects').insert(legacyPayload).select('*, clients(id, name)').single();
+  }
+  const { data, error } = result;
   if (!error && data) {
     persistProjectAccentColor(getProjectStorageKey(data), accent_color);
     return { data: { ...data, accent_color: accent_color ?? null }, error, local: false };
@@ -380,12 +419,22 @@ export async function updateProject(id, project) {
     return { data: next.find((row) => String(row.id ?? row.localId) === String(id)) ?? null, error: null, local: true };
   }
   const { dbPayload, accent_color } = splitSupabaseProjectPayload(payload);
-  const { data, error } = await supabase
+  let result = await supabase
     .from('projects')
     .update({ ...dbPayload, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select('*, clients(id, name)')
     .single();
+  if (result.error && isMissingProjectSortOrderError(result.error)) {
+    const { sort_order: _sortOrder, ...legacyPayload } = dbPayload;
+    result = await supabase
+      .from('projects')
+      .update({ ...legacyPayload, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('*, clients(id, name)')
+      .single();
+  }
+  const { data, error } = result;
   if (!error) {
     persistProjectAccentColor(String(id), accent_color);
     return { data: data ? { ...data, accent_color: accent_color ?? null } : null, error, local: false };
@@ -402,6 +451,31 @@ export async function deleteProject(id, project = null) {
   }
   const { error } = await supabase.from('projects').delete().eq('id', id);
   return { error, local: false };
+}
+
+export async function reorderProjects(orderedProjects = []) {
+  if (!canUseProjectPermission('projects.edit')) return { error: projectPermissionError('projects.edit'), local: !isSupabaseConfigured };
+  const updates = orderedProjects
+    .map((project, index) => ({ id: project.id ?? project.localId, sort_order: (index + 1) * PROJECT_ORDER_STEP }))
+    .filter((row) => row.id);
+  if (!updates.length) return { error: null, local: !isSupabaseConfigured };
+
+  if (!isSupabaseConfigured || orderedProjects.some((project) => project.localId)) {
+    const orderById = new Map(updates.map((row) => [String(row.id), row.sort_order]));
+    const next = readLocal(LOCAL_PROJECTS_KEY).map((project) => {
+      const projectId = String(project.id ?? project.localId);
+      return orderById.has(projectId) ? { ...project, sort_order: orderById.get(projectId) } : project;
+    });
+    writeLocal(LOCAL_PROJECTS_KEY, next);
+    return { error: null, local: true };
+  }
+
+  const results = await Promise.all(updates.map((row) => supabase
+    .from('projects')
+    .update({ sort_order: row.sort_order })
+    .eq('id', row.id)));
+  const failed = results.find((result) => result.error);
+  return { error: failed?.error ? getProjectOrderError(failed.error) : null, local: false };
 }
 
 // ─── Project Tasks ─────────────────────────────────────────────────────────────
@@ -701,6 +775,8 @@ export async function fetchProjectAllComments(projectId) {
 
 const PROJECTS_LAST_WORKSPACE_PREFIX = 'fixer:projects:last-workspace';
 const LEGACY_PROJECTS_SELECTED_KEY = 'fixer.projects.selectedProjectId';
+const PROJECTS_COLUMNS_SPLIT_MIN = 0.25;
+const PROJECTS_COLUMNS_SPLIT_MAX = 0.75;
 
 export function getProjectsLastWorkspaceStorageKey(userId) {
   const scopedUserId = String(userId ?? '').trim();
@@ -740,7 +816,9 @@ function parseProjectsWorkspace(raw) {
     leftCollapsed: raw.leftCollapsed === true,
     historyCollapsed: raw.historyCollapsed !== false,
     centerPanelOpen: raw.centerPanelOpen !== false,
-    columnsSplit: Number.isFinite(columnsSplit) && columnsSplit > 0 ? columnsSplit : null
+    columnsSplit: Number.isFinite(columnsSplit) && columnsSplit > 0
+      ? Math.min(PROJECTS_COLUMNS_SPLIT_MAX, Math.max(PROJECTS_COLUMNS_SPLIT_MIN, columnsSplit))
+      : null
   };
 }
 

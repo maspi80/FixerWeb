@@ -72,7 +72,9 @@ function NoteRichTextEditor({
       StarterKit.configure({
         heading: { levels: [1, 2] },
         codeBlock: false,
-        horizontalRule: false
+        horizontalRule: false,
+        link: false,
+        underline: false
       }),
       Underline,
       Link.configure({

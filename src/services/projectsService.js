@@ -768,7 +768,7 @@ export async function fetchProjectAllComments(projectId) {
   if (taskErr || !taskRows?.length) return { data: [], error: taskErr, local: false };
   const { data, error } = await supabase
     .from('project_task_comments')
-    .select('id, task_id')
+    .select('id, task_id, body, author, created_at, updated_at')
     .in('task_id', taskRows.map((t) => t.id));
   return { data: data ?? [], error, local: false };
 }

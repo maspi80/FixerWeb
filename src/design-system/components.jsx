@@ -76,6 +76,7 @@ export function ColorSwatchPicker({ options = [], value, onChange, disabled = fa
 }
 
 const SAVE_STATE_LABELS = {
+  dirty: 'Niezapisane',
   saving: 'Zapisywanie…',
   saved: 'Zapisano',
   error: 'Błąd zapisu'

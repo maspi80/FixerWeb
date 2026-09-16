@@ -17,17 +17,13 @@ Wersja dopracowująca moduł Klienci po uruchomieniu prawdziwego zapisu w Supaba
 
 ## Supabase
 
-W Supabase SQL Editor uruchom jako całość plik:
+Zmiany bazy są zapisane jako kolejno numerowane migracje w katalogu
+`supabase/`. Plik `schema.sql` jest historycznym schematem bazowym i nie
+zawiera wszystkich późniejszych zmian. Nie należy używać go jako zamiennika
+pełnego zestawu migracji.
 
-```text
-supabase/001_clients_production_schema.sql
-```
-
-Ten sam skrypt jest też zapisany w:
-
-```text
-supabase/schema.sql
-```
+Przed wdrożeniem sprawdź [checklistę migracji](docs/SUPABASE_MIGRATIONS.md) i
+uruchom migracje, których brakuje w danym środowisku, w kolejności numerów.
 
 W Vercel muszą być ustawione zmienne środowiskowe:
 

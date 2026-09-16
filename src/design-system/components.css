@@ -473,6 +473,10 @@
   color:var(--fw-color-warning-text);
 }
 
+.ds-save-status.is-dirty{
+  color:var(--fw-color-text-muted);
+}
+
 .ds-save-status.is-saved{
   color:var(--fw-color-success-text);
 }
@@ -482,6 +486,7 @@
 }
 
 .app-shell.theme-light .ds-save-status.is-saving{ color:#92400e; }
+.app-shell.theme-light .ds-save-status.is-dirty{ color:#64748b; }
 .app-shell.theme-light .ds-save-status.is-saved{ color:#166534; }
 .app-shell.theme-light .ds-save-status.is-error{ color:#b91c1c; }
 

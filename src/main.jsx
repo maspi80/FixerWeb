@@ -851,6 +851,7 @@ function calculateChatUnreadCounts(messages = [], readState = {}, currentUserId 
 
 function canManageProjectComment(comment, commentAuthor, canManageAllComments = false) {
   if (canManageAllComments) return true;
+  if (!isSupabaseConfigured && comment?.localId) return true;
   const commentAuthorId = String(comment?.author_user_id ?? '').trim();
   const currentUserId = String(commentAuthor?.user_id ?? commentAuthor?.author_user_id ?? '').trim();
   return Boolean(commentAuthorId && currentUserId && commentAuthorId === currentUserId);
@@ -8509,6 +8510,7 @@ const PROJECT_TASK_INSPECTOR_SPLIT_KEY = buildUiResizeStorageKey('project-task-i
 const PROJECT_TASK_INSPECTOR_DESCRIPTION_KEY = buildUiResizeStorageKey('project-task-inspector', 'description');
 const PROJECT_TASK_INSPECTOR_COMMENT_KEY = buildUiResizeStorageKey('project-task-inspector', 'comment');
 const PROJECT_TASK_INSPECTOR_COLLAPSED_KEY = 'fixer.projects.taskInspectorDetailsCollapsed';
+const PROJECT_TASK_INSPECTOR_COMMENTS_COLLAPSED_KEY = 'fixer.projects.taskInspectorCommentsCollapsed';
 const PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT = 460;
 const PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT = 220;
 const PROJECT_TASK_INSPECTOR_COMMENTS_MIN_HEIGHT = 250;
@@ -8522,6 +8524,7 @@ const NOTES_DETAILS_MAX_WIDTH = 620;
 const NOTES_LIST_MIN_WIDTH = 520;
 const NOTES_LAYOUT_GAP = 8;
 const NOTES_OVERLAY_MAX_WORKSPACE_WIDTH = 980;
+const NOTES_AUTOSAVE_DELAY_MS = 1000;
 
 function getNotesDetailsMaxWidth(workspaceWidth) {
   const fallbackWidth = typeof window === 'undefined' ? 1280 : window.innerWidth - PROJECTS_APP_SIDEBAR_FALLBACK_WIDTH - PROJECTS_PAGE_GUTTER_FALLBACK_WIDTH;
@@ -8553,9 +8556,11 @@ function getProjectTaskInspectorSplitStorageKey(userId) {
   return scopedUserId ? `${PROJECT_TASK_INSPECTOR_SPLIT_KEY}:${scopedUserId}` : PROJECT_TASK_INSPECTOR_SPLIT_KEY;
 }
 
-function getProjectTaskInspectorCollapsedStorageKey(userId) {
+function getProjectTaskInspectorTaskStorageKey(baseKey, userId, taskId) {
   const scopedUserId = String(userId ?? '').trim();
-  return scopedUserId ? `${PROJECT_TASK_INSPECTOR_COLLAPSED_KEY}:${scopedUserId}` : PROJECT_TASK_INSPECTOR_COLLAPSED_KEY;
+  const scopedTaskId = String(taskId ?? '').trim();
+  const userKey = scopedUserId ? `${baseKey}:${scopedUserId}` : baseKey;
+  return scopedTaskId ? `${userKey}:task:${scopedTaskId}` : userKey;
 }
 
 function getProjectTaskInspectorFieldStorageKey(baseKey, userId) {
@@ -9046,7 +9051,9 @@ function getSavedProjectDetailsCollapsed() {
   return localStorage.getItem(PROJECT_DETAILS_COLLAPSED_KEY) === 'true';
 }
 
-function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false, layout = 'inline' }) {
+const PROJECT_TASK_COMMENTS_SYNC_EVENT = 'fixer:project-task-comments-changed';
+
+function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false, layout = 'inline', collapsed = false, onCollapsedChange = null, focusRequest = null, onFocusRequestHandled = null }) {
   const taskId = task?.id ?? task?.localId;
   const isPanelLayout = layout === 'panel';
   const commentResizeKey = useMemo(() => (
@@ -9060,6 +9067,9 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   const [editingCommentText, setEditingCommentText] = useState('');
   const [commentContextMenu, setCommentContextMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const commentsSyncSourceRef = useRef(Symbol('project-task-comments'));
+  const commentsRootRef = useRef(null);
+  const commentsCollapsed = isPanelLayout && collapsed;
   const canCreateProjectItems = permissions.create === true;
   const canManageComment = (comment) => canManageProjectComment(comment, commentAuthor, canManageAllComments);
 
@@ -9080,7 +9090,36 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
     setLoading(false);
   };
 
+  const notifyCommentsChanged = () => {
+    window.dispatchEvent(new CustomEvent(PROJECT_TASK_COMMENTS_SYNC_EVENT, {
+      detail: { taskId: String(taskId), source: commentsSyncSourceRef.current }
+    }));
+  };
+
   useEffect(() => { loadComments(); }, [taskId]);
+
+  useEffect(() => {
+    const syncComments = (event) => {
+      if (event.detail?.source === commentsSyncSourceRef.current) return;
+      if (String(event.detail?.taskId ?? '') !== String(taskId ?? '')) return;
+      loadComments();
+    };
+    window.addEventListener(PROJECT_TASK_COMMENTS_SYNC_EVENT, syncComments);
+    return () => window.removeEventListener(PROJECT_TASK_COMMENTS_SYNC_EVENT, syncComments);
+  }, [taskId]);
+
+  useEffect(() => {
+    if (!isPanelLayout || !focusRequest || String(focusRequest.taskId) !== String(taskId)) return undefined;
+    if (commentsCollapsed) {
+      onCollapsedChange?.(false);
+      return undefined;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      commentsRootRef.current?.querySelector('.project-comment-field textarea')?.focus();
+      onFocusRequestHandled?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [commentsCollapsed, focusRequest, isPanelLayout, onCollapsedChange, onFocusRequestHandled, taskId]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !taskId || task?.localId || permissions.view !== true) return undefined;
@@ -9137,6 +9176,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
     if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
     setNewComment('');
     await loadComments();
+    notifyCommentsChanged();
     onChanged?.();
   };
 
@@ -9154,6 +9194,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
         const result = await deleteTaskComment(comment.id ?? comment.localId, comment);
         if (result.error) { setNotice(`Błąd: ${result.error.message}`); return; }
         await loadComments();
+        notifyCommentsChanged();
         onChanged?.();
       }
     });
@@ -9168,6 +9209,7 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
     setEditingCommentId(null);
     setEditingCommentText('');
     await loadComments();
+    notifyCommentsChanged();
     onChanged?.();
   };
 
@@ -9235,11 +9277,27 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
     </div>
   </div>;
 
-  return <div className={`project-task-inline-comments ${isPanelLayout ? 'project-task-inline-comments-panel' : ''}`.trim()}>
+  return <div ref={commentsRootRef} className={`project-task-inline-comments ${isPanelLayout ? 'project-task-inline-comments-panel' : ''} ${isPanelLayout && commentsCollapsed ? 'is-comments-collapsed' : ''}`.trim()}>
     {notice && <div className="notice">{notice}</div>}
-    {isPanelLayout && <div className="project-comments-section-label">Komentarze</div>}
-    {isPanelLayout ? commentsList : commentComposer}
-    {isPanelLayout ? commentComposer : commentsList}
+    {isPanelLayout && <div className="project-comments-section-header">
+      <button
+        type="button"
+        className={`project-icon-action project-task-details-toggle ${commentsCollapsed ? 'is-collapsed' : ''}`}
+        onClick={() => onCollapsedChange?.(!commentsCollapsed)}
+        aria-expanded={!commentsCollapsed}
+        aria-label={commentsCollapsed ? 'Rozwiń komentarze' : 'Zwiń komentarze'}
+        title={commentsCollapsed ? 'Rozwiń komentarze' : 'Zwiń komentarze'}
+      >
+        {commentsCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+      </button>
+      <button type="button" className="project-comments-section-toggle" onClick={() => onCollapsedChange?.(!commentsCollapsed)} aria-expanded={!commentsCollapsed}>
+        Komentarze <em>({comments.length})</em>
+      </button>
+    </div>}
+    {!commentsCollapsed && <>
+      {isPanelLayout ? commentsList : commentComposer}
+      {isPanelLayout ? commentComposer : commentsList}
+    </>}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     {commentContextMenu && <AppRowContextMenu
       x={commentContextMenu.x}
@@ -9430,7 +9488,7 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   const [tasks, setTasks] = useState([]);
   const [sections, setSections] = useState([]);
   const [commentCounts, setCommentCounts] = useState({});
-  const [expandedTasks, setExpandedTasks] = useState(new Set());
+  const [latestComments, setLatestComments] = useState({});
   const [collapsedSections, setCollapsedSections] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
@@ -9464,15 +9522,20 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
       fetchProjectAllComments(projectId)
     ]);
     const counts = {};
+    const latest = {};
     (commentsResult.data ?? []).forEach((comment) => {
       const tid = String(comment.task_id);
       counts[tid] = (counts[tid] ?? 0) + 1;
+      const currentTime = new Date(latest[tid]?.created_at ?? latest[tid]?.updated_at ?? 0).getTime();
+      const commentTime = new Date(comment.created_at ?? comment.updated_at ?? 0).getTime();
+      if (!latest[tid] || commentTime >= currentTime) latest[tid] = comment;
     });
     if (tasksResult.error || sectionsResult.error || commentsResult.error) setNotice('Nie udało się pobrać pełnych danych panelu projektu.');
     else setNotice('');
     setTasks(tasksResult.data ?? []);
     setSections(sectionsResult.data ?? []);
     setCommentCounts(counts);
+    setLatestComments(latest);
     setLoading(false);
   };
 
@@ -9514,13 +9577,13 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
         return removeRecordById(current, payload.old);
       });
       if (!removed) return;
-      setExpandedTasks((current) => {
-        if (!current.has(removedId)) return current;
-        const next = new Set(current);
-        next.delete(removedId);
+      setCommentCounts((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, removedId)) return current;
+        const next = { ...current };
+        delete next[removedId];
         return next;
       });
-      setCommentCounts((current) => {
+      setLatestComments((current) => {
         if (!Object.prototype.hasOwnProperty.call(current, removedId)) return current;
         const next = { ...current };
         delete next[removedId];
@@ -9596,7 +9659,6 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     };
   }, [projectId, project?.localId, permissions.view]);
 
-  useEffect(() => { setExpandedTasks(new Set()); }, [projectId]);
   useEffect(() => {
     if (!latestTask || String(latestTask.project_id) !== String(projectId)) return;
     const latestTaskId = latestTask.id ?? latestTask.localId;
@@ -9793,16 +9855,6 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     });
   };
 
-  const toggleTaskExpanded = (task) => {
-    const key = String(task.id ?? task.localId);
-    setExpandedTasks((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   const openEditSectionItem = (task) => {
     if (!canEditProjectItems) return;
     setTaskContextMenu(null);
@@ -9817,13 +9869,8 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
   };
 
   const addCommentToTask = (task) => {
-    const taskKey = String(task.id ?? task.localId);
     setTaskContextMenu(null);
-    setExpandedTasks((current) => {
-      const next = new Set(current);
-      next.add(taskKey);
-      return next;
-    });
+    onOpenTask?.(task, { focusComments: true });
   };
 
   const deletePanelTask = (task) => {
@@ -10085,16 +10132,16 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
     const taskKey = String(task.id ?? task.localId);
     const sectionKey = getSectionKey(sectionId);
     const comments = commentCounts[taskKey] ?? 0;
+    const latestComment = latestComments[taskKey] ?? null;
     const hasComments = comments > 0;
     const done = isCompletedStatus(task.status);
-    const expanded = expandedTasks.has(taskKey);
     const dragging = taskDragState?.taskKey === taskKey;
     const activeDropSectionKey = taskDragState?.targetSectionKey ?? taskDragState?.sectionKey;
     const dropTargetIndex = activeDropSectionKey === sectionKey ? taskDragState.dropTargetIndex : null;
     const dropBefore = dropTargetIndex === index;
     const dropAfter = dropTargetIndex === index + 1;
     return <div
-      className={`project-detail-task-item ${done ? 'is-done' : ''} ${expanded ? 'is-expanded' : ''} ${String(selectedTaskKey ?? '') === taskKey ? 'is-selected' : ''} ${dragging ? 'is-dragging' : ''} ${dropBefore ? 'is-drop-before' : ''} ${dropAfter ? 'is-drop-after' : ''}`}
+      className={`project-detail-task-item ${done ? 'is-done' : ''} ${String(selectedTaskKey ?? '') === taskKey ? 'is-selected' : ''} ${dragging ? 'is-dragging' : ''} ${dropBefore ? 'is-drop-before' : ''} ${dropAfter ? 'is-drop-after' : ''}`}
       key={taskKey}
       draggable={canEditProjectItems}
       onDragStart={(event) => startTaskDrag(event, task, sectionId)}
@@ -10114,15 +10161,14 @@ function ProjectDetailsPanel({ project, collapsed = false, width = null, onResiz
           onClick={() => handleSectionItemMainClick(task)}
           onDoubleClick={(event) => handleSectionItemMainDoubleClick(event, task)}
           onKeyDown={(event) => { if (event.key === 'Enter') openEditSectionItem(task); }}
-          aria-expanded={expanded}
           title={taskInspectorOpen ? 'Klik — pokaż w inspektorze, prawy klik — menu' : 'Dwuklik — szczegóły, prawy klik — menu'}
         >
           <strong>{task.title}</strong>
-          <span>{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
+          <span className="project-detail-task-meta">{task.status || '—'} · {task.due_date || 'Brak terminu'}</span>
+          {latestComment?.body && <span className="project-detail-task-comment-preview">{latestComment.author ? `${latestComment.author}: ` : ''}{latestComment.body}</span>}
         </button>
-        <button type="button" className={`project-detail-task-comments ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); toggleTaskExpanded(task); }} aria-label="Pokaż komentarze i postęp" title="Komentarze / postęp">{comments}</button>
+        <button type="button" className={`project-detail-task-comments ${hasComments ? 'has-comments' : ''}`} onClick={(event) => { event.stopPropagation(); onOpenTask?.(task, { focusComments: true }); }} aria-label="Otwórz komentarze w panelu szczegółów" title="Otwórz komentarze">{comments}</button>
       </div>
-      {expanded && <ProjectTaskInlineComments task={task} onChanged={loadPanelData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} />}
     </div>;
   };
 
@@ -10444,7 +10490,7 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
   </aside>;
 }
 
-function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false }) {
+function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null }, canManageAllComments = false, commentsFocusRequest = null, onCommentsFocusHandled = null }) {
   const taskId = task?.id ?? task?.localId;
   const taskProjectId = task?.project_id;
   const [form, setForm] = useState(() => ({}));
@@ -10458,11 +10504,14 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
   const savingRef = useRef(Promise.resolve());
   const splitLayoutRef = useRef(null);
   const splitStorageKey = useMemo(() => getProjectTaskInspectorSplitStorageKey(commentAuthor?.user_id), [commentAuthor?.user_id]);
-  const collapseStorageKey = useMemo(() => getProjectTaskInspectorCollapsedStorageKey(commentAuthor?.user_id), [commentAuthor?.user_id]);
+  const collapseStorageKey = useMemo(() => getProjectTaskInspectorTaskStorageKey(PROJECT_TASK_INSPECTOR_COLLAPSED_KEY, commentAuthor?.user_id, taskId), [commentAuthor?.user_id, taskId]);
+  const commentsCollapseStorageKey = useMemo(() => getProjectTaskInspectorTaskStorageKey(PROJECT_TASK_INSPECTOR_COMMENTS_COLLAPSED_KEY, commentAuthor?.user_id, taskId), [commentAuthor?.user_id, taskId]);
   const descriptionResizeKey = useMemo(() => getProjectTaskInspectorFieldStorageKey(PROJECT_TASK_INSPECTOR_DESCRIPTION_KEY, commentAuthor?.user_id), [commentAuthor?.user_id]);
   const { dataSectionHeight, startDataSectionResize } = useProjectTaskInspectorSplit(splitLayoutRef, splitStorageKey);
   const [taskDetailsCollapsed, setTaskDetailsCollapsed] = useState(() => getSavedProjectTaskInspectorDetailsCollapsed(collapseStorageKey));
+  const [commentsCollapsed, setCommentsCollapsed] = useState(() => localStorage.getItem(commentsCollapseStorageKey) === 'true');
   const collapseStorageKeyRef = useRef(collapseStorageKey);
+  const commentsCollapseStorageKeyRef = useRef(commentsCollapseStorageKey);
   const done = isCompletedStatus(form.status);
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
@@ -10596,6 +10645,18 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
     localStorage.setItem(collapseStorageKey, taskDetailsCollapsed ? 'true' : 'false');
   }, [collapseStorageKey, taskDetailsCollapsed]);
 
+  useEffect(() => {
+    setCommentsCollapsed(localStorage.getItem(commentsCollapseStorageKey) === 'true');
+  }, [commentsCollapseStorageKey]);
+
+  useEffect(() => {
+    if (commentsCollapseStorageKeyRef.current !== commentsCollapseStorageKey) {
+      commentsCollapseStorageKeyRef.current = commentsCollapseStorageKey;
+      return;
+    }
+    localStorage.setItem(commentsCollapseStorageKey, commentsCollapsed ? 'true' : 'false');
+  }, [commentsCollapseStorageKey, commentsCollapsed]);
+
   const scheduleSave = (delay = 700) => {
     clearAutosaveTimer();
     autosaveTimerRef.current = window.setTimeout(() => {
@@ -10649,7 +10710,7 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
         {canDeleteProjectItems && <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>}
         <SaveStatusIndicator status={saveStatus} className="project-task-save-status" />
       </div>
-      <div className={`project-task-inspector-layout ${taskDetailsCollapsed ? 'is-details-collapsed' : ''}`.trim()} ref={splitLayoutRef}>
+      <div className={`project-task-inspector-layout ${taskDetailsCollapsed ? 'is-details-collapsed' : ''} ${commentsCollapsed ? 'is-comments-collapsed' : ''}`.trim()} ref={splitLayoutRef}>
         {!taskDetailsCollapsed && <><div className="project-task-inspector-data project-inspector-fields" style={{ height: `${dataSectionHeight}px` }}>
           {notice && <div className="notice">{notice}</div>}
           {!canEditProjectItems && <div className="notice">Tryb tylko do odczytu: brak uprawnienia projects.edit.</div>}
@@ -10684,8 +10745,8 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
             <AppTextarea className="project-task-description-textarea" resizeKey={descriptionResizeKey} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
           </FormField>
         </div>
-        <div className="project-task-inspector-resizer" role="separator" aria-orientation="horizontal" onPointerDown={startDataSectionResize} /></>}
-        <ProjectTaskInlineComments key={String(task.id ?? task.localId)} task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} layout="panel" />
+        {!commentsCollapsed && <div className="project-task-inspector-resizer" role="separator" aria-orientation="horizontal" onPointerDown={startDataSectionResize} />}</>}
+        <ProjectTaskInlineComments key={String(task.id ?? task.localId)} task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllComments} layout="panel" collapsed={commentsCollapsed} onCollapsedChange={setCommentsCollapsed} focusRequest={commentsFocusRequest} onFocusRequestHandled={onCommentsFocusHandled} />
       </div>
     </div>}
   </aside>;
@@ -10810,6 +10871,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [columnsSplit, setColumnsSplit] = useState(0.54);
   const [projectPanelRefreshKey, setProjectPanelRefreshKey] = useState(0);
+  const [taskCommentsFocusRequest, setTaskCommentsFocusRequest] = useState(null);
   const [workPriorityNames, setWorkPriorityNames] = useState(DEFAULT_WORK_PRIORITIES);
   const projectsWorkspaceRef = useRef(null);
   const detailsAutosaveRef = useRef(null);
@@ -11882,9 +11944,12 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     ));
   };
 
-  const openProjectTaskDetails = async (task) => {
+  const openProjectTaskDetails = async (task, options = {}) => {
     await flushDetailsAutosave();
     applyOpenProjectTaskState(task, task?.project_id ?? selectedProject?.id ?? selectedProject?.localId);
+    setTaskCommentsFocusRequest(options.focusComments
+      ? { taskId: String(task?.id ?? task?.localId), nonce: Date.now() }
+      : null);
   };
 
   const closeDetailsPanel = async () => {
@@ -12026,17 +12091,6 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
             onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? editWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń" />
         </section>
 
-        <HistorySection title="Historia projektów" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
-          <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
-            enableSelectionActions={false}
-            getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
-            getRowStyle={(row) => row._workType === 'project' && normalizeAccentColor(row._source?.accent_color)
-              ? { '--work-row-accent': normalizeAccentColor(row._source.accent_color) }
-              : undefined}
-            onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? editWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz"
-            customRowActions={canEditProjects ? [{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }] : []}
-          />
-        </HistorySection>
       </div>}
       {hasProjectBoard && <ProjectDetailsPanel
         project={selectedProject}
@@ -12064,9 +12118,21 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
       {detailsOpen && (selectedSimpleTask
         ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
         : selectedProjectTask
-          ? <ProjectTaskInspectorPanel key={String(selectedProjectTask.id ?? selectedProjectTask.localId)} task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} />
+          ? <ProjectTaskInspectorPanel key={String(selectedProjectTask.id ?? selectedProjectTask.localId)} task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} commentsFocusRequest={taskCommentsFocusRequest} onCommentsFocusHandled={() => setTaskCommentsFocusRequest(null)} />
           : null)}
     </div>
+
+    <HistorySection title="Historia projektów" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
+      <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
+        enableSelectionActions={false}
+        getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
+        getRowStyle={(row) => row._workType === 'project' && normalizeAccentColor(row._source?.accent_color)
+          ? { '--work-row-accent': normalizeAccentColor(row._source.accent_color) }
+          : undefined}
+        onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? editWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz"
+        customRowActions={canEditProjects ? [{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }] : []}
+      />
+    </HistorySection>
 
     {editorOpen && <ProjectEditor project={editingProject} clients={clients} allProjects={rows} documentSettings={documentSettings} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} onClose={() => { setEditorOpen(false); setEditingProject(null); }} onSave={saveProject} />}
     {taskEditorOpen && <OrganizerTaskEditor task={editingSimpleTask} categories={categories} workPriorities={workPriorityNames} onClose={() => { setTaskEditorOpen(false); setEditingSimpleTask(null); }} onSave={saveSimpleTask} />}
@@ -12117,7 +12183,7 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
 
   const update = useCallback((key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
-    setSaveStatus('saving');
+    setSaveStatus('dirty');
   }, []);
   const updateContent = useCallback((content) => update('content', content), [update]);
 
@@ -12160,7 +12226,7 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
     const timer = window.setTimeout(() => {
       if (!String(formRef.current.title ?? '').trim()) return;
       persistNote({ autosave: true });
-    }, 2500);
+    }, NOTES_AUTOSAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [form, noteKey]);
 
@@ -12214,7 +12280,8 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
       </div>
       <div className="notes-details-fields">
         <FormField label="Tytuł *"><AppInput value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Tytuł notatki" /></FormField>
-        <FormField label="Treść" className="notes-details-content-field">
+        <div className="app-form-field ds-form-field notes-details-content-field">
+          <span>Treść</span>
           <NoteRichTextEditor
             noteKey={noteKey}
             value={form.content}
@@ -12222,7 +12289,7 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
             disabled={busy}
             placeholder="Treść notatki..."
           />
-        </FormField>
+        </div>
         <div className="notes-details-meta-grid">
           <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{NOTE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
           <FormField label="Kolor" className="notes-color-field"><NoteColorPicker value={form.note_color} onChange={changeNoteColor} disabled={busy} /></FormField>
@@ -12232,7 +12299,6 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
         <div className="notes-details-actions">
           <SaveStatusIndicator status={saveStatus} className="notes-save-status" />
           <ButtonSecondary className="notes-form-action-button" onClick={() => onDelete?.(note)} disabled={busy || saveStatus === 'saving'}><Trash2 size={16} />Usuń</ButtonSecondary>
-          <ButtonPrimary className="notes-form-action-button" onClick={() => persistNote({ autosave: false })} disabled={busy || saveStatus === 'saving'}><Save size={16} />Zapisz</ButtonPrimary>
         </div>
       </div>
     </div>}
@@ -12560,6 +12626,7 @@ function NotatkiModule() {
         </section>
       </div>
       <NoteDetailsPanel
+        key={selectedNote ? String(selectedNote.id ?? selectedNote.localId) : 'no-note'}
         note={selectedNote}
         collapsed={detailsCollapsed}
         width={detailsWidth}
@@ -16310,11 +16377,13 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       const offsetLeft = viewport?.offsetLeft ?? 0;
       const offsetTop = viewport?.offsetTop ?? 0;
       const padding = 18;
-      const submenuWidth = 220;
-      const submenuHeight = submenu === 'columns' ? Math.min(360, Math.max(180, orderedColumns.length * 36 + 16)) : 140;
+      const submenuWidth = 190;
+      const submenuHeight = submenu === 'columns'
+        ? Math.min(300, Math.max(96, (orderedColumns.length + 1) * 30 + 10))
+        : 112;
       const rect = event?.currentTarget?.getBoundingClientRect?.();
       const overlap = 4;
-      const baseX = rect ? rect.right - overlap : current.x + 218 - overlap;
+      const baseX = rect ? rect.right - overlap : current.x + 192 - overlap;
       const fallbackLeftX = rect ? rect.left - submenuWidth + overlap : current.x - submenuWidth + overlap;
       const opensLeft = baseX + submenuWidth + padding > offsetLeft + viewportWidth;
       const x = opensLeft ? Math.max(offsetLeft + padding, fallbackLeftX) : Math.min(baseX, offsetLeft + viewportWidth - submenuWidth - padding);
@@ -16383,11 +16452,11 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const openColumnMenu = (event, columnKey = null) => {
     event.preventDefault();
     setRowContextMenu(null);
-    const position = getSafeMenuPosition(event, 230, 260);
+    const position = getSafeMenuPosition(event, 192, 150);
     const viewport = window.visualViewport;
     const viewportWidth = viewport?.width ?? window.innerWidth;
     const offsetLeft = viewport?.offsetLeft ?? 0;
-    const submenuSide = position.x + 230 + 230 + 18 > offsetLeft + viewportWidth ? 'left' : 'right';
+    const submenuSide = position.x + 192 + 190 + 18 > offsetLeft + viewportWidth ? 'left' : 'right';
     setContextMenu({ ...position, columnKey, submenu: null, submenuSide });
   };
 
@@ -16498,7 +16567,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       </div>}
       {contextMenu && <div className="column-context-menu column-menu-desktop" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()} onMouseEnter={clearColumnSubmenuClose} onMouseLeave={scheduleColumnSubmenuClose}>
         <div className={`column-menu-submenu-row ${contextMenu.submenu === 'alignment' ? `is-open submenu-bridge-${contextMenu.submenuSide ?? 'right'}` : ''}`.trim()} onMouseEnter={(event) => openColumnSubmenu('alignment', event)} onMouseLeave={scheduleColumnSubmenuClose}>
-          <button type="button" className={contextMenu.submenu === 'alignment' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'alignment' ? null : 'alignment', event)}>Wyrównanie <ChevronRight size={14} /></button>
+          <button type="button" className={contextMenu.submenu === 'alignment' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'alignment' ? null : 'alignment', event)}><AlignLeft size={14} /><span>Wyrównanie</span><ChevronRight size={14} /></button>
           {contextMenu.submenu === 'alignment' && selectedContextColumn && <div className={`column-submenu column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }} onMouseEnter={clearColumnSubmenuClose} onMouseLeave={scheduleColumnSubmenuClose}>
             {[
               { value: 'left', label: 'Do lewej', icon: AlignLeft },
@@ -16512,7 +16581,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
           </div>}
         </div>
         <div className={`column-menu-submenu-row ${contextMenu.submenu === 'columns' ? `is-open submenu-bridge-${contextMenu.submenuSide ?? 'right'}` : ''}`.trim()} onMouseEnter={(event) => openColumnSubmenu('columns', event)} onMouseLeave={scheduleColumnSubmenuClose}>
-          <button type="button" className={contextMenu.submenu === 'columns' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'columns' ? null : 'columns', event)}>Kolumny <ChevronRight size={14} /></button>
+          <button type="button" className={contextMenu.submenu === 'columns' ? 'active' : ''} onClick={(event) => openColumnSubmenu(contextMenu.submenu === 'columns' ? null : 'columns', event)}><Columns3 size={14} /><span>Kolumny</span><ChevronRight size={14} /></button>
           {contextMenu.submenu === 'columns' && <div className={`column-submenu column-submenu-columns column-submenu-${contextMenu.submenuSide ?? 'right'}`} style={{ left: contextMenu.submenuPosition?.x, top: contextMenu.submenuPosition?.y }} onMouseEnter={clearColumnSubmenuClose} onMouseLeave={scheduleColumnSubmenuClose}>
             <label key="__lp__"><input type="checkbox" checked={lpVisible} onChange={toggleLpColumn} />Lp.</label>
             {orderedColumns.map((column) => {
@@ -16523,7 +16592,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
           </div>}
         </div>
         <div className="context-menu-separator" />
-        <button type="button" onClick={resetColumns}>Resetuj ustawienia tabeli</button>
+        <button type="button" onClick={resetColumns}><RotateCcw size={14} /><span>Resetuj tabelę</span></button>
       </div>}
     </div>
   );

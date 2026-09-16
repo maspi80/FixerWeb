@@ -32,7 +32,7 @@ function isMissingSortOrderError(error) {
 
 function getNoteOrderError(error) {
   if (isMissingSortOrderError(error)) {
-    return new Error('Brak obsługi kolejności notatek w bazie. Uruchom migrację supabase/023_notes_sort_order.sql.');
+    return new Error('Brak obsługi kolejności notatek w bazie. Uruchom migrację supabase/050_notes_sort_order.sql.');
   }
   return error;
 }

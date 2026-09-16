@@ -489,6 +489,7 @@
   padding:var(--fw-space-3,10px) var(--fw-space-4,12px);
   color:var(--fw-color-text-strong,#eef4ff);
   font-size:var(--fw-font-size-control,14px);
+  font-weight:var(--fw-weight-body,400);
   line-height:1.45;
   outline:none;
   border:0;

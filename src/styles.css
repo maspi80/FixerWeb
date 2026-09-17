@@ -20,3 +20,5 @@
 @import "./styles/design-system/themes.css";
 @import "./styles/modules/users-chat.css";
 @import "./styles/design-system/buttons.css";
+@import "./styles/design-system/lightweight.css";
+@import "./styles/modules/settings-compact.css";

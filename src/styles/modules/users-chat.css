@@ -170,15 +170,15 @@
 }
 
 .login-page.theme-soft-dark{
-  --fw-color-app-bg:#1e222a;
-  --fw-color-surface:#252a33;
-  --fw-color-section:rgba(255,255,255,.045);
-  --fw-color-border:rgba(241,243,245,.12);
-  --fw-color-border-strong:rgba(241,243,245,.16);
-  --fw-color-text:#f1f3f5;
-  --fw-color-text-strong:#f8fafc;
-  --fw-color-text-soft:#c7ced8;
-  --fw-color-danger:#f87171;
+  --fw-color-app-bg:#303641;
+  --fw-color-surface:#3a414d;
+  --fw-color-section:rgba(255,255,255,.055);
+  --fw-color-border:rgba(241,245,249,.16);
+  --fw-color-border-strong:rgba(241,245,249,.22);
+  --fw-color-text:#f3f5f7;
+  --fw-color-text-strong:#ffffff;
+  --fw-color-text-soft:#d9dfe7;
+  --fw-color-danger:#fb7185;
   background:var(--fw-color-app-bg);
   color:var(--fw-color-text);
 }

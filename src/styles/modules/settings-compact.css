@@ -1,0 +1,327 @@
+/* Compact, task-oriented layout for the Settings module only. */
+
+.settings-module-page:not(.documents-module-page) .settings-v2-layout {
+  gap: 8px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-v2-header {
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 380px);
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 2px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fw-color-border) 78%, transparent);
+}
+
+.settings-v2-context {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-v2-context-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--fw-radius-md);
+  background: color-mix(in srgb, var(--fw-color-primary) 9%, transparent);
+  color: var(--fw-color-menu-active);
+}
+
+.settings-module-page:not(.documents-module-page) .settings-v2-header .eyebrow {
+  margin-bottom: 1px;
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-v2-header h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.15;
+  font-weight: var(--fw-weight-semibold);
+}
+
+.settings-module-page:not(.documents-module-page) .settings-v2-header .muted {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-search-field .app-input {
+  height: 32px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-v2-search-wrap .settings-search-results {
+  position: absolute;
+  inset: calc(100% + 5px) 0 auto;
+  z-index: 20;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--fw-color-border);
+  border-radius: var(--fw-radius-md);
+  background: var(--fw-color-surface-strong);
+  box-shadow: var(--fw-shadow-menu);
+}
+
+.settings-module-page:not(.documents-module-page) .settings-sidebar-layout {
+  grid-template-columns: 178px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-sidebar-panel {
+  padding: 6px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-sidebar-nav-list {
+  gap: 1px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-sidebar-item {
+  min-height: 34px;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--fw-radius-md);
+  font-size: 12.5px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-sidebar-item.active {
+  box-shadow: inset 2px 0 0 var(--fw-color-selection-bar);
+}
+
+.settings-module-page:not(.documents-module-page) .settings-main-panel {
+  min-height: 0;
+  padding: 9px;
+  gap: 9px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-sub-tabs-bar {
+  gap: 2px;
+  margin: -2px 0 0;
+  padding: 0 0 7px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-sub-tab {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-config-screen,
+.settings-module-page:not(.documents-module-page) .settings-form-screen {
+  gap: 8px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-config-card,
+.settings-module-page:not(.documents-module-page) .settings-form-section,
+.settings-module-page:not(.documents-module-page) .settings-preview-panel,
+.settings-module-page:not(.documents-module-page) .settings-card {
+  gap: 8px;
+  padding: 10px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-config-card-header {
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-config-card-header h3,
+.settings-module-page:not(.documents-module-page) .settings-section-title h4,
+.settings-module-page:not(.documents-module-page) .settings-card h3 {
+  margin-bottom: 2px;
+  font-size: 13.5px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-config-card-header .eyebrow {
+  margin-bottom: 2px;
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-config-card-header .muted,
+.settings-module-page:not(.documents-module-page) .settings-section-title .muted,
+.settings-module-page:not(.documents-module-page) .settings-card > .muted {
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* The common interface preferences fit into a predictable two-column grid. */
+.settings-module-page:not(.documents-module-page) .interface-v2-screen {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.settings-module-page:not(.documents-module-page) .interface-v2-screen > .settings-config-card:nth-child(-n + 2) {
+  grid-column: 1 / -1;
+}
+
+.settings-module-page:not(.documents-module-page) .theme-choice-row {
+  gap: 6px;
+}
+
+.settings-module-page:not(.documents-module-page) .theme-choice-button {
+  min-height: 32px;
+  padding-inline: 11px;
+  font-size: 12px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-toggle-grid {
+  gap: 5px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-option-row {
+  min-height: 38px;
+  gap: 7px;
+  padding: 7px 8px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-option-row strong {
+  font-size: 12px;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-option-row small {
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+
+/* Advanced theme editing stays available without dominating the page. */
+.settings-advanced-disclosure {
+  border-top: 1px solid color-mix(in srgb, var(--fw-color-border) 74%, transparent);
+  padding-top: 7px;
+}
+
+.settings-advanced-disclosure > summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fw-color-text-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: var(--fw-weight-semibold);
+  list-style: none;
+}
+
+.settings-advanced-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-advanced-disclosure > summary::before {
+  content: '›';
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--fw-color-primary) 10%, transparent);
+  color: var(--fw-color-menu-active);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform .14s ease;
+}
+
+.settings-advanced-disclosure[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-advanced-disclosure > summary small {
+  color: var(--fw-color-text-muted);
+  font-size: 10.5px;
+  font-weight: var(--fw-weight-body);
+}
+
+.settings-advanced-content {
+  display: grid;
+  gap: 8px;
+  padding-top: 7px;
+}
+
+.settings-module-page:not(.documents-module-page) .ui-theme-token-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.settings-module-page:not(.documents-module-page) .ui-theme-token-row {
+  min-width: 0;
+}
+
+/* System uses compact horizontal navigation; Integrations has one item, so no duplicate menu. */
+.settings-module-page:not(.documents-module-page) .settings-subsystem-workspace {
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.settings-module-page:not(.documents-module-page) .system-subsystem-workspace > .settings-subsystem-nav {
+  position: static;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  overflow-x: auto;
+}
+
+.settings-module-page:not(.documents-module-page) .system-subsystem-workspace > .settings-subsystem-nav .documents-nav-item {
+  min-height: 32px;
+  flex: 0 0 auto;
+  padding: 5px 10px;
+}
+
+.settings-module-page:not(.documents-module-page) .system-subsystem-workspace > .settings-subsystem-nav .documents-nav-item small {
+  display: none;
+}
+
+.settings-module-page:not(.documents-module-page) .integration-subsystem-workspace > .settings-subsystem-nav {
+  display: none;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-subsystem-detail {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-module-page:not(.documents-module-page) .settings-pane-grid,
+.settings-module-page:not(.documents-module-page) .compact-settings-grid {
+  gap: 8px;
+}
+
+.settings-module-page:not(.documents-module-page) .dictionary-card-compact-list .dictionary-list {
+  max-height: min(390px, calc(100vh - 330px));
+}
+
+@media (max-width: 1180px) {
+  .settings-module-page:not(.documents-module-page) .settings-sidebar-layout {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+
+  .settings-module-page:not(.documents-module-page) .interface-v2-screen {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-module-page:not(.documents-module-page) .interface-v2-screen > .settings-config-card:nth-child(-n + 2) {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 860px) {
+  .settings-module-page:not(.documents-module-page) .settings-v2-header,
+  .settings-module-page:not(.documents-module-page) .settings-sidebar-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-module-page:not(.documents-module-page) .settings-sidebar-nav-list {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .settings-module-page:not(.documents-module-page) .ui-theme-token-list {
+    grid-template-columns: 1fr;
+  }
+}

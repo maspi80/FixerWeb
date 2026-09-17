@@ -1,0 +1,339 @@
+/*
+ * Lightweight visual layer.
+ * Kept as one final stylesheet so the complete treatment can be reviewed or
+ * reverted without touching module behaviour or data-related code.
+ */
+
+.app-shell {
+  --fw-radius-md: 7px;
+  --fw-radius-lg: 9px;
+  --fw-radius-xl: 10px;
+  --fw-radius-panel: 10px;
+  --fw-radius-modal: 12px;
+  --fw-shadow-panel: 0 1px 2px rgba(2, 6, 23, .035);
+  --fw-shadow-modal: 0 16px 42px rgba(2, 6, 23, .22);
+}
+
+/* App frame */
+.topbar {
+  border-color: color-mix(in srgb, var(--fw-color-border) 84%, transparent);
+  box-shadow: none;
+}
+
+.sidebar {
+  border-right-color: color-mix(in srgb, var(--fw-color-border) 82%, transparent);
+}
+
+.nav-item,
+.ghost-button {
+  border-radius: var(--fw-radius-md);
+}
+
+.nav-item.active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--fw-color-selection) 76%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--fw-color-selection-bar) 78%, transparent);
+}
+
+/* Primary surfaces remain visible; secondary surfaces rely on spacing. */
+.panel,
+.stat-card,
+.app-section,
+.ds-section-panel,
+.settings-card,
+.settings-config-card,
+.settings-content,
+.settings-sidebar,
+.settings-section-shell,
+.documents-nav-panel,
+.documents-detail-panel,
+.settings-preview-panel,
+.calendar-work-filter-card,
+.system-info-panel,
+.system-warning-panel,
+.summary-box,
+.form-section,
+.flat-form-section,
+.kanban-column,
+.task-card,
+.timeline-row div,
+.quick-actions button,
+.alert-row {
+  border-color: color-mix(in srgb, var(--fw-color-border) 82%, transparent);
+  border-radius: var(--fw-radius-panel);
+  box-shadow: var(--fw-shadow-panel);
+}
+
+.hero-panel,
+.rentals-command-panel,
+.calendar-toolbar-panel,
+.projects-actions-panel,
+.service-hero-panel {
+  padding: 4px 0;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.panel .form-section,
+.panel .flat-form-section,
+.panel .summary-box,
+.modal-card .form-section,
+.modal-card .flat-form-section,
+.settings-card .settings-config-card,
+.settings-content .settings-config-card {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--fw-color-section) 72%, transparent);
+  box-shadow: none;
+}
+
+.panel-header,
+.settings-config-card-header,
+.documents-card-header-row {
+  margin-bottom: 10px;
+}
+
+/* Toolbars and filters */
+.module-actions,
+.rentals-command-actions,
+.calendar-toolbar,
+.section-export-actions,
+.calendar-export-actions {
+  gap: 7px;
+}
+
+.client-filter-bar,
+.project-filter-bar,
+.shared-picker-toolbar,
+.equipment-picker-toolbar,
+.table-toolbar,
+.table-tools {
+  border-bottom-color: color-mix(in srgb, var(--fw-color-border) 72%, transparent);
+}
+
+.client-filter-bar > label,
+.module-filters > label,
+.project-filter-bar > label {
+  color: var(--fw-color-text-muted);
+  font-weight: var(--fw-weight-medium);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Controls */
+.app-button,
+.ds-button,
+.primary-button,
+.secondary-button,
+.file-button,
+.icon-button,
+.ds-icon-button,
+.panel-header button,
+.row-actions button,
+.compact-table-button,
+.module-actions .module-action-button,
+.theme-choice-button,
+.calendar-filter-button,
+.work-type-switch button,
+.calendar-view-switch button,
+.tabs button,
+.equipment-tabs button,
+.record-tabs button,
+.service-order-tabs button,
+.settings-top-tab,
+.settings-inner-tab,
+.settings-sub-tab,
+.documents-nav-item,
+.agreement-subtab,
+.dictionary-icon-button {
+  border-radius: var(--fw-radius-md);
+  box-shadow: none;
+}
+
+.app-button-secondary,
+.ds-button-secondary,
+.secondary-button,
+.file-button,
+.icon-button,
+.ds-icon-button,
+.compact-table-button,
+.panel-header button,
+.row-actions button {
+  border-color: color-mix(in srgb, var(--fw-color-border-strong) 78%, transparent);
+  background: transparent;
+}
+
+.module-actions .app-button,
+.module-actions .ds-button,
+.module-actions .module-action-button,
+.projects-actions-panel .module-actions .module-action-button,
+.notes-module-page .module-actions .module-action-button {
+  border-radius: var(--fw-radius-md);
+}
+
+input,
+select,
+textarea,
+.app-input,
+.ds-form-field input,
+.ds-form-field select,
+.ds-form-field textarea,
+.client-filter-bar input,
+.client-filter-bar select,
+.module-filters input,
+.module-filters select {
+  border-color: color-mix(in srgb, var(--fw-color-border-strong) 88%, transparent);
+  border-radius: var(--fw-radius-md);
+  background: color-mix(in srgb, var(--fw-color-surface) 92%, var(--fw-color-section) 8%);
+  box-shadow: none;
+}
+
+input:hover,
+select:hover,
+textarea:hover,
+.app-input:hover {
+  border-color: color-mix(in srgb, var(--fw-color-border-hover) 72%, var(--fw-color-border-strong));
+}
+
+/* Tables */
+th,
+.table-scroll thead th,
+.app-table th,
+.data-table th,
+.expanded-set-table th,
+.dashboard-mini-table th {
+  color: var(--fw-color-text-muted);
+  background: color-mix(in srgb, var(--fw-color-surface) 94%, var(--fw-color-section) 6%);
+  border-bottom-color: var(--fw-color-border-strong);
+  font-weight: var(--fw-weight-semibold);
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
+}
+
+td,
+.app-table td,
+.data-table td,
+.expanded-set-table td,
+.dashboard-mini-table td {
+  border-bottom-color: color-mix(in srgb, var(--fw-color-border) 72%, transparent);
+  font-weight: var(--fw-weight-body);
+}
+
+.table-shell tbody tr:hover,
+.data-table tbody tr:hover,
+.app-table tbody tr:hover {
+  background: color-mix(in srgb, var(--fw-color-hover) 76%, transparent);
+}
+
+.table-shell tbody tr.selected-row {
+  background: color-mix(in srgb, var(--fw-color-selection) 80%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--fw-color-selection-bar) 78%, transparent);
+}
+
+/* Statuses are informative accents, not dominant blocks. */
+.status-pill,
+.app-badge,
+.ds-status-pill,
+.config-tag,
+.work-type-pill,
+.equipment-set-badge,
+.dictionary-readonly-badge {
+  min-height: 20px;
+  padding: 2px 7px;
+  border-color: transparent;
+  font-weight: var(--fw-weight-medium);
+}
+
+.status-pill,
+.app-badge-info,
+.ds-status-pill.tone-info {
+  background: color-mix(in srgb, var(--fw-color-primary) 9%, transparent);
+}
+
+.status-pill.success,
+.app-badge-success,
+.ds-status-pill.tone-success {
+  background: var(--fw-color-success-bg);
+}
+
+.status-pill.warning,
+.app-badge-warning,
+.ds-status-pill.tone-warning {
+  background: var(--fw-color-warning-bg);
+}
+
+.status-pill.danger,
+.app-badge-danger,
+.ds-status-pill.tone-danger {
+  background: var(--fw-color-danger-bg);
+}
+
+.ds-status-pill.has-custom-color {
+  background: color-mix(in srgb, var(--ds-status-color) 9%, transparent);
+}
+
+/* Tabs use a quiet underline hierarchy instead of multiple framed pills. */
+.app-tabs,
+.tabs,
+.equipment-tabs,
+.record-tabs,
+.service-order-tabs,
+.settings-sub-tabs-bar,
+.agreement-subtabs {
+  border-bottom-color: color-mix(in srgb, var(--fw-color-border) 74%, transparent);
+}
+
+.app-tabs > button,
+.tabs button,
+.equipment-tabs button,
+.record-tabs button,
+.service-order-tabs button,
+.settings-top-tab,
+.settings-inner-tab,
+.settings-sub-tab,
+.agreement-subtab {
+  border-color: transparent;
+  background: transparent;
+}
+
+.app-tabs > button.active,
+.app-tabs > button[aria-selected="true"],
+.tabs button.active,
+.equipment-tabs button.active,
+.record-tabs button.active,
+.service-order-tabs button.active,
+.settings-top-tab.active,
+.settings-inner-tab.active,
+.settings-sub-tab.active,
+.agreement-subtab.active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--fw-color-selection) 78%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--fw-color-selection-bar) 82%, transparent);
+}
+
+/* Dialogs stay elevated, but with a restrained outline and shadow. */
+.modal-card,
+.app-modal,
+.ds-modal-frame {
+  border-color: color-mix(in srgb, var(--fw-color-border-strong) 86%, transparent);
+  border-radius: var(--fw-radius-modal);
+  box-shadow: var(--fw-shadow-modal);
+}
+
+.modal-backdrop,
+.draggable-modal-backdrop {
+  background: rgba(15, 23, 42, .36);
+  backdrop-filter: blur(3px);
+}
+
+@media (max-width: 860px) {
+  .hero-panel,
+  .rentals-command-panel,
+  .calendar-toolbar-panel,
+  .projects-actions-panel,
+  .service-hero-panel {
+    padding-inline: 0;
+  }
+}

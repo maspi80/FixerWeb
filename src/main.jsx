@@ -1984,7 +1984,7 @@ function Sidebar({ activeModule, setActiveModule, modules: sidebarModules = modu
 const COLOR_THEME_SEQUENCE = ['light', 'soft-dark', 'dark'];
 const COLOR_THEME_LABELS = {
   light: 'Jasny',
-  'soft-dark': 'Soft Dark',
+  'soft-dark': 'Pośredni',
   dark: 'Ciemny'
 };
 
@@ -2004,6 +2004,13 @@ function getNextColorThemeLabel(mode) {
 
 function getColorThemeLabel(mode) {
   return COLOR_THEME_LABELS[normalizeColorThemeMode(mode)];
+}
+
+function getColorThemeIcon(mode) {
+  const normalized = normalizeColorThemeMode(mode);
+  if (normalized === 'light') return Sun;
+  if (normalized === 'soft-dark') return SlidersHorizontal;
+  return Moon;
 }
 
 function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme, onNavigate, allowedModuleIds = null }) {
@@ -2092,6 +2099,8 @@ function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onT
   };
 
   let renderedIndex = 0;
+  const ThemeIcon = getColorThemeIcon(colorTheme);
+  const nextColorTheme = getNextColorThemeMode(colorTheme);
 
   return (
     <header className="topbar">
@@ -2129,7 +2138,7 @@ function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onT
           </div>}
         </div>
         <button className="icon-button" onClick={onToggleDensity}><SlidersHorizontal size={18} /><span>{themeCompact ? 'Kompakt' : 'Wygodny'}</span></button>
-        <button className="icon-button" onClick={() => onChangeColorTheme(getNextColorThemeMode(colorTheme))} title="Zmień motyw">{getNextColorThemeMode(colorTheme) === 'light' ? <Sun size={18} /> : <Moon size={18} />}<span>{getNextColorThemeLabel(colorTheme)}</span></button>
+        <button className="icon-button" onClick={() => onChangeColorTheme(nextColorTheme)} title={`Zmień motyw na: ${getNextColorThemeLabel(colorTheme)}`}><ThemeIcon size={18} /><span>{getColorThemeLabel(colorTheme)}</span></button>
         <NotificationsBell onNavigate={onNavigate} />
       </div>
     </header>
@@ -2788,7 +2797,7 @@ function ClientsModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
           <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearClientFilters}>Wyczyść filtry</AppButton>
           {rows.length > 0 && filteredRows.length < rows.length && <span className="filter-count">{filteredRows.length} z {rows.length}</span>}
         </div>
-        <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onEdit={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
+        <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
       {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
       {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
@@ -3370,7 +3379,7 @@ function EquipmentModule({ isActive = false, dashboardIntent, onConsumeDashboard
           <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearEquipmentFilters}>Wyczyść</AppButton>
           {rows.filter((item) => !isEquipmentSetComponent(item)).length > 0 && displayRows.length < rows.filter((item) => !isEquipmentSetComponent(item)).length && <span className="filter-count">{displayRows.length} z {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>}
         </div>
-        <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onEdit={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
+        <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
       {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} conditions={equipmentConditions} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
       {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
@@ -5050,7 +5059,7 @@ function RentalsModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
         </div>
         <span>{activeRows.length} pozycji</span>
       </div>
-      <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={activeRows} onOpen={(row) => openRentalEditor(row._rental)} onEdit={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'return', label: 'Zarejestruj zwrot', icon: CheckCircle2, visible: canRegisterReturn, onClick: (row) => setReturningRental(row._rental ?? row) }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
+      <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={activeRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'return', label: 'Zarejestruj zwrot', icon: CheckCircle2, visible: canRegisterReturn, onClick: (row) => setReturningRental(row._rental ?? row) }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
     </section>
     <HistorySection
       title="Historia wypożyczeń"
@@ -6624,7 +6633,6 @@ function ServiceModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
         columns={serviceColumns}
         rows={filteredRows}
         onOpen={openServiceEditor}
-        onEdit={openServiceEditor}
         onDelete={deleteServiceOrder}
         openLabel="Otwórz"
         editLabel="Otwórz kartotekę"
@@ -12468,10 +12476,7 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
             placeholder="Treść notatki..."
           />
         </div>
-        <div className="notes-details-meta-grid">
-          <FormField label="Status"><AppSelect value={form.status} onChange={(e) => update('status', e.target.value)}>{NOTE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></FormField>
-          <FormField label="Kolor" className="notes-color-field"><NoteColorPicker value={form.note_color} onChange={changeNoteColor} disabled={busy} /></FormField>
-        </div>
+        <FormField label="Kolor" className="notes-color-field"><NoteColorPicker value={form.note_color} onChange={changeNoteColor} disabled={busy} /></FormField>
       </div>
       <div className="notes-details-footer">
         <div className="notes-details-actions">
@@ -12798,7 +12803,6 @@ function NotatkiModule({ isActive = false }) {
               }}
               onRowClick={(row) => selectNote(row._note ?? row)}
               onOpen={(row) => selectNote(row._note ?? row)}
-              onEdit={(row) => selectNote(row._note ?? row)}
               onDelete={(row) => handleDelete(row._note ?? row)}
               openLabel="Otwórz" editLabel="Edytuj" deleteLabel="Usuń"
             />}
@@ -13224,23 +13228,23 @@ const BUILTIN_UI_THEME_PRESETS = [
   },
   {
     id: 'soft-dark',
-    name: 'Soft Dark',
-    description: 'grafitowy komfortowy',
+    name: 'Pośredni',
+    description: 'łagodny grafitowy',
     group: 'soft-dark',
     builtIn: true,
     tokens: {
-      appBg: '#1E222A',
-      panelBg: '#252A33',
-      tableBg: '#252A33',
-      border: '#373D48',
-      textMain: '#F1F3F5',
-      textMuted: '#858C98',
-      accent: '#4F46E5',
-      menuActive: '#C7D2FE',
-      primaryButton: '#4F46E5',
+      appBg: '#303641',
+      panelBg: '#3A414D',
+      tableBg: '#3A414D',
+      border: '#555E6C',
+      textMain: '#F3F5F7',
+      textMuted: '#B3BCC8',
+      accent: '#8EA8FF',
+      menuActive: '#D9E2FF',
+      primaryButton: '#526ED0',
       success: '#22C55E',
-      warning: '#F59E0B',
-      danger: '#F87171'
+      warning: '#FBBF24',
+      danger: '#FB7185'
     }
   }
 ];
@@ -16205,7 +16209,7 @@ function normalizeTableColumnWidths(widths, availableKeys = []) {
   }, {});
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, onReorderRows = null, isRowReorderable = null, rowReorderDisabled = false, enableSorting = true, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = true, getRowClassName = null, getRowStyle = null, nested = false, showLpColumn = true }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, onReorderRows = null, isRowReorderable = null, rowReorderDisabled = false, enableSorting = true, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = Boolean(onBulkDelete), getRowClassName = null, getRowStyle = null, nested = false, showLpColumn = true }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -16660,6 +16664,14 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     }
   };
 
+  const getRowCopyName = (row) => String(
+    row?.name ?? row?.title_display ?? row?.title ?? row?.client_name ?? row?.client ?? ''
+  ).trim();
+
+  const getRowCopyNumber = (row) => String(
+    row?.number ?? row?.rental_number ?? row?.service_number ?? row?.project_number ?? ''
+  ).trim();
+
   const runRowAction = (action) => {
     const row = rowContextMenu?.row;
     setRowContextMenu(null);
@@ -16673,8 +16685,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     if (action === 'edit') onEdit?.(row);
     if (action === 'duplicate') onDuplicate?.(row);
     if (action === 'history') onHistory?.(row);
-    if (action === 'copyName') copyText(row.name ?? row.number ?? row.client ?? '');
-    if (action === 'copyId') copyText(row.id ?? row.localId ?? row.number ?? '');
+    if (action === 'copyName') copyText(getRowCopyName(row));
+    if (action === 'copyNumber') copyText(getRowCopyNumber(row));
     if (action === 'delete') onDelete?.(row);
     if (String(action).startsWith('custom:')) {
       const customKey = String(action).replace('custom:', '');
@@ -16739,9 +16751,9 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
           const Icon = action.icon ?? Package;
           return <button key={action.key} type="button" className={action.className ?? ''} onClick={() => runRowAction(`custom:${action.key}`)}><Icon size={14} />{action.label}</button>;
         })}
-        <div className="context-menu-separator" />
-        <button type="button" onClick={() => runRowAction('copyName')}><Copy size={14} />Kopiuj nazwę</button>
-        {(rowContextMenu.row?.id || rowContextMenu.row?.localId || rowContextMenu.row?.number) && <button type="button" onClick={() => runRowAction('copyId')}><Copy size={14} />Kopiuj ID / numer</button>}
+        {(getRowCopyName(rowContextMenu.row) || getRowCopyNumber(rowContextMenu.row)) && <div className="context-menu-separator" />}
+        {getRowCopyName(rowContextMenu.row) && <button type="button" onClick={() => runRowAction('copyName')}><Copy size={14} />Kopiuj nazwę</button>}
+        {getRowCopyNumber(rowContextMenu.row) && <button type="button" onClick={() => runRowAction('copyNumber')}><Copy size={14} />Kopiuj numer</button>}
         {onDelete && canDelete(rowContextMenu.row) && <><div className="context-menu-separator" /><button type="button" className="danger-action" onClick={() => runRowAction('delete')}><Trash2 size={14} />{deleteLabel}</button></>}
       </div>}
       {contextMenu && <div className="column-context-menu column-menu-desktop" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(event) => event.stopPropagation()} onMouseEnter={clearColumnSubmenuClose} onMouseLeave={scheduleColumnSubmenuClose}>
@@ -18659,15 +18671,15 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
   const isAdmin = currentUser?.profile?.role === 'admin' && currentUser?.profile?.is_active !== false;
   const themeOptions = [
     { id: 'light', label: 'Jasny', icon: Sun },
-    { id: 'soft-dark', label: 'Soft Dark', icon: Moon },
+    { id: 'soft-dark', label: 'Pośredni', icon: SlidersHorizontal },
     { id: 'dark', label: 'Ciemny', icon: Moon }
   ];
   const sections = isDocumentsMode
     ? [{ id: 'documents', label: 'Dokumenty', icon: FileText, description: 'Szablony, numeracja, profil firmy i projektant.' }]
     : [
-      { id: 'documents', label: 'Dokumenty i szablony', icon: FileText, description: 'Szablony, numeracja, profil firmy i projektant.' },
-      { id: 'dictionaries', label: 'Słowniki', icon: List, description: 'Statusy, kategorie, priorytety, lokalizacje i stany w modułach.' },
       { id: 'interface', label: 'Interfejs', icon: SlidersHorizontal, description: 'Motyw, dashboard, tabele, widoki i preferencje pracy.' },
+      { id: 'dictionaries', label: 'Słowniki', icon: List, description: 'Statusy, kategorie, priorytety, lokalizacje i stany w modułach.' },
+      { id: 'documents', label: 'Dokumenty i szablony', icon: FileText, description: 'Szablony, numeracja, profil firmy i projektant.' },
       { id: 'integrations', label: 'Integracje', icon: CalendarDays, description: 'Kalendarz, powiadomienia, import, eksport i przyszłe połączenia.' },
       { id: 'system', label: 'System', icon: Settings, description: 'Backup, restore, diagnostyka, migracje i przyszła administracja.' },
       ...(isAdmin ? [{ id: 'users', label: 'Użytkownicy i uprawnienia', icon: ShieldCheck, description: 'Konta, role, statusy i przyszłe permissions.' }] : [])
@@ -19551,8 +19563,8 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
       documentCompany: { section: 'documents', documentPanel: 'company' },
       designer: { section: 'documents', documentPanel: 'designer' },
       documentDesigner: { section: 'documents', documentPanel: 'designer' },
-      archive: { section: 'documents', documentPanel: 'archive' },
-      pdfArchive: { section: 'documents', documentPanel: 'archive' },
+      archive: { section: 'documents', documentPanel: 'agreement' },
+      pdfArchive: { section: 'documents', documentPanel: 'agreement' },
       interface: { section: 'interface' },
       clients: { section: 'dictionaries', sub: 'clients' },
       equipment: { section: 'dictionaries', sub: 'equipment' },
@@ -20242,12 +20254,10 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
     { section: 'documents', documentPanel: 'numbering', label: 'Numeracja dokumentów', keywords: 'dokumenty numeracja numery format prefix prefiks wypozyczenia serwis projekty' },
     { section: 'documents', documentPanel: 'company', label: 'Logo i dane firmy', keywords: 'dokumenty firma logo dane firmowe stopka naglowek' },
     { section: 'documents', documentPanel: 'designer', label: 'Projektant dokumentów', keywords: 'dokumenty projektant kreator edytor szablon a4 layout' },
-    { section: 'documents', documentPanel: 'archive', label: 'Archiwum PDF', keywords: 'dokumenty pdf archiwum wygenerowane pobierz podglad' },
     { section: 'integrations', integrationPanel: 'calendar', label: 'Kalendarz', keywords: 'kalendarz zrodla kolory filtr roboczy wydarzenia' },
     { section: 'system', systemPanel: 'backup', label: 'Backup', keywords: 'backup kopie bezpieczenstwa pelna kopia json' },
     { section: 'system', systemPanel: 'restore', label: 'Restore', keywords: 'restore przywroc import backup przywracanie' },
     { section: 'system', systemPanel: 'csv', label: 'Eksport CSV', keywords: 'csv eksport klienci sprzet wypozyczenia serwis zadania' },
-    { section: 'system', systemPanel: 'diagnostics', label: 'Diagnostyka', keywords: 'diagnostyka zakres kopii status konfiguracja' },
     ...(isAdmin ? [{ section: 'users', label: 'Użytkownicy i uprawnienia', keywords: 'uzytkownicy użytkownicy uprawnienia permissions role admin konta' }] : []),
     { section: 'dictionaries', sub: 'service', label: 'Statusy serwisu', keywords: 'status statusy serwis zlecenia priorytet priorytety' },
     { section: 'dictionaries', sub: 'equipment', label: 'Statusy i kategorie sprzętu', keywords: 'status statusy sprzet kategorie lokalizacje stany' },
@@ -20289,7 +20299,7 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
     numbering: 'numbering',
     company: 'company',
     designer: 'designer',
-    archive: 'archive'
+    archive: 'agreement'
   };
   const effectiveDocumentPanel = isDocumentsMode ? (documentsSectionToPanel[documentsMainSection] ?? 'agreement') : activeDocumentPanel;
 
@@ -20313,6 +20323,7 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
   const activeSubsInSection = getActiveSub(activeSection);
   const currentSubSections = subSectionsMap[activeSection] || [];
   const currentSection = sections.find((section) => section.id === activeSection) ?? sections[0];
+  const CurrentSectionIcon = currentSection?.icon ?? Settings;
   const companyFieldErrors = {
     email: companyProfile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyProfile.email) ? 'Sprawdź format adresu e-mail.' : '',
     website: companyProfile.website && !/^(https?:\/\/)?[\w.-]+\.[a-z]{2,}/i.test(companyProfile.website) ? 'Sprawdź format adresu WWW.' : ''
@@ -20320,10 +20331,13 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
 
   return <div className="settings-v2-layout">
     <div className="settings-v2-header">
-      <div>
-        <p className="eyebrow">{isDocumentsMode ? 'Moduł biznesowy' : 'Panel administracyjny'}</p>
-        {isDocumentsMode && <h2>Dokumenty</h2>}
-        <p className="muted">{isDocumentsMode ? 'Szablony, numeracja, dane firmy, projektant A4 i archiwum PDF.' : 'Centralne miejsce konfiguracji FIXER WEB, słowników, integracji i systemu.'}</p>
+      <div className="settings-v2-context">
+        {!isDocumentsMode && <span className="settings-v2-context-icon"><CurrentSectionIcon size={18} /></span>}
+        <div>
+          <p className="eyebrow">{isDocumentsMode ? 'Moduł biznesowy' : 'Ustawienia'}</p>
+          <h2>{isDocumentsMode ? 'Dokumenty' : currentSection?.label}</h2>
+          <p className="muted">{isDocumentsMode ? 'Szablony, numeracja, dane firmy, projektant A4 i archiwum PDF.' : currentSection?.description}</p>
+        </div>
       </div>
       {!isDocumentsMode && <SettingsSearch value={settingsSearch} onChange={setSettingsSearch} results={settingsSearchResults} onOpenResult={openSettingsSearchTarget} />}
     </div>
@@ -20478,44 +20492,49 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
             </div>
           </div>
 
-          <div className="ui-theme-actions-row">
-            <AppButton variant="primary" size="sm" onClick={saveCustomUiThemePreset}><Save size={14} />Zapisz jako preset</AppButton>
-            <AppButton variant="danger" size="sm" onClick={() => selectedUiThemePreset && deleteCustomUiThemePreset(selectedUiThemePreset.id)} disabled={!selectedUiThemePreset || selectedUiThemePreset.builtIn}><Trash2 size={13} />Usuń własny preset</AppButton>
-            <AppButton variant="secondary" size="sm" onClick={resetUiThemeToDefaults}><RotateCcw size={14} />Przywróć domyślne</AppButton>
-          </div>
+          <details className="settings-advanced-disclosure">
+            <summary><span>Zaawansowana personalizacja kolorów</span><small>Własne kolory i presety</small></summary>
+            <div className="settings-advanced-content">
+              <div className="ui-theme-actions-row">
+                <AppButton variant="primary" size="sm" onClick={saveCustomUiThemePreset}><Save size={14} />Zapisz jako preset</AppButton>
+                <AppButton variant="danger" size="sm" onClick={() => selectedUiThemePreset && deleteCustomUiThemePreset(selectedUiThemePreset.id)} disabled={!selectedUiThemePreset || selectedUiThemePreset.builtIn}><Trash2 size={13} />Usuń własny preset</AppButton>
+                <AppButton variant="secondary" size="sm" onClick={resetUiThemeToDefaults}><RotateCcw size={14} />Przywróć domyślne</AppButton>
+              </div>
 
-          {uiThemeContrastWarnings.length > 0 && <AppNotice variant="warning" title="Słaby kontrast">
-            {uiThemeContrastWarnings.map((warning, index) => <div key={`${warning}-${index}`}>{warning}</div>)}
-          </AppNotice>}
-          {uiThemeNotice && <AppNotice variant="info">{uiThemeNotice}</AppNotice>}
+              {uiThemeContrastWarnings.length > 0 && <AppNotice variant="warning" title="Słaby kontrast">
+                {uiThemeContrastWarnings.map((warning, index) => <div key={`${warning}-${index}`}>{warning}</div>)}
+              </AppNotice>}
+              {uiThemeNotice && <AppNotice variant="info">{uiThemeNotice}</AppNotice>}
 
-          <div className="ui-theme-token-list">
-            {UI_THEME_TOKEN_DEFINITIONS.map((token) => {
-              const tokenValue = activeUiTheme?.tokens?.[token.key] ?? '#000000';
-              return <div key={token.key} className="ui-theme-token-row">
-                <div className="ui-theme-token-meta">
-                  <strong>{token.label}</strong>
-                  <small>{token.description}</small>
-                </div>
-                <input
-                  type="color"
-                  className="ui-theme-color-input"
-                  value={tokenValue}
-                  onChange={(event) => updateUiThemeToken(token.key, event.target.value)}
-                  aria-label={`Wybierz kolor: ${token.label}`}
-                />
-                <AppInput
-                  value={tokenValue}
-                  onChange={(event) => updateUiThemeToken(token.key, event.target.value)}
-                  placeholder="#000000"
-                />
-              </div>;
-            })}
-          </div>
+              <div className="ui-theme-token-list">
+                {UI_THEME_TOKEN_DEFINITIONS.map((token) => {
+                  const tokenValue = activeUiTheme?.tokens?.[token.key] ?? '#000000';
+                  return <div key={token.key} className="ui-theme-token-row">
+                    <div className="ui-theme-token-meta">
+                      <strong>{token.label}</strong>
+                      <small>{token.description}</small>
+                    </div>
+                    <input
+                      type="color"
+                      className="ui-theme-color-input"
+                      value={tokenValue}
+                      onChange={(event) => updateUiThemeToken(token.key, event.target.value)}
+                      aria-label={`Wybierz kolor: ${token.label}`}
+                    />
+                    <AppInput
+                      value={tokenValue}
+                      onChange={(event) => updateUiThemeToken(token.key, event.target.value)}
+                      placeholder="#000000"
+                    />
+                  </div>;
+                })}
+              </div>
 
-          <div className="ui-theme-save-row">
-            <AppInput value={uiThemeNameInput} onChange={(event) => setUiThemeNameInput(event.target.value)} placeholder="Nazwa nowego presetu (dla przycisku „Zapisz jako preset”)" />
-          </div>
+              <div className="ui-theme-save-row">
+                <AppInput value={uiThemeNameInput} onChange={(event) => setUiThemeNameInput(event.target.value)} placeholder="Nazwa nowego presetu (dla przycisku „Zapisz jako preset”)" />
+              </div>
+            </div>
+          </details>
         </section>
 
         <section className="settings-config-card">
@@ -20533,32 +20552,10 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
 
         <section className="settings-config-card">
           <div className="settings-config-card-header">
-            <div><p className="eyebrow">Tabele</p><h3>Układ danych</h3><p className="muted">Preferencje pracy z tabelami w modułach FIXER WEB.</p></div>
-          </div>
-          <div className="settings-toggle-grid two-columns">
-            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberColumnLayout} onChange={(event) => updatePreference('rememberColumnLayout', event.target.checked)} /><span><strong>Zapamiętuj układ kolumn</strong><small>Szerokości, kolejność i widoczność kolumn zostają zapisane lokalnie.</small></span></label>
-            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberFilters} onChange={(event) => updatePreference('rememberFilters', event.target.checked)} /><span><strong>Zapamiętuj filtry tabel</strong><small>Filtry zostają przywrócone po powrocie do modułu.</small></span></label>
-            <label className="settings-option-row"><input type="checkbox" checked={Boolean(preferences.tableVerticalLines)} onChange={(event) => updatePreference('tableVerticalLines', event.target.checked)} /><span><strong>Pionowe linie w tabelach</strong><small>Pokazuje delikatne linie oddzielające kolumny w tabelach.</small></span></label>
-            <label className="firm-field settings-select-row">Domyślna liczba wierszy<AppSelect value={preferences.defaultRowsPerPage} onChange={(event) => updatePreference('defaultRowsPerPage', event.target.value)}><option>10</option><option>25</option><option>50</option><option>100</option></AppSelect></label>
-          </div>
-        </section>
-
-        <section className="settings-config-card">
-          <div className="settings-config-card-header">
-            <div><p className="eyebrow">Okna i panele</p><h3>Zachowanie okien</h3><p className="muted">Ustawienia ergonomii pracy z modalami i panelami roboczymi.</p></div>
-          </div>
-          <div className="settings-toggle-grid two-columns">
-            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberWindowSize} onChange={(event) => updatePreference('rememberWindowSize', event.target.checked)} /><span><strong>Zapamiętuj rozmiary okien</strong><small>Modalne okna otwierają się w ostatnio użytym rozmiarze.</small></span></label>
-            <label className="settings-option-row"><input type="checkbox" checked={preferences.rememberWindowPosition} onChange={(event) => updatePreference('rememberWindowPosition', event.target.checked)} /><span><strong>Zapamiętuj pozycje okien</strong><small>Pozycje okien są zapisywane lokalnie dla wygodniejszej pracy.</small></span></label>
-          </div>
-        </section>
-
-        <section className="settings-config-card">
-          <div className="settings-config-card-header">
-            <div><p className="eyebrow">Preferencje pracy</p><h3>Bezpieczeństwo operacji</h3><p className="muted">Domyślne zachowania programu przy czynnościach wymagających uwagi.</p></div>
+            <div><p className="eyebrow">Tabele</p><h3>Wygląd tabel</h3><p className="muted">Opcjonalne elementy wizualne tabel w modułach FIXER WEB.</p></div>
           </div>
           <div className="settings-toggle-grid">
-            <label className="settings-option-row"><input type="checkbox" checked={preferences.confirmDelete} onChange={(event) => updatePreference('confirmDelete', event.target.checked)} /><span><strong>Pokazuj potwierdzenie usunięcia</strong><small>Program poprosi o potwierdzenie przed usunięciem danych.</small></span></label>
+            <label className="settings-option-row"><input type="checkbox" checked={Boolean(preferences.tableVerticalLines)} onChange={(event) => updatePreference('tableVerticalLines', event.target.checked)} /><span><strong>Pionowe linie w tabelach</strong><small>Pokazuje delikatne linie oddzielające kolumny w tabelach.</small></span></label>
           </div>
         </section>
       </div></InterfaceSettingsPanel>}
@@ -20566,10 +20563,6 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
       {activeSection === 'dictionaries' && activeSubsInSection === 'clients' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
         {renderClientTypesDictionaryEditor()}
         {renderReadonlyDictionaryEditor('Typy klientów', 'Wartości systemowe używane w kartotece klienta.', ['Firma', 'Osoba prywatna'])}
-        <div className="settings-card compact-admin-card">
-          <h3>Widok klientów</h3>
-          <p className="muted">Domyślne filtry, kolumny i pola dodatkowe będą konfigurowane w tej sekcji.</p>
-        </div>
       </div></DictionariesSettingsPanel>}
 
       {activeSection === 'dictionaries' && activeSubsInSection === 'equipment' && <DictionariesSettingsPanel><div className="settings-pane-grid settings-pane-grid-wide compact-settings-grid">
@@ -20596,8 +20589,7 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
             ['templates', 'Szablony dokumentów', 'Umowy, protokoły, raporty i dokumenty wewnętrzne'],
             ['numbering', 'Numeracja dokumentów', 'Formaty numerów dla każdego typu dokumentu'],
             ['company', 'Logo i dane firmy', 'Jedno źródło danych dla wszystkich dokumentów'],
-            ['designer', 'Projektant dokumentów', 'Edytor pełnoekranowy A4: układ i elementy'],
-            ['archive', 'Archiwum PDF', 'Lista wygenerowanych dokumentów PDF']
+            ['designer', 'Projektant dokumentów', 'Edytor pełnoekranowy A4: układ i elementy']
           ].map(([id, label, description]) => <button key={id} type="button" className={`documents-nav-item ${(isDocumentsMode ? documentsMainSection : activeDocumentPanel) === id ? 'active' : ''}`} onClick={() => openDocumentPanel(id)}>
             <strong>{label}</strong><small>{description}</small>
           </button>)}
@@ -20945,13 +20937,12 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
         </div>}
       </div></DocumentsSettingsPanel>}
 
-      {activeSection === 'system' && <SystemSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace settings-subsystem-workspace">
+      {activeSection === 'system' && <SystemSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace settings-subsystem-workspace system-subsystem-workspace">
         <aside className="documents-nav-panel documents-v2-nav settings-subsystem-nav">
           {[
             ['backup', 'Backup', 'Pełna kopia danych'],
             ['restore', 'Restore', 'Przywracanie z pliku'],
-            ['csv', 'Eksport CSV', 'Szybkie eksporty tabel'],
-            ['diagnostics', 'Diagnostyka', 'Czytelny stan systemu']
+            ['csv', 'Eksport CSV', 'Szybkie eksporty tabel']
           ].map(([id, label, description]) => <button key={id} type="button" className={`documents-nav-item ${activeSystemPanel === id ? 'active' : ''}`} onClick={() => setActiveSystemPanel(id)}>
             <strong>{label}</strong><small>{description}</small>
           </button>)}
@@ -20963,7 +20954,6 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
           {activeSystemPanel === 'backup' && <section className="settings-config-card system-config-card">
             <div className="settings-config-card-header">
               <div><p className="eyebrow">System</p><h3>Backup</h3><p className="muted">Pełna kopia danych, relacji i ustawień programu do jednego pliku JSON.</p></div>
-              <AppButton variant="primary" size="sm" onClick={() => createBackupFile()} disabled={backupBusy}><Download size={15} />Utwórz backup</AppButton>
             </div>
             <div className="system-action-grid">
               <button type="button" className="backup-action-button primary" onClick={() => createBackupFile()} disabled={backupBusy}>
@@ -20983,7 +20973,6 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
           {activeSystemPanel === 'restore' && <section className="settings-config-card system-config-card">
             <div className="settings-config-card-header">
               <div><p className="eyebrow">System</p><h3>Restore</h3><p className="muted">Przywracanie danych z pliku backupu. Przed nadpisaniem danych pojawi się potwierdzenie.</p></div>
-              <AppButton variant="secondary" size="sm" onClick={() => restoreInputRef.current?.click()} disabled={backupBusy}><FolderOpen size={15} />Wybierz plik</AppButton>
             </div>
             <div className="system-action-grid one-column">
               <button type="button" className="backup-action-button" onClick={() => restoreInputRef.current?.click()} disabled={backupBusy}>
@@ -21040,7 +21029,7 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
         </div>
       </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'integrations' && <IntegrationsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace settings-subsystem-workspace">
+      {activeSection === 'integrations' && <IntegrationsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace settings-subsystem-workspace integration-subsystem-workspace">
         <aside className="documents-nav-panel documents-v2-nav settings-subsystem-nav">
           {[
             ['calendar', 'Kalendarz', 'Źródła, kolory i widoczność']
@@ -21073,22 +21062,6 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
                   </label>
                 </div>;
               })}
-            </div>
-            <div className="calendar-work-filter-card integration-filter-summary">
-              <div>
-                <p className="eyebrow">Podgląd startowy</p>
-                <h4>Źródła widoczne po resecie widoku kalendarza</h4>
-                <p className="muted">Bieżący filtr roboczy kalendarza może być tymczasowo inny, ale poniższa lista definiuje stan domyślny.</p>
-              </div>
-              <div className="calendar-work-filter-preview">
-                {CALENDAR_SOURCES.map((source) => {
-                  const settings = calendarSourceSettings[source.id] ?? {};
-                  return <span key={source.id} className={settings.enabledByDefault === false ? 'disabled' : ''}>
-                    <i style={{ background: settings.color || DEFAULT_CALENDAR_SOURCE_COLORS[source.id] }} />
-                    {source.label}
-                  </span>;
-                })}
-              </div>
             </div>
           </section>}
         </div>

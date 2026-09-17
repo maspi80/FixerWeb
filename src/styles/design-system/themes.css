@@ -266,11 +266,14 @@ textarea:focus-visible,
 
 .topbar {
   height: 72px;
-  padding: 12px 24px;
+  margin-inline: var(--fw-page-padding-x);
+  padding: 12px 14px;
   gap: 14px;
   background: color-mix(in srgb, var(--fw-color-app-bg) 88%, var(--fw-color-surface) 12%);
-  border-bottom: 1px solid var(--fw-color-border);
-  box-shadow: none;
+  border: 1px solid var(--fw-color-border);
+  border-top: 0;
+  border-radius: 0 0 var(--fw-radius-panel) var(--fw-radius-panel);
+  box-shadow: 0 5px 14px color-mix(in srgb, #020617 8%, transparent);
 }
 
 .topbar h1,
@@ -803,6 +806,7 @@ th.sorted,
   }
 
   .topbar {
+    margin-inline: 16px;
     padding-inline: 16px;
   }
 
@@ -847,6 +851,7 @@ th.sorted,
     position: relative;
     height: auto;
     min-height: 64px;
+    margin-inline: 12px;
     flex-wrap: wrap;
     align-items: flex-start;
   }

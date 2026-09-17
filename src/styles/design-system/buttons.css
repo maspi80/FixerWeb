@@ -1,0 +1,116 @@
+/*
+ * Application-wide button sizing.
+ *
+ * 36 px — primary module actions
+ * 34 px — regular buttons and icon buttons
+ * 28 px — compact table/editor controls
+ * 24 px — dense binary controls placed inside a 36 px row
+ *
+ * Width follows the label. This keeps short actions such as CSV/PDF compact
+ * while preserving the same vertical rhythm as longer actions.
+ */
+:root {
+  --fw-button-height-action: 36px;
+  --fw-button-height-default: 34px;
+  --fw-button-height-compact: 28px;
+  --fw-button-height-dense: 24px;
+  --fw-button-padding-x: 12px;
+}
+
+.primary-button,
+.secondary-button,
+.file-button,
+.app-button,
+.ds-button {
+  min-width: 0;
+  padding-inline: var(--fw-button-padding-x);
+}
+
+.app-button-md,
+.primary-button,
+.secondary-button,
+.file-button,
+.ds-button {
+  min-height: var(--fw-button-height-default);
+}
+
+.app-button-sm {
+  min-height: var(--fw-button-height-compact);
+  padding-inline: 10px;
+}
+
+.app-button-lg {
+  min-height: var(--fw-button-height-action);
+}
+
+.module-actions .app-button,
+.module-actions .ds-button,
+.module-actions .module-action-button,
+.section-export-actions .app-button,
+.section-export-actions .ds-button,
+.calendar-export-actions .app-button,
+.calendar-export-actions .ds-button,
+.projects-actions-panel .module-actions .module-action-button,
+.notes-module-page .module-actions .module-action-button {
+  min-width: 0;
+  min-height: var(--fw-button-height-action);
+  height: var(--fw-button-height-action);
+  padding-inline: var(--fw-button-padding-x);
+}
+
+.icon-button,
+.ds-icon-button {
+  min-width: var(--fw-button-height-default);
+  min-height: var(--fw-button-height-default);
+}
+
+.ds-modal-close-button,
+.resizable-picker-modal .modal-header .ds-modal-close-button,
+.resizable-picker-modal .ds-modal-header .ds-modal-close-button {
+  width: var(--fw-button-height-default);
+  height: var(--fw-button-height-default);
+  min-width: var(--fw-button-height-default);
+  min-height: var(--fw-button-height-default);
+}
+
+/* Compact controls repeat across tables, dictionaries and project editors. */
+.row-expand-button,
+.dictionary-icon-button,
+.dashboard-panel-ctrl-btn,
+.project-task-details-toggle,
+.project-detail-section-action,
+.project-detail-section-delete,
+.project-detail-task-actions .project-icon-action,
+.project-comment-delete,
+.document-designer-column-item-actions .dictionary-icon-button {
+  width: var(--fw-button-height-compact);
+  height: var(--fw-button-height-compact);
+  min-width: var(--fw-button-height-compact);
+  min-height: var(--fw-button-height-compact);
+  padding: 0;
+}
+
+/* Colour choices are compact, but still provide a reliable click target. */
+.ds-color-swatch,
+.status-color-option,
+.project-section-color-chip,
+.project-section-color-add {
+  width: var(--fw-button-height-compact);
+  height: var(--fw-button-height-compact);
+  min-width: var(--fw-button-height-compact);
+  min-height: var(--fw-button-height-compact);
+  flex-basis: var(--fw-button-height-compact);
+}
+
+/* Dense completion/comment controls live inside a larger clickable row. */
+.project-detail-task-row {
+  grid-template-columns: var(--fw-button-height-dense) minmax(0, 1fr) var(--fw-button-height-compact);
+}
+
+.project-task-done-toggle,
+.project-detail-task-comments {
+  width: var(--fw-button-height-dense);
+  height: var(--fw-button-height-dense);
+  min-width: var(--fw-button-height-dense);
+  min-height: var(--fw-button-height-dense);
+}

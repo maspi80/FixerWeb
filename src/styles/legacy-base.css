@@ -1757,7 +1757,8 @@ th.lp-header{cursor:default;user-select:none;font-weight:var(--fw-weight-medium,
 /* FIXER global button standard and compact company settings without regressions */
 :root{
   --fixer-button-height:36px;
-  --fixer-button-min-width:124px;
+  /* Buttons size to their label; toolbars control only their height. */
+  --fixer-button-min-width:0px;
   --fixer-button-radius:12px;
   --fixer-button-gap:8px;
 }

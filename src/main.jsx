@@ -7176,6 +7176,16 @@ const CALENDAR_EXPORT_COLUMNS = [
   { key: 'subtitle', label: 'Opis' },
   { key: 'statusLabel', label: 'Status' }
 ];
+const CALENDAR_EVENT_COLORS = [
+  { id: 'teal', label: 'Turkusowy', value: '#14b8a6', color: '#14b8a6' },
+  { id: 'blue', label: 'Niebieski', value: '#3b82f6', color: '#3b82f6' },
+  { id: 'indigo', label: 'Indygo', value: '#6366f1', color: '#6366f1' },
+  { id: 'violet', label: 'Fioletowy', value: '#8b5cf6', color: '#8b5cf6' },
+  { id: 'green', label: 'Zielony', value: '#22c55e', color: '#22c55e' },
+  { id: 'amber', label: 'Bursztynowy', value: '#f59e0b', color: '#f59e0b' },
+  { id: 'orange', label: 'Pomarańczowy', value: '#f97316', color: '#f97316' },
+  { id: 'red', label: 'Czerwony', value: '#ef4444', color: '#ef4444' }
+];
 
 function getCalendarSettings() {
   const defaultSources = getDefaultCalendarSources();
@@ -7229,6 +7239,27 @@ function toCalendarDate(value) {
 function toIsoDateValue(date) {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function toCalendarDateTimeInputValue(value) {
+  const date = value instanceof Date ? new Date(value) : toCalendarDate(value);
+  if (!date) return '';
+  const part = (number) => String(number).padStart(2, '0');
+  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}`;
+}
+
+function addCalendarInputMinutes(value, minutes) {
+  const date = toCalendarDate(value);
+  if (!date) return '';
+  date.setMinutes(date.getMinutes() + minutes);
+  return toCalendarDateTimeInputValue(date);
+}
+
+function calendarInputDayDistance(startValue, endValue) {
+  const startDate = toCalendarDate(String(startValue || '').slice(0, 10));
+  const endDate = toCalendarDate(String(endValue || '').slice(0, 10));
+  if (!startDate || !endDate) return 0;
+  return Math.max(0, Math.round((endDate - startDate) / (24 * 60 * 60 * 1000)));
 }
 
 function addCalendarDays(date, days) {
@@ -7290,7 +7321,16 @@ function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTask
   const push = (events, event) => {
     const start = toCalendarDate(event.start);
     if (!start) return;
-    events.push({ ...event, start, dateKey: toIsoDateValue(start), id: event.id });
+    const requestedEnd = toCalendarDate(event.end);
+    const end = requestedEnd && requestedEnd >= start ? requestedEnd : start;
+    events.push({
+      ...event,
+      start,
+      end,
+      dateKey: toIsoDateValue(start),
+      endDateKey: toIsoDateValue(end),
+      id: event.id
+    });
   };
   const events = [];
 
@@ -7324,7 +7364,7 @@ function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTask
 
   projectRows.filter((project) => !project.archived).forEach((project) => {
     const recordId = project.id ?? project.localId;
-    if (project.due_date) push(events, {
+    if (project.start_date || project.due_date) push(events, {
       id: `projects:due:${recordId}`,
       source: 'projects',
       sourceId: recordId,
@@ -7332,9 +7372,10 @@ function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTask
       sourceLabel: 'Projekty',
       title: project.name || project.project_number || 'Projekt',
       subtitle: project.clients?.name || project.priority || '',
-      start: project.due_date,
+      start: project.start_date || project.due_date,
+      end: project.due_date || project.start_date,
       statusLabel: project.status,
-      typeLabel: 'Termin projektu'
+      typeLabel: project.start_date && project.due_date && project.start_date !== project.due_date ? 'Czas trwania projektu' : 'Termin projektu'
     });
   });
 
@@ -7451,29 +7492,138 @@ function buildCalendarEvents({ organizerRows = [], projectRows = [], projectTask
   return events.sort((left, right) => left.start - right.start || left.title.localeCompare(right.title, 'pl'));
 }
 
+const CALENDAR_GRID_EVENT_LANES = 4;
+
+function buildCalendarGridEventLayout(days, events, maxLanes = CALENDAR_GRID_EVENT_LANES) {
+  const dayKeys = days.map(toIsoDateValue);
+  const firstDayKey = dayKeys[0];
+  const lastDayKey = dayKeys[dayKeys.length - 1];
+  const weekCandidates = Array.from({ length: Math.ceil(days.length / 7) }, () => []);
+  const hiddenByDay = Array(days.length).fill(0);
+
+  events.forEach((event) => {
+    const eventStartKey = event.dateKey;
+    const eventEndKey = event.endDateKey || eventStartKey;
+    if (!eventStartKey || eventEndKey < firstDayKey || eventStartKey > lastDayKey) return;
+
+    let startIndex = 0;
+    while (startIndex < dayKeys.length && dayKeys[startIndex] < eventStartKey) startIndex += 1;
+    let endIndex = dayKeys.length - 1;
+    while (endIndex >= 0 && dayKeys[endIndex] > eventEndKey) endIndex -= 1;
+    if (startIndex > endIndex) return;
+
+    let segmentStart = startIndex;
+    while (segmentStart <= endIndex) {
+      const weekIndex = Math.floor(segmentStart / 7);
+      const segmentEnd = Math.min(endIndex, (weekIndex + 1) * 7 - 1);
+      weekCandidates[weekIndex].push({
+        event,
+        weekIndex,
+        startIndex: segmentStart,
+        endIndex: segmentEnd,
+        startColumn: (segmentStart % 7) + 1,
+        endColumn: (segmentEnd % 7) + 1,
+        continuesBefore: eventStartKey < dayKeys[segmentStart],
+        continuesAfter: eventEndKey > dayKeys[segmentEnd]
+      });
+      segmentStart = segmentEnd + 1;
+    }
+  });
+
+  const segments = [];
+  weekCandidates.forEach((candidates) => {
+    const laneEnds = [];
+    candidates
+      .sort((left, right) => left.startColumn - right.startColumn || right.endColumn - left.endColumn || left.event.start - right.event.start)
+      .forEach((segment) => {
+        let lane = laneEnds.findIndex((occupiedUntil) => occupiedUntil < segment.startColumn);
+        if (lane < 0) lane = laneEnds.length;
+        laneEnds[lane] = segment.endColumn;
+        if (lane < maxLanes) {
+          segments.push({ ...segment, lane });
+          return;
+        }
+        for (let index = segment.startIndex; index <= segment.endIndex; index += 1) hiddenByDay[index] += 1;
+      });
+  });
+
+  return { segments, hiddenByDay };
+}
+
 function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDelete }) {
-  const [form, setForm] = useState(() => ({
-    title: event?.title ?? '',
-    description: event?.description ?? '',
-    start_at: event?.start_at ? String(event.start_at).slice(0, 16) : `${initialDate || getLocalIsoDate()}T09:00`,
-    end_at: event?.end_at ? String(event.end_at).slice(0, 16) : '',
-    all_day: event?.all_day !== false,
-    location: event?.location ?? '',
-    color: event?.color ?? '#14b8a6'
-  }));
+  const [form, setForm] = useState(() => {
+    const allDay = event?.all_day !== false;
+    const fallbackDate = initialDate || getLocalIsoDate();
+    const inputStartAt = toCalendarDateTimeInputValue(event?.start_at) || `${fallbackDate}T09:00`;
+    const inputEndAt = toCalendarDateTimeInputValue(event?.end_at);
+    const startAt = allDay ? `${inputStartAt.slice(0, 10)}T00:00` : inputStartAt;
+    const endAt = allDay
+      ? `${(inputEndAt || inputStartAt).slice(0, 10)}T23:59`
+      : (inputEndAt || addCalendarInputMinutes(startAt, 60));
+    return {
+      title: event?.title ?? '',
+      description: event?.description ?? '',
+      start_at: startAt,
+      end_at: endAt,
+      all_day: allDay,
+      location: event?.location ?? '',
+      color: event?.color ?? '#14b8a6'
+    };
+  });
   const [formError, setFormError] = useState('');
-  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const update = (key, value) => {
+    setFormError('');
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+  const updateStart = (value) => {
+    setFormError('');
+    setForm((current) => {
+      if (current.all_day) {
+        const dayDistance = calendarInputDayDistance(current.start_at, current.end_at);
+        const nextStart = toCalendarDate(value);
+        const nextEndDate = nextStart ? toIsoDateValue(addCalendarDays(nextStart, dayDistance)) : value;
+        return { ...current, start_at: `${value}T00:00`, end_at: `${nextEndDate}T23:59` };
+      }
+      const oldStart = toCalendarDate(current.start_at);
+      const oldEnd = toCalendarDate(current.end_at);
+      const duration = oldStart && oldEnd && oldEnd > oldStart ? oldEnd - oldStart : 60 * 60 * 1000;
+      const nextStart = toCalendarDate(value);
+      return { ...current, start_at: value, end_at: nextStart ? toCalendarDateTimeInputValue(new Date(nextStart.getTime() + duration)) : current.end_at };
+    });
+  };
+  const updateEnd = (value) => {
+    setFormError('');
+    setForm((current) => ({ ...current, end_at: current.all_day ? `${value}T23:59` : value }));
+  };
+  const toggleAllDay = (allDay) => {
+    setFormError('');
+    setForm((current) => {
+      const startDate = current.start_at.slice(0, 10) || getLocalIsoDate();
+      const endDate = current.end_at.slice(0, 10) || startDate;
+      return {
+        ...current,
+        all_day: allDay,
+        start_at: `${startDate}T${allDay ? '00:00' : '09:00'}`,
+        end_at: `${endDate}T${allDay ? '23:59' : (endDate === startDate ? '10:00' : '17:00')}`
+      };
+    });
+  };
   const submit = () => {
     if (!form.title.trim()) { setFormError('Tytuł wydarzenia jest wymagany.'); return; }
+    if (!form.start_at || !form.end_at) { setFormError('Podaj datę rozpoczęcia i zakończenia.'); return; }
+    const start = toCalendarDate(form.start_at);
+    const end = toCalendarDate(form.end_at);
+    if (!start || !end) { setFormError('Podany termin jest nieprawidłowy.'); return; }
+    if (end < start) { setFormError('Koniec wydarzenia nie może być wcześniejszy niż jego początek.'); return; }
     setFormError('');
-    onSave({ ...event, ...form, start_at: form.start_at ? new Date(form.start_at).toISOString() : null, end_at: form.end_at ? new Date(form.end_at).toISOString() : null });
+    onSave({ ...event, ...form, start_at: start.toISOString(), end_at: end.toISOString() });
   };
 
   return <ResizableModalFrame
     className="calendar-event-modal"
-    storageKey="fixer-calendar-event-modal"
-    defaultSize={{ width: 680, height: 500 }}
-    minSize={{ width: 520, height: 420 }}
+    storageKey="fixer-calendar-event-modal-v2"
+    defaultSize={{ width: 680, height: 460 }}
+    minSize={{ width: 520, height: 410 }}
     eyebrow="Kalendarz"
     title={event ? 'Wydarzenie ręczne' : 'Nowe wydarzenie'}
     onClose={onClose}
@@ -7481,17 +7631,27 @@ function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDele
   >
     <div className="calendar-event-form">
       {formError && <AppNotice variant="error" className="service-form-notice">{formError}</AppNotice>}
-      <FormField label="Tytuł *"><AppInput value={form.title} onChange={(event) => update('title', event.target.value)} /></FormField>
+      <FormField label="Tytuł" required><AppInput autoFocus value={form.title} onChange={(event) => update('title', event.target.value)} /></FormField>
+      <label className="settings-check calendar-all-day-check"><input type="checkbox" checked={form.all_day} onChange={(event) => toggleAllDay(event.target.checked)} />Wydarzenie całodniowe</label>
       <div className="calendar-event-form-row">
-        <FormField label="Start"><AppInput type="datetime-local" value={form.start_at} onChange={(event) => update('start_at', event.target.value)} /></FormField>
-        <FormField label="Koniec"><AppInput type="datetime-local" value={form.end_at} onChange={(event) => update('end_at', event.target.value)} /></FormField>
+        <FormField label={form.all_day ? 'Data rozpoczęcia' : 'Start'} required>
+          <AppInput type={form.all_day ? 'date' : 'datetime-local'} value={form.all_day ? form.start_at.slice(0, 10) : form.start_at} onChange={(event) => updateStart(event.target.value)} />
+        </FormField>
+        <FormField label={form.all_day ? 'Data zakończenia' : 'Koniec'} required hint={form.all_day ? 'Dzień zakończenia jest wliczony w wydarzenie.' : ''}>
+          <AppInput type={form.all_day ? 'date' : 'datetime-local'} min={form.all_day ? form.start_at.slice(0, 10) : form.start_at} value={form.all_day ? form.end_at.slice(0, 10) : form.end_at} onChange={(event) => updateEnd(event.target.value)} />
+        </FormField>
       </div>
       <div className="calendar-event-form-row calendar-event-compact-row">
         <FormField label="Miejsce"><AppInput value={form.location} onChange={(event) => update('location', event.target.value)} /></FormField>
-        <FormField label="Kolor"><AppInput type="color" value={form.color} onChange={(event) => update('color', event.target.value)} /></FormField>
+        <FormField label="Kolor">
+          <div className="calendar-event-color-control">
+            <ColorSwatchPicker options={CALENDAR_EVENT_COLORS} value={form.color} onChange={(value) => update('color', value)} label="Kolor wydarzenia" />
+            <AppInput type="color" value={form.color} onChange={(event) => update('color', event.target.value)} aria-label="Własny kolor wydarzenia" title="Własny kolor" />
+          </div>
+        </FormField>
       </div>
-      <FormField label="Opis"><AppTextarea resizeKey="fixer:textarea:calendar:description" value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
-      <label className="settings-check calendar-all-day-check"><input type="checkbox" checked={form.all_day} onChange={(event) => update('all_day', event.target.checked)} />Wydarzenie całodniowe</label>
+      <FormField label="Opis"><AppTextarea className="calendar-event-description" resizeKey="fixer:textarea:calendar:description" value={form.description} onChange={(event) => update('description', event.target.value)} /></FormField>
+      <div className="calendar-event-notification-note"><Bell size={15} /><span>{form.all_day ? 'Powiadomienie pojawi się w dniu wydarzenia.' : 'Powiadomienie pojawi się przed rozpoczęciem wydarzenia.'}</span></div>
     </div>
   </ResizableModalFrame>;
 }
@@ -7600,7 +7760,7 @@ function CalendarModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     statuses: [...new Set(allEvents.map((event) => event.statusLabel).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'))
   }), [allEvents]);
   const visibleEvents = allEvents.filter((event) => {
-    if (sources[event.source] === false || event.start < start || event.start >= end) return false;
+    if (sources[event.source] === false || event.end < start || event.start >= end) return false;
     if ((filters.type ?? 'all') !== 'all' && event.typeLabel !== filters.type) return false;
     if ((filters.status ?? 'all') !== 'all' && event.statusLabel !== filters.status) return false;
     return true;
@@ -7610,7 +7770,14 @@ function CalendarModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     date_display: formatServiceDateTime(event.start)
   }));
   const days = Array.from({ length: Math.round((end - start) / (24 * 60 * 60 * 1000)) }, (_, index) => addCalendarDays(start, index));
-  const eventsByDay = (day) => visibleEvents.filter((event) => event.dateKey === toIsoDateValue(day));
+  const usesRangeBars = view === 'month' || view === 'week';
+  const eventsByDay = (day) => {
+    const dayKey = toIsoDateValue(day);
+    return visibleEvents.filter((event) => event.dateKey <= dayKey && (event.endDateKey || event.dateKey) >= dayKey);
+  };
+  const gridEventLayout = usesRangeBars
+    ? buildCalendarGridEventLayout(days, visibleEvents)
+    : { segments: [], hiddenByDay: [] };
 
   const move = (direction) => {
     const current = toCalendarDate(anchorDate) ?? new Date();
@@ -7657,25 +7824,35 @@ function CalendarModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     });
   };
 
-  const renderEvent = (event) => {
+  const renderEvent = (event, { key = event.id, className = '', style = {} } = {}) => {
     const color = getCalendarEventColor(event, statusColors, sourceSettings);
-    return <button key={event.id} type="button" className={`calendar-event calendar-event-${event.source}`} style={{ '--event-color': color }} onClick={() => openEvent(event)} title={`${event.sourceLabel}: ${event.title}`}>
+    return <button key={key} type="button" className={`calendar-event calendar-event-${event.source} ${className}`.trim()} style={{ '--event-color': color, ...style }} onClick={() => openEvent(event)} title={`${event.sourceLabel}: ${event.title}`}>
       <span>{event.title}</span>
       <small>{event.typeLabel}</small>
     </button>;
   };
 
   const renderGrid = () => <div className={`calendar-grid calendar-grid-${view}`}>
-    {days.map((day) => {
+    {days.map((day, dayIndex) => {
       const dayEvents = eventsByDay(day);
-      const visibleDayEvents = view === 'month' ? dayEvents.slice(0, 4) : dayEvents;
-      const hiddenDayEvents = dayEvents.length - visibleDayEvents.length;
+      const visibleDayEvents = usesRangeBars ? [] : dayEvents;
+      const hiddenDayEvents = usesRangeBars ? (gridEventLayout.hiddenByDay[dayIndex] || 0) : 0;
       const outsideMonth = view === 'month' && day.getMonth() !== (toCalendarDate(anchorDate) ?? new Date()).getMonth();
-      return <div key={toIsoDateValue(day)} className={`calendar-day-cell ${isSameCalendarDay(day, new Date()) ? 'today' : ''} ${outsideMonth ? 'outside-month' : ''}`} onDoubleClick={() => setNewEventDate(toIsoDateValue(day))}>
+      const gridPosition = usesRangeBars ? { gridColumn: (dayIndex % 7) + 1, gridRow: Math.floor(dayIndex / 7) + 1 } : undefined;
+      return <div key={toIsoDateValue(day)} style={gridPosition} className={`calendar-day-cell ${isSameCalendarDay(day, new Date()) ? 'today' : ''} ${outsideMonth ? 'outside-month' : ''}`} onDoubleClick={() => setNewEventDate(toIsoDateValue(day))}>
         <div className="calendar-day-head"><strong>{day.toLocaleDateString('pl-PL', { weekday: view === 'month' ? 'short' : 'long' })}</strong><span>{day.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })}</span></div>
         <div className="calendar-day-events">{visibleDayEvents.map(renderEvent)}{hiddenDayEvents > 0 && <button type="button" className="calendar-more-events" onClick={() => openDay(day)}>+{hiddenDayEvents} więcej</button>}{!dayEvents.length && <span className="calendar-empty-slot">+ Dodaj</span>}</div>
       </div>;
     })}
+    {usesRangeBars && gridEventLayout.segments.map((segment) => renderEvent(segment.event, {
+      key: `${segment.event.id}:${segment.weekIndex}:${segment.startColumn}`,
+      className: `calendar-event-span ${segment.continuesBefore ? 'continues-before' : ''} ${segment.continuesAfter ? 'continues-after' : ''}`,
+      style: {
+        gridColumn: `${segment.startColumn} / ${segment.endColumn + 1}`,
+        gridRow: segment.weekIndex + 1,
+        '--calendar-event-lane': segment.lane
+      }
+    }))}
   </div>;
 
   const renderAgenda = () => <div className="calendar-agenda">

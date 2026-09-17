@@ -16,6 +16,7 @@ export const NOTE_COLORS = [
 
 const LOCAL_NOTES_KEY = 'fixer-notes';
 const NOTE_COLOR_IDS = new Set(NOTE_COLORS.map((color) => color.id));
+const NOTE_HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const NOTE_ORDER_STEP = 100;
 
 const noteColumns = `
@@ -53,6 +54,7 @@ function writeLocal(key, data) {
 
 function normalizeNoteColor(color) {
   const value = String(color ?? DEFAULT_NOTE_COLOR).trim();
+  if (NOTE_HEX_COLOR_PATTERN.test(value)) return value.toUpperCase();
   return NOTE_COLOR_IDS.has(value) ? value : DEFAULT_NOTE_COLOR;
 }
 

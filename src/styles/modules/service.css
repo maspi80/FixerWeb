@@ -1,6 +1,11 @@
 /* Service module */
 .service-module-page{
   min-height:0;
+  overflow:hidden;
+  grid-template-rows:auto minmax(0,1fr) auto;
+}
+.service-module-page.service-history-expanded{
+  grid-template-rows:auto minmax(190px,1fr) minmax(170px,36%);
 }
 .service-hero-panel{
   flex:0 0 auto;
@@ -11,8 +16,26 @@
   flex-direction:column;
   gap:8px;
 }
+.service-module-page > .service-list-panel:not(.service-completed-section){
+  overflow:hidden;
+}
+.service-module-page > .service-list-panel:not(.service-completed-section) > .table-shell,
+.service-completed-section .history-section-content,
+.service-completed-section .history-section-content > .table-shell{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
 .service-completed-section{
   margin-top:0;
+}
+.service-completed-section.is-expanded{
+  height:100%;
+  overflow:hidden;
+}
+.service-completed-section.is-expanded .history-section-content{
+  overflow:hidden;
 }
 .service-filter-bar{
   grid-template-columns:minmax(260px,1fr) minmax(150px,190px) minmax(140px,170px) auto auto;
@@ -691,4 +714,3 @@
 .app-shell.theme-light .client-choice-card small{
   color:#64748b;
 }
-

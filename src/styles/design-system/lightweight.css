@@ -24,6 +24,75 @@
   border-right-color: color-mix(in srgb, var(--fw-color-border) 82%, transparent);
 }
 
+.sidebar .user-card .avatar {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+@media (min-width: 861px) {
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .sidebar-collapsed .sidebar {
+    padding: 12px 8px;
+  }
+
+  .sidebar-collapsed .sidebar-header,
+  .sidebar-collapsed .sidebar-footer {
+    align-items: center;
+  }
+
+  .sidebar-collapsed .sidebar-header {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .sidebar-collapsed .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
+
+  .sidebar-collapsed .nav-item,
+  .sidebar-collapsed .sidebar-footer > .ghost-button {
+    position: relative;
+    width: 46px;
+    min-width: 46px;
+    min-height: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar-collapsed .user-card {
+    width: 46px;
+    height: 42px;
+    min-width: 46px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 9px;
+  }
+
+  .sidebar-collapsed .user-card .avatar {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
+    border-radius: 7px;
+    font-size: 11px;
+  }
+
+  .sidebar-collapsed .nav-item-count {
+    top: 2px;
+    right: 2px;
+  }
+}
+
 .nav-item,
 .ghost-button {
   border-radius: var(--fw-radius-md);
@@ -212,6 +281,26 @@ th,
   box-shadow: none;
 }
 
+/* Sticky table headers must be fully opaque so scrolled rows never show through. */
+.app-shell .table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  isolation: isolate;
+  background: var(--fw-color-surface-strong) !important;
+}
+
+.app-shell .table-scroll thead th:hover {
+  background: color-mix(in srgb, var(--fw-color-text-strong) 5%, var(--fw-color-surface-strong) 95%) !important;
+}
+
+.app-shell .table-scroll thead th.sorted,
+.app-shell .table-scroll thead th.active,
+.app-shell .table-scroll thead th[aria-sort="ascending"],
+.app-shell .table-scroll thead th[aria-sort="descending"] {
+  background: color-mix(in srgb, var(--fw-color-primary) 14%, var(--fw-color-surface-strong) 86%) !important;
+}
+
 td,
 .app-table td,
 .data-table td,
@@ -230,6 +319,91 @@ td,
 .table-shell tbody tr.selected-row {
   background: color-mix(in srgb, var(--fw-color-selection) 80%, transparent);
   box-shadow: inset 2px 0 0 color-mix(in srgb, var(--fw-color-selection-bar) 78%, transparent);
+}
+
+/* The first click marks the beginning of a possible Shift+click range. */
+.table-shell tbody tr.selection-anchor-row {
+  background: color-mix(in srgb, var(--fw-color-selection) 38%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--fw-color-selection-bar) 48%, transparent);
+}
+
+.picker-visible-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.picker-visible-toggle > span {
+  color: var(--fw-color-text-muted);
+  font-size: var(--fw-font-size-sm);
+}
+
+/* Dashboard metrics are flat information tiles, not coloured call-to-action cards. */
+.app-shell .dashboard-metric-card,
+.app-shell.theme-light .dashboard-metric-card {
+  --dashboard-metric-accent: var(--fw-color-border-strong);
+  border: 1px solid var(--fw-color-border);
+  border-left: 3px solid var(--dashboard-metric-accent);
+  border-radius: var(--fw-radius-panel);
+  background: var(--fw-color-surface);
+  color: var(--fw-color-text);
+  box-shadow: none;
+}
+
+.app-shell .dashboard-metric-card.card-active.dashboard-metric-card--rental-danger,
+.app-shell .dashboard-metric-card.card-active.dashboard-metric-card--service-danger,
+.app-shell .dashboard-metric-card.card-active.dashboard-metric-card--task-danger,
+.app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--rental-danger,
+.app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--service-danger,
+.app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--task-danger {
+  --dashboard-metric-accent: var(--fw-color-danger);
+  border-color: var(--fw-color-border);
+  border-left-color: var(--dashboard-metric-accent);
+  background: var(--fw-color-surface);
+}
+
+.app-shell .dashboard-metric-card.card-active.dashboard-metric-card--rental-today,
+.app-shell .dashboard-metric-card.card-active.dashboard-metric-card--service-today,
+.app-shell .dashboard-metric-card.card-active.dashboard-metric-card--task-today,
+.app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--rental-today,
+.app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--service-today,
+.app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--task-today {
+  --dashboard-metric-accent: var(--fw-color-warning);
+  border-color: var(--fw-color-border);
+  border-left-color: var(--dashboard-metric-accent);
+  background: var(--fw-color-surface);
+}
+
+.app-shell .dashboard-metric-card--info,
+.app-shell.theme-light .dashboard-metric-card--info {
+  --dashboard-metric-accent: var(--fw-color-selection-bar);
+  border-color: var(--fw-color-border);
+  border-left-color: var(--dashboard-metric-accent);
+  background: var(--fw-color-surface);
+}
+
+.app-shell .dashboard-metric-card:hover:not(.in-edit),
+.app-shell.theme-light .dashboard-metric-card:hover:not(.in-edit),
+.app-shell .dashboard-metric-card.in-edit:hover,
+.app-shell.theme-light .dashboard-metric-card.in-edit:hover {
+  border-color: var(--fw-color-border-hover);
+  border-left-color: var(--dashboard-metric-accent);
+  background: var(--fw-color-hover);
+  box-shadow: none;
+}
+
+.app-shell .dashboard-metric-card strong,
+.app-shell.theme-light .dashboard-metric-card strong {
+  color: var(--fw-color-text-strong);
+  font-weight: var(--fw-weight-semibold);
+}
+
+.app-shell .dashboard-metric-card span,
+.app-shell.theme-light .dashboard-metric-card span,
+.app-shell .dashboard-metric-label svg,
+.app-shell.theme-light .dashboard-metric-label svg {
+  color: var(--fw-color-text-muted);
+  font-weight: var(--fw-weight-medium);
 }
 
 /* Statuses are informative accents, not dominant blocks. */
@@ -326,6 +500,157 @@ td,
 .draggable-modal-backdrop {
   background: rgba(15, 23, 42, .36);
   backdrop-filter: blur(3px);
+}
+
+/* Projects use the same restrained surface hierarchy as the other modules. */
+.projects-module-page .projects-actions-panel {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.projects-module-page .project-details-panel,
+.projects-module-page .project-details-collapsed {
+  border-color: var(--fw-color-border);
+  border-radius: var(--fw-radius-panel);
+  background: var(--fw-color-surface);
+  box-shadow: var(--fw-shadow-panel);
+}
+
+.projects-module-page .project-details-header {
+  border-bottom-color: var(--fw-color-border);
+  background: color-mix(in srgb, var(--fw-color-section) 58%, transparent);
+}
+
+.projects-module-page .project-details-header strong,
+.projects-module-page .project-detail-task-main strong,
+.projects-module-page .project-comment-row strong,
+.projects-module-page .simple-task-details-card > strong {
+  color: var(--fw-color-text-strong);
+  font-weight: var(--fw-weight-semibold);
+}
+
+.projects-module-page .project-details-header span,
+.projects-module-page .project-detail-task-main span,
+.projects-module-page .project-comment-row span,
+.projects-module-page .project-detail-empty,
+.projects-module-page .simple-task-details-card dt {
+  color: var(--fw-color-text-muted);
+  font-weight: var(--fw-weight-medium);
+}
+
+.projects-module-page .project-detail-section,
+.projects-module-page .project-comment-row,
+.projects-module-page .project-inspector-related,
+.projects-module-page .simple-task-details-card {
+  border-color: var(--fw-color-border);
+  border-radius: var(--fw-radius-panel);
+  background: var(--fw-color-section);
+  box-shadow: none;
+}
+
+.projects-module-page .project-detail-section-head,
+.projects-module-page .project-detail-section-head.is-colored {
+  min-height: 34px;
+  border-bottom-color: var(--fw-color-border);
+  background: color-mix(in srgb, var(--project-section-header-bg, var(--fw-color-section-soft)) 22%, var(--fw-color-section) 78%) !important;
+  color: var(--fw-color-text-strong) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--project-section-header-bg, var(--fw-color-primary)) 72%, transparent);
+}
+
+.projects-module-page .project-detail-section-toggle strong {
+  font-weight: var(--fw-weight-semibold);
+}
+
+.projects-module-page .project-detail-section-toggle em,
+.projects-module-page .project-detail-section-head.is-colored .project-detail-section-toggle em {
+  color: var(--fw-color-text-muted) !important;
+  font-weight: var(--fw-weight-medium);
+}
+
+.projects-module-page .project-detail-section-action,
+.projects-module-page .project-detail-section-delete,
+.projects-module-page .project-detail-task-comments,
+.projects-module-page .project-icon-action {
+  border-color: var(--fw-color-border-strong);
+  background: transparent;
+  box-shadow: none;
+}
+
+.projects-module-page .project-detail-task-row {
+  min-height: 38px;
+}
+
+.projects-module-page .project-detail-task-row:hover,
+.projects-module-page .project-comment-interactive-row:not(.is-editing):hover {
+  background: var(--fw-color-hover);
+}
+
+.projects-module-page .project-detail-task-item.is-selected {
+  background: var(--fw-color-selection);
+  box-shadow: inset 2px 0 0 var(--fw-color-selection-bar);
+}
+
+.projects-module-page .project-comment-row p,
+.projects-module-page .simple-task-details-card dd,
+.projects-module-page .simple-task-details-card p {
+  color: var(--fw-color-text-soft);
+  font-weight: var(--fw-weight-body);
+}
+
+.projects-module-page .project-details-collapsed button {
+  border: 0;
+  background: transparent;
+  color: var(--fw-color-text-muted);
+  font-weight: var(--fw-weight-medium);
+}
+
+.projects-module-page .projects-columns-splitter::after,
+.projects-module-page .project-details-splitter::after {
+  background: color-mix(in srgb, var(--fw-color-border-strong) 72%, transparent);
+}
+
+.projects-module-page .project-board-color-control {
+  border-left-color: var(--fw-color-border);
+}
+
+input.system-color-input {
+  flex: 0 0 30px;
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  min-height: 30px !important;
+  max-width: 30px !important;
+  padding: 0 !important;
+  border: 2px solid var(--fw-color-border-strong);
+  border-radius: 50% !important;
+  background: transparent;
+  overflow: hidden;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+input.system-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input.system-color-input::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+input.system-color-input::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+input.system-color-input:hover:not(:disabled) {
+  border-color: var(--fw-color-primary-border);
+}
+
+input.system-color-input:disabled {
+  opacity: .45;
+  cursor: not-allowed;
 }
 
 @media (max-width: 860px) {

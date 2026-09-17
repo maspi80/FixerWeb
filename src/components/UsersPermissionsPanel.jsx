@@ -329,7 +329,7 @@ export default function UsersPermissionsPanel({ isActive = false, currentUser = 
                 </AppSelect>
               </FormField>
               <FormField label="Kolor użytkownika">
-                <AppInput className="users-color-input" type="color" value={userForm.userColor} onChange={(event) => setUserForm((current) => ({ ...current, userColor: normalizeUserColor(event.target.value) }))} />
+                <AppInput className="users-color-input system-color-input" type="color" value={userForm.userColor} onChange={(event) => setUserForm((current) => ({ ...current, userColor: normalizeUserColor(event.target.value) }))} />
               </FormField>
               <label className="users-active-toggle">
                 <input type="checkbox" checked={userForm.isActive} onChange={(event) => setUserForm((current) => ({ ...current, isActive: event.target.checked }))} />

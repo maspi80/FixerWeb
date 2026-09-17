@@ -1969,6 +1969,40 @@ textarea:focus-visible {
   background-clip: padding-box;
 }
 
+/* Table scrollbars stay unobtrusive until the user interacts with a table. */
+.table-scroll,
+.dashboard-table-scroll {
+  scrollbar-color: transparent transparent;
+}
+
+.table-scroll:hover,
+.table-scroll:focus-within,
+.dashboard-table-scroll:hover,
+.dashboard-table-scroll:focus-within {
+  scrollbar-color: color-mix(in srgb, var(--fw-color-text-muted) 45%, transparent) transparent;
+}
+
+.dashboard-table-scroll::-webkit-scrollbar {
+  width: var(--fw-scrollbar-size);
+  height: var(--fw-scrollbar-size);
+}
+
+.table-scroll::-webkit-scrollbar-thumb,
+.dashboard-table-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+.table-scroll:hover::-webkit-scrollbar-thumb,
+.table-scroll:focus-within::-webkit-scrollbar-thumb,
+.dashboard-table-scroll:hover::-webkit-scrollbar-thumb,
+.dashboard-table-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fw-color-text-muted) 45%, transparent);
+  background-clip: padding-box;
+}
+
 .row-context-menu,
 .column-context-menu,
 .column-submenu,

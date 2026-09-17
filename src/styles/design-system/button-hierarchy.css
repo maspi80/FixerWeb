@@ -1,0 +1,139 @@
+/*
+ * Final semantic button hierarchy.
+ *
+ * This file is intentionally imported last. Module-specific layout rules may
+ * size and position buttons, but they must not change the meaning conveyed by
+ * primary, secondary, ghost and danger variants.
+ */
+
+.app-shell .app-button-primary,
+.app-shell .ds-button-primary,
+.app-shell .primary-button,
+.app-shell .module-actions .app-button-primary,
+.app-shell .module-actions .ds-button-primary,
+.app-shell .module-actions .primary-button,
+.app-shell .module-actions .app-button-primary.module-action-button,
+.app-shell .backup-action-button.primary {
+  border-color: color-mix(in srgb, var(--fw-color-button-primary, var(--fw-color-primary)) 78%, #000 22%);
+  background: var(--fw-color-button-primary, var(--fw-color-primary));
+  color: #fff;
+  box-shadow: none;
+}
+
+.app-shell .app-button-secondary,
+.app-shell .ds-button-secondary,
+.app-shell .secondary-button,
+.app-shell .file-button,
+.app-shell .module-actions .app-button-secondary,
+.app-shell .module-actions .ds-button-secondary,
+.app-shell .module-actions .secondary-button,
+.app-shell .module-actions .app-button-secondary.module-action-button {
+  border-color: var(--fw-color-border-strong);
+  background: var(--fw-color-section-soft);
+  color: var(--fw-color-text-soft);
+  box-shadow: none;
+}
+
+.app-shell .app-button-ghost,
+.app-shell .ds-button-ghost,
+.app-shell .ghost-button:not(.danger) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--fw-color-text-muted);
+  box-shadow: none;
+}
+
+.app-shell .app-button-danger,
+.app-shell .ds-button-danger,
+.app-shell .app-button.danger-action,
+.app-shell .secondary-button.danger-action,
+.app-shell .project-icon-action.danger-action {
+  border-color: color-mix(in srgb, var(--fw-color-danger) 34%, transparent);
+  background: color-mix(in srgb, var(--fw-color-danger) 11%, transparent);
+  color: var(--fw-color-danger-text, var(--fw-color-danger));
+  box-shadow: none;
+}
+
+.app-shell .app-button-primary:hover:not(:disabled),
+.app-shell .ds-button-primary:hover:not(:disabled),
+.app-shell .primary-button:hover:not(:disabled),
+.app-shell .backup-action-button.primary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--fw-color-button-primary, var(--fw-color-primary)) 84%, #000 16%);
+  background: color-mix(in srgb, var(--fw-color-button-primary, var(--fw-color-primary)) 91%, #fff 9%);
+  color: #fff;
+  filter: none;
+}
+
+.app-shell .app-button-secondary:hover:not(:disabled),
+.app-shell .ds-button-secondary:hover:not(:disabled),
+.app-shell .secondary-button:hover:not(:disabled),
+.app-shell .file-button:hover:not(:disabled) {
+  border-color: var(--fw-color-border-hover);
+  background: var(--fw-color-hover);
+  color: var(--fw-color-text-strong);
+  filter: none;
+}
+
+.app-shell .app-button-ghost:hover:not(:disabled),
+.app-shell .ds-button-ghost:hover:not(:disabled),
+.app-shell .ghost-button:not(.danger):hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--fw-color-hover);
+  color: var(--fw-color-text-strong);
+  filter: none;
+}
+
+.app-shell .app-button-danger:hover:not(:disabled),
+.app-shell .ds-button-danger:hover:not(:disabled),
+.app-shell .app-button.danger-action:hover:not(:disabled),
+.app-shell .secondary-button.danger-action:hover:not(:disabled),
+.app-shell .project-icon-action.danger-action:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--fw-color-danger) 52%, transparent);
+  background: color-mix(in srgb, var(--fw-color-danger) 17%, transparent);
+  color: var(--fw-color-danger-text, var(--fw-color-danger));
+  filter: none;
+}
+
+/* Menus stay visually quiet; danger is communicated by colour, not a block. */
+.app-shell .row-context-menu button.danger-action,
+.app-shell .project-section-context-menu button.danger-action {
+  border-color: transparent;
+  background: transparent;
+  color: var(--fw-color-danger-text, var(--fw-color-danger));
+}
+
+.app-shell .row-context-menu button.danger-action:hover:not(:disabled),
+.app-shell .project-section-context-menu button.danger-action:hover:not(:disabled) {
+  background: var(--fw-color-danger-bg);
+  color: var(--fw-color-danger-text, var(--fw-color-danger));
+}
+
+.app-shell .app-button:disabled,
+.app-shell .ds-button:disabled,
+.app-shell .primary-button:disabled,
+.app-shell .secondary-button:disabled,
+.app-shell .file-button:disabled,
+.app-shell .backup-action-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.app-shell .app-button:focus-visible,
+.app-shell .ds-button:focus-visible,
+.app-shell .primary-button:focus-visible,
+.app-shell .secondary-button:focus-visible,
+.app-shell .file-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--fw-color-primary-soft);
+}
+
+/* One reset-filter action across every list and filter popover. */
+.app-shell .filter-clear-button,
+.app-shell .calendar-filter-popover-actions .filter-clear-button {
+  align-self: end;
+  min-height: var(--fw-control-height-lg);
+  height: var(--fw-control-height-lg);
+  padding-inline: var(--fw-control-padding-x);
+  white-space: nowrap;
+}

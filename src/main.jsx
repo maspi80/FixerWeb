@@ -19,7 +19,6 @@ import {
   SaveStatusIndicator,
   ButtonPrimary,
   ButtonSecondary,
-  ButtonGhost,
   ModalFrame,
   ModalCloseButton,
   FormField,
@@ -2104,7 +2103,7 @@ function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onT
 
   return (
     <header className="topbar">
-      <div><p className="eyebrow">Panel systemu</p><h1>{module.label}</h1></div>
+      <div><h1>{module.label}</h1></div>
       <div className="topbar-actions">
         <div className="global-search-wrapper" ref={searchRef}>
           <div className={`global-search ${searchOpen && trimmedSearch.length >= 2 ? 'active' : ''}`}>
@@ -2794,7 +2793,7 @@ function ClientsModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
               {clientKinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
             </AppSelect>
           </label>
-          <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearClientFilters}>Wyczyść filtry</AppButton>
+          <AppButton variant="secondary" className="filter-clear-button" onClick={clearClientFilters}>Wyczyść</AppButton>
           {rows.length > 0 && filteredRows.length < rows.length && <span className="filter-count">{filteredRows.length} z {rows.length}</span>}
         </div>
         <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
@@ -3376,7 +3375,7 @@ function EquipmentModule({ isActive = false, dashboardIntent, onConsumeDashboard
           <label>Lokalizacja<AppSelect value={filters.location ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, location: event.target.value }))}><option value="all">Wszystkie</option>{equipmentFilterOptions.locations.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
           <label>Producent<AppSelect value={filters.brand ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, brand: event.target.value }))}><option value="all">Wszyscy</option>{equipmentFilterOptions.brands.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></label>
           <label>Typ<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option><option value="Sprzęt">Sprzęt</option><option value="Zestaw">Zestaw</option></AppSelect></label>
-          <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearEquipmentFilters}>Wyczyść</AppButton>
+          <AppButton variant="secondary" className="filter-clear-button" onClick={clearEquipmentFilters}>Wyczyść</AppButton>
           {rows.filter((item) => !isEquipmentSetComponent(item)).length > 0 && displayRows.length < rows.filter((item) => !isEquipmentSetComponent(item)).length && <span className="filter-count">{displayRows.length} z {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>}
         </div>
         <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
@@ -5049,15 +5048,8 @@ function RentalsModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
         <label>Szukaj<AppInput value={filters.search ?? ''} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Numer, klient, sprzęt, marka, model" /></label>
         <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option><option value="active">Aktywne</option><option value="partially_returned">Częściowo zwrócone</option><option value="returned">Zwrócone</option></AppSelect></label>
         <label>Typ wypożyczenia<AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{rentalTypes.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
-        <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearRentalFilters}>Wyczyść</AppButton>
+        <AppButton variant="secondary" className="filter-clear-button" onClick={clearRentalFilters}>Wyczyść</AppButton>
         {displayRows.length > 0 && activeRows.length + returnedRows.length < displayRows.length && <span className="filter-count">{activeRows.length + returnedRows.length} z {displayRows.length}</span>}
-      </div>
-      <div className="rentals-section-heading">
-        <div>
-          <p className="eyebrow">Aktywne</p>
-          <h3>Aktywne wypożyczenia</h3>
-        </div>
-        <span>{activeRows.length} pozycji</span>
       </div>
       <DataTable storageKey={RENTALS_TABLE_KEY} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={activeRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDelete} onBulkDelete={handleBulkDelete} customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'return', label: 'Zarejestruj zwrot', icon: CheckCircle2, visible: canRegisterReturn, onClick: (row) => setReturningRental(row._rental ?? row) }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
     </section>
@@ -6057,6 +6049,7 @@ function ClientPickerModal({ clients, selectedClientId, onClose, onConfirm, onCr
 function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selectedIds = [], initialQuery = '', onClose, onConfirm, onBeforeSelectItem, onSelectBlocked }) {
   const [filters, setFilters] = useStoredState('fixer-equipment-picker-filters', { query: '', category: 'all', status: 'all', location: 'all', sort: 'name' });
   const [selectedKeys, setSelectedKeys] = useState(() => new Set(selectedIds.map(String)));
+  const [selectionAnchorKey, setSelectionAnchorKey] = useState(null);
 
   useEffect(() => {
     if (!initialQuery) return;
@@ -6089,7 +6082,6 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
     code_display: item.barcode || item.inventory_number || '—'
   }));
   const pickerColumns = [
-    { key: 'picker_selected', label: 'Wybierz', renderCell: (item) => <input type="checkbox" checked={selectedKeys.has(String(getEquipmentKey(item)))} onChange={() => toggleItem(item)} onClick={(event) => event.stopPropagation()} aria-label="Wybierz sprzęt" /> },
     { key: 'name', label: 'Nazwa', renderCell: (row) => renderEquipmentNameWithBadge(row) },
     { key: 'item_type_display', label: 'Kategoria' },
     { key: 'brand', label: 'Marka' },
@@ -6114,6 +6106,40 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
       }
       const next = new Set(current);
       next.add(key);
+      return next;
+    });
+  };
+
+  const selectPickerRow = (item, event) => {
+    if (event?.detail > 1) return;
+    if (event?.shiftKey) window.getSelection?.()?.removeAllRanges();
+    const targetKey = String(getEquipmentKey(item));
+    if (!event?.shiftKey || !selectionAnchorKey) {
+      setSelectionAnchorKey(targetKey);
+      toggleItem(item);
+      return;
+    }
+    const anchorIndex = pickerRows.findIndex((row) => String(getEquipmentKey(row)) === selectionAnchorKey);
+    const targetIndex = pickerRows.findIndex((row) => String(getEquipmentKey(row)) === targetKey);
+    if (anchorIndex < 0 || targetIndex < 0) {
+      setSelectionAnchorKey(targetKey);
+      toggleItem(item);
+      return;
+    }
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    const range = pickerRows.slice(start, end + 1);
+    const blockedItem = range.find((row) => {
+      const key = String(getEquipmentKey(row));
+      return !selectedKeys.has(key) && onBeforeSelectItem && !onBeforeSelectItem(row);
+    });
+    if (blockedItem) onSelectBlocked?.(blockedItem);
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      range.forEach((row) => {
+        const key = String(getEquipmentKey(row));
+        if (next.has(key) || !onBeforeSelectItem || onBeforeSelectItem(row)) next.add(key);
+      });
       return next;
     });
   };
@@ -6165,12 +6191,12 @@ function EquipmentPickerModal({ title = 'Wybierz sprzęt', availableItems, selec
         <FormField label="Status"><AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
         <FormField label="Lokalizacja"><AppSelect value={filters.location ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, location: event.target.value }))}><option value="all">Wszystkie</option>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</AppSelect></FormField>
         <FormField label="Sortuj"><AppSelect value={filters.sort ?? 'name'} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}><option value="name">Nazwa</option><option value="category">Kategoria</option><option value="status">Status</option><option value="location">Lokalizacja</option></AppSelect></FormField>
-        <ButtonGhost className="compact-table-button" onClick={clearFilters}>Wyczyść</ButtonGhost>
+        <AppButton variant="secondary" className="filter-clear-button" onClick={clearFilters}>Wyczyść</AppButton>
       </div>
       <div className="set-picker-summary"><strong>{selectedItems.length} zaznaczono</strong><span>{filteredItems.length} z {availableItems.length} dostępnych pozycji</span></div>
       <div className="shared-picker-table-shell" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' && selectedItems.length) onConfirm(selectedItems); }}>
-        <div className="picker-visible-toggle"><label><input type="checkbox" checked={visibleAllSelected} onChange={toggleVisible} />Zaznacz widoczne</label></div>
-        {pickerRows.length ? <DataTable storageKey="equipment-picker-table" columns={pickerColumns} rows={pickerRows} onOpen={toggleItem} openLabel="Zaznacz / odznacz" enableSelectionActions={false} /> : <EmptyState title="Brak pozycji spełniających aktualne filtry." />}
+        <div className="picker-visible-toggle"><AppButton variant="ghost" size="sm" className="compact-table-button" onClick={toggleVisible}>{visibleAllSelected ? 'Odznacz widoczne' : 'Zaznacz widoczne'}</AppButton><span>Kliknij pozycję lub użyj Shift+klik, aby zaznaczyć zakres.</span></div>
+        {pickerRows.length ? <DataTable storageKey="equipment-picker-table" columns={pickerColumns} rows={pickerRows} onRowClick={selectPickerRow} enableSelectionActions={false} enableShiftRangeSelection getRowClassName={(item) => selectedKeys.has(String(getEquipmentKey(item))) ? 'selected-row' : ''} /> : <EmptyState title="Brak pozycji spełniających aktualne filtry." />}
       </div>
     </ResizableModalFrame>;
 }
@@ -6603,7 +6629,7 @@ function ServiceModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
     { key: 'total_cost_display', label: 'Suma' }
   ];
 
-  return <div className="module-page service-module-page">
+  return <div className={`module-page service-module-page ${serviceHistoryCollapsed ? 'service-history-collapsed' : 'service-history-expanded'}`}>
     <section className="panel hero-panel service-hero-panel">
       <div className="module-actions">
         <AppButton variant="primary" className="module-action-button" onClick={createNewOrder}><Plus size={18} />Nowe zlecenie</AppButton>
@@ -6613,19 +6639,12 @@ function ServiceModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
       {notice && <div className="notice">{notice}</div>}
     </section>
     <section className="panel service-list-panel rentals-records-section">
-      <div className="rentals-section-heading">
-        <div>
-          <p className="eyebrow">Aktywne</p>
-          <h3>Aktywne zlecenia serwisowe</h3>
-        </div>
-        <span>{activeTableRows.length} pozycji</span>
-      </div>
       <div className="client-filter-bar service-filter-bar">
         <label>Szukaj<AppInput value={filters.search ?? ''} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Numer, klient, sprzęt, opis, diagnoza" /></label>
         <label>Status<AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{serviceStatuses.filter((s) => s !== 'Wydane').map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
         <label>Priorytet<AppSelect value={filters.priority ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, priority: event.target.value }))}><option value="all">Wszystkie</option>{servicePriorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</AppSelect></label>
         <label>Kategoria<AppSelect value={filters.category ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}><option value="all">Wszystkie</option>{serviceCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</AppSelect></label>
-        <AppButton variant="secondary" size="sm" className="compact-button" onClick={clearFilters}>Wyczyść filtry</AppButton>
+        <AppButton variant="secondary" className="filter-clear-button" onClick={clearFilters}>Wyczyść</AppButton>
       </div>
       <DataTable
         storageKey={SERVICE_TABLE_KEY}
@@ -7654,7 +7673,7 @@ function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDele
         <FormField label="Kolor">
           <div className="calendar-event-color-control">
             <ColorSwatchPicker options={CALENDAR_EVENT_COLORS} value={form.color} onChange={(value) => update('color', value)} label="Kolor wydarzenia" />
-            <AppInput type="color" value={form.color} onChange={(event) => update('color', event.target.value)} aria-label="Własny kolor wydarzenia" title="Własny kolor" />
+            <AppInput className="system-color-input" type="color" value={form.color} onChange={(event) => update('color', event.target.value)} aria-label="Własny kolor wydarzenia" title="Własny kolor" />
           </div>
         </FormField>
       </div>
@@ -7927,7 +7946,7 @@ function CalendarModule({ isActive = false, dashboardIntent, onConsumeDashboardI
               <label className="calendar-filter-popover-field"><span>Typ</span><AppSelect value={filters.type ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.types.map((type) => <option key={type} value={type}>{type}</option>)}</AppSelect></label>
               <label className="calendar-filter-popover-field"><span>Status</span><AppSelect value={filters.status ?? 'all'} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">Wszystkie</option>{calendarFilterOptions.statuses.map((status) => <option key={status} value={status}>{status}</option>)}</AppSelect></label>
               <div className="calendar-filter-popover-actions">
-                <AppButton variant="secondary" size="sm" onClick={clearCalendarFilters}>Wyczyść filtry</AppButton>
+                <AppButton variant="secondary" className="filter-clear-button" onClick={clearCalendarFilters}>Wyczyść</AppButton>
               </div>
             </div>}
           </div>
@@ -8705,9 +8724,9 @@ const PROJECT_TASK_INSPECTOR_RESIZER_SPACE = 22;
 const NOTES_DETAILS_WIDTH_KEY = 'fixer-notes-details-panel-width';
 const NOTES_DETAILS_COLLAPSED_KEY = 'fixer.notes.detailsPanelCollapsed';
 const NOTES_DETAILS_SELECTED_KEY = 'fixer.notes.selectedNoteId';
-const NOTES_DETAILS_MIN_WIDTH = 340;
+const NOTES_DETAILS_MIN_WIDTH = 300;
 const NOTES_DETAILS_DEFAULT_WIDTH = 420;
-const NOTES_DETAILS_MAX_WIDTH = 620;
+const NOTES_DETAILS_MAX_WIDTH = 960;
 const NOTES_LIST_MIN_WIDTH = 520;
 const NOTES_LAYOUT_GAP = 8;
 const NOTES_OVERLAY_MAX_WORKSPACE_WIDTH = 980;
@@ -8869,29 +8888,16 @@ function resolveProjectAccentColor(project) {
   return normalizeAccentColor(project?.accent_color);
 }
 
-const PROJECT_COLOR_PRESETS = [
-  { id: 'default', color: '', label: 'Domyślny' },
-  { id: 'blue', color: '#3B82F6', label: 'Niebieski' },
-  { id: 'green', color: '#22C55E', label: 'Zielony' },
-  { id: 'yellow', color: '#EAB308', label: 'Żółty' },
-  { id: 'orange', color: '#F97316', label: 'Pomarańczowy' },
-  { id: 'red', color: '#EF4444', label: 'Czerwony' },
-  { id: 'purple', color: '#A855F7', label: 'Fioletowy' },
-  { id: 'gray', color: '#64748B', label: 'Szary' }
-];
-
 function ProjectColorPicker({ value, onChange, disabled = false }) {
-  const selectedColor = normalizeAccentColor(value) ?? '';
-  const presetColors = new Set(PROJECT_COLOR_PRESETS.map((preset) => preset.color));
-  const options = presetColors.has(selectedColor) || !selectedColor
-    ? PROJECT_COLOR_PRESETS
-    : [...PROJECT_COLOR_PRESETS, { id: 'custom', color: selectedColor, label: 'Aktualny kolor' }];
-  return <ColorSwatchPicker
-    options={options.map((preset) => ({ ...preset, value: preset.color }))}
+  const selectedColor = normalizeAccentColor(value) ?? '#64748B';
+  return <input
+    type="color"
+    className="system-color-input"
     value={selectedColor}
-    onChange={onChange}
+    onChange={(event) => onChange?.(event.target.value.toUpperCase())}
     disabled={disabled}
-    label="Kolor projektu"
+    aria-label="Wybierz kolor projektu"
+    title="Wybierz kolor projektu"
   />;
 }
 
@@ -9234,8 +9240,22 @@ function clampProjectColumnsSplit(value, workspaceWidth, rightWidth = 0) {
   return Math.min(bounds.max, Math.max(bounds.min, resolved));
 }
 
+function getSavedProjectColumnsSplit() {
+  if (typeof window === 'undefined') return 0.54;
+  const saved = Number(localStorage.getItem(PROJECTS_COLUMNS_SPLIT_KEY));
+  return Number.isFinite(saved)
+    ? Math.min(PROJECTS_COLUMNS_SPLIT_MAX, Math.max(PROJECTS_COLUMNS_SPLIT_MIN, saved))
+    : 0.54;
+}
+
 function getSavedProjectDetailsCollapsed() {
+  if (typeof window === 'undefined') return false;
   return localStorage.getItem(PROJECT_DETAILS_COLLAPSED_KEY) === 'true';
+}
+
+function getSavedProjectsLeftCollapsed() {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(PROJECTS_LEFT_COLLAPSED_KEY) === 'true';
 }
 
 const PROJECT_TASK_COMMENTS_SYNC_EVENT = 'fixer:project-task-comments-changed';
@@ -11051,12 +11071,12 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
   const [selectedProjectTask, setSelectedProjectTask] = useState(null);
   const [highlightedProjectTask, setHighlightedProjectTask] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+  const [detailsCollapsed, setDetailsCollapsed] = useState(getSavedProjectDetailsCollapsed);
   const [detailsWidth, setDetailsWidth] = useState(getSavedProjectDetailsWidth);
   const detailsWidthRef = useRef(detailsWidth);
   detailsWidthRef.current = detailsWidth;
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [columnsSplit, setColumnsSplit] = useState(0.54);
+  const [leftCollapsed, setLeftCollapsed] = useState(getSavedProjectsLeftCollapsed);
+  const [columnsSplit, setColumnsSplit] = useState(getSavedProjectColumnsSplit);
   const [projectPanelRefreshKey, setProjectPanelRefreshKey] = useState(0);
   const [taskCommentsFocusRequest, setTaskCommentsFocusRequest] = useState(null);
   const [workPriorityNames, setWorkPriorityNames] = useState(DEFAULT_WORK_PRIORITIES);
@@ -11174,8 +11194,10 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
   }, [isActive, permissions.view, currentUser?.id, currentUser?.email]);
 
   useEffect(() => {
+    if (!isActive) return undefined;
     const syncLayoutToBounds = () => {
       const workspaceWidth = projectsWorkspaceRef.current?.getBoundingClientRect().width;
+      if (!Number.isFinite(workspaceWidth) || workspaceWidth <= 0) return;
       const currentWidth = detailsWidthRef.current;
       const nextWidth = clampProjectDetailsWidth(currentWidth, workspaceWidth, leftCollapsed, { reserveCenterPanel: !isTasksOnlyView });
       if (Math.round(nextWidth) !== Math.round(currentWidth)) {
@@ -11206,7 +11228,13 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
       window.removeEventListener('resize', syncLayoutToBounds);
       window.visualViewport?.removeEventListener('resize', syncLayoutToBounds);
     };
-  }, [detailsCollapsed, detailsOpen, leftCollapsed, isTasksOnlyView]);
+  }, [detailsCollapsed, detailsOpen, isActive, leftCollapsed, isTasksOnlyView]);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECT_DETAILS_COLLAPSED_KEY, String(detailsCollapsed));
+    localStorage.setItem(PROJECTS_LEFT_COLLAPSED_KEY, String(leftCollapsed));
+    localStorage.setItem(PROJECTS_COLUMNS_SPLIT_KEY, String(Number(columnsSplit.toFixed(4))));
+  }, [columnsSplit, detailsCollapsed, leftCollapsed]);
 
   useEffect(() => {
     workspaceRestoreStartedRef.current = false;
@@ -12206,11 +12234,6 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  const listSubtitle = (filters.type ?? 'all') === 'task'
-    ? 'Lista zadań'
-    : (filters.type ?? 'all') === 'project'
-      ? 'Lista projektów'
-      : 'Lista zadań i projektów';
   const leftColumnFlex = Math.max(0.1, 1 - columnsSplit);
   const centerColumnFlex = Math.max(0.1, columnsSplit);
   const hasProjectBoard = Boolean(selectedProject);
@@ -12220,30 +12243,22 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     : detailsWidth;
 
   return <div className={`module-page projects-module-page ${detailsCollapsed ? 'details-collapsed' : ''} ${leftCollapsed ? 'projects-left-collapsed-mode' : ''} ${isSimpleTaskDetailsLayout ? 'projects-task-details-layout' : ''}`}>
+    <section className="panel hero-panel projects-actions-panel">
+      <div className="module-actions">
+        {canCreateProjects && <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Zadanie</AppButton>}
+        {canCreateProjects && <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>}
+        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>
+        <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania i projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
+      </div>
+      {notice && <div className="notice">{notice}</div>}
+    </section>
     <div className="projects-workspace" ref={projectsWorkspaceRef}>
       {leftCollapsed
         ? <aside className="project-details-collapsed projects-left-collapsed">
           <button type="button" className="project-icon-action" onClick={() => setLeftCollapsed(false)} aria-label="Pokaż listę" title="Pokaż listę"><ChevronRight size={15} /></button>
         </aside>
         : <div className="projects-list-pane" style={{ flexGrow: hasProjectBoard ? leftColumnFlex : 1 }}>
-        <button type="button" className="project-icon-action projects-left-collapse-button" onClick={() => setLeftCollapsed(true)} aria-label="Zwiń listę" title="Zwiń listę"><ChevronLeft size={15} /></button>
-        <section className="panel hero-panel projects-actions-panel">
-          <div className="module-actions">
-            {canCreateProjects && <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Zadanie</AppButton>}
-            {canCreateProjects && <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>}
-            <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>
-            <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania i projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
-          </div>
-          {notice && <div className="notice">{notice}</div>}
-        </section>
-
         <section className="panel service-list-panel rentals-records-section projects-list-panel">
-          <div className="rentals-section-heading">
-            <div>
-              <h3>{listSubtitle}</h3>
-            </div>
-            <span>{activeTableRows.length} pozycji</span>
-          </div>
           <div className="module-filters project-filter-bar">
             <div className="work-type-switch" role="group" aria-label="Typ wpisu">
               {[['all', 'Wszystko'], ['task', 'Zadania'], ['project', 'Projekty']].map(([value, label]) => (
@@ -12259,6 +12274,7 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
               <option value="">Wszystkie priorytety</option>
               {workPriorityNames.map((p) => <option key={p}>{p}</option>)}
             </AppSelect>
+            <button type="button" className="project-icon-action projects-left-collapse-button" onClick={() => setLeftCollapsed(true)} aria-label="Zwiń listę" title="Zwiń listę"><ChevronLeft size={15} /></button>
           </div>
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
             enableSelectionActions={false}
@@ -12327,17 +12343,40 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
 }
 
 function NoteColorPicker({ value, onChange, disabled = false }) {
-  const options = NOTE_COLORS.map((color) => ({
-    ...color,
-    value: color.id,
-    color: color.id === 'default' ? '' : `var(--notes-color-${color.id})`
-  }));
-  return <ColorSwatchPicker options={options} value={value} onChange={onChange} disabled={disabled} label="Kolor notatki" />;
+  const legacyColors = {
+    default: '#64748B',
+    blue: '#3B82F6',
+    green: '#22C55E',
+    yellow: '#EAB308',
+    orange: '#F97316',
+    red: '#EF4444',
+    purple: '#A855F7',
+    gray: '#64748B'
+  };
+  const normalizedValue = /^#[0-9a-f]{6}$/i.test(String(value ?? ''))
+    ? String(value).toUpperCase()
+    : legacyColors[value] ?? legacyColors.default;
+  return <input
+    type="color"
+    className="system-color-input"
+    value={normalizedValue}
+    onChange={(event) => onChange?.(event.target.value.toUpperCase())}
+    disabled={disabled}
+    aria-label="Wybierz kolor notatki"
+    title="Wybierz kolor notatki"
+  />;
 }
 
 function noteColorClass(noteColor, prefix) {
+  if (/^#[0-9a-f]{6}$/i.test(String(noteColor ?? ''))) return `${prefix}-custom`;
   const color = NOTE_COLORS.some((item) => item.id === noteColor) ? noteColor : 'default';
   return `${prefix}-${color}`;
+}
+
+function noteColorStyle(noteColor) {
+  return /^#[0-9a-f]{6}$/i.test(String(noteColor ?? ''))
+    ? { '--note-accent': String(noteColor).toUpperCase() }
+    : undefined;
 }
 
 function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleCollapse, onSave, onDelete, onRegisterSave, onColorPreview, busy = false }) {
@@ -12420,17 +12459,6 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
     if (colorSaveTimerRef.current) window.clearTimeout(colorSaveTimerRef.current);
   }, [noteKey]);
 
-  const toggleArchive = () => {
-    setForm((current) => {
-      const nextStatus = current.status === 'Archiwum' ? 'Aktywna' : 'Archiwum';
-      return {
-        ...current,
-        status: nextStatus,
-        pinned: nextStatus === 'Archiwum' ? false : current.pinned
-      };
-    });
-  };
-
   const changeNoteColor = (noteColor) => {
     skipAutosaveRef.current = true;
     update('note_color', noteColor);
@@ -12455,14 +12483,17 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
       <div>
         <span className="project-details-type">Notatka</span>
         <strong>{note ? (String(form.title ?? '').trim() || 'Notatka bez tytułu') : 'Wybierz notatkę'}</strong>
-        {note && <span>{note.status || '—'} · Edycja: {note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</span>}
+        {note && <span>Edycja: {note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</span>}
       </div>
     </div>
     {!note && <div className="notes-details-empty"><EmptyState title="Wybierz notatkę z listy lub kart." /></div>}
     {note && <div className="project-details-body notes-details-body">
       <div className="project-details-toolbar">
         <button type="button" className={`project-icon-action ${form.pinned ? 'is-active' : ''}`} onClick={() => update('pinned', !form.pinned)} aria-label={form.pinned ? 'Odepnij notatkę' : 'Przypnij notatkę'} title={form.pinned ? 'Odepnij' : 'Przypnij'}><Pin size={15} /></button>
-        <button type="button" className="project-icon-action" onClick={toggleArchive} aria-label={form.status === 'Archiwum' ? 'Przywróć do aktywnych' : 'Przenieś do archiwum'} title={form.status === 'Archiwum' ? 'Przywróć' : 'Archiwizuj'}><ArchiveIcon status={form.status} /></button>
+        <div className="notes-details-color-control">
+          <span>Kolor</span>
+          <NoteColorPicker value={form.note_color} onChange={changeNoteColor} disabled={busy} />
+        </div>
       </div>
       <div className="notes-details-fields">
         <FormField label="Tytuł *"><AppInput value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Tytuł notatki" /></FormField>
@@ -12476,7 +12507,6 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
             placeholder="Treść notatki..."
           />
         </div>
-        <FormField label="Kolor" className="notes-color-field"><NoteColorPicker value={form.note_color} onChange={changeNoteColor} disabled={busy} /></FormField>
       </div>
       <div className="notes-details-footer">
         <div className="notes-details-actions">
@@ -12488,14 +12518,10 @@ function NoteDetailsPanel({ note, collapsed, width, onResizeStart, onToggleColla
   </aside>;
 }
 
-function ArchiveIcon({ status }) {
-  return status === 'Archiwum' ? <RotateCcw size={15} /> : <History size={15} />;
-}
-
 function NotesBoardCard({ note, selected, onSelect }) {
   const title = String(note.title ?? '').trim() || 'Notatka bez tytułu';
   const preview = noteContentPreviewText(note.content).slice(0, 120);
-  return <button type="button" className={`notes-board-card ${noteColorClass(note.note_color, 'notes-card-color')} ${selected ? 'is-selected' : ''}`.trim()} onClick={() => onSelect(note)}>
+  return <button type="button" className={`notes-board-card ${noteColorClass(note.note_color, 'notes-card-color')} ${selected ? 'is-selected' : ''}`.trim()} style={noteColorStyle(note.note_color)} onClick={() => onSelect(note)}>
     <strong>{title}</strong>
     {preview && <span>{preview}</span>}
     <em>{note.updated_at ? formatDashboardDate(note.updated_at) : '—'}</em>
@@ -12560,8 +12586,10 @@ function NotatkiModule({ isActive = false }) {
   }, [selectedNoteId]);
 
   useEffect(() => {
+    if (!isActive) return undefined;
     const syncDetailsWidth = () => {
       const workspaceWidth = notesWorkspaceRef.current?.getBoundingClientRect().width;
+      if (!Number.isFinite(workspaceWidth) || workspaceWidth <= 0) return;
       const currentWidth = detailsWidthRef.current;
       const nextWidth = clampNotesDetailsWidth(currentWidth, workspaceWidth);
       if (nextWidth !== Math.round(currentWidth)) {
@@ -12584,7 +12612,7 @@ function NotatkiModule({ isActive = false }) {
       window.removeEventListener('resize', syncDetailsWidth);
       window.visualViewport?.removeEventListener('resize', syncDetailsWidth);
     };
-  }, []);
+  }, [isActive]);
 
   const filteredRows = useMemo(() => {
     const q = String(filters.search ?? '').trim();
@@ -12759,7 +12787,6 @@ function NotatkiModule({ isActive = false }) {
         ? <span className="notes-title-pinned"><Pin size={14} aria-hidden="true" /><span>{row.title_display}</span></span>
         : row.title_display
     },
-    { key: 'status', label: 'Status' },
     { key: 'updated_display', label: 'Edycja' },
     { key: 'created_display', label: 'Utworzono' }
   ];
@@ -12780,13 +12807,6 @@ function NotatkiModule({ isActive = false }) {
         </section>
 
         <section className="panel service-list-panel rentals-records-section projects-list-panel notes-list-panel">
-          <div className="rentals-section-heading">
-            <div>
-              <p className="eyebrow">Notatki</p>
-              <h3>{(filters.view ?? 'list') === 'board' ? 'Karty notatek' : 'Lista notatek'}</h3>
-            </div>
-            <span>{sortedRows.length} pozycji</span>
-          </div>
           <div className="module-filters project-filter-bar">
             <AppInput ref={searchInputRef} placeholder="Szukaj..." value={filters.search ?? ''} onChange={(e) => setFilters((current) => ({ ...current, search: e.target.value }))} />
           </div>
@@ -12801,6 +12821,7 @@ function NotatkiModule({ isActive = false }) {
                 if (row.note_key === String(selectedNoteId)) classes.push('active-row');
                 return classes.join(' ');
               }}
+              getRowStyle={(row) => noteColorStyle(row.note_color)}
               onRowClick={(row) => selectNote(row._note ?? row)}
               onOpen={(row) => selectNote(row._note ?? row)}
               onDelete={(row) => handleDelete(row._note ?? row)}
@@ -16209,7 +16230,7 @@ function normalizeTableColumnWidths(widths, availableKeys = []) {
   }, {});
 }
 
-function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, onReorderRows = null, isRowReorderable = null, rowReorderDisabled = false, enableSorting = true, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = Boolean(onBulkDelete), getRowClassName = null, getRowStyle = null, nested = false, showLpColumn = true }) {
+function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowClick = null, onEdit, onDuplicate, onHistory, onDelete, onBulkDelete, onReorderRows = null, isRowReorderable = null, rowReorderDisabled = false, enableSorting = true, customRowActions = [], isRowLocked = null, isRowExpandable = null, renderExpandedRow = null, canDelete = () => true, openLabel = 'Otwórz', editLabel = 'Edytuj', deleteLabel = 'Usuń', enableSelectionActions = Boolean(onBulkDelete), enableShiftRangeSelection = enableSelectionActions, getRowClassName = null, getRowStyle = null, nested = false, showLpColumn = true }) {
   const columnsSignature = columns.map((column) => column.key).join('|');
   const defaultPreference = useMemo(() => ({
     visibleColumns: columns.map((column) => column.key),
@@ -16237,6 +16258,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const [columnWidths, setColumnWidths] = useState(initialPreference.columnWidths);
   const [columnAlignments, setColumnAlignments] = useState(initialPreference.columnAlignments ?? {});
   const [selectedRowKeys, setSelectedRowKeys] = useState(() => new Set());
+  const [selectionAnchorKey, setSelectionAnchorKey] = useState(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState(() => new Set());
   const [lpVisible, setLpVisible] = useState(initialPreference.lpVisible !== false);
@@ -16397,7 +16419,6 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
 
   const getRowKey = (row, index) => String(row.id ?? row.localId ?? row.number ?? row.name ?? index);
   const selectedRows = sortedRows.filter((row, index) => selectedRowKeys.has(getRowKey(row, index)));
-  const allVisibleSelected = sortedRows.length > 0 && sortedRows.every((row, index) => selectedRowKeys.has(getRowKey(row, index)));
   const hasSelectionActions = enableSelectionActions;
   const hasExpandableRows = Boolean(isRowExpandable && renderExpandedRow);
   const hasRowReordering = typeof onReorderRows === 'function';
@@ -16407,12 +16428,13 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   const canReorderRows = hasRowReordering && !rowReorderDisabled && (!enableSorting || !sortKey) && reorderableRowsCount > 1;
 
   useEffect(() => {
+    const available = new Set(sortedRows.map((row, index) => getRowKey(row, index)));
     setSelectedRowKeys((current) => {
       if (!current.size) return current;
-      const available = new Set(sortedRows.map((row, index) => getRowKey(row, index)));
       const next = new Set([...current].filter((key) => available.has(key)));
       return next.size === current.size ? current : next;
     });
+    setSelectionAnchorKey((current) => current && available.has(current) ? current : null);
   }, [sortedRows]);
 
   useEffect(() => {
@@ -16432,7 +16454,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
   }, [columns, columnOrder]);
 
   const activeColumns = orderedColumns.filter((column) => visibleColumns.includes(column.key));
-  const hasActions = Boolean(onOpen || onEdit || onDuplicate || onHistory || onDelete || customRowActions.length);
+  const hasActions = Boolean(onOpen || onRowClick || onEdit || onDuplicate || onHistory || onDelete || customRowActions.length);
   const selectedContextColumn = contextMenu?.columnKey ? columns.find((column) => column.key === contextMenu.columnKey) : null;
 
   const applySort = (key, direction = 'asc') => {
@@ -16462,6 +16484,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
 
   const toggleRowSelection = (row, index) => {
     const key = getRowKey(row, index);
+    setSelectionAnchorKey(key);
     setSelectedRowKeys((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
@@ -16470,19 +16493,29 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
     });
   };
 
-  const toggleAllVisibleRows = () => {
-    setSelectedRowKeys((current) => {
-      const next = new Set(current);
-      if (allVisibleSelected) {
-        sortedRows.forEach((row, index) => next.delete(getRowKey(row, index)));
-      } else {
-        sortedRows.forEach((row, index) => next.add(getRowKey(row, index)));
-      }
-      return next;
-    });
+  const selectRowRange = (row, index) => {
+    window.getSelection?.()?.removeAllRanges();
+    const targetKey = getRowKey(row, index);
+    if (!selectionAnchorKey) {
+      setSelectionAnchorKey(targetKey);
+      setSelectedRowKeys(new Set([targetKey]));
+      return;
+    }
+    const anchorIndex = sortedRows.findIndex((item, itemIndex) => getRowKey(item, itemIndex) === selectionAnchorKey);
+    if (anchorIndex < 0) {
+      setSelectionAnchorKey(targetKey);
+      setSelectedRowKeys(new Set([targetKey]));
+      return;
+    }
+    const start = Math.min(anchorIndex, index);
+    const end = Math.max(anchorIndex, index);
+    setSelectedRowKeys(new Set(sortedRows.slice(start, end + 1).map((item, offset) => getRowKey(item, start + offset))));
   };
 
-  const clearSelection = () => setSelectedRowKeys(new Set());
+  const clearSelection = () => {
+    setSelectedRowKeys(new Set());
+    setSelectionAnchorKey(null);
+  };
 
   const moveRow = (sourceKey, targetKey) => {
     if (!canReorderRows || !sourceKey || !targetKey || sourceKey === targetKey) return;
@@ -16705,8 +16738,8 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
       </div>}
       <div className="table-scroll">
         <AppTable>
-          <colgroup>{hasRowReordering && <col className="row-drag-col" />}{hasSelectionActions && <col className="selection-col" />}{lpVisible && <col className="lp-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
-          <thead><tr>{hasRowReordering && <th className="row-drag-cell row-drag-header" aria-label="Zmiana kolejności" />}{hasSelectionActions && <th className="selection-cell selection-header" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisibleRows} aria-label="Zaznacz wszystkie widoczne pozycje" /></th>}{lpVisible && <th className="lp-cell lp-header" aria-label="Liczba porządkowa">Lp.</th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
+          <colgroup>{hasRowReordering && <col className="row-drag-col" />}{lpVisible && <col className="lp-col" />}{hasExpandableRows && <col className="expand-col" />}{activeColumns.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ? `${columnWidths[column.key]}px` : undefined }} />)}</colgroup>
+          <thead><tr>{hasRowReordering && <th className="row-drag-cell row-drag-header" aria-label="Zmiana kolejności" />}{lpVisible && <th className="lp-cell lp-header" aria-label="Liczba porządkowa">Lp.</th>}{hasExpandableRows && <th className="expand-cell expand-header" aria-label="Rozwiń wiersz" />}{activeColumns.map((column) => {
             const alignment = getColumnAlignment(column, columnAlignments);
             return <th key={column.key} draggable aria-sort={enableSorting && sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} onContextMenu={(event) => openColumnMenu(event, column.key)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveColumn(draggedColumn, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)} onClick={() => handleSort(column.key)} className={`${draggedColumn === column.key ? 'dragging-column' : ''} ${enableSorting && sortKey === column.key ? 'sorted' : ''} ${enableSorting ? '' : 'sorting-disabled'} table-align-${alignment}`.trim()}><span>{column.label}</span>{enableSorting && sortKey === column.key && <em>{sortDir === 'asc' ? '↑' : '↓'}</em>}<button type="button" className="column-resizer" aria-label={`Zmień szerokość kolumny ${column.label}`} onMouseDown={(event) => startResize(event, column.key)} /></th>;
           })}</tr></thead>
@@ -16727,15 +16760,16 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
             const rowToneClass = row._rowTone ? `row-tone-${row._rowTone}` : '';
             const customRowClass = typeof getRowClassName === 'function' ? getRowClassName(row) : '';
             const customRowStyle = typeof getRowStyle === 'function' ? getRowStyle(row) : undefined;
-            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${draggedRowKey === rowKey ? 'dragging-row' : ''} ${rowDropTargetKey === rowKey ? 'row-drop-target' : ''} ${rowToneClass} ${customRowClass}`.trim();
+            const selectionAnchor = hasSelectionActions && selectionAnchorKey === rowKey && !selected;
+            const rowClass = `${hasActions ? 'editable-row' : ''} ${selected ? 'selected-row' : ''} ${selectionAnchor ? 'selection-anchor-row' : ''} ${expandable ? 'expandable-row' : ''} ${expanded ? 'expanded-row' : ''} ${draggedRowKey === rowKey ? 'dragging-row' : ''} ${rowDropTargetKey === rowKey ? 'row-drop-target' : ''} ${rowToneClass} ${customRowClass}`.trim();
             const rowTitle = expandable
-              ? 'Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.'
+              ? `${hasSelectionActions ? 'Shift+klik zaznacza zakres. ' : ''}Kliknij, żeby rozwinąć zawartość zestawu. Dwuklik otwiera kartotekę.`
               : hasActions
-                ? onRowClick ? 'Pojedynczy klik pokazuje szczegóły. Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : 'Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.'
+                ? onRowClick ? 'Pojedynczy klik pokazuje szczegóły. Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.' : `${hasSelectionActions ? 'Kliknij pierwszy wiersz, następnie użyj Shift+klik, aby zaznaczyć zakres. ' : ''}Dwuklik lub Enter otwiera kartotekę. Prawy klik pokazuje operacje.`
                 : 'Prawy klik pokazuje operacje tabeli.';
             return <Fragment key={rowKey}>
-              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} style={customRowStyle} onDragOver={(event) => { if (!rowCanReorder || !draggedRowKey) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setRowDropTargetKey(rowKey); }} onDrop={(event) => { if (!rowCanReorder) return; event.preventDefault(); moveRow(draggedRowKey, rowKey); setDraggedRowKey(null); setRowDropTargetKey(null); }} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a, .row-drag-handle')) return; onRowClick?.(row); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) (onOpen ?? onEdit)?.(row); }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasRowReordering && <td className="row-drag-cell"><span role="button" tabIndex={rowCanReorder ? 0 : -1} className={`row-drag-handle ${rowCanReorder ? '' : 'is-disabled'}`.trim()} draggable={rowCanReorder} onClick={(event) => event.stopPropagation()} onDragStart={(event) => { if (!rowCanReorder) return; event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', rowKey); setDraggedRowKey(rowKey); setRowDropTargetKey(null); }} onDragEnd={() => { setDraggedRowKey(null); setRowDropTargetKey(null); }} aria-disabled={!rowCanReorder} aria-label={`Przeciągnij, aby zmienić kolejność: ${row.title_display ?? row.name ?? rowKey}`} title={rowReorderTitle}><GripVertical size={15} /></span></td>}{hasSelectionActions && <td className="selection-cell"><input type="checkbox" checked={selected} onChange={() => toggleRowSelection(row, index)} onClick={(event) => event.stopPropagation()} aria-label="Zaznacz pozycję" /></td>}{lpVisible && <td className="lp-cell table-align-center">{index + 1}</td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-expanded={expanded} aria-label={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'} title={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
-              {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasRowReordering ? 1 : 0) + (hasSelectionActions ? 1 : 0) + (lpVisible ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
+              <tr tabIndex={hasActions ? 0 : undefined} className={rowClass} style={customRowStyle} onMouseDown={(event) => { if (enableShiftRangeSelection && event.shiftKey) event.preventDefault(); }} onDragOver={(event) => { if (!rowCanReorder || !draggedRowKey) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setRowDropTargetKey(rowKey); }} onDrop={(event) => { if (!rowCanReorder) return; event.preventDefault(); moveRow(draggedRowKey, rowKey); setDraggedRowKey(null); setRowDropTargetKey(null); }} onClick={(event) => { if (event.target.closest('button, input, select, textarea, a, .row-drag-handle')) return; if (hasSelectionActions && event.shiftKey) { event.preventDefault(); selectRowRange(row, index); return; } if (hasSelectionActions && (event.metaKey || event.ctrlKey)) { event.preventDefault(); toggleRowSelection(row, index); return; } if (hasSelectionActions) { setSelectionAnchorKey(rowKey); if (selectedRowKeys.size) setSelectedRowKeys(new Set()); } onRowClick?.(row, event); if (expandable) toggleExpandedRow(row, index); }} onKeyDown={(event) => { if (event.key === 'Enter' && hasActions) { if (onOpen || onEdit) (onOpen ?? onEdit)?.(row); else onRowClick?.(row, event); } }} onDoubleClick={() => (typeof isRowLocked === 'function' && isRowLocked(row)) ? alert('Ta pozycja jest składnikiem zestawu. Operacje są zablokowane do czasu usunięcia jej z zestawu.') : (onOpen ?? onEdit)?.(row)} onContextMenu={(event) => openRowMenu(event, row)} title={rowTitle}>{hasRowReordering && <td className="row-drag-cell"><span role="button" tabIndex={rowCanReorder ? 0 : -1} className={`row-drag-handle ${rowCanReorder ? '' : 'is-disabled'}`.trim()} draggable={rowCanReorder} onClick={(event) => event.stopPropagation()} onDragStart={(event) => { if (!rowCanReorder) return; event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', rowKey); setDraggedRowKey(rowKey); setRowDropTargetKey(null); }} onDragEnd={() => { setDraggedRowKey(null); setRowDropTargetKey(null); }} aria-disabled={!rowCanReorder} aria-label={`Przeciągnij, aby zmienić kolejność: ${row.title_display ?? row.name ?? rowKey}`} title={rowReorderTitle}><GripVertical size={15} /></span></td>}{lpVisible && <td className="lp-cell table-align-center">{index + 1}</td>}{hasExpandableRows && <td className="expand-cell">{expandable && <button type="button" className="row-expand-button" onClick={(event) => { event.stopPropagation(); toggleExpandedRow(row, index); }} aria-expanded={expanded} aria-label={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'} title={expanded ? 'Zwiń szczegóły' : 'Rozwiń szczegóły'}>{expanded ? '▾' : '▸'}</button>}</td>}{activeColumns.map((column) => <td key={column.key} className={`table-align-${getColumnAlignment(column, columnAlignments)}`}>{column.renderCell ? column.renderCell(row) : column.key === 'status' || column.key === 'client_kind' ? <StatusPill value={row[column.key]} /> : row[column.key]}</td>)}</tr>
+              {expanded && <tr className="expanded-content-row"><td colSpan={activeColumns.length + (hasRowReordering ? 1 : 0) + (lpVisible ? 1 : 0) + (hasExpandableRows ? 1 : 0)}>{renderExpandedRow(row)}</td></tr>}
             </Fragment>;
           })}</tbody>
         </AppTable>
@@ -18563,7 +18597,7 @@ function DocumentDesignerPanel({ companyProfile, previewContext, onNotice = () =
             <label className="firm-field">Wysokość<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={Math.round(selectedElement.height)} min={selectedElement.kind === 'line' ? 1 : DOCUMENT_DESIGNER_MIN_SIZE.height} max={DOCUMENT_DESIGNER_PAGE.height} fallback={selectedElement.kind === 'line' ? resolveDesignerElementHeight(selectedElement, getDesignerLibraryItem(selectedElement.libraryId)) : DOCUMENT_DESIGNER_MIN_SIZE.height} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ height: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Rozmiar<DocumentDesignerDeferredNumberInput elementId={selectedElement.id} value={selectedElement.fontSize} min={8} max={72} fallback={10} onFocus={beginPropertyEditSession} onCommit={(nextValue) => updateSelectedElementGeometry({ fontSize: nextValue })} onBlurCommit={commitPropertyEditSession} /></label>
             <label className="firm-field">Pogrubienie<AppSelect value={String(selectedElement.fontWeight)} onChange={(event) => updateSelectedElement({ fontWeight: Number(event.target.value) })}><option value="400">Normal</option><option value="500">Średni</option><option value="700">Mocny</option></AppSelect></label>
-            <label className="firm-field">Kolor<AppInput type="color" value={selectedElement.color} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ color: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
+            <label className="firm-field">Kolor<AppInput className="system-color-input" type="color" value={selectedElement.color} onFocus={beginPropertyEditSession} onChange={(event) => updateSelectedElement({ color: event.target.value }, { history: 'deferred' })} onBlur={commitPropertyEditSession} /></label>
             <label className="firm-field">Wyrównanie<AppSelect value={selectedElement.align} onChange={(event) => updateSelectedElement({ align: event.target.value })}><option value="left">Do lewej</option><option value="center">Wyśrodkuj</option><option value="right">Do prawej</option></AppSelect></label>
           </div>
           <label className="settings-check"><input type="checkbox" checked={selectedElement.visible !== false} onChange={(event) => updateSelectedElement({ visible: event.target.checked })} />Widoczny</label>
@@ -21058,7 +21092,7 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
                   </label>
                   <label className="calendar-source-color-field">
                     Kolor źródła
-                    <AppInput type="color" value={color} onChange={(event) => updateCalendarSourceSetting(source.id, 'color', event.target.value)} />
+                    <AppInput className="system-color-input" type="color" value={color} onChange={(event) => updateCalendarSourceSetting(source.id, 'color', event.target.value)} />
                   </label>
                 </div>;
               })}

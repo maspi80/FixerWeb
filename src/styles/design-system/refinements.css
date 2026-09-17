@@ -160,7 +160,6 @@
 .rental-item-name-cell small { font-weight: 400; }
 .rental-item-code-cell { font-weight: 500; }
 .rental-equipment-preview-table td { font-weight: 400; }
-.rentals-section-heading > span { font-weight: 600; }
 .rental-return-summary span { font-weight: 600; }
 .rental-return-summary em { font-weight: 700; }
 .rental-return-name strong { font-weight: 600; }
@@ -294,4 +293,3 @@
 .app-shell.theme-light .row-context-menu .danger-action {
   color: #dc2626;
 }
-

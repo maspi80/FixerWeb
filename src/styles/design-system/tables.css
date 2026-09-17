@@ -1,8 +1,18 @@
 /* Production table/action standard */
-.app-shell.table-vertical-lines-enabled table > thead > tr > th:not(:last-child),
 .app-shell.table-vertical-lines-enabled table > tbody > tr > td:not(:last-child),
 .app-shell.table-vertical-lines-enabled table > tfoot > tr > td:not(:last-child){
-  border-inline-end:1px solid color-mix(in srgb,var(--fw-color-border) 76%,transparent);
+  position:relative;
+}
+.app-shell.table-vertical-lines-enabled table > thead > tr > th:not(:last-child)::before,
+.app-shell.table-vertical-lines-enabled table > tbody > tr > td:not(:last-child)::before,
+.app-shell.table-vertical-lines-enabled table > tfoot > tr > td:not(:last-child)::before{
+  content:"";
+  position:absolute;
+  inset-block:0;
+  inset-inline-end:0;
+  width:1px;
+  background:color-mix(in srgb,var(--fw-color-border) 76%,transparent);
+  pointer-events:none;
 }
 
 .module-actions{

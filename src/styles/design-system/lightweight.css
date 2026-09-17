@@ -138,11 +138,11 @@
 .calendar-toolbar-panel,
 .projects-actions-panel,
 .service-hero-panel {
-  padding: 4px 0;
-  border-color: transparent;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--fw-color-border) 82%, transparent);
+  border-radius: var(--fw-radius-panel);
+  background: var(--fw-color-surface);
+  box-shadow: var(--fw-shadow-panel);
 }
 
 .panel .form-section,
@@ -231,6 +231,31 @@
 .row-actions button {
   border-color: color-mix(in srgb, var(--fw-color-border-strong) 78%, transparent);
   background: transparent;
+}
+
+/* Context menus live inside module forms, but must not inherit form label/input layout. */
+.app-shell .column-submenu label {
+  display: flex;
+  grid-column: auto;
+  grid-template-columns: none;
+  align-items: center;
+  width: 100%;
+  gap: 7px;
+}
+
+.app-shell .column-submenu label input[type="checkbox"] {
+  appearance: auto;
+  width: 14px;
+  min-width: 14px;
+  max-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  max-height: 14px;
+  margin: 0;
+  padding: 0;
+  border-radius: 3px;
+  flex: 0 0 14px;
+  accent-color: var(--fw-color-primary);
 }
 
 .module-actions .app-button,
@@ -659,6 +684,6 @@ input.system-color-input:disabled {
   .calendar-toolbar-panel,
   .projects-actions-panel,
   .service-hero-panel {
-    padding-inline: 0;
+    padding-inline: 10px;
   }
 }

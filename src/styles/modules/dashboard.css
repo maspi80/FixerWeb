@@ -20,9 +20,19 @@
 .dashboard-metrics-header{
   display:flex;
   align-items:center;
-  justify-content:space-between;
+  justify-content:flex-end;
   gap:12px;
-  min-height:26px;
+  min-height:32px;
+}
+.dashboard-edit-actions .app-button{
+  min-height:32px;
+  height:32px;
+}
+.dashboard-edit-hint{
+  margin-right:auto;
+  color:var(--fw-color-text-muted);
+  font-size:12px;
+  line-height:1.3;
 }
 .dashboard-metrics-label{
   color:#64748b;
@@ -53,10 +63,10 @@
 .dashboard-metric-card{
   position:relative;
   min-width:0;
-  border:1px solid rgba(34,197,94,.20);
+  border:1px solid var(--fw-color-border);
   border-radius:10px;
-  background:linear-gradient(90deg,rgba(34,197,94,.055),rgba(15,23,42,.7) 38%);
-  color:#dbe7f8;
+  background:var(--fw-color-surface);
+  color:var(--fw-color-text);
   text-align:left;
   display:flex;
   flex-direction:column;
@@ -66,8 +76,8 @@
   transition:border-color .14s,background .14s;
 }
 .dashboard-metric-card:hover:not(.in-edit){
-  border-color:rgba(96,165,250,.38);
-  background:rgba(30,41,59,.82);
+  border-color:var(--fw-color-border-hover);
+  background:var(--fw-color-hover);
 }
 .dashboard-metric-card span{
   color:#7a8fa8;
@@ -97,18 +107,40 @@
 .dashboard-metric-card.card-active.dashboard-metric-card--rental-danger,
 .dashboard-metric-card.card-active.dashboard-metric-card--service-danger,
 .dashboard-metric-card.card-active.dashboard-metric-card--task-danger{
-  border-color:rgba(248,113,113,.50);
-  background:linear-gradient(90deg,rgba(248,113,113,.14),rgba(15,23,42,.72) 42%);
+  border-color:var(--fw-color-border);
+  background:var(--fw-color-surface);
+  box-shadow:inset 3px 0 0 #f87171;
+}
+.dashboard-metric-card.card-active.dashboard-metric-card--rental-danger strong,
+.dashboard-metric-card.card-active.dashboard-metric-card--service-danger strong,
+.dashboard-metric-card.card-active.dashboard-metric-card--task-danger strong{
+  color:#fca5a5;
 }
 .dashboard-metric-card.card-active.dashboard-metric-card--rental-today,
 .dashboard-metric-card.card-active.dashboard-metric-card--service-today,
 .dashboard-metric-card.card-active.dashboard-metric-card--task-today{
-  border-color:rgba(245,158,11,.48);
-  background:linear-gradient(90deg,rgba(245,158,11,.14),rgba(15,23,42,.72) 42%);
+  border-color:var(--fw-color-border);
+  background:var(--fw-color-surface);
+  box-shadow:inset 3px 0 0 #f59e0b;
+}
+.dashboard-metric-card.card-active.dashboard-metric-card--rental-today strong,
+.dashboard-metric-card.card-active.dashboard-metric-card--service-today strong,
+.dashboard-metric-card.card-active.dashboard-metric-card--task-today strong{
+  color:#fbbf24;
 }
 .dashboard-metric-card--info{
-  border-color:rgba(96,165,250,.24);
-  background:linear-gradient(90deg,rgba(96,165,250,.08),rgba(15,23,42,.7) 40%);
+  border-color:var(--fw-color-border);
+  background:var(--fw-color-surface);
+}
+.dashboard-metric-card.card-zero{
+  background:var(--fw-color-section-soft);
+  opacity:.72;
+}
+.dashboard-metric-card.card-zero strong{
+  color:var(--fw-color-text-muted);
+}
+.dashboard-metric-card.card-zero:hover{
+  opacity:1;
 }
 
 /* Edit mode states */
@@ -156,10 +188,28 @@
 .dashboard-panels-grid{
   position:relative;
   display:grid;
-  grid-template-columns:minmax(0,var(--dashboard-left-column,50%)) minmax(0,1fr);
-  grid-template-rows:minmax(150px,var(--dashboard-top-row,50%)) minmax(150px,1fr);
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:minmax(190px,.86fr) minmax(220px,1.14fr);
   gap:8px;
   min-height:0;
+  height:100%;
+}
+.dashboard-panels-grid > .dashboard-table-panel:first-child{
+  grid-column:1/-1;
+}
+.dashboard-panels-grid.dashboard-panels-count-3{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.dashboard-panels-grid.dashboard-panels-count-2{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-rows:minmax(260px,1fr);
+}
+.dashboard-panels-grid.dashboard-panels-count-2 > .dashboard-table-panel:first-child{
+  grid-column:auto;
+}
+.dashboard-panels-grid.dashboard-panels-count-1{
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:minmax(260px,1fr);
 }
 .dashboard-table-panel{
   position:relative;
@@ -211,7 +261,7 @@
   color:#94a3b8;
 }
 
-/* Panel top-border accent colors */
+/* Panel accents */
 .dashboard-panel--service{ border-top:2px solid rgba(56,189,248,.38); }
 .dashboard-panel--rental{ border-top:2px solid rgba(34,197,94,.36); }
 .dashboard-panel--tasks{ border-top:2px solid rgba(167,139,250,.38); }
@@ -220,6 +270,19 @@
 /* Hidden panel in edit mode */
 .panel-hidden{
   opacity:.42;
+  border-style:dashed;
+}
+.dashboard-table-panel.in-edit{
+  cursor:pointer;
+  transition:opacity .14s,border-color .14s,background .14s;
+}
+.dashboard-table-panel.in-edit:hover{
+  border-color:rgba(96,165,250,.42);
+  background:color-mix(in srgb,var(--fw-color-surface) 92%,var(--fw-color-primary));
+}
+.dashboard-table-panel.in-edit:focus-visible{
+  outline:2px solid var(--fw-color-primary);
+  outline-offset:2px;
 }
 
 /* Panel edit controls */
@@ -227,6 +290,11 @@
   display:flex;
   align-items:center;
   gap:4px;
+}
+.dashboard-panel-visibility{
+  color:var(--fw-color-text-muted);
+  font-size:11px;
+  font-weight:800;
 }
 .dashboard-panel-ctrl-btn{
   border:1px solid rgba(148,163,184,.2);
@@ -250,56 +318,6 @@
   opacity:.22;
   cursor:default;
 }
-.dashboard-resize-handle{
-  position:absolute;
-  z-index:8;
-  display:block;
-  border:0;
-  padding:0;
-  opacity:.72;
-}
-.dashboard-resize-handle::after{
-  content:"";
-  position:absolute;
-  border-radius:999px;
-  background:rgba(96,165,250,.34);
-  transition:background .12s,opacity .12s;
-}
-.dashboard-resize-handle:hover::after{
-  background:rgba(96,165,250,.62);
-}
-.dashboard-resize-handle-x{
-  top:0;
-  bottom:0;
-  left:calc(var(--dashboard-left-column,50%) - 4px);
-  width:8px;
-  cursor:col-resize;
-}
-.dashboard-resize-handle-x::after{
-  top:10px;
-  bottom:10px;
-  left:3px;
-  width:2px;
-}
-.dashboard-resize-handle-y{
-  left:0;
-  right:0;
-  top:calc(var(--dashboard-top-row,50%) - 4px);
-  height:8px;
-  cursor:row-resize;
-}
-.dashboard-resize-handle-y::after{
-  left:10px;
-  right:10px;
-  top:3px;
-  height:2px;
-}
-.resizing-dashboard-layout,
-.resizing-dashboard-layout *{
-  cursor:grabbing!important;
-  user-select:none!important;
-}
-
 /* Attention panel list */
 .dashboard-attention-list{
   flex:1 1 auto;
@@ -451,8 +469,8 @@
 }
 .app-shell.theme-light .dashboard-metric-card{
   background:#ffffff;
-  border-color:#bbf7d0;
-  box-shadow:0 2px 8px rgba(15,23,42,.06);
+  border-color:var(--fw-color-border);
+  box-shadow:none;
 }
 .app-shell.theme-light .dashboard-metric-card:hover:not(.in-edit){
   background:#f8fbff;
@@ -470,18 +488,23 @@
 .app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--rental-danger,
 .app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--service-danger,
 .app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--task-danger{
-  border-color:#f87171;
-  background:#fff1f2;
+  border-color:var(--fw-color-border);
+  background:#ffffff;
+  box-shadow:inset 3px 0 0 #ef4444;
 }
 .app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--rental-today,
 .app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--service-today,
 .app-shell.theme-light .dashboard-metric-card.card-active.dashboard-metric-card--task-today{
-  border-color:#f59e0b;
-  background:#fff7ed;
+  border-color:var(--fw-color-border);
+  background:#ffffff;
+  box-shadow:inset 3px 0 0 #f59e0b;
 }
 .app-shell.theme-light .dashboard-metric-card--info{
-  border-color:#bfdbfe;
-  background:#eff6ff;
+  border-color:var(--fw-color-border);
+  background:#ffffff;
+}
+.app-shell.theme-light .dashboard-metric-card.card-zero{
+  background:#f8fafc;
 }
 .app-shell.theme-light .dashboard-panel-title{
   color:#1e293b;
@@ -530,12 +553,6 @@
 }
 .app-shell.theme-light .dashboard-panel-ctrl-btn:hover:not(:disabled){
   background:rgba(59,130,246,.12);
-}
-.app-shell.theme-light .dashboard-resize-handle::after{
-  background:rgba(37,99,235,.30);
-}
-.app-shell.theme-light .dashboard-resize-handle:hover::after{
-  background:rgba(37,99,235,.54);
 }
 .app-shell.theme-light .inline-notice-button{
   color:#1d4ed8;
@@ -755,4 +772,3 @@
 .app-shell.theme-light .dashboard-overdue-date{
   color:#b91c1c;
 }
-

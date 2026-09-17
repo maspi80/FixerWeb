@@ -298,6 +298,23 @@ textarea:focus-visible,
   min-width: 0;
 }
 
+.topbar-actions .topbar-compact-toggle {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 10px;
+  flex: 0 0 34px;
+}
+
+.topbar-actions .topbar-compact-toggle.active {
+  color: var(--fw-color-primary);
+  border-color: color-mix(in srgb, var(--fw-color-primary) 48%, var(--fw-color-border));
+  background: color-mix(in srgb, var(--fw-color-primary) 12%, transparent);
+}
+
 .global-search {
   min-width: min(280px, 36vw);
   max-width: 560px;

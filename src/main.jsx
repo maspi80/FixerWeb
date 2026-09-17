@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Bell, Briefcase, CalendarDays, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eraser, LayoutDashboard,
   LogOut, MessageSquare, MoreHorizontal, Package, PanelLeft, Search, Settings, SlidersHorizontal, Users, Wrench,
-  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Pencil, Pin, Plus, Printer, RotateCcw, Save, ShieldCheck, StickyNote, Trash2, X, Sun, Moon, List, Columns3, Grid3X3, Clock
+  ClipboardList, Barcode, Copy, Download, FilePlus2, FileText, FolderOpen, GripVertical, History, Minus, Pencil, Pin, Plus, Printer, RotateCcw, Save, ShieldCheck, StickyNote, Trash2, X, Sun, Moon, SunMoon, List, Columns3, Grid3X3, Clock
 } from 'lucide-react';
 import './design-system/tokens.css';
 import './design-system/components.css';
@@ -33,7 +33,7 @@ import {
 } from './design-system';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
-import { dashboardCards, alerts, rentals, serviceOrders, clients as demoClients, equipment as demoEquipment } from './data/mockData';
+import { dashboardCards, alerts, clients as demoClients, equipment as demoEquipment } from './data/mockData';
 import { createClientRecord, deleteClientRecord, fetchClients, updateClientRecord } from './services/clientsService';
 import { addClientTypeRecord, deleteClientTypeRecord, fetchClientTypes, resetClientTypesRecords, updateClientTypeRecord } from './services/clientTypesService';
 import { fetchTablePreference, getLocalTablePreference, saveTablePreference } from './services/tablePreferencesService';
@@ -1135,7 +1135,7 @@ function App() {
   const [demoAuth, setDemoAuth] = useState(() => localStorage.getItem('fixer-demo-auth') === 'true');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('fixer-sidebar') === 'collapsed');
   const [globalSearch, setGlobalSearch] = useState('');
-  const [themeCompact, setThemeCompact] = useState(() => localStorage.getItem('fixer-density') === 'compact');
+  const [dashboardEditMode, setDashboardEditMode] = useState(false);
   const [colorTheme, setColorTheme] = useState(() => getInitialUiAppearance().colorTheme);
   const [tableVerticalLines, setTableVerticalLines] = useState(() => Boolean(readUiPreference('tableVerticalLines', false)));
   const [moduleIntent, setModuleIntent] = useState(null);
@@ -1757,7 +1757,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${themeCompact ? 'compact' : ''} theme-${colorTheme}${tableVerticalLines ? ' table-vertical-lines-enabled' : ''}`} style={uiThemeCssVariables}>
+    <div className={`app-shell compact ${sidebarCollapsed ? 'sidebar-collapsed' : ''} theme-${colorTheme}${tableVerticalLines ? ' table-vertical-lines-enabled' : ''}`} style={uiThemeCssVariables}>
       <Sidebar
         activeModule={activeModule}
         setActiveModule={(moduleId) => {
@@ -1796,12 +1796,8 @@ function App() {
           globalSearch={globalSearch}
           setGlobalSearch={setGlobalSearch}
           onOpenGlobalResult={openGlobalSearchResult}
-          onToggleDensity={() => {
-            const next = !themeCompact;
-            setThemeCompact(next);
-            localStorage.setItem('fixer-density', next ? 'compact' : 'comfortable');
-          }}
-          themeCompact={themeCompact}
+          dashboardEditMode={dashboardEditMode}
+          onToggleDashboardEdit={() => setDashboardEditMode((current) => !current)}
           colorTheme={colorTheme}
           onChangeColorTheme={handleColorThemeCollection}
           onNavigate={navigateToModule}
@@ -1810,10 +1806,10 @@ function App() {
         <section className="page-content">
           {!visibleModules.length && <EmptyState title="Brak przypisanych modułów." />}
           <ModuleKeepAlive moduleId="dashboard" activeModule={activeModule} mounted={allowedModuleIds.has('dashboard') && visitedModuleIds.has('dashboard')}>
-            <Dashboard isActive={activeModule === 'dashboard'} onNavigate={navigateToModule} />
+            <Dashboard isActive={activeModule === 'dashboard'} onNavigate={navigateToModule} editMode={dashboardEditMode} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="clients" activeModule={activeModule} mounted={allowedModuleIds.has('clients') && visitedModuleIds.has('clients')}>
-            <ClientsModule isActive={activeModule === 'clients'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
+            <ClientsModule isActive={activeModule === 'clients'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="equipment" activeModule={activeModule} mounted={allowedModuleIds.has('equipment') && visitedModuleIds.has('equipment')}>
             <EquipmentModule isActive={activeModule === 'equipment'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
@@ -2008,11 +2004,11 @@ function getColorThemeLabel(mode) {
 function getColorThemeIcon(mode) {
   const normalized = normalizeColorThemeMode(mode);
   if (normalized === 'light') return Sun;
-  if (normalized === 'soft-dark') return SlidersHorizontal;
+  if (normalized === 'soft-dark') return SunMoon;
   return Moon;
 }
 
-function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onToggleDensity, themeCompact, colorTheme, onChangeColorTheme, onNavigate, allowedModuleIds = null }) {
+function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, dashboardEditMode = false, onToggleDashboardEdit, colorTheme, onChangeColorTheme, onNavigate, allowedModuleIds = null }) {
   const [searchGroups, setSearchGroups] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -2136,8 +2132,19 @@ function Topbar({ module, globalSearch, setGlobalSearch, onOpenGlobalResult, onT
             </div>)}
           </div>}
         </div>
-        <button className="icon-button" onClick={onToggleDensity}><SlidersHorizontal size={18} /><span>{themeCompact ? 'Kompakt' : 'Wygodny'}</span></button>
-        <button className="icon-button" onClick={() => onChangeColorTheme(nextColorTheme)} title={`Zmień motyw na: ${getNextColorThemeLabel(colorTheme)}`}><ThemeIcon size={18} /><span>{getColorThemeLabel(colorTheme)}</span></button>
+        {module.id === 'dashboard' && <button
+          className={`icon-button topbar-compact-toggle ${dashboardEditMode ? 'active' : ''}`}
+          onClick={onToggleDashboardEdit}
+          title={dashboardEditMode ? 'Zakończ dostosowywanie Dashboardu' : 'Dostosuj Dashboard'}
+          aria-label={dashboardEditMode ? 'Zakończ dostosowywanie Dashboardu' : 'Dostosuj Dashboard'}
+          aria-pressed={dashboardEditMode}
+        ><Settings size={17} /></button>}
+        <button
+          className="icon-button topbar-compact-toggle"
+          onClick={() => onChangeColorTheme(nextColorTheme)}
+          title={`${getColorThemeLabel(colorTheme)} — przełącz na: ${getNextColorThemeLabel(colorTheme)}`}
+          aria-label={`Aktualny motyw: ${getColorThemeLabel(colorTheme)}. Przełącz na: ${getNextColorThemeLabel(colorTheme)}`}
+        ><ThemeIcon size={17} /></button>
         <NotificationsBell onNavigate={onNavigate} />
       </div>
     </header>
@@ -2250,7 +2257,7 @@ function getDefaultDashboardSettings() {
   return {
     visible: Object.fromEntries(DASHBOARD_ITEMS.map((item) => [item.id, true])),
     cardOrder: DASHBOARD_ITEMS.filter((item) => item.area === 'card').map((item) => item.id),
-    panelOrder: ['todayTasks', 'attentionPanel', 'activeServices', 'activeRentalsPanel'],
+    panelOrder: ['attentionPanel', 'todayTasks', 'activeServices', 'activeRentalsPanel'],
     panelLayout: { ...DASHBOARD_DEFAULT_PANEL_LAYOUT }
   };
 }
@@ -2304,7 +2311,7 @@ function resetDashboardSettings() {
   return defaults;
 }
 
-function Dashboard({ isActive = false, onNavigate }) {
+function Dashboard({ isActive = false, onNavigate, editMode = false }) {
   const [rentalsRows, setRentalsRows] = useState([]);
   const [serviceRows, setServiceRows] = useState([]);
   const [organizerRows, setOrganizerRows] = useState([]);
@@ -2312,8 +2319,6 @@ function Dashboard({ isActive = false, onNavigate }) {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [dashboardSettings, setDashboardSettings] = useState(getDashboardSettings);
-  const [editMode, setEditMode] = useState(false);
-  const panelsGridRef = useRef(null);
 
   useEffect(() => {
     if (!isActive) return undefined;
@@ -2360,44 +2365,16 @@ function Dashboard({ isActive = false, onNavigate }) {
     updateDashboardSettings((current) => ({ ...current, cardOrder: order }));
   };
 
-  const movePanel = (index, direction) => {
+  const movePanel = (panelId, direction) => {
     const order = [...dashboardSettings.panelOrder];
+    const index = order.indexOf(panelId);
     const next = index + direction;
-    if (next < 0 || next >= order.length) return;
+    if (index < 0 || next < 0 || next >= order.length) return;
     [order[index], order[next]] = [order[next], order[index]];
     updateDashboardSettings((current) => ({ ...current, panelOrder: order }));
   };
 
   const resetDashboardLayout = () => setDashboardSettings(resetDashboardSettings());
-
-  const startPanelResize = (axis, event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const grid = panelsGridRef.current;
-    if (!grid) return;
-    const rect = grid.getBoundingClientRect();
-    const onMouseMove = (moveEvent) => {
-      const nextPercent = axis === 'x'
-        ? ((moveEvent.clientX - rect.left) / rect.width) * 100
-        : ((moveEvent.clientY - rect.top) / rect.height) * 100;
-      const clamped = Math.min(68, Math.max(32, nextPercent));
-      updateDashboardSettings((current) => ({
-        ...current,
-        panelLayout: {
-          ...(current.panelLayout ?? DASHBOARD_DEFAULT_PANEL_LAYOUT),
-          [axis === 'x' ? 'columnPercent' : 'rowPercent']: clamped
-        }
-      }));
-    };
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      document.body.classList.remove('resizing-dashboard-layout');
-    };
-    document.body.classList.add('resizing-dashboard-layout');
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
 
   const today = getLocalIsoDate();
   const activeRentals = rentalsRows.filter((rental) => rental.status !== 'returned');
@@ -2447,10 +2424,8 @@ function Dashboard({ isActive = false, onNavigate }) {
 
   const orderedPanels = (dashboardSettings.panelOrder ?? []).map((id) => DASHBOARD_ITEMS.find((item) => item.id === id)).filter(Boolean);
 
-  const colPercent = dashboardSettings.panelLayout?.columnPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.columnPercent;
-  const rowPercent = dashboardSettings.panelLayout?.rowPercent ?? DASHBOARD_DEFAULT_PANEL_LAYOUT.rowPercent;
-  const visiblePanelIds = orderedPanels.filter((p) => isDashboardItemVisible(p.id)).map((p) => p.id);
-  const visiblePanelCount = visiblePanelIds.length;
+  const visiblePanelCount = orderedPanels.filter((panel) => isDashboardItemVisible(panel.id)).length;
+  const renderedPanelCount = editMode ? orderedPanels.length : visiblePanelCount;
 
   const attentionItems = [
     ...overdueRentals.map((r) => buildDashboardAttentionItem({ key: `rental:${r.id ?? r.localId ?? r.rental_number}`, source: 'Wypożyczenie', icon: Package, tone: 'rental-danger', title: `${r.rental_number} — ${r.clients?.name ?? '—'}`, dueDate: r.planned_return_date, label: `Zwrot po terminie: ${getRentalOverdueDays(r)} ${getRentalOverdueDays(r) === 1 ? 'dzień' : 'dni'}`, priority: 10, onClick: () => onNavigate('rentals', { type: 'rentals', filter: 'open', rentalId: r.id }) })),
@@ -2525,20 +2500,18 @@ function Dashboard({ isActive = false, onNavigate }) {
     {notice && <div className="notice dashboard-notice">{notice}</div>}
 
     <div className="dashboard-metrics-bar">
-      <div className="dashboard-metrics-header">
-        <span className="dashboard-metrics-label">{editMode ? 'Tryb edycji — kliknij kafel aby ukryć/pokazać, strzałki aby przestawić' : 'Wskaźniki'}</span>
+      {editMode && <div className="dashboard-metrics-header">
+        <span className="dashboard-edit-hint">Kliknij kafel lub panel, aby go ukryć albo pokazać. Strzałkami zmienisz kolejność.</span>
         <div className="dashboard-edit-actions">
-          {loading && <span className="dashboard-loading">Odświeżanie...</span>}
-          <AppButton variant="secondary" size="sm" onClick={() => setEditMode((current) => !current)}>{editMode ? 'Gotowe' : 'Dostosuj'}</AppButton>
           <AppButton variant="secondary" size="sm" onClick={resetDashboardLayout}><RotateCcw size={14} />Resetuj układ</AppButton>
         </div>
-      </div>
+      </div>}
       <div className="dashboard-metrics-grid">
         {orderedCards.map((card, index) => {
           const isVisible = isDashboardItemVisible(card.id);
           if (!isVisible && !editMode) return null;
           return <button key={card.id} type="button"
-            className={`dashboard-metric-card dashboard-metric-card--${card.tone} ${card.isActive ? 'card-active' : ''} ${!isVisible ? 'card-hidden' : ''} ${editMode ? 'in-edit' : ''}`}
+            className={`dashboard-metric-card dashboard-metric-card--${card.tone} ${card.isActive ? 'card-active' : ''} ${card.value === 0 ? 'card-zero' : ''} ${!isVisible ? 'card-hidden' : ''} ${editMode ? 'in-edit' : ''}`}
             onClick={() => { if (editMode) { toggleItemVisible(card.id); return; } onNavigate(...card.target); }}
           >
             {editMode && <div className="dashboard-card-reorder">
@@ -2553,43 +2526,38 @@ function Dashboard({ isActive = false, onNavigate }) {
       </div>
     </div>
 
-    {(visiblePanelCount > 0 || editMode) && <div
-      className="dashboard-panels-grid"
-      ref={panelsGridRef}
-      style={
-        editMode || visiblePanelCount === 4
-          ? { '--dashboard-left-column': `${colPercent}%`, '--dashboard-top-row': `${rowPercent}%` }
-          : visiblePanelCount === 3
-            ? { gridTemplateColumns: `minmax(0,${colPercent}%) minmax(0,1fr)`, gridTemplateRows: 'auto auto' }
-            : visiblePanelCount === 2
-              ? { gridTemplateColumns: `minmax(0,${colPercent}%) minmax(0,1fr)`, gridTemplateRows: 'auto' }
-              : { gridTemplateColumns: '1fr', gridTemplateRows: 'auto' }
-      }
-    >
-      {orderedPanels.map((panel, index) => {
+    {(visiblePanelCount > 0 || editMode) && <div className={`dashboard-panels-grid dashboard-panels-count-${Math.max(1, renderedPanelCount)}`}>
+      {orderedPanels.map((panel, panelIndex) => {
         const isVisible = isDashboardItemVisible(panel.id);
         if (!isVisible && !editMode) return null;
         const navigate = panelActions[panel.id];
         const PanelIcon = panelIcons[panel.id] ?? LayoutDashboard;
-        const spanFull = !editMode && visiblePanelCount === 3 && isVisible && visiblePanelIds.indexOf(panel.id) === 2;
-        return <section key={panel.id} className={`panel dashboard-table-panel dashboard-panel--${panel.tone} ${!isVisible ? 'panel-hidden' : ''}`} style={spanFull ? { gridColumn: '1 / -1' } : undefined}>
+        return <section
+          key={panel.id}
+          className={`panel dashboard-table-panel dashboard-panel--${panel.tone} ${!isVisible ? 'panel-hidden' : ''} ${editMode ? 'in-edit' : ''}`}
+          onClick={editMode ? () => toggleItemVisible(panel.id) : undefined}
+          role={editMode ? 'button' : undefined}
+          tabIndex={editMode ? 0 : undefined}
+          onKeyDown={editMode ? (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              toggleItemVisible(panel.id);
+            }
+          } : undefined}
+        >
           <div className="dashboard-panel-header-row">
             <h2 className="dashboard-panel-title"><PanelIcon size={15} />{panelTitles[panel.id] ?? panel.label}</h2>
             {editMode
               ? <div className="dashboard-panel-controls">
-                  <button type="button" className="dashboard-panel-ctrl-btn" onClick={() => movePanel(index, -1)} disabled={index === 0}><ArrowUp size={11} /></button>
-                  <button type="button" className="dashboard-panel-ctrl-btn" onClick={() => toggleItemVisible(panel.id)}>{isVisible ? <X size={11} /> : <Plus size={11} />}</button>
-                  <button type="button" className="dashboard-panel-ctrl-btn" onClick={() => movePanel(index, 1)} disabled={index === orderedPanels.length - 1}><ArrowDown size={11} /></button>
+                  <span className="dashboard-panel-visibility">{isVisible ? 'Widoczny' : 'Ukryty'}</span>
+                  <button type="button" aria-label="Przesuń panel wcześniej" className="dashboard-panel-ctrl-btn" onClick={(event) => { event.stopPropagation(); movePanel(panel.id, -1); }} disabled={panelIndex === 0}><ChevronLeft size={13} /></button>
+                  <button type="button" aria-label="Przesuń panel później" className="dashboard-panel-ctrl-btn" onClick={(event) => { event.stopPropagation(); movePanel(panel.id, 1); }} disabled={panelIndex === orderedPanels.length - 1}><ChevronRight size={13} /></button>
                 </div>
               : navigate && <button type="button" className="dashboard-panel-goto" onClick={navigate}>Przejdź<ChevronRight size={13} /></button>}
           </div>
           {isVisible && renderPanelContent(panel.id)}
         </section>;
       })}
-      {editMode && <>
-        <div className="dashboard-resize-handle dashboard-resize-handle-x" role="separator" aria-orientation="vertical" title="Zmień szerokość sekcji" onMouseDown={(event) => startPanelResize('x', event)} />
-        <div className="dashboard-resize-handle dashboard-resize-handle-y" role="separator" aria-orientation="horizontal" title="Zmień wysokość sekcji" onMouseDown={(event) => startPanelResize('y', event)} />
-      </>}
     </div>}
     {visiblePanelCount === 0 && !editMode && <div className="dashboard-empty-layout" style={{ marginTop: 8 }}>Wszystkie panele są ukryte — użyj „Dostosuj".</div>}
   </div>;
@@ -2606,7 +2574,7 @@ const CLIENTS_TABLE_COLUMNS = [
   { key: 'nip', label: 'NIP' }
 ];
 
-function ClientsModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent }) {
+function ClientsModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent, onNavigate }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -2798,16 +2766,19 @@ function ClientsModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
         </div>
         <DataTable storageKey={CLIENTS_TABLE_KEY} loading={loading} columns={CLIENTS_TABLE_COLUMNS} rows={filteredRows} onOpen={(client) => openClientEditor(client, 'data')} onHistory={(client) => openClientEditor(client, 'history')} onDuplicate={duplicateClient} onDelete={handleDelete} onBulkDelete={handleBulkDelete} />
       </section>
-      {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {editorOpen && <ClientEditor client={editingClient} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} onNavigate={(moduleId, intent) => { setEditorOpen(false); onNavigate?.(moduleId, intent); }} />}
       {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     </div>
   );
 }
 
 
-function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
+function ClientEditor({ client, initialTab = 'data', onClose, onSave, onNavigate }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [clientTypes, setClientTypes] = useState(DEFAULT_CLIENT_TYPES);
+  const [clientHistoryRows, setClientHistoryRows] = useState([]);
+  const [clientHistoryLoading, setClientHistoryLoading] = useState(false);
+  const [clientHistoryError, setClientHistoryError] = useState('');
   const [errors, setErrors] = useState({});
   const [saveError, setSaveError] = useState('');
   const [form, setForm] = useState(() => ({
@@ -2855,10 +2826,58 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
     return () => { active = false; };
   }, []);
 
-  const clientHistoryRows = [
-    ...rentals.filter((rental) => rental.client === form.name).map((rental) => ({ date: rental.date, type: 'Wypożyczenie', description: `${rental.number} — ${rental.item}`, status: rental.status })),
-    ...serviceOrders.filter((order) => order.client === form.name).map((order) => ({ date: '—', type: 'Serwis', description: `${order.number} — ${order.item}`, status: order.status }))
-  ];
+  useEffect(() => {
+    if (activeTab !== 'history') return undefined;
+    if (!form.id) {
+      setClientHistoryRows([]);
+      setClientHistoryError('');
+      return undefined;
+    }
+
+    let active = true;
+    setClientHistoryLoading(true);
+    setClientHistoryError('');
+    Promise.all([fetchRentals(), fetchServiceOrders()]).then(([rentalsResult, servicesResult]) => {
+      if (!active) return;
+      const clientId = String(form.id);
+      const matchesClient = (record) => String(record?.client_id ?? record?.clients?.id ?? '') === clientId;
+      const rentalRows = (rentalsResult.data ?? []).filter(matchesClient).map((rental) => {
+        const itemNames = [...new Set((rental.rental_items ?? []).map((item) => item.name_snapshot).filter(Boolean))];
+        return {
+          id: `rental-${rental.id}`,
+          date: formatDashboardDate(rental.start_date ?? rental.created_at),
+          completed: formatDashboardDate(rental.actual_return_date),
+          type: 'Wypożyczenie',
+          description: `${rental.rental_number || 'Wypożyczenie'} — ${itemNames.join(', ') || 'Brak pozycji'}`,
+          status: formatRentalStatus(rental.status),
+          _sortDate: rental.start_date ?? rental.created_at ?? '',
+          _targetModule: 'rentals',
+          _targetId: rental.id
+        };
+      });
+      const serviceRows = (servicesResult.data ?? []).filter(matchesClient).map((order) => ({
+        id: `service-${order.id}`,
+        date: formatDashboardDate(order.accepted_date ?? order.created_at),
+        completed: formatDashboardDate(order.completed_date),
+        type: 'Serwis',
+        description: `${order.service_number || 'Zlecenie serwisowe'} — ${order.customer_device_name || [order.customer_device_brand, order.customer_device_model].filter(Boolean).join(' ') || 'Sprzęt klienta'}`,
+        status: order.status || '—',
+        _sortDate: order.accepted_date ?? order.created_at ?? '',
+        _targetModule: 'service',
+        _targetId: order.id
+      }));
+      setClientHistoryRows([...rentalRows, ...serviceRows].sort((left, right) => String(right._sortDate).localeCompare(String(left._sortDate))));
+      const errors = [rentalsResult.error ? 'wypożyczeń' : '', servicesResult.error ? 'serwisu' : ''].filter(Boolean);
+      setClientHistoryError(errors.length ? `Nie udało się pobrać pełnej historii ${errors.join(' i ')}.` : '');
+    }).catch((error) => {
+      if (!active) return;
+      setClientHistoryRows([]);
+      setClientHistoryError(error?.message || 'Nie udało się pobrać historii klienta.');
+    }).finally(() => {
+      if (active) setClientHistoryLoading(false);
+    });
+    return () => { active = false; };
+  }, [activeTab, form.id]);
 
   return (
     <ResizableModalFrame
@@ -2916,7 +2935,19 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
         </div>}
         {activeTab === 'history' && <div className="history-panel">
           <div className="summary-box"><strong>Informacje o kliencie</strong><span>{form.notes || 'Brak notatek.'}</span></div>
-          {clientHistoryRows.length ? <DataTable storageKey={`client-history-${form.id ?? form.localId ?? 'new'}`} columns={[{ key: 'date', label: 'Data' },{ key: 'type', label: 'Typ' },{ key: 'description', label: 'Opis' },{ key: 'status', label: 'Status' }]} rows={clientHistoryRows} /> : <div className="notice">Brak powiązanych wypożyczeń lub zleceń serwisowych dla tego klienta.</div>}
+          {clientHistoryError && <AppNotice variant="warning">{clientHistoryError}</AppNotice>}
+          {clientHistoryLoading
+            ? <div className="loading-line">Pobieranie historii klienta...</div>
+            : clientHistoryRows.length
+              ? <DataTable
+                  storageKey={`client-history-${form.id ?? form.localId ?? 'new'}`}
+                  columns={[{ key: 'date', label: 'Data' },{ key: 'completed', label: 'Zakończenie' },{ key: 'type', label: 'Typ' },{ key: 'description', label: 'Opis' },{ key: 'status', label: 'Status' }]}
+                  rows={clientHistoryRows}
+                  onRowClick={(row) => onNavigate?.(row._targetModule, row._targetModule === 'rentals' ? { type: 'rentals', filter: 'all', rentalId: row._targetId } : { type: 'service', serviceOrderId: row._targetId })}
+                  onOpen={(row) => onNavigate?.(row._targetModule, row._targetModule === 'rentals' ? { type: 'rentals', filter: 'all', rentalId: row._targetId } : { type: 'service', serviceOrderId: row._targetId })}
+                  openLabel="Otwórz dokument"
+                />
+              : !clientHistoryError && <div className="notice">Brak powiązanych wypożyczeń lub zleceń serwisowych dla tego klienta.</div>}
         </div>}
       </div>
     </ResizableModalFrame>
@@ -3022,6 +3053,7 @@ function EquipmentModule({ isActive = false, dashboardIntent, onConsumeDashboard
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState(null);
+  const [editorInitialTab, setEditorInitialTab] = useState('basic');
   const [notice, setNotice] = useState('');
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [equipmentCategories, setEquipmentCategories] = useState(() => getLocalEquipmentDictionaryNames('category'));
@@ -3080,6 +3112,7 @@ function EquipmentModule({ isActive = false, dashboardIntent, onConsumeDashboard
       return;
     }
     setEditingEquipment(item);
+    setEditorInitialTab(options.tab ?? 'basic');
     setEditorOpen(true);
   };
 
@@ -3378,9 +3411,9 @@ function EquipmentModule({ isActive = false, dashboardIntent, onConsumeDashboard
           <AppButton variant="secondary" className="filter-clear-button" onClick={clearEquipmentFilters}>Wyczyść</AppButton>
           {rows.filter((item) => !isEquipmentSetComponent(item)).length > 0 && displayRows.length < rows.filter((item) => !isEquipmentSetComponent(item)).length && <span className="filter-count">{displayRows.length} z {rows.filter((item) => !isEquipmentSetComponent(item)).length}</span>}
         </div>
-        <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
+        <DataTable storageKey={EQUIPMENT_TABLE_KEY} loading={loading} columns={EQUIPMENT_TABLE_COLUMNS} rows={displayRows} onOpen={openEquipmentEditor} onHistory={(item) => openEquipmentEditor(item, { force: true, tab: 'history' })} onDuplicate={duplicateEquipment} onDelete={handleDelete} onBulkDelete={handleBulkDelete} isRowLocked={isEquipmentSetComponent} isRowExpandable={isEquipmentSet} renderExpandedRow={renderSetContents} />
       </section>
-      {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} conditions={equipmentConditions} onClose={() => setEditorOpen(false)} onSave={handleSave} />}
+      {editorOpen && <EquipmentEditor equipment={editingEquipment} equipmentRows={rows} categories={equipmentCategories} statuses={equipmentStatuses} locations={equipmentLocations} conditions={equipmentConditions} initialTab={editorInitialTab} onClose={() => setEditorOpen(false)} onSave={handleSave} onOpenRental={(rentalId) => { setEditorOpen(false); onNavigate?.('rentals', { type: 'rentals', filter: 'all', rentalId }); }} />}
       {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     </div>
   );
@@ -3445,10 +3478,13 @@ function buildEquipmentCardNotes(form) {
 }
 
 
-function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), locations = getLocalEquipmentDictionaryNames('location'), conditions = getActiveConfigDictionaryNames('equipmentConditions'), onClose, onSave }) {
+function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalEquipmentDictionaryNames('category'), statuses = getLocalEquipmentDictionaryNames('status'), locations = getLocalEquipmentDictionaryNames('location'), conditions = getActiveConfigDictionaryNames('equipmentConditions'), initialTab = 'basic', onClose, onSave, onOpenRental }) {
   const cardData = parseEquipmentCardNotes(equipment?.notes);
   const isInitialSetCard = equipment?.category === EQUIPMENT_SET_CATEGORY || Array.isArray(equipment?.set_items) && equipment.set_items.length > 0;
-  const [activeTab, setActiveTab] = useState('basic');
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [rentalHistoryRows, setRentalHistoryRows] = useState([]);
+  const [rentalHistoryLoading, setRentalHistoryLoading] = useState(false);
+  const [rentalHistoryError, setRentalHistoryError] = useState('');
   const [errors, setErrors] = useState({});
   const [saveError, setSaveError] = useState('');
   const [confirmDialog, setConfirmDialog] = useState(null);
@@ -3607,6 +3643,66 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
 
   const fieldClass = (key) => errors[key] ? 'field-error' : undefined;
 
+  useEffect(() => {
+    if (activeTab !== 'history') return undefined;
+    if (!form.id) {
+      setRentalHistoryRows([]);
+      setRentalHistoryError('');
+      return undefined;
+    }
+    let active = true;
+    setRentalHistoryLoading(true);
+    setRentalHistoryError('');
+    fetchRentals().then(({ data, error }) => {
+      if (!active) return;
+      const equipmentId = String(form.id);
+      const historyRows = (data ?? []).flatMap((rental) => {
+        const matchedItems = (rental.rental_items ?? []).filter((item) =>
+          String(item.equipment_id ?? '') === equipmentId || String(item.parent_set_equipment_id ?? '') === equipmentId
+        );
+        if (!matchedItems.length) return [];
+        return [{
+          id: `equipment-rental-${rental.id}`,
+          date: formatDashboardDate(rental.start_date ?? rental.created_at),
+          completed: formatDashboardDate(rental.actual_return_date),
+          document: rental.rental_number || 'Wypożyczenie',
+          client: rental.clients?.name || '—',
+          quantity: matchedItems.length,
+          status: formatRentalStatus(rental.status),
+          _rentalId: rental.id,
+          _sortDate: rental.start_date ?? rental.created_at ?? ''
+        }];
+      }).sort((left, right) => String(right._sortDate).localeCompare(String(left._sortDate)));
+      setRentalHistoryRows(historyRows);
+      setRentalHistoryError(error ? `Nie udało się pobrać historii wypożyczeń: ${error.message}` : '');
+    }).catch((error) => {
+      if (!active) return;
+      setRentalHistoryRows([]);
+      setRentalHistoryError(error?.message || 'Nie udało się pobrać historii wypożyczeń sprzętu.');
+    }).finally(() => {
+      if (active) setRentalHistoryLoading(false);
+    });
+    return () => { active = false; };
+  }, [activeTab, form.id]);
+
+  const renderEquipmentHistory = () => <div className="equipment-section-panel equipment-rental-history-panel">
+    <div className="section-title">Historia wypożyczeń</div>
+    {rentalHistoryError && <AppNotice variant="warning">{rentalHistoryError}</AppNotice>}
+    {rentalHistoryLoading
+      ? <div className="loading-line">Pobieranie historii sprzętu...</div>
+      : rentalHistoryRows.length
+        ? <DataTable
+            storageKey={`equipment-rental-history-${form.id ?? form.localId ?? 'new'}`}
+            columns={[{ key: 'date', label: 'Wydano' }, { key: 'completed', label: 'Zwrócono' }, { key: 'document', label: 'Wypożyczenie' }, { key: 'client', label: 'Klient' }, { key: 'quantity', label: 'Liczba' }, { key: 'status', label: 'Status' }]}
+            rows={rentalHistoryRows}
+            onRowClick={(row) => onOpenRental?.(row._rentalId)}
+            onOpen={(row) => onOpenRental?.(row._rentalId)}
+            openLabel="Otwórz wypożyczenie"
+          />
+        : !rentalHistoryError && <div className="notice">Brak wypożyczeń powiązanych z tym sprzętem.</div>}
+    {!isSetCard && <FormField label="Uwagi ręczne"><AppTextarea resizeKey="fixer:ui-resize:equipment-editor:historyNotes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Dodatkowe uwagi niezależne od historii systemowej." /></FormField>}
+  </div>;
+
   const tabs = [
     { id: 'basic', label: 'Dane podstawowe' },
     { id: 'gallery', label: 'Galeria' },
@@ -3629,7 +3725,11 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
         footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz zestaw</AppButton></>}
       >
         {saveError && <AppNotice variant="error" className="service-form-notice">{saveError}</AppNotice>}
-        <div className="set-card-content">
+        <AppTabs className="record-tabs" aria-label="Sekcje karty zestawu">
+          <button type="button" aria-selected={activeTab !== 'history'} className={activeTab !== 'history' ? 'active' : ''} onClick={() => setActiveTab('basic')}>Dane zestawu</button>
+          <button type="button" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
+        </AppTabs>
+        {activeTab !== 'history' && <div className="set-card-content">
           <div className="equipment-section-panel set-details-panel">
             <div className="section-title">Dane zestawu</div>
             <div className="set-basic-grid">
@@ -3659,7 +3759,8 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
               </table>
             </div> : <div className="empty-set-box">Brak składników zestawu. Użyj przycisku „Dodaj składniki", żeby wybrać pozycje z magazynu.</div>}
           </div>
-        </div>
+        </div>}
+        {activeTab === 'history' && renderEquipmentHistory()}
         {setPickerOpen && <EquipmentSetPicker availableItems={availableSetComponents} onClose={() => setSetPickerOpen(false)} onConfirm={(items) => { addSetItems(items); setSetPickerOpen(false); }} />}
         {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
       </ResizableModalFrame>
@@ -3714,10 +3815,7 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
             {form.attachments.length ? form.attachments.map((item, index) => <div key={`${item.name}-${index}`} className="equipment-list-row"><span><strong>{item.name}</strong>{item.url ? ` — ${item.url}` : ''}</span><button type="button" className="ghost-mini-button" onClick={() => removeAttachment(index)}>Usuń</button></div>) : <p className="muted">Brak załączników.</p>}
           </div>
         </div>}
-        {activeTab === 'history' && <div className="equipment-section-panel">
-          <div className="section-title">Historia sprzętu</div>
-          <AppTextarea resizeKey="fixer:ui-resize:equipment-editor:historyNotes" className="large-notes" value={form.history_notes} onChange={(event) => update('history_notes', event.target.value)} placeholder="Historia wypożyczeń, zmian lokalizacji, uwagi magazynowe." />
-        </div>}
+        {activeTab === 'history' && renderEquipmentHistory()}
         {activeTab === 'service' && <div className="equipment-section-panel">
           <div className="section-title">Serwis</div>
           <AppTextarea resizeKey="fixer:ui-resize:equipment-editor:serviceNotes" className="large-notes" value={form.service_notes} onChange={(event) => update('service_notes', event.target.value)} placeholder="Historia napraw, przeglądów, usterek i zaleceń serwisowych." />
@@ -4753,8 +4851,49 @@ function findUnavailableRentalEquipment(equipmentItems, originalEquipmentIds = n
   return items.find((item) => !originalEquipmentIds.has(item.id) && !isEquipmentAvailableForRental(item)) ?? null;
 }
 
-function HistorySection({ title, count = 0, collapsed, onToggle, actions = null, children, className = '' }) {
-  return <section className={`history-section ${collapsed ? 'is-collapsed' : 'is-expanded'} ${className}`.trim()}>
+function HistorySection({ title, count = 0, collapsed, onToggle, actions = null, children, className = '', resizeStorageKey = '' }) {
+  const resolvedResizeStorageKey = `fixer-history-panel-height:${resizeStorageKey || String(title).toLocaleLowerCase('pl').replace(/[^a-z0-9ąćęłńóśźż]+/gi, '-')}`;
+  const [savedHeight, setSavedHeight] = useState(() => {
+    const stored = Number(localStorage.getItem(resolvedResizeStorageKey));
+    return Number.isFinite(stored) && stored >= 120 ? stored : null;
+  });
+
+  const startResize = (event) => {
+    if (collapsed || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const section = event.currentTarget.closest('.history-section');
+    const parent = section?.parentElement;
+    if (!section || !parent) return;
+    const startY = event.clientY;
+    const startHeight = section.getBoundingClientRect().height;
+    const parentHeight = parent.getBoundingClientRect().height;
+    const minHeight = 140;
+    const maxHeight = Math.max(minHeight, parentHeight - 150);
+    let finalHeight = startHeight;
+    const onPointerMove = (moveEvent) => {
+      finalHeight = Math.round(Math.min(maxHeight, Math.max(minHeight, startHeight + startY - moveEvent.clientY)));
+      setSavedHeight(finalHeight);
+    };
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      document.body.classList.remove('resizing-history-panel');
+      localStorage.setItem(resolvedResizeStorageKey, String(Math.round(finalHeight)));
+    };
+    document.body.classList.add('resizing-history-panel');
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  };
+
+  const expandedSizeStyle = !collapsed && savedHeight
+    ? { flexBasis: `${savedHeight}px`, height: `${savedHeight}px` }
+    : undefined;
+
+  return <section className={`history-section history-section-resizable ${collapsed ? 'is-collapsed' : 'is-expanded'} ${className}`.trim()} style={expandedSizeStyle}>
+    {!collapsed && <button type="button" className="history-resize-handle" onPointerDown={startResize} aria-label={`Zmień wysokość: ${title}`} title="Przeciągnij, aby zmienić wysokość"><span /></button>}
     <button type="button" className="history-toggle-button" onClick={onToggle} aria-expanded={!collapsed}>
       <span>{title} {collapsed ? '▸' : '▾'}</span>
       <span className="history-count">({count})</span>
@@ -4822,6 +4961,7 @@ function RentalsModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
     if (dashboardIntent?.type !== 'rentals') return;
     setDashboardRentalFilter(dashboardIntent.filter ?? 'all');
     if (dashboardIntent.rentalId) setPendingOpenRentalId(dashboardIntent.rentalId);
+    if (dashboardIntent.action === 'create') openRentalEditor(null);
     onConsumeDashboardIntent?.();
   }, [dashboardIntent, onConsumeDashboardIntent]);
 
@@ -5055,6 +5195,7 @@ function RentalsModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
     </section>
     <HistorySection
       title="Historia wypożyczeń"
+      resizeStorageKey="rentals"
       count={returnedRows.length}
       collapsed={returnedCollapsed}
       onToggle={() => setReturnedCollapsed((value) => !value)}
@@ -6403,6 +6544,7 @@ function ServiceModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
   useEffect(() => {
     if (dashboardIntent?.type !== 'service') return;
     if (dashboardIntent.serviceOrderId) setPendingOpenServiceId(dashboardIntent.serviceOrderId);
+    if (dashboardIntent.action === 'create') createNewOrder();
     onConsumeDashboardIntent?.();
   }, [dashboardIntent, onConsumeDashboardIntent]);
 
@@ -6665,6 +6807,7 @@ function ServiceModule({ isActive = false, dashboardIntent, onConsumeDashboardIn
     </section>
     <HistorySection
       title="Historia serwisu"
+      resizeStorageKey="service"
       count={completedTableRows.length}
       collapsed={serviceHistoryCollapsed}
       onToggle={() => setServiceHistoryCollapsed((v) => !v)}
@@ -8641,7 +8784,7 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
           </div>}
           {!activeTasks.length && !tasksLoading && <EmptyState title="Brak aktywnych zadań." />}
         </div>}
-        {historyTaskRows.length > 0 && <HistorySection title="Historia zadań" count={historyTaskRows.length} collapsed={historyTasksCollapsed} onToggle={() => setHistoryTasksCollapsed((value) => !value)} className="project-history-section">
+        {historyTaskRows.length > 0 && <HistorySection title="Historia zadań" resizeStorageKey="project-tasks" count={historyTaskRows.length} collapsed={historyTasksCollapsed} onToggle={() => setHistoryTasksCollapsed((value) => !value)} className="project-history-section">
           <DataTable storageKey={`pt-hist-${projectId?.slice(0,8) ?? 'new'}`} columns={historyTaskColumns} rows={historyTaskRows} enableSelectionActions={false}
             onOpen={openEditTask} openLabel="Podgląd zadania"
             customRowActions={canEditProjectItems ? [{ key: 'restore', label: 'Przywróć jako aktywne', icon: RotateCcw, onClick: (row) => { const t = row._task; updateProjectTask(t.id ?? t.localId, { ...t, status: WORK_STATUSES[0], archived: false, completed_at: null }).then(loadTasks); } }] : []}
@@ -8904,6 +9047,13 @@ function ProjectColorPicker({ value, onChange, disabled = false }) {
 function ProjectTableTitle({ project, title, titleClassName = '' }) {
   return <span className="project-table-title">
     <span className={titleClassName}>{title}</span>
+  </span>;
+}
+
+function WorkTypeBadge({ type }) {
+  const isProject = type === 'project';
+  return <span className={`work-type-pill work-type-pill-inline ${isProject ? 'project' : 'task'}`}>
+    {isProject ? 'Projekt' : 'Zadanie'}
   </span>;
 }
 
@@ -11249,6 +11399,7 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     if (dashboardIntent.projectId) setPendingOpenProjectId(dashboardIntent.projectId);
     if (dashboardIntent.taskId) setPendingOpenSimpleTaskId(dashboardIntent.taskId);
     if (dashboardIntent.filter === 'tasks') setFilters((current) => ({ ...current, type: 'task' }));
+    if (dashboardIntent.action === 'create-task') openNewSimpleTask();
     onConsumeDashboardIntent?.();
     setWorkspaceRestoreDone(true);
   }, [dashboardIntent, onConsumeDashboardIntent]);
@@ -11583,17 +11734,18 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
   };
 
   const activeColumns = [
-    { key: 'type_label', label: 'Typ', align: 'center', renderCell: (row) => <span className={`work-type-pill ${row._workType}`}>{row.type_label}</span> },
     {
       key: 'displayTitle',
       label: 'Nazwa',
       renderCell: (row) => row._workType === 'project'
         ? <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row._source?.status)} onToggle={() => setProjectStatus(row._source, WORK_DONE_STATUS)} />}
+          <WorkTypeBadge type="project" />
           <ProjectTableTitle project={row._source} title={row.displayTitle} titleClassName="work-title-project" />
         </div>
         : <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row._source?.status)} onToggle={() => setSimpleTaskStatus(row._source, isCompletedStatus(row._source?.status) ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
+          <WorkTypeBadge type="task" />
           <span className={row._source?.archived || isCompletedStatus(row._source?.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
         </div>
     },
@@ -11611,10 +11763,12 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
       renderCell: (row) => row._workType === 'task'
         ? <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row.status)} onToggle={() => setSimpleTaskStatus(row._source ?? row, isCompletedStatus(row.status) ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
+          <WorkTypeBadge type="task" />
           <span className={isCompletedStatus(row.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
         </div>
         : <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row.status)} onToggle={() => handleRestore(row._project ?? row)} />}
+          <WorkTypeBadge type="project" />
           <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName={isCompletedStatus(row.status) ? 'work-title-project work-title-done' : 'work-title-project'} />
         </div>
     },
@@ -12324,7 +12478,7 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
           : null)}
     </div>
 
-    <HistorySection title="Historia projektów" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
+    <HistorySection title="Historia projektów" resizeStorageKey="projects" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
       <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
         enableSelectionActions={false}
         getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
@@ -18705,7 +18859,7 @@ function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onCo
   const isAdmin = currentUser?.profile?.role === 'admin' && currentUser?.profile?.is_active !== false;
   const themeOptions = [
     { id: 'light', label: 'Jasny', icon: Sun },
-    { id: 'soft-dark', label: 'Pośredni', icon: SlidersHorizontal },
+    { id: 'soft-dark', label: 'Pośredni', icon: SunMoon },
     { id: 'dark', label: 'Ciemny', icon: Moon }
   ];
   const sections = isDocumentsMode

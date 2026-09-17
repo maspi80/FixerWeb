@@ -136,6 +136,18 @@
   border-color:rgba(34,197,94,.22);
   background:rgba(34,197,94,.10);
 }
+.work-type-pill-inline{
+  flex:0 0 auto;
+  min-width:58px;
+  min-height:20px;
+  padding:0 7px;
+  overflow:visible;
+  font-size:10px;
+  line-height:1;
+  letter-spacing:.02em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
 .table-shell tbody tr.work-row-project td:first-child{
   box-shadow:inset 4px 0 0 var(--work-row-accent,rgba(96,165,250,.72));
 }
@@ -474,6 +486,47 @@
   gap:8px;
   min-height:auto;
 }
+.history-section.is-expanded{
+  position:relative;
+}
+.history-resize-handle{
+  position:absolute;
+  z-index:5;
+  top:-6px;
+  left:0;
+  right:0;
+  width:100%;
+  height:12px;
+  margin:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  cursor:row-resize;
+  touch-action:none;
+}
+.history-resize-handle span{
+  position:absolute;
+  top:5px;
+  left:50%;
+  width:54px;
+  height:2px;
+  border-radius:999px;
+  background:var(--fw-color-border-strong);
+  opacity:.5;
+  transform:translateX(-50%);
+  transition:width .14s ease,opacity .14s ease,background-color .14s ease;
+}
+.history-resize-handle:hover span,
+.history-resize-handle:focus-visible span{
+  width:78px;
+  opacity:1;
+  background:var(--fw-color-primary);
+}
+body.resizing-history-panel,
+body.resizing-history-panel *{
+  cursor:row-resize!important;
+  user-select:none!important;
+}
 .history-section.panel{
   padding:0;
   border:0;
@@ -523,6 +576,19 @@
 }
 .history-section-content{
   min-height:0;
+}
+.history-section.is-expanded .history-section-content,
+.history-section.is-expanded .history-section-content > .table-shell{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.history-section.is-expanded .history-section-content .table-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
 }
 .project-section-block .table-shell{border-radius:0;border:0}
 .app-shell.theme-light .project-client-chip{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.12);color:#0f172a}

@@ -438,16 +438,15 @@
 
 /* v0.7.0 — UX Architecture v1: wypożyczenia jako dokument operacyjny */
 .rentals-module-page{
+  display:flex;
+  flex-direction:column;
   gap:10px;
   min-height:0;
   overflow:hidden;
-  grid-template-rows:auto minmax(0,1fr) auto;
-}
-.rentals-module-page:has(> .returned-rentals-section.is-expanded){
-  grid-template-rows:auto minmax(190px,1fr) minmax(170px,36%);
 }
 .rentals-command-panel{
   display:grid;
+  flex:0 0 auto;
   grid-template-columns:minmax(0,1fr) auto;
   gap:12px;
   align-items:center;
@@ -1031,6 +1030,7 @@
   min-height:0;
 }
 .rentals-module-page > .rentals-records-section:not(.returned-rentals-section){
+  flex:1 1 0;
   overflow:hidden;
 }
 .rentals-module-page > .rentals-records-section:not(.returned-rentals-section) > .table-shell,
@@ -1042,10 +1042,12 @@
   flex-direction:column;
 }
 .returned-rentals-section{
+  flex:0 0 auto;
   margin-top:0;
 }
 .returned-rentals-section.is-expanded{
-  height:100%;
+  flex-basis:36%;
+  min-height:170px;
   overflow:hidden;
 }
 .returned-rentals-section.is-expanded .history-section-content{

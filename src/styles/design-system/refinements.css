@@ -7,15 +7,16 @@
    internally via .table-scroll).  That layout is correct for data-table
    modules but wrong for Settings, which needs natural document scroll.
 
-   The selectors below undo the height/overflow lock exclusively when the
-   .settings-module-page is present, without touching any other module.
+   Moduły są przechowywane w DOM po pierwszym otwarciu. Dlatego selektory
+   muszą reagować wyłącznie na aktualnie widoczny moduł Ustawień, a nie na
+   jego ukrytą kopię pozostawioną przez ModuleKeepAlive.
 ──────────────────────────────────────────────────────────────────────────── */
-.main-area:has(.settings-module-page) {
+.main-area:has(> .page-content > .module-keep-alive:not([hidden]) .settings-module-page) {
   height: auto !important;
   min-height: 100vh;
   overflow: visible !important;
 }
-.page-content:has(.settings-module-page) {
+.page-content:has(> .module-keep-alive:not([hidden]) .settings-module-page) {
   height: auto !important;
   min-height: 0;
   overflow: visible !important;

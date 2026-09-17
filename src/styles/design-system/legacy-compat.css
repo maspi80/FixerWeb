@@ -123,10 +123,10 @@
 
 /* DS V2 polish — gestsze widoki robocze i wspolny rytm kartotek */
 .page-content{
-  padding:14px 24px 28px;
+  padding:var(--fw-page-padding-top) var(--fw-page-padding-x) var(--fw-page-padding-bottom);
 }
 .module-page{
-  gap:10px;
+  gap:var(--fw-module-gap);
 }
 .hero-panel,
 .rentals-command-panel{
@@ -140,16 +140,16 @@
 .module-actions,
 .rentals-command-actions{
   margin-top:0;
-  gap:8px;
+  gap:var(--fw-toolbar-gap);
 }
 .panel,
 .rentals-table-panel{
-  padding:10px;
+  padding:var(--fw-panel-padding);
 }
 .client-filter-bar{
-  gap:8px;
-  margin-bottom:8px;
-  padding-bottom:8px;
+  gap:var(--fw-toolbar-gap);
+  margin-bottom:var(--fw-toolbar-gap);
+  padding-bottom:var(--fw-toolbar-gap);
 }
 .equipment-filter-bar{
   grid-template-columns:minmax(220px,1.2fr) repeat(5,minmax(130px,.7fr)) auto auto;
@@ -169,8 +169,8 @@
   min-height:var(--fw-control-height-md);
 }
 .table-tools{
-  margin-bottom:8px;
-  padding-bottom:8px;
+  margin-bottom:var(--fw-toolbar-gap);
+  padding-bottom:var(--fw-toolbar-gap);
 }
 .table-scroll th,
 .table-scroll td{
@@ -550,4 +550,3 @@ body.rental-items-section-resizing *{
   border-color:rgba(225,29,72,.18);
   background:rgba(254,226,226,.36);
 }
-

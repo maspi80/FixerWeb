@@ -41,23 +41,24 @@
   display:flex;
   flex-wrap:nowrap;
   align-items:center;
-  gap:4px;
-  overflow:hidden;
+  gap:var(--fw-toolbar-gap);
+  overflow-x:auto;
+  overflow-y:hidden;
 }
 .projects-actions-panel .module-actions .module-action-button{
-  min-height:30px;
-  height:30px;
-  min-width:auto;
-  padding:0 7px;
-  border-radius:9px;
-  gap:4px;
-  font-size:12px;
+  min-height:var(--fixer-button-height);
+  height:var(--fixer-button-height);
+  min-width:var(--fixer-button-min-width);
+  padding:0 14px;
+  border-radius:var(--fixer-button-radius);
+  gap:var(--fixer-button-gap);
+  font-size:var(--fw-font-size-control);
   line-height:1;
   white-space:nowrap;
 }
 .projects-actions-panel .module-actions .module-action-button svg{
-  width:14px;
-  height:14px;
+  width:16px;
+  height:16px;
   flex:0 0 auto;
 }
 .projects-list-panel{
@@ -539,29 +540,29 @@ body.resizing-project-task-inspector *{
   margin-left:auto;
 }
 .project-board-actions{
-  gap:6px;
+  gap:var(--fw-toolbar-gap);
   flex-wrap:wrap;
 }
 .project-board-actions .project-board-action-button{
   min-width:auto;
-  min-height:32px;
-  height:32px;
-  padding:0 10px;
-  border-radius:9px;
-  gap:5px;
-  font-size:12px;
+  min-height:var(--fixer-button-height);
+  height:var(--fixer-button-height);
+  padding:0 14px;
+  border-radius:var(--fixer-button-radius);
+  gap:var(--fixer-button-gap);
+  font-size:var(--fw-font-size-control);
   line-height:1;
 }
 .project-board-actions .project-board-action-button svg{
-  width:14px;
-  height:14px;
+  width:16px;
+  height:16px;
   flex:0 0 auto;
 }
 .project-board-color-control{
   display:flex;
   align-items:center;
   gap:8px;
-  min-height:32px;
+  min-height:var(--fixer-button-height);
   margin-left:auto;
   padding:0 4px 0 10px;
   border-left:1px solid rgba(148,163,184,.14);

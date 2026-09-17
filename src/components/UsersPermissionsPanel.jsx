@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCcw, Save, ShieldCheck, Trash2, UserCheck } from 'lucide-react';
+import { Plus, Save, ShieldCheck, Trash2, UserCheck } from 'lucide-react';
 import {
   AppButton,
   AppInput,
@@ -64,7 +64,7 @@ function isValidUsername(value) {
   return /^[a-z0-9._-]{3,40}$/.test(normalizeUsernameInput(value));
 }
 
-export default function UsersPermissionsPanel({ currentUser = null }) {
+export default function UsersPermissionsPanel({ isActive = false, currentUser = null }) {
   const [profiles, setProfiles] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -107,8 +107,8 @@ export default function UsersPermissionsPanel({ currentUser = null }) {
   };
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (isActive) loadUsers();
+  }, [isActive]);
 
   useEffect(() => {
     if (!selectedProfile) {
@@ -279,7 +279,6 @@ export default function UsersPermissionsPanel({ currentUser = null }) {
           <p className="muted">Prosty panel zarządzania kontami i przyszłymi permissions.</p>
         </div>
         <div className="settings-action-row">
-          <AppButton variant="secondary" size="sm" onClick={loadUsers} disabled={loading || saving}><RefreshCcw size={14} />Odśwież</AppButton>
           <AppButton variant="primary" size="sm" onClick={() => setCreateModalOpen(true)} disabled={saving}><Plus size={14} />Dodaj użytkownika</AppButton>
           <AppButton variant="danger" size="sm" onClick={() => setDeleteModalOpen(true)} disabled={saving || !selectedProfile || isSelectedCurrentUser}><Trash2 size={14} />Usuń użytkownika</AppButton>
         </div>

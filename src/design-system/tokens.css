@@ -80,6 +80,13 @@
   --fw-control-height-lg: 36px;
   --fw-icon-button-size: 34px;
   --fw-control-padding-x: 12px;
+  --fw-page-padding-x: 24px;
+  --fw-page-padding-top: 14px;
+  --fw-page-padding-bottom: 28px;
+  --fw-module-gap: 10px;
+  --fw-panel-padding: 10px;
+  --fw-toolbar-gap: 8px;
+  --fw-scrollbar-size: 10px;
 
   /* Typographic weight scale */
   --fw-weight-body:        400; /* body text, helper descriptions, inputs */

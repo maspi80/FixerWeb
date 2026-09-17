@@ -12,6 +12,7 @@ import {
   AppButton,
   AppInput,
   AppSelect,
+  AppTabs,
   AppTable,
   AppTextarea,
   ColorSwatchPicker,
@@ -1810,28 +1811,28 @@ function App() {
         <section className="page-content">
           {!visibleModules.length && <EmptyState title="Brak przypisanych modułów." />}
           <ModuleKeepAlive moduleId="dashboard" activeModule={activeModule} mounted={allowedModuleIds.has('dashboard') && visitedModuleIds.has('dashboard')}>
-            <Dashboard onNavigate={navigateToModule} />
+            <Dashboard isActive={activeModule === 'dashboard'} onNavigate={navigateToModule} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="clients" activeModule={activeModule} mounted={allowedModuleIds.has('clients') && visitedModuleIds.has('clients')}>
-            <ClientsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
+            <ClientsModule isActive={activeModule === 'clients'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="equipment" activeModule={activeModule} mounted={allowedModuleIds.has('equipment') && visitedModuleIds.has('equipment')}>
-            <EquipmentModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
+            <EquipmentModule isActive={activeModule === 'equipment'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="rentals" activeModule={activeModule} mounted={allowedModuleIds.has('rentals') && visitedModuleIds.has('rentals')}>
-            <RentalsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
+            <RentalsModule isActive={activeModule === 'rentals'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="service" activeModule={activeModule} mounted={allowedModuleIds.has('service') && visitedModuleIds.has('service')}>
-            <ServiceModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
+            <ServiceModule isActive={activeModule === 'service'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="calendar" activeModule={activeModule} mounted={allowedModuleIds.has('calendar') && visitedModuleIds.has('calendar')}>
-            <CalendarModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
+            <CalendarModule isActive={activeModule === 'calendar'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} onNavigate={navigateToModule} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="projects" activeModule={activeModule} mounted={allowedModuleIds.has('projects') && visitedModuleIds.has('projects')}>
-            <ProjectsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} permissions={projectPermissions} currentUser={currentUser} />
+            <ProjectsModule isActive={activeModule === 'projects'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} permissions={projectPermissions} currentUser={currentUser} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="notes" activeModule={activeModule} mounted={allowedModuleIds.has('notes') && visitedModuleIds.has('notes')}>
-            <NotatkiModule />
+            <NotatkiModule isActive={activeModule === 'notes'} />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="chat" activeModule={activeModule} mounted={allowedModuleIds.has('chat') && visitedModuleIds.has('chat')}>
             <ChatModule
@@ -1887,7 +1888,7 @@ function App() {
             />
           </ModuleKeepAlive>
           <ModuleKeepAlive moduleId="settings" activeModule={activeModule} mounted={allowedModuleIds.has('settings') && visitedModuleIds.has('settings')}>
-            <SettingsModule dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} currentUser={currentUser} />
+            <SettingsModule isActive={activeModule === 'settings'} dashboardIntent={moduleIntent} onConsumeDashboardIntent={() => setModuleIntent(null)} colorTheme={colorTheme} onChangeColorTheme={handleColorThemeCollection} onApplyUiThemePreset={handleApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={handleStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={setActiveUiTheme} onPreferenceChange={(key, value) => { if (key === 'tableVerticalLines') setTableVerticalLines(Boolean(value)); }} appSettingsReady={appSettingsReady} currentUser={currentUser} />
           </ModuleKeepAlive>
         </section>
       </main>
@@ -2295,7 +2296,7 @@ function resetDashboardSettings() {
   return defaults;
 }
 
-function Dashboard({ onNavigate }) {
+function Dashboard({ isActive = false, onNavigate }) {
   const [rentalsRows, setRentalsRows] = useState([]);
   const [serviceRows, setServiceRows] = useState([]);
   const [organizerRows, setOrganizerRows] = useState([]);
@@ -2307,6 +2308,7 @@ function Dashboard({ onNavigate }) {
   const panelsGridRef = useRef(null);
 
   useEffect(() => {
+    if (!isActive) return undefined;
     let active = true;
     const loadDashboard = async () => {
       setLoading(true);
@@ -2322,7 +2324,7 @@ function Dashboard({ onNavigate }) {
     };
     loadDashboard();
     return () => { active = false; };
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
     const handleStorage = (event) => {
@@ -2596,7 +2598,7 @@ const CLIENTS_TABLE_COLUMNS = [
   { key: 'nip', label: 'NIP' }
 ];
 
-function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
+function ClientsModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -2642,7 +2644,9 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     setLoading(false);
   };
 
-  useEffect(() => { loadClients(); }, []);
+  useEffect(() => {
+    if (isActive) loadClients();
+  }, [isActive]);
 
   useEffect(() => {
     if (dashboardIntent?.type !== 'clients') return;
@@ -2755,7 +2759,6 @@ function ClientsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       <section className="panel hero-panel">
         <div className="module-actions">
           <AppButton variant="primary" className="module-action-button" onClick={() => openClientEditor(null, 'data')}><Plus size={18} />Dodaj klienta</AppButton>
-          <AppButton variant="secondary" className="module-action-button" onClick={loadClients}>Odśwież</AppButton>
           <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><Download size={16} />CSV</AppButton>
           <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Baza klientów', CLIENTS_TABLE_KEY, CLIENTS_TABLE_COLUMNS, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />PDF</AppButton>
         </div>
@@ -2861,11 +2864,11 @@ function ClientEditor({ client, initialTab = 'data', onClose, onSave }) {
       footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveClient}><Save size={18} />Zapisz</AppButton></>}
     >
       {saveError && <AppNotice variant="error" className="service-form-notice">{saveError}</AppNotice>}
-      <div className="record-tabs" role="tablist">
-        <button className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
-        <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
-        <button className={activeTab === 'notes' ? 'active' : ''} onClick={() => setActiveTab('notes')}>Notatki</button>
-      </div>
+      <AppTabs className="record-tabs" aria-label="Sekcje kartoteki klienta">
+        <button type="button" aria-selected={activeTab === 'data'} className={activeTab === 'data' ? 'active' : ''} onClick={() => setActiveTab('data')}>Dane klienta</button>
+        <button type="button" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Historia</button>
+        <button type="button" aria-selected={activeTab === 'notes'} className={activeTab === 'notes' ? 'active' : ''} onClick={() => setActiveTab('notes')}>Notatki</button>
+      </AppTabs>
       <div className="client-tab-panel">
         {activeTab === 'data' && <div className="client-form-compact">
           <div className="form-section flat-form-section">
@@ -3006,7 +3009,7 @@ function getEquipmentSetStatus(setItems = []) {
   return EQUIPMENT_AVAILABLE_STATUS;
 }
 
-function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate }) {
+function EquipmentModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent, onNavigate }) {
   const [rows, setRows] = useState(demoEquipment);
   const [loading, setLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -3042,7 +3045,12 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
     setLoading(false);
   };
 
-  useEffect(() => { loadEquipment(); loadEquipmentDictionaries(); setEquipmentConditions(getActiveConfigDictionaryNames('equipmentConditions')); }, []);
+  useEffect(() => {
+    if (!isActive) return;
+    loadEquipment();
+    loadEquipmentDictionaries();
+    setEquipmentConditions(getActiveConfigDictionaryNames('equipmentConditions'));
+  }, [isActive]);
 
   useEffect(() => {
     if (dashboardIntent?.type !== 'equipment') return;
@@ -3345,7 +3353,6 @@ function EquipmentModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate
         <div className="module-actions">
           <AppButton variant="primary" onClick={() => openEquipmentEditor(null)}><Plus size={18} />Dodaj sprzęt</AppButton>
           <AppButton variant="secondary" onClick={openSetEditor}><Package size={18} />Dodaj zestaw</AppButton>
-          <AppButton variant="secondary" onClick={loadEquipment}>Odśwież</AppButton>
           <AppButton variant="secondary" onClick={() => exportTableToCsv(EQUIPMENT_TABLE_KEY, EQUIPMENT_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><Download size={16} />CSV</AppButton>
           <AppButton variant="secondary" onClick={() => exportTableToPdf('Sprzęt', EQUIPMENT_TABLE_KEY, EQUIPMENT_TABLE_COLUMNS, displayRows)} disabled={!displayRows.length}><FileText size={16} />PDF</AppButton>
         </div>
@@ -3663,11 +3670,11 @@ function EquipmentEditor({ equipment, equipmentRows = [], categories = getLocalE
         footer={<><AppButton variant="secondary" onClick={onClose}>Anuluj</AppButton><AppButton variant="primary" onClick={saveEquipment}><Save size={18} />Zapisz sprzęt</AppButton></>}
       >
       {saveError && <AppNotice variant="error" className="service-form-notice">{saveError}</AppNotice>}
-      <div className="record-tabs" role="tablist" aria-label="Sekcje karty sprzętu">
+      <AppTabs className="record-tabs" aria-label="Sekcje karty sprzętu">
         {tabs.map((tab) => (
-          <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
+          <button key={tab.id} type="button" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
         ))}
-      </div>
+      </AppTabs>
       <div className="equipment-tab-panel">
         {activeTab === 'basic' && <div className="equipment-basic-grid">
           <FormField className="equipment-name-field" label="Nazwa sprzętu *" error={errors.name}><AppInput className={fieldClass('name')} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="np. Mikser Video" /></FormField>
@@ -4751,7 +4758,7 @@ function HistorySection({ title, count = 0, collapsed, onToggle, actions = null,
   </section>;
 }
 
-function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
+function RentalsModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [clients, setClients] = useState([]);
   const [equipmentRows, setEquipmentRows] = useState([]);
@@ -4795,12 +4802,13 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
   };
 
   useEffect(() => {
+    if (!isActive) return;
     loadRentals();
     loadRentalDictionaries();
     setRentalSettings(getRentalNumberingSettings());
     setRentalTypes(getActiveConfigDictionaryNames('rentalTypes'));
     setReturnConditions(getActiveConfigDictionaryNames('returnConditions'));
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
     if (dashboardIntent?.type !== 'rentals') return;
@@ -5021,7 +5029,6 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
     <section className="panel rentals-command-panel">
       <div className="module-actions">
         <ButtonPrimary onClick={() => openRentalEditor(null)}><Plus size={17} />Nowe wypożyczenie</ButtonPrimary>
-        <ButtonSecondary onClick={() => { loadRentals(); loadRentalDictionaries(); }}>Odśwież</ButtonSecondary>
         <ButtonSecondary onClick={() => exportTableToCsv(RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, activeRows)} disabled={!activeRows.length}><Download size={15} />CSV</ButtonSecondary>
         <ButtonSecondary onClick={() => exportTableToPdf('Wypożyczenia', RENTALS_TABLE_KEY, RENTALS_TABLE_COLUMNS, activeRows)} disabled={!activeRows.length}><FileText size={15} />PDF</ButtonSecondary>
       </div>
@@ -5051,10 +5058,6 @@ function RentalsModule({ dashboardIntent, onConsumeDashboardIntent }) {
       collapsed={returnedCollapsed}
       onToggle={() => setReturnedCollapsed((value) => !value)}
       className="panel rentals-table-panel rentals-records-section returned-rentals-section"
-      actions={<>
-        <ButtonSecondary onClick={() => exportTableToCsv(`${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><Download size={15} />CSV</ButtonSecondary>
-        <ButtonSecondary onClick={() => exportTableToPdf('Historia wypożyczeń', `${RENTALS_TABLE_KEY}-returned`, RENTALS_TABLE_COLUMNS, returnedRows)} disabled={!returnedRows.length}><FileText size={15} />PDF</ButtonSecondary>
-      </>}
     >
       <DataTable storageKey={`${RENTALS_TABLE_KEY}-returned`} loading={loading} columns={RENTALS_TABLE_COLUMNS} rows={returnedRows} onOpen={(row) => openRentalEditor(row._rental)} onDelete={handleDeleteReturnedRental} openLabel="Podgląd wypożyczenia" deleteLabel="Usuń z historii" customRowActions={[{ key: 'agreement', label: 'Umowa', icon: FileText, visible: canOpenAgreement, onClick: (row) => setAgreementRental(row._rental ?? row) }, { key: 'restore', label: 'Przywróć jako aktywne wypożyczenie', icon: RotateCcw, onClick: handleRestoreReturnedRental }]} isRowExpandable={(row) => Boolean((row._rental?.rental_items ?? []).length)} renderExpandedRow={renderRentalItems} />
     </HistorySection>
@@ -6302,7 +6305,7 @@ function generateServiceNumber(existingRows = []) {
   return formatDocumentNumber({ ...settings, format: effectiveFormat }, sequence, today);
 }
 
-function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
+function ServiceModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent }) {
   const [rows, setRows] = useState([]);
   const [clients, setClients] = useState([]);
   const [equipmentRows, setEquipmentRows] = useState([]);
@@ -6358,7 +6361,9 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     setLoading(false);
   };
 
-  useEffect(() => { loadServiceData(); }, []);
+  useEffect(() => {
+    if (isActive) loadServiceData();
+  }, [isActive]);
 
   useEffect(() => {
     if (dashboardIntent?.type !== 'service') return;
@@ -6593,7 +6598,6 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
     <section className="panel hero-panel service-hero-panel">
       <div className="module-actions">
         <AppButton variant="primary" className="module-action-button" onClick={createNewOrder}><Plus size={18} />Nowe zlecenie</AppButton>
-        <AppButton variant="secondary" className="module-action-button" onClick={loadServiceData}>Odśwież</AppButton>
         <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(SERVICE_TABLE_KEY, serviceColumns, filteredRows)} disabled={!filteredRows.length}><Download size={16} />CSV</AppButton>
         <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Aktywne zlecenia serwisowe', SERVICE_TABLE_KEY, serviceColumns, filteredRows)} disabled={!filteredRows.length}><FileText size={16} />PDF</AppButton>
       </div>
@@ -6638,10 +6642,6 @@ function ServiceModule({ dashboardIntent, onConsumeDashboardIntent }) {
       collapsed={serviceHistoryCollapsed}
       onToggle={() => setServiceHistoryCollapsed((v) => !v)}
       className="panel service-list-panel rentals-records-section service-completed-section"
-      actions={<>
-        <ButtonSecondary onClick={() => exportTableToCsv(`${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><Download size={15} />CSV</ButtonSecondary>
-        <ButtonSecondary onClick={() => exportTableToPdf('Historia serwisów', `${SERVICE_TABLE_KEY}-completed`, completedServiceColumns, completedTableRows)} disabled={!completedTableRows.length}><FileText size={15} />PDF</ButtonSecondary>
-      </>}
     >
       <DataTable
         storageKey={`${SERVICE_TABLE_KEY}-completed`}
@@ -7030,9 +7030,9 @@ function ServiceOrderEditor({ order, clients, equipmentRows, existingRows, servi
       <FormField label="Planowany termin"><AppInput type="date" value={form.planned_date || ''} onChange={(event) => update('planned_date', event.target.value)} /></FormField>
       <FormField label="Data zakończenia"><AppInput type="date" value={form.completed_date || ''} onChange={(event) => update('completed_date', event.target.value)} /></FormField>
     </div>
-    <div className="service-order-tabs" role="tablist" aria-label="Sekcje zlecenia serwisowego">
-      {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
-    </div>
+    <AppTabs className="service-order-tabs" aria-label="Sekcje zlecenia serwisowego">
+      {tabs.map((tab) => <button key={tab.id} type="button" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+    </AppTabs>
     <div className="service-order-tab-panel">
       {activeTab === 'basic' && <div className="service-tab-content service-tab-basic">
         <SectionPanel className="service-record-section" title="Klient i sprzęt klienta">
@@ -7496,7 +7496,7 @@ function CalendarManualEventEditor({ event, initialDate, onClose, onSave, onDele
   </ResizableModalFrame>;
 }
 
-function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate }) {
+function CalendarModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent, onNavigate }) {
   const settings = getCalendarSettings();
   const [view, setView] = useState(CALENDAR_VIEWS.some((item) => item.id === settings.view) ? settings.view : 'week');
   const [anchorDate, setAnchorDate] = useState(getLocalIsoDate());
@@ -7539,7 +7539,9 @@ function CalendarModule({ dashboardIntent, onConsumeDashboardIntent, onNavigate 
     setLoading(false);
   };
 
-  useEffect(() => { loadCalendar(); }, []);
+  useEffect(() => {
+    if (isActive) loadCalendar();
+  }, [isActive]);
 
   useEffect(() => {
     const onStorage = (event) => {
@@ -7907,9 +7909,9 @@ function ProjectTaskEditor({ task, projectId, sections = [], workPriorities = DE
   return <ResizableModalFrame storageKey="fixer-project-task-modal" defaultSize={{ width: 680, height: 520 }} minSize={{ width: 500, height: 400 }} eyebrow="Zadanie projektu" title={task ? 'Edytuj zadanie' : 'Nowe zadanie'} onClose={onClose}
     footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary>{canSaveTask && <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{task ? 'Zapisz' : 'Dodaj'}</ButtonPrimary>}</>}>
     {notice && <div className="notice">{notice}</div>}
-    <div className="record-tabs" role="tablist">
-      {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
-    </div>
+    <AppTabs className="record-tabs" aria-label="Sekcje zadania projektu">
+      {tabs.map((tab) => <button key={tab.id} type="button" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+    </AppTabs>
 
     {activeTab === 'data' && <div className="project-task-form">
       <FormField label="Tytuł *">
@@ -8334,9 +8336,9 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     <ResizableModalFrame storageKey="fixer-project-modal" defaultSize={{ width: 900, height: 640 }} minSize={{ width: 640, height: 480 }} eyebrow="Projekt" title={isNew ? 'Nowy projekt' : String(project?.name || 'Projekt bez nazwy')} onClose={onClose}
       footer={<><ButtonSecondary onClick={onClose} disabled={busy}>Anuluj</ButtonSecondary>{canSaveProject && <ButtonPrimary onClick={handleSave} disabled={busy}><Save size={15} />{isNew ? 'Utwórz projekt' : 'Zapisz'}</ButtonPrimary>}</>}>
       {notice && <div className="notice">{notice}</div>}
-      <div className="record-tabs" role="tablist">
-        {tabs.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
-      </div>
+      <AppTabs className="record-tabs" aria-label="Sekcje projektu">
+        {tabs.map((tab) => <button key={tab.id} type="button" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+      </AppTabs>
 
       {activeTab === 'data' && <div className="service-order-form-body">
         <FormField label="Nazwa projektu *">
@@ -10839,7 +10841,7 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
   </aside>;
 }
 
-function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme = 'dark', permissions = { view: true, create: true, edit: true, delete: true }, currentUser = null }) {
+function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent, colorTheme = 'dark', permissions = { view: true, create: true, edit: true, delete: true }, currentUser = null }) {
   const currentUserId = currentUser?.profile?.id ?? currentUser?.id ?? null;
   const [rows, setRows] = useState([]);
   const [organizerRows, setOrganizerRows] = useState([]);
@@ -10975,7 +10977,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
   }, [permissions.view, permissions.create, permissions.edit, permissions.delete]);
 
   useEffect(() => {
-    if (permissions.view !== true) return undefined;
+    if (!isActive || permissions.view !== true) return undefined;
     let cancelled = false;
     if (import.meta.env.DEV) {
       console.debug('[Projects] load start', { userId: currentUser?.id ?? currentUser?.email ?? 'local' });
@@ -10984,7 +10986,7 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
     return () => {
       cancelled = true;
     };
-  }, [permissions.view, currentUser?.id, currentUser?.email]);
+  }, [isActive, permissions.view, currentUser?.id, currentUser?.email]);
 
   useEffect(() => {
     const syncLayoutToBounds = () => {
@@ -12044,7 +12046,6 @@ function ProjectsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme 
           <div className="module-actions">
             {canCreateProjects && <AppButton variant="primary" className="module-action-button" onClick={openNewSimpleTask}><Plus size={18} />Zadanie</AppButton>}
             {canCreateProjects && <AppButton variant="secondary" className="module-action-button" onClick={openNewProject}><Plus size={18} />Projekt</AppButton>}
-            <AppButton variant="secondary" className="module-action-button" onClick={loadData}>Odśwież</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToCsv(PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><Download size={16} />CSV</AppButton>
             <AppButton variant="secondary" className="module-action-button" onClick={() => exportTableToPdf('Zadania i projekty', PROJECTS_TABLE_KEY, activeColumns, activeTableRows)} disabled={!activeTableRows.length}><FileText size={16} />PDF</AppButton>
           </div>
@@ -12338,7 +12339,7 @@ function NotesBoardView({ notes, selectedNoteId, onSelectNote }) {
   </div>;
 }
 
-function NotatkiModule() {
+function NotatkiModule({ isActive = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -12363,7 +12364,9 @@ function NotatkiModule() {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    if (isActive) loadData();
+  }, [isActive]);
 
   useEffect(() => {
     localStorage.setItem(NOTES_DETAILS_COLLAPSED_KEY, detailsCollapsed ? 'true' : 'false');
@@ -12585,7 +12588,6 @@ function NotatkiModule() {
         <section className="panel hero-panel projects-actions-panel">
           <div className="module-actions">
             <AppButton variant="primary" className="module-action-button" onClick={handleCreate} disabled={busy}><Plus size={16} />Notatka</AppButton>
-            <AppButton variant="secondary" className="module-action-button" onClick={loadData} disabled={loading}>Odśwież</AppButton>
             <div className="work-type-switch notes-view-switch" role="group" aria-label="Widok notatek">
               {[['list', 'Lista', List], ['board', 'Karty', Columns3]].map(([value, label, Icon]) => (
                 <button key={value} type="button" className={(filters.view ?? 'list') === value ? 'active' : ''} onClick={() => setFilters((current) => ({ ...current, view: value }))}><Icon size={14} />{label}</button>
@@ -12693,9 +12695,9 @@ function OrganizerTaskEditor({ task, categories, workPriorities = DEFAULT_WORK_P
   </ResizableModalFrame>;
 }
 
-function SettingsModule({ dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true, currentUser = null }) {
+function SettingsModule({ isActive = false, dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors, onStatusColorChange, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true, currentUser = null }) {
   return <div className="module-page settings-module-page compact-settings-page">
-    <SettingsV2 mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} onApplyUiThemePreset={onApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} onPreferenceChange={onPreferenceChange} appSettingsReady={appSettingsReady} currentUser={currentUser} />
+    <SettingsV2 isActive={isActive} mode="settings" dashboardIntent={dashboardIntent} onConsumeDashboardIntent={onConsumeDashboardIntent} colorTheme={colorTheme} onChangeColorTheme={onChangeColorTheme} onApplyUiThemePreset={onApplyUiThemePreset} statusColors={statusColors} onStatusColorChange={onStatusColorChange} activeUiTheme={activeUiTheme} onChangeActiveUiTheme={onChangeActiveUiTheme} onPreferenceChange={onPreferenceChange} appSettingsReady={appSettingsReady} currentUser={currentUser} />
   </div>;
 }
 
@@ -16965,13 +16967,14 @@ function SettingsNavigation({ sections, activeSection, onSelect }) {
 
 function SettingsSectionShell({ subSections = [], activeSub, onSubChange, children }) {
   return <section className="panel settings-content settings-main-panel settings-section-shell">
-    {subSections.length > 0 && <div className="settings-sub-tabs-bar">
+    {subSections.length > 0 && <AppTabs className="settings-sub-tabs-bar" aria-label="Podsekcje ustawień">
       {subSections.map((sub) => <button key={sub.id} type="button"
+        aria-selected={activeSub === sub.id}
         className={`settings-sub-tab ${activeSub === sub.id ? 'active' : ''}`}
         onClick={() => onSubChange(sub.id)}>
         {sub.label}
       </button>)}
-    </div>}
+    </AppTabs>}
     {children}
   </section>;
 }
@@ -18474,7 +18477,7 @@ function DocumentTemplateRowActions({ type, menuOpen, onToggleMenu, onEdit, onPr
   </div>;
 }
 
-function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true, currentUser = null }) {
+function SettingsV2({ isActive = false, mode = 'settings', dashboardIntent, onConsumeDashboardIntent, colorTheme, onChangeColorTheme, onApplyUiThemePreset, statusColors = {}, onStatusColorChange = () => {}, activeUiTheme, onChangeActiveUiTheme, onPreferenceChange = () => {}, appSettingsReady = true, currentUser = null }) {
   const isDocumentsMode = mode === 'documents';
   const isAdmin = currentUser?.profile?.role === 'admin' && currentUser?.profile?.is_active !== false;
   const themeOptions = [
@@ -18591,9 +18594,10 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setWorkPriorityItems(result.data ?? []);
   };
   useEffect(() => {
+    if (!isActive) return;
     loadOrganizerSettings();
     loadWorkPrioritySettings();
-  }, []);
+  }, [isActive]);
 
   useEffect(() => {
     documentTemplateLibraryRef.current = documentTemplateLibrary;
@@ -19335,7 +19339,9 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     setNotice('');
   };
 
-  useEffect(() => { loadTypes(); }, []);
+  useEffect(() => {
+    if (isActive) loadTypes();
+  }, [isActive]);
 
   const loadEquipmentSettings = async () => {
     const [categoriesResult, statusesResult, locationsResult] = await Promise.all([
@@ -19351,7 +19357,9 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     }
   };
 
-  useEffect(() => { loadEquipmentSettings(); }, []);
+  useEffect(() => {
+    if (isActive) loadEquipmentSettings();
+  }, [isActive]);
 
   useEffect(() => {
     if (isDocumentsMode) return;
@@ -19449,7 +19457,9 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
     }
   };
 
-  useEffect(() => { loadServiceSettings(); }, []);
+  useEffect(() => {
+    if (isActive) loadServiceSettings();
+  }, [isActive]);
 
   const resetServiceDictionary = async (type) => {
     setConfirmDialog({
@@ -20401,7 +20411,7 @@ function SettingsV2({ mode = 'settings', dashboardIntent, onConsumeDashboardInte
         {renderServiceDictionaryEditor(SERVICE_DICTIONARY_TYPES.progressTemplate, 'Szablony postępów', 'Szybkie wpisy dodawane w historii zgłoszenia.', 'np. Klient poinformowany')}
       </div></DictionariesSettingsPanel>}
 
-      {activeSection === 'users' && isAdmin && <UsersPermissionsPanel currentUser={currentUser} />}
+      {activeSection === 'users' && isAdmin && <UsersPermissionsPanel isActive={isActive} currentUser={currentUser} />}
 
       {activeSection === 'documents' && <DocumentsSettingsPanel><div className="documents-settings-pane documents-workspace documents-v2-workspace">
         <aside className="documents-nav-panel documents-v2-nav">

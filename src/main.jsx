@@ -84,6 +84,7 @@ import {
   fetchOrganizerTaskComments,
   fetchOrganizerTasks,
   createOrganizerTask,
+  reorderOrganizerTasks,
   updateOrganizerTaskComment,
   resetOrganizerCategories,
   updateOrganizerCategory,
@@ -8669,9 +8670,14 @@ function ProjectEditor({ project, clients = [], allProjects = [], documentSettin
     { key: 'title', label: 'Nazwa' },
     { key: 'status', label: 'Status' },
     { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
-    { key: 'due_date', label: 'Termin' }
+    { key: 'due_date', label: 'Termin' },
+    { key: 'created_display', label: 'Utworzono' }
   ];
-  const historyTaskRows = historyTasks.map((t) => ({ ...t, _task: t }));
+  const historyTaskRows = historyTasks.map((t) => ({
+    ...t,
+    _task: t,
+    created_display: t.created_at ? formatDashboardDate(t.created_at) : '—'
+  }));
 
   const tabs = [
     { id: 'data', label: 'Dane projektu' },
@@ -8860,6 +8866,8 @@ const PROJECT_TASK_INSPECTOR_DESCRIPTION_KEY = buildUiResizeStorageKey('project-
 const PROJECT_TASK_INSPECTOR_COMMENT_KEY = buildUiResizeStorageKey('project-task-inspector', 'comment');
 const PROJECT_TASK_INSPECTOR_COLLAPSED_KEY = 'fixer.projects.taskInspectorDetailsCollapsed';
 const PROJECT_TASK_INSPECTOR_COMMENTS_COLLAPSED_KEY = 'fixer.projects.taskInspectorCommentsCollapsed';
+const SIMPLE_TASK_INSPECTOR_COMMENTS_COLLAPSED_KEY = 'fixer.projects.simpleTaskInspectorCommentsCollapsed';
+const SIMPLE_TASK_INSPECTOR_COMMENT_KEY = buildUiResizeStorageKey('simple-task-inspector', 'comment');
 const PROJECT_TASK_INSPECTOR_DATA_DEFAULT_HEIGHT = 460;
 const PROJECT_TASK_INSPECTOR_DATA_MIN_HEIGHT = 220;
 const PROJECT_TASK_INSPECTOR_COMMENTS_MIN_HEIGHT = 250;
@@ -9052,8 +9060,8 @@ function ProjectTableTitle({ project, title, titleClassName = '' }) {
 
 function WorkTypeBadge({ type }) {
   const isProject = type === 'project';
-  return <span className={`work-type-pill work-type-pill-inline ${isProject ? 'project' : 'task'}`}>
-    {isProject ? 'Projekt' : 'Zadanie'}
+  return <span className={`work-type-pill work-type-pill-inline work-type-pill-compact ${isProject ? 'project' : 'task'}`} title={isProject ? 'Projekt' : 'Zadanie'} aria-label={isProject ? 'Projekt' : 'Zadanie'}>
+    {isProject ? 'P-' : 'Z-'}
   </span>;
 }
 
@@ -9669,8 +9677,9 @@ function ProjectTaskInlineComments({ task, onChanged, colorTheme = 'dark', permi
   </div>;
 }
 
-function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
+function SimpleTaskComments({ task, onChanged, collapsed = false, onCollapsedChange = null, colorTheme = 'dark', permissions = { create: true, edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
   const taskId = task?.id ?? task?.localId;
+  const commentResizeKey = useMemo(() => getProjectTaskInspectorFieldStorageKey(SIMPLE_TASK_INSPECTOR_COMMENT_KEY, commentAuthor?.user_id), [commentAuthor?.user_id]);
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -9774,13 +9783,28 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions 
     }
   };
 
-  return <div className={`simple-task-comments ${comments.length > 0 ? 'has-comments' : ''}`}>
-    <div className="simple-task-comments-title">Komentarze / postęp <span>({comments.length})</span></div>
+  return <div className={`simple-task-comments project-task-inline-comments-panel ${comments.length > 0 ? 'has-comments' : ''} ${collapsed ? 'is-comments-collapsed' : ''}`.trim()}>
+    <div className="project-comments-section-header">
+      <button
+        type="button"
+        className={`project-icon-action project-task-details-toggle ${collapsed ? 'is-collapsed' : ''}`}
+        onClick={() => onCollapsedChange?.(!collapsed)}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? 'Rozwiń komentarze' : 'Zwiń komentarze'}
+        title={collapsed ? 'Rozwiń komentarze' : 'Zwiń komentarze'}
+      >
+        {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+      </button>
+      <button type="button" className="project-comments-section-toggle simple-task-comments-title" onClick={() => onCollapsedChange?.(!collapsed)} aria-expanded={!collapsed}>
+        Komentarze / postęp <span>({comments.length})</span>
+      </button>
+    </div>
+    {!collapsed && <>
     {notice && <div className="notice">{notice}</div>}
     {canCreateProjectItems && <div className="project-comments-add">
       <div className="project-comment-field">
         <span className="project-comment-label">Komentarz</span>
-        <AppTextarea value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza lub postępu..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
+        <AppTextarea resizeKey={commentResizeKey} value={newComment} onChange={(event) => setNewComment(event.target.value)} placeholder="Treść komentarza lub postępu..." rows={3} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) addComment(); }} />
         <ButtonPrimary className="project-comment-submit-button" onClick={addComment} disabled={!newComment.trim()}>Skomentuj</ButtonPrimary>
       </div>
     </div>}
@@ -9809,6 +9833,7 @@ function SimpleTaskComments({ task, onChanged, colorTheme = 'dark', permissions 
       })}
       {!loading && !comments.length && <div className="project-detail-empty">Brak komentarzy.</div>}
     </div>
+    </>}
     {confirmDialog && <ConfirmDialog title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} cancelLabel={confirmDialog.cancelLabel} variant={confirmDialog.variant} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog(null)} />}
     {commentContextMenu && <AppRowContextMenu
       x={commentContextMenu.x}
@@ -10842,6 +10867,7 @@ function ProjectInspectorPanel({ project, collapsed, width, onResizeStart, onTog
           <AppTextarea resizeKey={`fixer:ui-resize:project-inspector:${projectId}:notes`} value={form.notes ?? ''} onChange={(event) => set('notes', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
         </FormField>
         {project.clients?.name && <div className="project-inspector-related"><span>Klient</span><strong>{project.clients.name}</strong></div>}
+        <div className="project-inspector-related"><span>Utworzono</span><strong>{project.created_at ? formatServiceDateTime(project.created_at) : '—'}</strong></div>
       </div>
     </div>}
   </aside>;
@@ -11052,8 +11078,8 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
       <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
       <div>
         <span className="project-details-type">Zadanie</span>
-        <strong>{task ? (String(task.title ?? '').trim() || 'Zadanie bez tytułu') : 'Wybierz zadanie'}</strong>
-        {task && <span>{task.status || '—'} · Termin: {task.due_date || 'brak'}</span>}
+        <strong>{task ? (String(form.title ?? '').trim() || 'Zadanie bez tytułu') : 'Wybierz zadanie'}</strong>
+        {task && <span>{form.status || '—'} · Termin: {form.due_date || 'brak'}</span>}
       </div>
       <button type="button" className="project-icon-action project-details-close" onClick={onClose} aria-label="Zamknij panel" title="Zamknij panel"><X size={15} /></button>
     </div>
@@ -11085,14 +11111,17 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
                 {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
               </AppSelect>
             </FormField>
+            <FormField label="Termin">
+              <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
+            </FormField>
+            <FormField label="Utworzono">
+              <AppInput value={task.created_at ? formatDashboardDate(task.created_at) : '—'} readOnly />
+            </FormField>
             <FormField label="Sekcja">
               <AppSelect value={form.section_id ?? ''} onChange={(event) => set('section_id', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
                 <option value="">Bez sekcji</option>
                 {sections.map((section) => <option key={section.id ?? section.localId} value={section.id ?? section.localId}>{section.name}</option>)}
               </AppSelect>
-            </FormField>
-            <FormField label="Termin">
-              <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
             </FormField>
             <FormField label="Przypomnienie">
               <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
@@ -11109,12 +11138,163 @@ function ProjectTaskInspectorPanel({ task, collapsed, width, onResizeStart, onTo
   </aside>;
 }
 
-function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose = null, onEditTask, onStatusChange, onDeleteTask, onChanged, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
-  const done = Boolean(task?.archived) || isCompletedStatus(task?.status);
-  const title = String(task?.title ?? '').trim() || 'Zadanie bez tytułu';
+function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggleCollapse, onClose = null, onAutoSaveTask, autosaveRef = null, onDeleteTask, onChanged, categories = DEFAULT_ORGANIZER_CATEGORIES, workPriorities = DEFAULT_WORK_PRIORITIES, colorTheme = 'dark', permissions = { edit: true, delete: true }, commentAuthor = { author: 'Operator', user_id: null } }) {
+  const taskId = task?.id ?? task?.localId;
+  const commentsCollapseStorageKey = useMemo(() => getProjectTaskInspectorTaskStorageKey(SIMPLE_TASK_INSPECTOR_COMMENTS_COLLAPSED_KEY, commentAuthor?.user_id, taskId), [commentAuthor?.user_id, taskId]);
+  const [form, setForm] = useState(() => ({}));
+  const [notice, setNotice] = useState('');
+  const [saveStatus, setSaveStatus] = useState('idle');
+  const [commentsCollapsed, setCommentsCollapsed] = useState(() => localStorage.getItem(commentsCollapseStorageKey) === 'true');
+  const autosaveTimerRef = useRef(null);
+  const formRef = useRef({});
+  const dirtyRef = useRef(false);
+  const saveRevisionRef = useRef(0);
+  const savingRef = useRef(Promise.resolve());
+  const commentsCollapseStorageKeyRef = useRef(commentsCollapseStorageKey);
   const [taskContextMenu, setTaskContextMenu] = useState(null);
   const canEditProjectItems = permissions.edit === true;
   const canDeleteProjectItems = permissions.delete === true;
+  const done = Boolean(form.archived) || isCompletedStatus(form.status);
+  const title = String(form.title ?? task?.title ?? '').trim() || 'Zadanie bez tytułu';
+
+  const buildFormFromTask = () => {
+    const safeTask = task ?? {};
+    return {
+      title: safeTask.title ?? '',
+      description: safeTask.description ?? '',
+      status: normalizeWorkStatus(safeTask.status) || WORK_STATUSES[0],
+      priority: normalizeWorkPriority(safeTask.priority) || getDefaultWorkPriority(),
+      due_date: safeTask.due_date ?? '',
+      reminder_at: safeTask.reminder_at ? String(safeTask.reminder_at).slice(0, 16) : '',
+      category: safeTask.category ?? '',
+      linked_module: safeTask.linked_module ?? '',
+      linked_id: safeTask.linked_id ?? null,
+      linked_label: safeTask.linked_label ?? '',
+      archived: Boolean(safeTask.archived),
+      completed_date: safeTask.completed_date ?? null,
+      created_at: safeTask.created_at,
+      ...(task ? { id: task.id, localId: task.localId } : {})
+    };
+  };
+
+  const clearAutosaveTimer = () => {
+    if (!autosaveTimerRef.current) return;
+    window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = null;
+  };
+
+  const saveDraft = (draft = formRef.current) => {
+    if (!canEditProjectItems) return savingRef.current;
+    const draftTaskId = draft?.id ?? draft?.localId;
+    if (!draftTaskId || !dirtyRef.current) return savingRef.current;
+    if (!String(draft.title ?? '').trim()) {
+      setNotice('Tytuł zadania jest wymagany.');
+      setSaveStatus('error');
+      return savingRef.current;
+    }
+
+    dirtyRef.current = false;
+    const saveRevision = saveRevisionRef.current;
+    const payload = {
+      ...draft,
+      due_date: draft.due_date || null,
+      reminder_at: draft.reminder_at ? new Date(draft.reminder_at).toISOString() : null,
+      category: draft.category || null,
+      linked_module: draft.linked_module || null,
+      linked_label: draft.linked_label || null
+    };
+    savingRef.current = savingRef.current.then(async () => {
+      try {
+        const result = await onAutoSaveTask?.(payload);
+        if (result?.error) {
+          dirtyRef.current = true;
+          setNotice(humanizeError(result.error, 'Błąd zapisu zadania'));
+          setSaveStatus('error');
+          return;
+        }
+        setNotice('');
+        if (saveRevisionRef.current === saveRevision) setSaveStatus('saved');
+      } catch (error) {
+        dirtyRef.current = true;
+        setNotice(humanizeError(error, 'Błąd zapisu zadania'));
+        setSaveStatus('error');
+      }
+    });
+    return savingRef.current;
+  };
+
+  const flushPendingChanges = () => {
+    clearAutosaveTimer();
+    return saveDraft(formRef.current);
+  };
+
+  useEffect(() => {
+    flushPendingChanges();
+    const nextForm = buildFormFromTask();
+    formRef.current = nextForm;
+    dirtyRef.current = false;
+    setForm(nextForm);
+    setNotice('');
+    setSaveStatus('idle');
+    return () => { flushPendingChanges(); };
+  }, [taskId]);
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
+
+  useEffect(() => {
+    setCommentsCollapsed(localStorage.getItem(commentsCollapseStorageKey) === 'true');
+  }, [commentsCollapseStorageKey]);
+
+  useEffect(() => {
+    if (commentsCollapseStorageKeyRef.current !== commentsCollapseStorageKey) {
+      commentsCollapseStorageKeyRef.current = commentsCollapseStorageKey;
+      return;
+    }
+    localStorage.setItem(commentsCollapseStorageKey, commentsCollapsed ? 'true' : 'false');
+  }, [commentsCollapseStorageKey, commentsCollapsed]);
+
+  useEffect(() => {
+    if (!autosaveRef) return undefined;
+    autosaveRef.current = { flush: flushPendingChanges };
+    return () => {
+      flushPendingChanges();
+      autosaveRef.current = null;
+    };
+  }, [autosaveRef, taskId]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => { flushPendingChanges(); };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  const scheduleSave = (delay = 700) => {
+    clearAutosaveTimer();
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      saveDraft(formRef.current);
+    }, delay);
+  };
+
+  const set = (field, value, options = {}) => {
+    if (!canEditProjectItems) return;
+    const next = { ...formRef.current, [field]: value };
+    formRef.current = next;
+    dirtyRef.current = true;
+    saveRevisionRef.current += 1;
+    setForm(next);
+    setSaveStatus('saving');
+    if (options.immediate) {
+      window.setTimeout(() => {
+        clearAutosaveTimer();
+        saveDraft(formRef.current);
+      }, 0);
+      return;
+    }
+    scheduleSave();
+  };
 
   const openTaskContextMenu = (event) => {
     if (!task) return;
@@ -11137,43 +11317,67 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
     </aside>;
   }
 
-  return <aside className="project-details-panel simple-task-details-panel" style={{ width: `${width}px` }}>
+  return <aside className="project-details-panel project-inspector-panel simple-task-details-panel" style={{ width: `${width}px` }}>
     <div className="project-details-splitter" onMouseDown={onResizeStart} title="Zmień szerokość panelu" />
     <div className="project-details-header">
       <button type="button" className="project-icon-action" onClick={onToggleCollapse} aria-label="Zwiń panel" title="Zwiń panel"><ChevronLeft size={15} /></button>
       <div>
         <span className="project-details-type">Zadanie</span>
         <strong>{task ? title : 'Wybierz zadanie'}</strong>
-        {task && <span>{task.status || '—'} · Termin: {task.due_date || 'brak'}</span>}
+        {task && <span>{form.status || '—'} · Termin: {form.due_date || 'brak'}</span>}
       </div>
       {onClose && <button type="button" className="project-icon-action project-details-close" onClick={onClose} aria-label="Zamknij panel" title="Zamknij panel"><X size={15} /></button>}
     </div>
     {!task && <EmptyState title="Wybierz zadanie lub projekt z listy." />}
     {task && <div className="project-details-body">
-      <div className="project-details-toolbar">
-        {canEditProjectItems && <TaskDoneToggle done={done} onToggle={() => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
+      <div className="project-details-toolbar" onContextMenu={openTaskContextMenu}>
+        {canEditProjectItems && <TaskDoneToggle done={done} onToggle={() => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })} />}
+        {canDeleteProjectItems && <button type="button" className="project-icon-action danger-action" onClick={() => onDeleteTask?.(task)} aria-label="Usuń zadanie" title="Usuń zadanie"><Trash2 size={15} /></button>}
+        <SaveStatusIndicator status={saveStatus} className="project-task-save-status" />
       </div>
-      <div className="project-details-body-scroll">
-        <div
-          className={`simple-task-details-card ${done ? 'is-done' : ''} project-comment-interactive-row`}
-          onDoubleClick={() => canEditProjectItems && onEditTask(task)}
-          onContextMenu={openTaskContextMenu}
-          onKeyDown={(event) => { if (event.key === 'Enter' && canEditProjectItems) onEditTask(task); }}
-          tabIndex={0}
-          title="Dwuklik — edycja, prawy klik — menu"
-        >
-          <strong>{title}</strong>
-          <dl>
-            <div><dt>Status</dt><dd>{task.status || '—'}</dd></div>
-            <div><dt>Priorytet</dt><dd>{task.priority ? <StatusPill value={task.priority} /> : '—'}</dd></div>
-            <div><dt>Termin</dt><dd>{task.due_date || 'brak'}</dd></div>
-            <div><dt>Przypomnienie</dt><dd>{task.reminder_at ? formatServiceDateTime(task.reminder_at) : 'brak'}</dd></div>
-            {task.category && <div><dt>Kategoria</dt><dd>{task.category}</dd></div>}
-            {task.linked_label && <div><dt>Powiązanie</dt><dd>{task.linked_label}</dd></div>}
-          </dl>
-          <p>{task.description || 'Brak opisu.'}</p>
+      <div className="project-details-body-scroll project-inspector-fields">
+        {notice && <div className="notice">{notice}</div>}
+        {!canEditProjectItems && <div className="notice">Tryb tylko do odczytu: brak uprawnienia projects.edit.</div>}
+        <FormField label="Nazwa zadania *">
+          <AppInput value={form.title ?? ''} onChange={(event) => set('title', event.target.value)} readOnly={!canEditProjectItems} />
+        </FormField>
+        <div className="project-inspector-grid">
+          <FormField label="Status">
+            <AppSelect value={normalizeWorkStatus(form.status)} onChange={(event) => set('status', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
+              {WORK_STATUSES.map((status) => <option key={status}>{status}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Priorytet">
+            <AppSelect value={normalizeWorkPriority(form.priority)} onChange={(event) => set('priority', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
+              {workPriorities.map((priority) => <option key={priority}>{priority}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Termin">
+            <AppInput type="date" value={form.due_date ?? ''} onChange={(event) => set('due_date', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
+          </FormField>
+          <FormField label="Utworzono">
+            <AppInput value={task.created_at ? formatDashboardDate(task.created_at) : '—'} readOnly />
+          </FormField>
+          <FormField label="Przypomnienie">
+            <AppInput type="datetime-local" value={form.reminder_at ?? ''} onChange={(event) => set('reminder_at', event.target.value, { immediate: true })} readOnly={!canEditProjectItems} />
+          </FormField>
+          <FormField label="Kategoria">
+            <AppSelect value={form.category ?? ''} onChange={(event) => set('category', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
+              <option value="">Brak kategorii</option>
+              {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </AppSelect>
+          </FormField>
+          <FormField label="Powiązanie z modułem">
+            <AppSelect value={form.linked_module ?? ''} onChange={(event) => set('linked_module', event.target.value, { immediate: true })} disabled={!canEditProjectItems}>
+              <option value="">Brak</option><option value="service">Serwis</option><option value="rental">Wypożyczenie</option><option value="client">Klient</option><option value="equipment">Sprzęt</option>
+            </AppSelect>
+          </FormField>
         </div>
-        <SimpleTaskComments key={String(task.id ?? task.localId)} task={task} onChanged={onChanged} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
+        {form.linked_module && <FormField label="Opis powiązania"><AppInput value={form.linked_label ?? ''} onChange={(event) => set('linked_label', event.target.value)} readOnly={!canEditProjectItems} /></FormField>}
+        <FormField label="Opis">
+          <AppTextarea resizeKey={`fixer:ui-resize:simple-task-inspector:${taskId}:description`} value={form.description ?? ''} onChange={(event) => set('description', event.target.value)} rows={5} readOnly={!canEditProjectItems} />
+        </FormField>
+        <SimpleTaskComments key={String(task.id ?? task.localId)} task={task} onChanged={onChanged} collapsed={commentsCollapsed} onCollapsedChange={setCommentsCollapsed} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
       </div>
     </div>}
     {taskContextMenu && <AppRowContextMenu
@@ -11182,13 +11386,12 @@ function SimpleTaskDetailsPanel({ task, collapsed, width, onResizeStart, onToggl
       colorTheme={colorTheme}
       onClose={() => setTaskContextMenu(null)}
       items={[
-        canEditProjectItems ? { key: 'edit', label: 'Edytuj', icon: <Pencil size={14} />, onClick: () => onEditTask(task) } : null,
         {
           key: 'toggle-done',
           label: done ? 'Przywróć do zrobienia' : 'Oznacz jako zakończone',
           icon: <CheckCheck size={14} />,
           visible: canEditProjectItems,
-          onClick: () => onStatusChange(task, done ? WORK_STATUSES[0] : WORK_DONE_STATUS)
+          onClick: () => set('status', done ? WORK_STATUSES[0] : WORK_DONE_STATUS, { immediate: true })
         },
         canDeleteProjectItems ? { key: 'delete', label: 'Usuń', icon: <Trash2 size={14} />, className: 'danger-action', onClick: handleDeleteTask } : null
       ].filter(Boolean)}
@@ -11440,10 +11643,16 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     if (aOrder !== bOrder) return aOrder - bOrder;
     return (new Date(b?.created_at ?? 0).getTime() || 0) - (new Date(a?.created_at ?? 0).getTime() || 0);
   });
+  const orderedOrganizerRows = [...organizerRows].sort((a, b) => {
+    const aOrder = a?.sort_order !== null && a?.sort_order !== undefined && Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : Number.MAX_SAFE_INTEGER;
+    const bOrder = b?.sort_order !== null && b?.sort_order !== undefined && Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return (new Date(b?.created_at ?? 0).getTime() || 0) - (new Date(a?.created_at ?? 0).getTime() || 0);
+  });
   const activeRows = orderedProjectRows.filter((r) => !r.archived && !isCompletedStatus(r.status));
   const historyProjectRows = orderedProjectRows.filter((r) => r.archived || isCompletedStatus(r.status));
-  const activeOrganizerRows = organizerRows.filter((t) => !t.archived && !isCompletedStatus(t.status));
-  const historyOrganizerRows = organizerRows.filter((t) => t.archived || isCompletedStatus(t.status));
+  const activeOrganizerRows = orderedOrganizerRows.filter((t) => !t.archived && !isCompletedStatus(t.status));
+  const historyOrganizerRows = orderedOrganizerRows.filter((t) => t.archived || isCompletedStatus(t.status));
   const activeRowsSignature = useMemo(
     () => activeRows.map((row) => String(row.id ?? row.localId)).join('\u0001'),
     [rows]
@@ -11610,10 +11819,15 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     if (!requireProjectPermission(task.id || task.localId ? canEditProjects : canCreateProjects, task.id || task.localId ? 'projects.edit' : 'projects.create')) return;
     if (!String(task.title ?? '').trim()) { alert('Tytuł zadania jest wymagany.'); return; }
     const completed = isCompletedStatus(task.status);
+    const existingOrders = organizerRows
+      .map((row) => row?.sort_order)
+      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+      .map(Number);
     const payload = {
       ...task,
       archived: completed,
-      completed_date: completed ? (task.completed_date || getLocalIsoDate()) : null
+      completed_date: completed ? (task.completed_date || getLocalIsoDate()) : null,
+      ...(!(task.id || task.localId) ? { sort_order: existingOrders.length ? Math.min(...existingOrders) - 100 : 100 } : {})
     };
     const result = task.id || task.localId
       ? await updateOrganizerTask(task.id ?? task.localId, payload)
@@ -11622,6 +11836,35 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     setTaskEditorOpen(false);
     setEditingSimpleTask(null);
     await loadData();
+  };
+
+  const saveSimpleTaskFromInspector = async (taskForm) => {
+    if (!requireProjectPermission(canEditProjects, 'projects.edit')) return { data: null, error: new Error('Brak uprawnienia projects.edit.') };
+    const taskId = taskForm.id ?? taskForm.localId;
+    if (!taskId) return { data: null, error: new Error('ID zadania jest wymagane.') };
+    if (!String(taskForm.title ?? '').trim()) return { data: null, error: new Error('Tytuł zadania jest wymagany.') };
+    const completed = isCompletedStatus(taskForm.status);
+    const payload = {
+      ...taskForm,
+      archived: completed,
+      completed_date: completed ? (taskForm.completed_date || getLocalIsoDate()) : null
+    };
+    const result = await updateOrganizerTask(taskId, payload);
+    if (result.error) {
+      setNotice(humanizeError(result.error, 'Błąd zapisu zadania'));
+      return result;
+    }
+    const updatedTask = { ...payload, ...(result.data ?? {}) };
+    setOrganizerRows((current) => current.map((row) => (
+      String(row.id ?? row.localId) === String(taskId) ? { ...row, ...updatedTask } : row
+    )));
+    setSelectedDetailsWork((current) => {
+      if (current?._workType !== 'task') return current;
+      if (String(current.id ?? current.localId) !== String(taskId)) return current;
+      return mapTaskRow({ ...current._source, ...updatedTask });
+    });
+    setNotice('');
+    return { ...result, data: updatedTask };
   };
 
   const setSimpleTaskStatus = async (task, nextStatus) => {
@@ -11645,6 +11888,26 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     const result = await updateOrganizerTask(task.id ?? task.localId, { ...task, priority: nextPriority });
     if (result.error) { setNotice(humanizeError(result.error, 'Błąd zmiany priorytetu zadania')); return; }
     setOrganizerRows((current) => current.map((row) => String(row.id ?? row.localId) === String(task.id ?? task.localId) ? { ...row, priority: nextPriority, ...(result.data ?? {}) } : row));
+  };
+
+  const restoreWorkItem = async (row) => {
+    if (!row || !requireProjectPermission(canEditProjects, 'projects.edit')) return;
+    if (row._workType === 'task') {
+      const task = row._source ?? row._task ?? row;
+      const result = await updateOrganizerTask(task.id ?? task.localId, {
+        ...task,
+        archived: false,
+        status: WORK_STATUSES[0],
+        completed_date: null
+      });
+      if (result.error) {
+        setNotice(humanizeError(result.error, 'Nie udało się przywrócić zadania'));
+        return;
+      }
+      await loadData();
+      return;
+    }
+    await handleRestore(row._source ?? row._project ?? row);
   };
 
   const saveProjectTaskFromInspector = async (taskForm) => {
@@ -11734,28 +11997,29 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
   };
 
   const activeColumns = [
+    { key: 'type_label', label: 'Typ', align: 'center', renderCell: (row) => <WorkTypeBadge type={row._workType} /> },
     {
       key: 'displayTitle',
       label: 'Nazwa',
       renderCell: (row) => row._workType === 'project'
         ? <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row._source?.status)} onToggle={() => setProjectStatus(row._source, WORK_DONE_STATUS)} />}
-          <WorkTypeBadge type="project" />
           <ProjectTableTitle project={row._source} title={row.displayTitle} titleClassName="work-title-project" />
         </div>
         : <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row._source?.status)} onToggle={() => setSimpleTaskStatus(row._source, isCompletedStatus(row._source?.status) ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
-          <WorkTypeBadge type="task" />
           <span className={row._source?.archived || isCompletedStatus(row._source?.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
         </div>
     },
     { key: 'client_name', label: 'Klient / powiązanie' },
     { key: 'status', label: 'Status', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'project' ? setProjectStatus(row._source, status) : setSimpleTaskStatus(row._source, status)} /> : <StatusPill value={row.status} /> },
     { key: 'priority', label: 'Priorytet', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.priority} statuses={workPriorityNames} onStatusChange={(priority) => row._workType === 'project' ? setProjectPriority(row._source, priority) : setSimpleTaskPriority(row._source, priority)} /> : <StatusPill value={row.priority} /> },
-    { key: 'due_date', label: 'Termin' }
+    { key: 'due_date', label: 'Termin' },
+    { key: 'created_display', label: 'Utworzono' }
   ];
 
   const historyColumns = [
+    { key: 'type_label', label: 'Typ', align: 'center', renderCell: (row) => <WorkTypeBadge type={row._workType} /> },
     { key: 'project_number', label: 'Numer' },
     {
       key: 'displayTitle',
@@ -11763,19 +12027,18 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
       renderCell: (row) => row._workType === 'task'
         ? <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row.status)} onToggle={() => setSimpleTaskStatus(row._source ?? row, isCompletedStatus(row.status) ? WORK_STATUSES[0] : WORK_DONE_STATUS)} />}
-          <WorkTypeBadge type="task" />
           <span className={isCompletedStatus(row.status) ? 'work-title-done' : ''}>{row.displayTitle}</span>
         </div>
         : <div className="work-list-item-title">
           {canEditProjects && <TaskDoneToggle done={isCompletedStatus(row.status)} onToggle={() => handleRestore(row._project ?? row)} />}
-          <WorkTypeBadge type="project" />
           <ProjectTableTitle project={row._project ?? row} title={row.displayTitle} titleClassName={isCompletedStatus(row.status) ? 'work-title-project work-title-done' : 'work-title-project'} />
         </div>
     },
-    { key: 'client_name', label: 'Klient' },
+    { key: 'client_name', label: 'Klient / powiązanie' },
     { key: 'status', label: 'Status', renderCell: (row) => canEditProjects ? <ServiceStatusCell value={row.status} statuses={WORK_STATUSES} onStatusChange={(status) => row._workType === 'task' ? setSimpleTaskStatus(row._source ?? row, status) : setProjectStatus(row._project ?? row, status)} /> : <StatusPill value={row.status} /> },
     { key: 'priority', label: 'Priorytet', renderCell: (row) => <StatusPill value={row.priority} /> },
     { key: 'due_date', label: 'Termin' },
+    { key: 'created_display', label: 'Utworzono' },
     { key: 'completed_display', label: 'Zakończono' }
   ];
 
@@ -11790,6 +12053,7 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     displayTitle: String(r.name ?? '').trim() || 'Projekt bez nazwy',
     title: String(r.name ?? '').trim() || 'Projekt bez nazwy',
     client_name: r.clients?.name ?? '',
+    created_display: r.created_at ? formatDashboardDate(r.created_at) : '—',
     completed_display: r.completed_at ? formatDashboardDate(r.completed_at) : '—'
   });
 
@@ -11805,6 +12069,7 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
     title: String(task.title ?? '').trim() || 'Zadanie bez tytułu',
     project_number: '—',
     client_name: task.linked_label || task.category || '',
+    created_display: task.created_at ? formatDashboardDate(task.created_at) : '—',
     completed_display: task.completed_date ? formatDashboardDate(task.completed_date) : '—'
   });
 
@@ -11852,6 +12117,25 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
       });
       setRows(previousRows);
       setNotice(`Nie udało się zapisać kolejności projektów: ${humanizeError(result.error)}`);
+      return;
+    }
+    setNotice('');
+  };
+
+  const handleReorderOrganizerTasks = async (orderedTableRows) => {
+    const orderedTasks = orderedTableRows
+      .filter((row) => row._workType === 'task')
+      .map((row) => row._source ?? row._task ?? row);
+    const previousRows = organizerRows;
+    const orderById = new Map(orderedTasks.map((task, index) => [String(task.id ?? task.localId), (index + 1) * 100]));
+    setOrganizerRows((current) => current.map((task) => {
+      const sortOrder = orderById.get(String(task.id ?? task.localId));
+      return sortOrder == null ? task : { ...task, sort_order: sortOrder };
+    }));
+    const result = await reorderOrganizerTasks(orderedTasks);
+    if (result.error) {
+      setOrganizerRows(previousRows);
+      setNotice(`Nie udało się zapisać kolejności zadań: ${humanizeError(result.error)}`);
       return;
     }
     setNotice('');
@@ -12432,8 +12716,8 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
           </div>
           <DataTable storageKey={PROJECTS_TABLE_KEY} loading={loading} columns={activeColumns} rows={activeTableRows}
             enableSelectionActions={false}
-            onReorderRows={!isTasksOnlyView && canEditProjects ? handleReorderProjects : null}
-            isRowReorderable={(row) => row._workType === 'project'}
+            onReorderRows={canEditProjects ? (isTasksOnlyView ? handleReorderOrganizerTasks : handleReorderProjects) : null}
+            isRowReorderable={(row) => isTasksOnlyView ? row._workType === 'task' : row._workType === 'project'}
             rowReorderDisabled={loading || projectOrderFiltersActive}
             enableSorting={isTasksOnlyView}
             getRowClassName={(row) => {
@@ -12472,13 +12756,13 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
         canManageAllComments={canManageAllProjectComments}
       />}
       {detailsOpen && (selectedSimpleTask
-        ? <SimpleTaskDetailsPanel task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onEditTask={openSimpleTask} onStatusChange={setSimpleTaskStatus} onDeleteTask={deleteSimpleTask} onChanged={loadData} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
+        ? <SimpleTaskDetailsPanel key={String(selectedSimpleTask.id ?? selectedSimpleTask.localId)} task={selectedSimpleTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveSimpleTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteSimpleTask} onChanged={loadData} categories={categories} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} />
         : selectedProjectTask
           ? <ProjectTaskInspectorPanel key={String(selectedProjectTask.id ?? selectedProjectTask.localId)} task={selectedProjectTask} collapsed={detailsCollapsed} width={detailsLayoutWidth} onResizeStart={startDetailsResize} onToggleCollapse={toggleDetailsCollapsed} onClose={closeDetailsPanel} onAutoSaveTask={saveProjectTaskFromInspector} autosaveRef={detailsAutosaveRef} onDeleteTask={deleteProjectTaskFromInspector} onChanged={() => { setProjectPanelRefreshKey((value) => value + 1); }} workPriorities={workPriorityNames} colorTheme={colorTheme} permissions={permissions} commentAuthor={commentAuthor} canManageAllComments={canManageAllProjectComments} commentsFocusRequest={taskCommentsFocusRequest} onCommentsFocusHandled={() => setTaskCommentsFocusRequest(null)} />
           : null)}
     </div>
 
-    <HistorySection title="Historia projektów" resizeStorageKey="projects" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
+    <HistorySection title="Historia zadań i projektów" resizeStorageKey="projects" count={historyTableRows.length} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((v) => !v)} className="panel projects-history-section">
       <DataTable storageKey={PROJECTS_HISTORY_TABLE_KEY} columns={historyColumns} rows={historyTableRows}
         enableSelectionActions={false}
         getRowClassName={(row) => row._workType ? `work-row work-row-${row._workType}` : ''}
@@ -12486,7 +12770,10 @@ function ProjectsModule({ isActive = false, dashboardIntent, onConsumeDashboardI
           ? { '--work-row-accent': normalizeAccentColor(row._source.accent_color) }
           : undefined}
         onRowClick={selectWorkItem} onOpen={openWorkItem} onEdit={canEditProjects ? editWorkItem : null} onDelete={canDeleteProjects ? deleteWorkItem : null} openLabel="Otwórz"
-        customRowActions={canEditProjects ? [{ key: 'restore', label: 'Przywróć projekt', icon: RotateCcw, onClick: (row) => handleRestore(rows.find((r) => String(r.id ?? r.localId) === String(row.id ?? row.localId))) }] : []}
+        customRowActions={canEditProjects ? [
+          { key: 'restore-task', label: 'Przywróć zadanie', icon: RotateCcw, visible: (row) => row._workType === 'task', onClick: restoreWorkItem },
+          { key: 'restore-project', label: 'Przywróć projekt', icon: RotateCcw, visible: (row) => row._workType === 'project', onClick: restoreWorkItem }
+        ] : []}
       />
     </HistorySection>
 
@@ -14021,6 +14308,7 @@ const DOCUMENT_TEMPLATE_TYPES = [
       { key: '{{issueDate}}', description: 'Data wystawienia' },
       { key: '{{rentalIssueDate}}', description: 'Data wydania' },
       { key: '{{plannedReturnDate}}', description: 'Planowany zwrot' },
+      { key: '{{rentalPeriodText}}', description: 'Pełny zapis okresu wypożyczenia' },
       { key: '{{actualReturnDate}}', description: 'Faktyczny zwrot' },
       { key: '{{clientName}}', description: 'Nazwa klienta' },
       { key: '{{clientAddress}}', description: 'Adres klienta' },
@@ -14681,6 +14969,7 @@ const DOCUMENT_DESIGNER_LIBRARY = [
   { id: 'clientDetails', label: '👤 Dane klienta', kind: 'text', width: 300, height: 64, text: '{{clientDetails}}', fontSize: 10, fontWeight: 400, hint: 'Informacje klienta' },
   { id: 'serviceDetails', label: '🔧 Dane serwisowe', kind: 'text', width: 300, height: 80, text: '{{serviceNumber}}\n{{serviceStatus}}\n{{faultDescription}}\n{{serviceWorkPerformed}}', fontSize: 10, fontWeight: 400, hint: 'Numer, status, usterka, czynności serwisowe' },
   { id: 'rentalDetails', label: '📦 Dane wypożyczenia', kind: 'text', width: 300, height: 64, text: '{{rentalNumber}}\n{{rentalIssueDate}}\n{{plannedReturnDate}}', fontSize: 10, fontWeight: 400, hint: 'Numer i terminy' },
+  { id: 'rentalPeriod', label: '📅 Okres wypożyczenia', kind: 'text', width: 700, height: 42, text: '{{rentalPeriodText}}', fontSize: 10, fontWeight: 600, hint: 'Data wydania i termin zwrotu jako zapis umowy' },
   { id: 'documentNumber', label: '📄 Numer dokumentu', kind: 'text', width: 210, height: 22, text: 'Numer: {{documentNumber}}', fontSize: 10, fontWeight: 600, hint: 'Numeracja dokumentu' },
   { id: 'documentDate', label: '📄 Data dokumentu', kind: 'text', width: 210, height: 22, text: 'Data: {{issueDate}}', fontSize: 10, fontWeight: 600, hint: 'Data wystawienia' },
   { id: 'documentStatus', label: '📄 Status dokumentu', kind: 'text', width: 210, height: 22, text: 'Status: {{serviceStatus}}', fontSize: 10, fontWeight: 600, hint: 'Status obsługi' },
@@ -15084,6 +15373,19 @@ function buildFactoryDocumentDesignerLayout(documentTypeId, margins = DEFAULT_DE
     y += 56 + gap;
   }
 
+  if (documentTypeId === 'rentalAgreement') {
+    elements.push(designerLayoutElement('rentalPeriod', {
+      x: area.left,
+      y,
+      width: area.width,
+      height: 42,
+      fontSize: 10,
+      fontWeight: 600,
+      text: '{{rentalPeriodText}}'
+    }));
+    y += 42 + gap;
+  }
+
   const tableLibraryId = ['rentalAgreement', 'rentalConfirmation', 'issueProtocol', 'returnProtocol'].includes(documentTypeId)
     ? 'equipmentTable'
     : 'itemsTable';
@@ -15286,6 +15588,7 @@ function normalizeDocumentDesignerState(value) {
   const incomingTemplates = Array.isArray(value?.templates) ? value.templates : defaults.templates;
   const normalizedTemplates = incomingTemplates
     .map((template) => normalizeDocumentDesignerTemplate(template, template?.documentTypeId))
+    .map((template) => ensureRentalAgreementPeriodClause(template))
     .filter(Boolean);
   DOCUMENT_TEMPLATE_TYPES.forEach((type) => {
     if (normalizedTemplates.some((template) => template.documentTypeId === type.id)) return;
@@ -15538,10 +15841,49 @@ function getServiceDocumentDesignerTemplate(documentTypeId) {
   return template;
 }
 
+function ensureRentalAgreementPeriodClause(template) {
+  if (template?.documentTypeId !== 'rentalAgreement') return template;
+  const elements = Array.isArray(template.elements) ? template.elements : [];
+  const visibleText = elements
+    .filter((element) => element.visible !== false)
+    .map((element) => String(element.text ?? ''))
+    .join('\n');
+  const hasPeriodText = visibleText.includes('{{rentalPeriodText}}');
+  const hasBothDateFields = visibleText.includes('{{rentalIssueDate}}')
+    && visibleText.includes('{{plannedReturnDate}}');
+  if (hasPeriodText || hasBothDateFields) return template;
+
+  const margins = template.margins ?? DEFAULT_DESIGNER_MARGINS;
+  const area = getDesignerWorkArea(margins);
+  const equipmentTable = elements
+    .filter((element) => element.kind === 'table')
+    .sort((left, right) => left.y - right.y)[0];
+  const y = equipmentTable
+    ? equipmentTable.y + equipmentTable.height + 12
+    : Math.min(
+      area.bottom - 42,
+      Math.max(area.top, ...elements.map((element) => Number(element.y) + Number(element.height))) + 12
+    );
+  const periodElement = clampDesignerElementToWorkArea(
+    normalizeDocumentDesignerElement(designerLayoutElement('rentalPeriod', {
+      x: equipmentTable?.x ?? area.left,
+      y,
+      width: equipmentTable?.width ?? area.width,
+      height: 42,
+      fontSize: 10,
+      fontWeight: 600,
+      text: '{{rentalPeriodText}}'
+    })),
+    margins
+  );
+  return { ...template, elements: [...elements, periodElement] };
+}
+
 function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile()) {
   const client = rental?.clients ?? {};
   const items = getRentalBaseItems(rental);
   const issueDate = formatAgreementDate(rental?.start_date) || formatAgreementDate(getLocalIsoDate());
+  const plannedReturnDate = formatAgreementDate(rental?.planned_return_date) || '—';
   const introCity = company.documentCity || company.city || '';
   return {
     ...mapClientToDocumentContext(client),
@@ -15549,7 +15891,8 @@ function buildRentalAgreementDocumentContext(rental, company = getCompanyProfile
     documentNumber: rental?.rental_number || '—',
     issueDate,
     rentalIssueDate: formatAgreementDate(rental?.start_date) || issueDate,
-    plannedReturnDate: formatAgreementDate(rental?.planned_return_date) || '',
+    plannedReturnDate,
+    rentalPeriodText: `Sprzęt zostaje wypożyczony od ${formatAgreementDate(rental?.start_date) || issueDate} do ${plannedReturnDate}. Biorący zobowiązuje się zwrócić sprzęt najpóźniej w dniu ${plannedReturnDate}.`,
     actualReturnDate: formatAgreementDate(rental?.actual_return_date) || '',
     rentalNumber: rental?.rental_number || '—',
     status: rental?.status || '',
@@ -15575,7 +15918,7 @@ function buildRentalAgreementDocumentHtml(rental, { preview = true, company = ge
     buildRentalAgreementDocumentContext(rental, company),
     sharedTemplate
   );
-  const designerTemplate = getServiceDocumentDesignerTemplate('rentalAgreement');
+  const designerTemplate = ensureRentalAgreementPeriodClause(getServiceDocumentDesignerTemplate('rentalAgreement'));
   return renderDesignerDocumentHtml(designerTemplate, context, {
     preview,
     company,
@@ -15744,8 +16087,14 @@ const DESIGNER_PRINT_TABLE_ROW_HEIGHT = 17;
 const DESIGNER_PRINT_BLOCK_GAP = 8;
 
 function estimateDesignerFlowBlockHeight(element, context = {}, company = getCompanyProfile(), contentWidth = DOCUMENT_DESIGNER_PAGE.width) {
+  if (context.documentTypeId === 'rentalAgreement' && element.kind === 'line') return 1;
   if (element.kind === 'line') return Math.max(1, element.height);
   if (element.kind === 'signature') return Math.max(70, element.height);
+  if (context.documentTypeId === 'rentalAgreement' && element.libraryId === 'rentalPeriod') return 54;
+  if (context.documentTypeId === 'rentalAgreement' && (element.libraryId === 'terms' || String(element.text ?? '').includes('{{terms}}'))) {
+    const termCount = getRentalAgreementTerms(element, context).length;
+    return 28 + Math.max(1, Math.ceil(termCount / (termCount >= 6 ? 2 : 1))) * 14;
+  }
   if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') return 118;
   if (element.libraryId === 'footer') {
     const footerText = resolveDocumentFooterForRender(context, element.text);
@@ -15781,8 +16130,9 @@ function estimateDesignerFlowBlockHeight(element, context = {}, company = getCom
 
 function sortDesignerAfterElements(elements = []) {
   const priority = (element) => {
-    if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') return 10;
-    if (element.libraryId === 'terms' || String(element.text ?? '').includes('{{terms}}')) return 20;
+    if (element.libraryId === 'rentalPeriod') return 5;
+    if (element.libraryId === 'terms' || String(element.text ?? '').includes('{{terms}}')) return 10;
+    if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') return 20;
     if (element.kind === 'signature') return 30;
     if (element.libraryId === 'footer') return 50;
     return 25;
@@ -15815,6 +16165,26 @@ function renderDesignerTableChunkHtml(safeColumns, rows, marginLeft, width, { sh
   return `<div class="designer-doc-table-chunk" style="margin-left:${marginLeft}px;width:${width}px;max-width:100%;"><div class="designer-doc-table-flow-inner">${buildDesignerEquipmentTableChunkMarkup(safeColumns, rows, { showEmptyMessage })}</div></div>`;
 }
 
+function buildRentalPeriodMarkup(context = {}) {
+  const issueDate = String(context.rentalIssueDate || context.issueDate || '—');
+  const returnDate = String(context.plannedReturnDate || '—');
+  return `<section style="border:1px solid #c0c8d4;background:#fff;padding:6px 10px;color:#0f1e35;"><div style="font-size:7.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1e3a5f;margin-bottom:4px;">Okres wypożyczenia</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:9.5px;line-height:1.3;"><div>Data wydania: <strong>${escapeHtml(issueDate)}</strong></div><div>Termin zwrotu: <strong>${escapeHtml(returnDate)}</strong></div></div></section>`;
+}
+
+function getRentalAgreementTerms(element, context = {}) {
+  return applyDesignerTokens(element?.text, context)
+    .split('\n')
+    .map((line) => line.trim().replace(/^[-*]\s*/, ''))
+    .filter(Boolean);
+}
+
+function buildRentalAgreementTermsMarkup(element, context = {}) {
+  const terms = getRentalAgreementTerms(element, context);
+  const columnCount = terms.length >= 6 ? 2 : 1;
+  const items = terms.map((term) => `<li style="margin:0 0 3px;break-inside:avoid;page-break-inside:avoid;">${escapeHtml(term)}</li>`).join('');
+  return `<section style="color:#111827;"><div style="font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1e3a5f;margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid #c8d4e0;">Warunki umowy</div><ol style="columns:${columnCount};column-gap:22px;margin:0;padding-left:17px;font-size:8.5px;line-height:1.3;">${items}</ol></section>`;
+}
+
 function renderDocumentDesignerElementAbsoluteHtml(element, context = {}, company = getCompanyProfile(), origin = { x: 0, y: 0 }) {
   if (element.visible === false) return '';
   const commonStyle = `position:absolute;left:${element.x - origin.x}px;top:${element.y - origin.y}px;width:${element.width}px;height:${element.height}px;overflow:visible;`;
@@ -15838,6 +16208,9 @@ function renderDocumentDesignerElementAbsoluteHtml(element, context = {}, compan
     if (['serviceReport', 'serviceCompletion'].includes(String(context.documentTypeId ?? ''))) return '';
     const minHeight = Math.max(40, element.height);
     return `<div style="${commonStyle}min-height:${minHeight}px;height:auto;border:1px solid #c0c8d4;background:#fff;overflow:visible;">${buildDesignerEquipmentTableMarkup(element, context)}</div>`;
+  }
+  if (context.documentTypeId === 'rentalAgreement' && element.libraryId === 'rentalPeriod') {
+    return `<div style="${commonStyle}height:auto;overflow:visible;">${buildRentalPeriodMarkup(context)}</div>`;
   }
   if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') {
     const summaryHtml = context.rentalCostSummaryHtml
@@ -15901,16 +16274,25 @@ function renderServiceCompletionFlowBlockHtml(element, context, { marginTop = 0,
 
 function renderDocumentDesignerElementFlowHtml(element, context = {}, company = getCompanyProfile(), { marginTop = 0, marginLeft = 0, contentWidth = DOCUMENT_DESIGNER_PAGE.width } = {}) {
   if (element.visible === false) return '';
-  const width = Math.min(element.width, contentWidth);
-  const wrapStyle = `margin-top:${marginTop}px;margin-left:${marginLeft}px;width:${width}px;max-width:100%;`;
+  const isFullWidthRentalTerms = context.documentTypeId === 'rentalAgreement'
+    && (element.libraryId === 'terms' || String(element.text ?? '').includes('{{terms}}'));
+  const width = isFullWidthRentalTerms ? contentWidth : Math.min(element.width, contentWidth);
+  const resolvedMarginLeft = isFullWidthRentalTerms ? 0 : marginLeft;
+  const wrapStyle = `margin-top:${marginTop}px;margin-left:${resolvedMarginLeft}px;width:${width}px;max-width:100%;`;
   const textStyle = `font-size:${element.fontSize}px;font-weight:${element.fontWeight};color:${escapeHtml(element.color)};text-align:${element.align};white-space:pre-wrap;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;`;
   if (element.kind === 'line') {
-    const thickness = Math.max(1, element.height);
+    const thickness = context.documentTypeId === 'rentalAgreement' ? 1 : Math.max(1, element.height);
     return `<div class="designer-doc-flow-block" style="${wrapStyle}"><div style="width:100%;height:${thickness}px;background:${escapeHtml(element.color)};"></div></div>`;
   }
   if (element.kind === 'signature') {
     const label = applyDesignerTokens(element.text || 'Podpis', context);
     return `<div class="designer-doc-flow-block designer-doc-flow-signature" style="${wrapStyle}${textStyle}"><div style="font-size:${Math.max(10, element.fontSize)}px;font-weight:800;margin-bottom:40px;color:#0f1e35;">${escapeHtml(label)}</div><div style="border-top:1.2px dotted #8090a8;padding-top:5px;font-size:8.5px;color:#666;text-align:center;">miejscowość, data i podpis</div></div>`;
+  }
+  if (context.documentTypeId === 'rentalAgreement' && element.libraryId === 'rentalPeriod') {
+    return `<div class="designer-doc-flow-block" style="${wrapStyle}">${buildRentalPeriodMarkup(context)}</div>`;
+  }
+  if (context.documentTypeId === 'rentalAgreement' && (element.libraryId === 'terms' || String(element.text ?? '').includes('{{terms}}'))) {
+    return `<div class="designer-doc-flow-block" style="${wrapStyle}">${buildRentalAgreementTermsMarkup(element, context)}</div>`;
   }
   if (element.kind === 'costSummary' || element.libraryId === 'rentalCostSummary') {
     const summaryHtml = context.rentalCostSummaryHtml
@@ -15965,6 +16347,7 @@ function renderDocumentDesignerPaginatedHtml(template, context = {}, company = g
   const nextPageAvailable = DOCUMENT_DESIGNER_PAGE.height - padding.top - padding.bottom;
   const isServiceCompletionDoc = context.documentTypeId === 'serviceCompletion';
   const isServiceReportDoc = context.documentTypeId === 'serviceReport';
+  const isRentalAgreementDoc = context.documentTypeId === 'rentalAgreement';
 
   const pageDrafts = [];
   let currentParts = [];
@@ -16059,11 +16442,19 @@ function renderDocumentDesignerPaginatedHtml(template, context = {}, company = g
       const pair = sortedAfter.filter((item) => item.kind === 'signature' && item.y === element.y);
       renderedSignatureY.add(element.y);
       const blockHeight = Math.max(...pair.map((item) => estimateDesignerFlowBlockHeight(item, context, company, contentWidth)));
-      let marginTop = isServiceCompletionDoc ? 24 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
+      let marginTop = isServiceCompletionDoc
+        ? 24
+        : isRentalAgreementDoc
+          ? 16
+          : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
       ensureSpace(marginTop + blockHeight);
       if (cursorY + marginTop + blockHeight > pageBottom) {
         pushPage();
-        marginTop = isServiceCompletionDoc ? 24 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
+        marginTop = isServiceCompletionDoc
+          ? 24
+          : isRentalAgreementDoc
+            ? 16
+            : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
         ensureSpace(marginTop + blockHeight);
       }
       currentParts.push(`<div class="designer-doc-flow-signatures-row${isServiceCompletionDoc ? ' designer-doc-sc-signatures' : ''}"${isServiceCompletionDoc ? ` style="margin-top:${marginTop}px;"` : ''}>${pair.map((item) => (
@@ -16084,11 +16475,19 @@ function renderDocumentDesignerPaginatedHtml(template, context = {}, company = g
     }
     const blockHeight = estimateDesignerFlowBlockHeight(element, context, company, contentWidth);
     if (!blockHeight) return;
-    let marginTop = isServiceCompletionDoc ? 12 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
+    let marginTop = isServiceCompletionDoc
+      ? 12
+      : isRentalAgreementDoc
+        ? (element.libraryId === 'footer' ? 8 : 10)
+        : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
     ensureSpace(marginTop + blockHeight);
     if (cursorY + marginTop + blockHeight > pageBottom) {
       pushPage();
-      marginTop = isServiceCompletionDoc ? 12 : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
+      marginTop = isServiceCompletionDoc
+        ? 12
+        : isRentalAgreementDoc
+          ? (element.libraryId === 'footer' ? 8 : 10)
+          : Math.max(0, Math.max(padding.top, Number(element.y) || padding.top) - cursorY);
       ensureSpace(marginTop + blockHeight);
     }
     currentParts.push(renderDocumentDesignerElementFlowHtml(element, context, company, {
@@ -16120,7 +16519,7 @@ function renderDocumentDesignerElementHtml(element, context = {}, company = getC
 }
 
 function createDesignerDocumentLayoutCss() {
-  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body.designer-doc-body{display:flex;flex-direction:column;align-items:center;gap:16px;min-height:100vh;padding:16px 0;background:#e2e8f0}.designer-doc-print-page{position:relative;width:210mm;height:297mm;background:#fff;box-shadow:0 0 0 1px #cbd5e1;box-sizing:border-box;overflow:hidden;page-break-after:always;break-after:page}.designer-doc-print-page:last-child{page-break-after:auto;break-after:auto}.designer-doc-header-region{position:relative;width:100%}.designer-doc-page-body{width:100%}.designer-doc-table-chunk{margin-bottom:6px}.designer-doc-table-flow-inner{border:1px solid #c0c8d4;background:#fff;overflow:visible}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block,.designer-doc-flow-signature,.designer-doc-flow-signatures-row{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-sc-info,.designer-doc-sc-highlight,.designer-doc-sc-confirmation{break-inside:auto;page-break-inside:auto}.designer-doc-sc-heading{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1e3a5f;margin:0 0 7px;padding-bottom:4px;border-bottom:1px solid #c8d4e0}.designer-doc-sc-info-body{display:grid;gap:4px}.designer-doc-sc-row{display:flex;flex-wrap:wrap;gap:4px;font-size:10px;line-height:1.45}.designer-doc-sc-label{font-weight:700;color:#334155;flex:0 0 auto}.designer-doc-sc-value{color:#0f1e35;font-weight:600;word-break:break-word}.designer-doc-sc-highlight{border:1px solid #d8e0eb;border-radius:8px;background:#f8fafc;padding:10px 12px}.designer-doc-sc-content-body{font-size:10.5px;line-height:1.48;color:#0f1e35;white-space:pre-wrap;word-break:break-word;font-weight:500}.designer-doc-sc-confirmation{font-size:10.5px;line-height:1.45;color:#334155;font-style:italic;padding:2px 0}.designer-doc-flow-signatures-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}.designer-doc-sc-signatures{display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%}.designer-doc-sc-signatures .designer-doc-sc-signature{margin-left:0!important;max-width:none!important;width:auto!important}.designer-doc-sc-sig-label{font-size:10.5px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.designer-doc-sc-sig-line{border-top:1.2px dotted #8090a8;padding-top:5px;font-size:8.5px;color:#666;text-align:center}.designer-doc-sc-footer{margin-top:10px;padding-top:6px;border-top:1px solid #dde3ec;color:#888!important;text-align:center;line-height:1.35}.designer-doc-flow-signatures-row .designer-doc-flow-block,.designer-doc-flow-signatures-row .designer-doc-flow-signature{flex:1 1 240px;margin-left:0!important;width:auto!important;max-width:100%}.designer-doc-page-number{position:absolute;left:20mm;right:20mm;bottom:6mm;display:flex;justify-content:flex-end;font-size:8px;color:#64748b}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;min-height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:visible;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed;width:100%}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:auto!important;height:auto!important;display:block;margin:0;padding:0}.designer-doc-body{padding:0!important;gap:0!important}.designer-doc-print-page{width:210mm;height:297mm;box-shadow:none!important;margin:0!important;overflow:hidden}.designer-doc-toolbar{display:none!important}}`;
+  return `@page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif}body.designer-doc-body{display:flex;flex-direction:column;align-items:center;gap:16px;min-height:100vh;padding:16px 0;background:#e2e8f0}.designer-doc-print-page{position:relative;width:210mm;height:297mm;background:#fff;box-shadow:0 0 0 1px #cbd5e1;box-sizing:border-box;overflow:hidden;page-break-after:always;break-after:page}.designer-doc-print-page:last-child{page-break-after:auto;break-after:auto}.designer-doc-header-region{position:relative;width:100%}.designer-doc-page-body{width:100%}.designer-doc-table-chunk{margin-bottom:6px}.designer-doc-table-flow-inner{border:1px solid #c0c8d4;background:#fff;overflow:visible}.designer-doc-equipment-table thead{display:table-header-group}.designer-doc-equipment-table tbody tr{page-break-inside:avoid;break-inside:avoid-page}.designer-doc-flow-block,.designer-doc-flow-signature,.designer-doc-flow-signatures-row{break-inside:avoid-page;page-break-inside:avoid}.designer-doc-sc-info,.designer-doc-sc-highlight,.designer-doc-sc-confirmation{break-inside:auto;page-break-inside:auto}.designer-doc-sc-heading{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1e3a5f;margin:0 0 7px;padding-bottom:4px;border-bottom:1px solid #c8d4e0}.designer-doc-sc-info-body{display:grid;gap:4px}.designer-doc-sc-row{display:flex;flex-wrap:wrap;gap:4px;font-size:10px;line-height:1.45}.designer-doc-sc-label{font-weight:700;color:#334155;flex:0 0 auto}.designer-doc-sc-value{color:#0f1e35;font-weight:600;word-break:break-word}.designer-doc-sc-highlight{border:1px solid #d8e0eb;border-radius:8px;background:#f8fafc;padding:10px 12px}.designer-doc-sc-content-body{font-size:10.5px;line-height:1.48;color:#0f1e35;white-space:pre-wrap;word-break:break-word;font-weight:500}.designer-doc-sc-confirmation{font-size:10.5px;line-height:1.45;color:#334155;font-style:italic;padding:2px 0}.designer-doc-flow-signatures-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}.designer-doc-sc-signatures{display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%}.designer-doc-sc-signatures .designer-doc-sc-signature{margin-left:0!important;max-width:none!important;width:auto!important}.designer-doc-sc-sig-label{font-size:10.5px;font-weight:800;color:#0f1e35;display:block;margin-bottom:40px}.designer-doc-sc-sig-line{border-top:1.2px dotted #8090a8;padding-top:5px;font-size:8.5px;color:#666;text-align:center}.designer-doc-sc-footer{margin-top:10px;padding-top:6px;border-top:1px solid #dde3ec;color:#888!important;text-align:center;line-height:1.35}.designer-doc-flow-signatures-row .designer-doc-flow-block,.designer-doc-flow-signatures-row .designer-doc-flow-signature{flex:1 1 240px;margin-left:0!important;width:auto!important;max-width:100%}.designer-doc-page-number{position:absolute;left:20mm;right:20mm;bottom:6mm;display:flex;justify-content:flex-end;font-size:8px;color:#64748b}.designer-doc-page{position:relative;width:${DOCUMENT_DESIGNER_PAGE.width}px;min-height:${DOCUMENT_DESIGNER_PAGE.height}px;background:#fff;overflow:visible;box-shadow:0 0 0 1px #cbd5e1}.designer-doc-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;padding:8px 12px;background:#fff;border-bottom:1px solid #dde3ed;width:100%}.designer-doc-toolbar button{border:1.5px solid #1e3a5f;border-radius:6px;background:#1e3a5f;color:#fff;padding:6px 14px;font-weight:700;cursor:pointer;font-size:11px}@media print{html,body{background:#fff!important;min-height:0!important;height:auto!important;display:block!important;margin:0!important;padding:0!important;overflow:visible!important}.designer-doc-body{padding:0!important;gap:0!important}.designer-doc-print-page{width:210mm!important;height:296mm!important;min-height:0!important;box-shadow:none!important;margin:0!important;overflow:hidden!important}.designer-doc-print-page:last-child{page-break-after:avoid!important;break-after:avoid-page!important}.designer-doc-toolbar{display:none!important}}`;
 }
 
 function renderDesignerDocumentHtml(template, context = {}, { preview = true, company = getCompanyProfile(), title = '' } = {}) {
@@ -16903,7 +17302,7 @@ function DataTable({ columns, rows, storageKey, loading = false, onOpen, onRowCl
             const rowSupportsReordering = typeof isRowReorderable !== 'function' || isRowReorderable(row);
             const rowCanReorder = canReorderRows && rowSupportsReordering;
             const rowReorderTitle = !rowSupportsReordering
-              ? 'Zmiana kolejności dotyczy tylko projektów'
+              ? 'Zmiana kolejności nie jest dostępna dla tej pozycji w bieżącym widoku'
               : rowReorderDisabled
                 ? 'Wyczyść filtry, aby zmienić kolejność'
                 : enableSorting && sortKey

@@ -10,12 +10,28 @@ export const DEFAULT_ORGANIZER_CATEGORIES = ['Ogólne', 'Serwis', 'Wypożyczenia
 const LOCAL_TASKS_KEY = 'fixer-organizer-tasks';
 const LOCAL_CATEGORIES_KEY = 'fixer-organizer-categories';
 const LOCAL_COMMENTS_KEY = 'fixer-organizer-task-comments';
+const ORGANIZER_TASK_ORDER_STEP = 100;
 
 const taskColumns = `
   id, title, description, status, priority, due_date, reminder_at,
   category, linked_module, linked_id, linked_label,
-  archived, completed_date, created_at, updated_at
+  archived, completed_date, sort_order, created_at, updated_at
 `;
+const taskColumnsLegacy = taskColumns.replace(', sort_order', '');
+
+function isMissingSortOrderError(error) {
+  const message = String(error?.message ?? '').toLocaleLowerCase('pl');
+  return String(error?.code ?? '') === '42703' || (message.includes('sort_order') && (
+    message.includes('does not exist') || message.includes('could not find') || message.includes('schema cache')
+  ));
+}
+
+function getOrganizerTaskOrderError(error) {
+  if (isMissingSortOrderError(error)) {
+    return new Error('Brak obsługi kolejności zadań w bazie. Uruchom migrację supabase/051_organizer_tasks_sort_order.sql.');
+  }
+  return error;
+}
 
 function readLocal(key) {
   try {
@@ -32,6 +48,7 @@ function writeLocal(key, data) {
 }
 
 function normalizeTask(task) {
+  const sortOrder = Number(task.sort_order);
   return {
     title: String(task.title ?? '').trim(),
     description: String(task.description ?? '').trim(),
@@ -44,7 +61,8 @@ function normalizeTask(task) {
     linked_id: task.linked_id || null,
     linked_label: String(task.linked_label ?? '').trim() || null,
     archived: Boolean(task.archived),
-    completed_date: task.completed_date || null
+    completed_date: task.completed_date || null,
+    ...(Number.isFinite(sortOrder) ? { sort_order: sortOrder } : {})
   };
 }
 
@@ -52,10 +70,18 @@ export async function fetchOrganizerTasks() {
   if (!isSupabaseConfigured) {
     return { data: readLocal(LOCAL_TASKS_KEY), error: null, local: true };
   }
-  const { data, error } = await supabase
+  let result = await supabase
     .from('organizer_tasks')
     .select(taskColumns)
+    .order('sort_order', { ascending: true })
     .order('created_at', { ascending: false });
+  if (result.error && isMissingSortOrderError(result.error)) {
+    result = await supabase
+      .from('organizer_tasks')
+      .select(taskColumnsLegacy)
+      .order('created_at', { ascending: false });
+  }
+  const { data, error } = result;
   return { data: data ?? [], error, local: false };
 }
 
@@ -68,11 +94,16 @@ export async function createOrganizerTask(task) {
     writeLocal(LOCAL_TASKS_KEY, [created, ...readLocal(LOCAL_TASKS_KEY)]);
     return { data: created, error: null, local: true };
   }
-  const { data, error } = await supabase
+  let result = await supabase
     .from('organizer_tasks')
     .insert(payload)
     .select(taskColumns)
     .single();
+  if (result.error && isMissingSortOrderError(result.error)) {
+    const { sort_order: _sortOrder, ...legacyPayload } = payload;
+    result = await supabase.from('organizer_tasks').insert(legacyPayload).select(taskColumnsLegacy).single();
+  }
+  const { data, error } = result;
   return { data, error, local: false };
 }
 
@@ -86,13 +117,49 @@ export async function updateOrganizerTask(id, task) {
     writeLocal(LOCAL_TASKS_KEY, next);
     return { data: next.find((row) => String(row.id ?? row.localId) === String(id)) ?? null, error: null, local: true };
   }
-  const { data, error } = await supabase
+  let result = await supabase
     .from('organizer_tasks')
     .update({ ...payload, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select(taskColumns)
     .single();
+  if (result.error && isMissingSortOrderError(result.error)) {
+    const { sort_order: _sortOrder, ...legacyPayload } = payload;
+    result = await supabase
+      .from('organizer_tasks')
+      .update({ ...legacyPayload, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select(taskColumnsLegacy)
+      .single();
+  }
+  const { data, error } = result;
   return { data, error, local: false };
+}
+
+export async function reorderOrganizerTasks(orderedTasks = []) {
+  const updates = orderedTasks
+    .map((task, index) => ({ id: task.id ?? task.localId, sort_order: (index + 1) * ORGANIZER_TASK_ORDER_STEP }))
+    .filter((row) => row.id);
+  if (!updates.length) return { error: null, local: !isSupabaseConfigured };
+
+  if (!isSupabaseConfigured || orderedTasks.some((task) => task.localId)) {
+    const orderById = new Map(updates.map((row) => [String(row.id), row.sort_order]));
+    const now = new Date().toISOString();
+    const next = readLocal(LOCAL_TASKS_KEY).map((task) => {
+      const id = String(task.id ?? task.localId);
+      return orderById.has(id) ? { ...task, sort_order: orderById.get(id), updated_at: now } : task;
+    });
+    writeLocal(LOCAL_TASKS_KEY, next);
+    return { error: null, local: true };
+  }
+
+  const updatedAt = new Date().toISOString();
+  const results = await Promise.all(updates.map((row) => supabase
+    .from('organizer_tasks')
+    .update({ sort_order: row.sort_order, updated_at: updatedAt })
+    .eq('id', row.id)));
+  const failed = results.find((result) => result.error);
+  return { error: failed?.error ? getOrganizerTaskOrderError(failed.error) : null, local: false };
 }
 
 export async function deleteOrganizerTask(id, task = null) {
